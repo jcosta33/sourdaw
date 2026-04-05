@@ -64,7 +64,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: PARTIALLY RESOLVED - Inline `pushUndoEntry` closures have been removed, but heavy `onClick` handler orchestrations remain.
+- **Status**: RESOLVED (2026-04-05, convergence pass) — 7 async AI action handlers in `ClipContextMenu.tsx` collapsed behind `runAiActionWithToast` facade; inline `handleDuplicate` + `handleImportAudio` in `TrackContextMenu.tsx` replaced with `duplicateTrack` + new `importAudioClipToTrack` use cases. Multi-select loops kept in-view (4-line logic, not heavy). Remaining `pushUndoEntry` closures tracked by AUDIT-006.
 - **Title**: God Component Orchestration
 - **Severity**: P1
 - **Area**: frontend
@@ -85,7 +85,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: VERIFIED
+- **Status**: RESOLVED (2026-04-05, convergence pass) — `ExpandedChannelStrip.tsx` now imports a single `useChannelStripActions(track)` facade hook instead of 14 individual use cases. New multi-step use cases `toggleVcaMembership` and `createAndAssignVcaGroup` extracted from inline view branches. File shrank 407L → 364L. `MasterChannelStrip` deliberately uses its own shape (no mute/solo/arm) and does not need the hook.
 - **Title**: Channel Strip Orchestration Overload
 - **Severity**: P1
 - **Area**: frontend
@@ -259,7 +259,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: VERIFIED
+- **Status**: RESOLVED (2026-04-05, convergence pass) — `polyphonicAudioToMidi.ts` returns `PolyphonicAudioToMidiResult` DTO (`{ notes, sourceClip }`) and has no `addTrack`/`addClip`/`addMidiNote` calls. Orchestration lives correctly in caller `ClipAudioAiSection.tsx`. Audit verified stale.
 - **Title**: Mixed DSP/Orchestration Responsibilities
 - **Severity**: P2
 - **Area**: frontend/wasm

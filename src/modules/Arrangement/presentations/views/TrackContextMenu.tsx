@@ -11,12 +11,11 @@ import { renameTrack } from '../../useCases/renameTrack';
 import { freezeTrack, unfreezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce/bounceOperations';
 import { armTrack } from '../../useCases/recording';
-import { addTrack } from '../../useCases/addTrack';
+import { duplicateTrack } from '../../useCases/duplicateTrack';
+import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
 import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
 import { setTrackColor, setInputMonitoring } from '../../useCases/setTrackGainPan';
-import { decodeAudioFile } from '../../useCases/trackViewActions';
 import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
@@ -55,19 +54,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     useContextMenuDismiss(menuRef, close);
 
     const handleDuplicate = () => {
-        const newTrack = addTrack({ name: `${track.name} (copy)`, kind: track.kind });
-        if (newTrack) {
-            for (const clip of track.clips) {
-                addClip({
-                    trackId: newTrack.id,
-                    startBeat: clip.startBeat,
-                    endBeat: clip.endBeat,
-                    name: clip.name,
-                    type: clip.type,
-                    audioBufferId: clip.audioBufferId,
-                });
-            }
-        }
+        duplicateTrack(track.id);
         close();
     };
 
@@ -89,22 +76,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const midiInputRef = useRef<HTMLInputElement>(null);
 
     const handleImportAudio = async (file: File) => {
-        try {
-            const { id: bufferId, buffer } = await decodeAudioFile(file);
-            const tempo = 120;
-            const durationBeats = Math.ceil((buffer.duration / 60) * tempo);
-            const lastClipEnd = Math.max(0, ...track.clips.map((c) => c.endBeat));
-            addClip({
-                trackId: track.id,
-                startBeat: lastClipEnd,
-                endBeat: lastClipEnd + durationBeats,
-                name: file.name.replace(/\.[^.]+$/, ''),
-                type: 'audio',
-                audioBufferId: bufferId,
-            });
-        } catch {
-            notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
-        }
+        await importAudioClipToTrack(track.id, file);
         close();
     };
 

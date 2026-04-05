@@ -10,16 +10,6 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Circle, Ear, ShieldCheck } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
-import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
-import { soloTrack } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrack';
-import { soloTrackExclusive } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrackExclusive';
-import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
-import { toggleInputMonitoring } from '#/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring';
-import { toggleSoloSafe } from '#/modules/Arrangement/useCases/toggleTrackState/toggleSoloSafe';
-import { setTrackGain, setTrackPan, setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { armTrack } from '#/modules/Arrangement/useCases/recording';
-import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
-import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { menuBtnClass, menuSepClass } from '#/helpers/UI/contextMenuStyles';
 
@@ -29,13 +19,8 @@ import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 import { type Track } from '../../../models/TrackViewTypes';
-import {
-    getAllVCAGroups,
-    assignTrackToVCA,
-    removeTrackFromVCA,
-    createVCAGroup,
-} from '#/modules/Arrangement/useCases/vcaFader';
-import { releaseTouchAutomation } from '#/modules/Automation/useCases/automationRecording/releaseTouchAutomation';
+import { getAllVCAGroups } from '#/modules/Arrangement/useCases/vcaFader';
+import { useChannelStripActions } from '../../hooks/useChannelStripActions';
 
 type MixerMenu = { x: number; y: number } | null;
 
@@ -48,6 +33,7 @@ type ExpandedChannelStripProps = {
 };
 
 export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: ExpandedChannelStripProps): ReactElement => {
+    const actions = useChannelStripActions(track);
     const [ctxMenu, setCtxMenu] = useState<MixerMenu>(null);
     const [isRenaming, setIsRenaming] = useState(false);
     const ctxRef = useRef<HTMLDivElement>(null);
@@ -82,7 +68,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 isSelected && 'ring-1 ring-ring border-transparent'
             )}
             style={{ background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)' }}
-            onClick={() => selectTrack(track.id)}
+            onClick={actions.select}
             onContextMenu={handleContextMenu}
             role="group"
             aria-label={`${track.name} channel`}
@@ -100,12 +86,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     monospace
                     className="w-full px-1 text-[9px]"
                     onBlur={(e) => {
-                        renameTrack(track.id, e.currentTarget.value);
+                        actions.rename(e.currentTarget.value);
                         setIsRenaming(false);
                     }}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                            renameTrack(track.id, e.currentTarget.value);
+                            actions.rename(e.currentTarget.value);
                             setIsRenaming(false);
                         }
                         if (e.key === 'Escape') {
@@ -142,7 +128,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             className="font-bold text-[10px]"
                             onClick={(e) => {
                                 e.stopPropagation();
-                                muteTrack(track.id, !track.muted);
+                                actions.toggleMute();
                             }}
                         >
                             M
@@ -160,11 +146,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             className="font-bold text-[10px]"
                             onClick={(e) => {
                                 e.stopPropagation();
-                                if (e.metaKey || e.ctrlKey) {
-                                    soloTrack(track.id, !track.soloed);
-                                } else {
-                                    soloTrackExclusive(track.id);
-                                }
+                                actions.toggleSolo(e.metaKey || e.ctrlKey);
                             }}
                         >
                             S
@@ -182,7 +164,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             className=""
                             onClick={(e) => {
                                 e.stopPropagation();
-                                armTrack(track.id, !track.armed);
+                                actions.toggleArm();
                             }}
                         >
                             <Circle className={cn('size-3', track.armed && 'fill-state-record')} />
@@ -201,7 +183,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                                 className=""
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    toggleInputMonitoring(track.id);
+                                    actions.toggleMonitoring();
                                 }}
                             >
                                 <Ear className={cn('size-3', track.inputMonitoring === 'on' && 'fill-state-play/30')} />
@@ -221,17 +203,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             {/* Fader */}
             <div
                 className="shrink-0"
-                onPointerUp={() => {
-                    if (track.automationMode === 'touch') {
-                        releaseTouchAutomation(track.id, 'gain');
-                    }
-                }}
+                onPointerUp={actions.releaseGainAutomation}
             >
                 <Fader
                     value={track.gain}
-                    onChange={(v) => {
-                        setTrackGain(track.id, v);
-                    }}
+                    onChange={actions.setGain}
                     min={0}
                     max={1.5}
                     step={0.01}
@@ -249,17 +225,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
                 <div
-                    onPointerUp={() => {
-                        if (track.automationMode === 'touch') {
-                            releaseTouchAutomation(track.id, 'pan');
-                        }
-                    }}
+                    onPointerUp={actions.releasePanAutomation}
                 >
                     <RotaryKnob
                         value={track.pan}
-                        onChange={(v) => {
-                            setTrackPan(track.id, v);
-                        }}
+                        onChange={actions.setPan}
                         min={-50}
                         max={50}
                         size="sm"
@@ -297,7 +267,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(() => muteTrack(track.id, !track.muted))}
+                        onClick={act(actions.toggleMute)}
                     >
                         {track.muted ? 'Unmute' : 'Mute'}
                     </button>
@@ -305,7 +275,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(() => soloTrack(track.id, !track.soloed))}
+                        onClick={act(() => actions.toggleSolo(true))}
                     >
                         {track.soloed ? 'Unsolo' : 'Solo'}
                     </button>
@@ -313,7 +283,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(() => toggleSoloSafe(track.id))}
+                        onClick={act(actions.toggleSoloSafeFlag)}
                     >
                         {track.soloSafe ? 'Disable Solo Safe' : 'Solo Safe'}
                     </button>
@@ -321,7 +291,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(() => armTrack(track.id, !track.armed))}
+                        onClick={act(actions.toggleArm)}
                     >
                         {track.armed ? 'Disarm' : 'Arm for Recording'}
                     </button>
@@ -342,7 +312,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                                 key={c}
                                 color={c}
                                 active={c === track.color}
-                                onClick={act(() => setTrackColor(track.id, c))}
+                                onClick={act(() => actions.setColor(c))}
                                 aria-label={`Set color`}
                             />
                         ))}
@@ -355,13 +325,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             key={g.id}
                             className={`${menuBtnClass} ${track.vcaGroupId === g.id ? 'text-[var(--color-accent-cyan)]' : ''}`}
                             role="menuitem"
-                            onClick={act(() => {
-                                if (track.vcaGroupId === g.id) {
-                                    removeTrackFromVCA(track.id);
-                                } else {
-                                    assignTrackToVCA(track.id, g.id);
-                                }
-                            })}
+                            onClick={act(() => actions.toggleVca(g.id))}
                         >
                             {track.vcaGroupId === g.id ? `✓ ${g.name}` : g.name}
                         </button>
@@ -370,10 +334,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(() => {
-                            const group = createVCAGroup(`VCA ${getAllVCAGroups().length + 1}`);
-                            assignTrackToVCA(track.id, group.id);
-                        })}
+                        onClick={act(actions.createVcaAndAssign)}
                     >
                         + New VCA Group
                     </button>
@@ -382,7 +343,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             type="button"
                             className={`${menuBtnClass} text-muted-foreground`}
                             role="menuitem"
-                            onClick={act(() => removeTrackFromVCA(track.id))}
+                            onClick={act(actions.removeFromVca)}
                         >
                             Remove from VCA
                         </button>
@@ -392,11 +353,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         type="button"
                         className={`${menuBtnClass} text-destructive hover:bg-destructive/10`}
                         role="menuitem"
-                        onClick={act(() => {
-                            if (window.confirm('Are you sure you want to delete this track? This action cannot be undone.')) {
-                                removeTrack(track.id);
-                            }
-                        })}
+                        onClick={act(actions.removeWithConfirm)}
                     >
                         Remove Channel
                     </button>

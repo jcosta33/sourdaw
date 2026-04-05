@@ -27,7 +27,7 @@ import {
     executeAppAction,
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { notifyAiChange } from '#/modules/AiRuntime/useCases/notifyAiChange';
+import { runAiActionWithToast } from '#/modules/AiRuntime/useCases/runAiActionWithToast';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { menuBtnClass, menuSepClass, menuShortcutClass } from '#/helpers/UI/contextMenuStyles';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
@@ -254,17 +254,17 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(async () => {
-                            notifyUser('Separating stems… this may take a moment');
-                            try {
-                                await executeAppAction({ type: 'stemSeparate', payload: { clipId } });
-                                notifyAiChange('Stem separation complete', [
-                                    'Created separate tracks for each stem',
-                                ]);
-                            } catch {
-                                notifyUser('Stem separation failed', 'error');
-                            }
-                        })}
+                        onClick={act(() =>
+                            runAiActionWithToast(
+                                () => executeAppAction({ type: 'stemSeparate', payload: { clipId } }),
+                                {
+                                    startMsg: 'Separating stems… this may take a moment',
+                                    successMsg: 'Stem separation complete',
+                                    successDetails: ['Created separate tracks for each stem'],
+                                    failMsg: 'Stem separation failed',
+                                }
+                            )
+                        )}
                     >
                         <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Separate Stems
@@ -273,17 +273,17 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(async () => {
-                            notifyUser('Converting audio to MIDI…');
-                            try {
-                                await executeAppAction({ type: 'audioToMidi', payload: { clipId } });
-                                notifyAiChange('Audio converted to MIDI', [
-                                    'New MIDI clip created from detected onsets',
-                                ]);
-                            } catch {
-                                notifyUser('Audio-to-MIDI conversion failed', 'error');
-                            }
-                        })}
+                        onClick={act(() =>
+                            runAiActionWithToast(
+                                () => executeAppAction({ type: 'audioToMidi', payload: { clipId } }),
+                                {
+                                    startMsg: 'Converting audio to MIDI…',
+                                    successMsg: 'Audio converted to MIDI',
+                                    successDetails: ['New MIDI clip created from detected onsets'],
+                                    failMsg: 'Audio-to-MIDI conversion failed',
+                                }
+                            )
+                        )}
                     >
                         <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Convert to MIDI
@@ -292,12 +292,22 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(async () => {
-                            notifyUser('Denoising audio…');
-                            const { handleAiDenoiseClip } = await import('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip');
-                            await handleAiDenoiseClip(clipId, 0.7);
-                            notifyAiChange('Audio denoised', ['Noise reduction applied to clip']);
-                        })}
+                        onClick={act(() =>
+                            runAiActionWithToast(
+                                async () => {
+                                    const { handleAiDenoiseClip } = await import(
+                                        '#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip'
+                                    );
+                                    await handleAiDenoiseClip(clipId, 0.7);
+                                },
+                                {
+                                    startMsg: 'Denoising audio…',
+                                    successMsg: 'Audio denoised',
+                                    successDetails: ['Noise reduction applied to clip'],
+                                    failMsg: 'Audio denoise failed',
+                                }
+                            )
+                        )}
                     >
                         <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Denoise
@@ -331,20 +341,17 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(async () => {
-                            notifyUser('Generating MIDI continuation…');
-                            try {
-                                await executeAppAction({
-                                    type: 'completeMidi',
-                                    payload: { clipId, bars: 4 },
-                                });
-                                notifyAiChange('MIDI continuation generated', [
-                                    'Added 4 bars of new MIDI content',
-                                ]);
-                            } catch {
-                                notifyUser('MIDI continuation failed', 'error');
-                            }
-                        })}
+                        onClick={act(() =>
+                            runAiActionWithToast(
+                                () => executeAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } }),
+                                {
+                                    startMsg: 'Generating MIDI continuation…',
+                                    successMsg: 'MIDI continuation generated',
+                                    successDetails: ['Added 4 bars of new MIDI content'],
+                                    failMsg: 'MIDI continuation failed',
+                                }
+                            )
+                        )}
                     >
                         <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Continue MIDI…
@@ -353,20 +360,17 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         type="button"
                         className={menuBtnClass}
                         role="menuitem"
-                        onClick={act(async () => {
-                            notifyUser('Creating MIDI variation…');
-                            try {
-                                await executeAppAction({
-                                    type: 'variationMidi',
-                                    payload: { clipId, amount: 0.3 },
-                                });
-                                notifyAiChange('MIDI variation created', [
-                                    'Variation applied with 30% divergence',
-                                ]);
-                            } catch {
-                                notifyUser('MIDI variation failed', 'error');
-                            }
-                        })}
+                        onClick={act(() =>
+                            runAiActionWithToast(
+                                () => executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } }),
+                                {
+                                    startMsg: 'Creating MIDI variation…',
+                                    successMsg: 'MIDI variation created',
+                                    successDetails: ['Variation applied with 30% divergence'],
+                                    failMsg: 'MIDI variation failed',
+                                }
+                            )
+                        )}
                     >
                         <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Create Variation
