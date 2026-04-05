@@ -16,7 +16,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
-import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration';
+import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
 import { ChatComposer } from '../components/ChatComposer';
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */

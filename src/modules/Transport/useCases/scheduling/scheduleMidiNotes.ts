@@ -12,12 +12,25 @@ import {
 import { getCurrentTime, createBufferSource } from '#/modules/AudioEngine/useCases/scheduling';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
-import { scheduleNote, getSynthParamsForTrack } from '#/modules/Synth/useCases/builtinSynth';
+import { scheduleNote, getSynthParamsForTrack, type SynthParams } from '#/modules/Synth/useCases/builtinSynth';
 import { scheduleFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
-import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/Synth/useCases/drumKitSynth';
-import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/Synth/useCases/drumSynthEngine';
-import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
-import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases/chordTrack';
+import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
+import { getDrumKitByIndex } from '#/modules/AudioEngine/useCases/audioEngineQueries';
+
+// Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible
+// with the drum kit shape scheduleKitNote / getDrumKitByIndex operate on.
+type DrumKit = {
+    id: string;
+    name: string;
+    voices: Array<{ name: string; pitchRange: [number, number]; params: SynthParams }>;
+};
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
+import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation/compensation';
+
+// Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
+type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;
+import { getChordAtBeat } from '#/modules/MIDI/useCases/chordTrack/getChordAtBeat';
+import { transposeForChordTrack } from '#/modules/MIDI/useCases/transposeForChordTrack';
 import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores/yeastStore';
 import { type MidiEvent, type TransportInfo } from '#/modules/Yeast/models/MidiEvent';
 

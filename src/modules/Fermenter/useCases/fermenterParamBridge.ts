@@ -7,7 +7,7 @@
 
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { type FermenterPatch } from '../models/FermenterPatch';
 import { loadFermenterPatch, setFermenterParam } from '../stores/fermenterStore';
 

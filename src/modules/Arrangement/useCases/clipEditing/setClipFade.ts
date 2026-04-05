@@ -1,4 +1,4 @@
-import { updateClip } from '#/modules/Arrangement/repositories/track';
+import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
 
 export function setClipFade(clipId: string, fadeInBeats: number, fadeOutBeats: number): void {
     updateClip(clipId, (c) => ({

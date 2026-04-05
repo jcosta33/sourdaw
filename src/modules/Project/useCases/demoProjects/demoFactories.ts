@@ -5,7 +5,7 @@
 // (./index.ts) and any legacy imports keep working without change.
 // ---------------------------------------------------------------------------
 
-export { demo1_TheCompleteMix } from './resonance';
-export { demo_SweetDreams } from './sweetDreams';
-export { demo4_NativeShowcase } from './synthwave';
-export { demo5_NebulaDrift } from './nebulaDrift';
+export { demo1_TheCompleteMix } from './resonance/createResonanceDemo';
+export { demo_SweetDreams } from './sweetDreams/createSweetDreamsDemo';
+export { demo4_NativeShowcase } from './synthwave/createSynthwaveDemo';
+export { demo5_NebulaDrift } from './nebulaDrift/createNebulaDriftDemo';

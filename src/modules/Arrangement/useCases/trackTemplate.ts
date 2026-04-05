@@ -7,7 +7,9 @@
 
 import { type TrackTemplate } from '../models/TrackTemplate';
 import { loadTrackTemplates, saveTrackTemplates } from '../repositories/trackTemplate';
-import { getTrackById, getTrackState, setTrackState } from '../repositories/track';
+import { getTrackById } from '../repositories/track/getTrackById';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
 import { createTrack } from '../models/Track';
 
 let templateCache: TrackTemplate[] | null = null;

@@ -1,4 +1,4 @@
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import {
     RECORDING_MODES,

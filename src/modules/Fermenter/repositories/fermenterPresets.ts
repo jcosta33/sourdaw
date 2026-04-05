@@ -3,8 +3,29 @@
  * Named after the sourdough theme: Sourdaw app, Fermenter synth.
  */
 
-import { type SoundPreset, type DevicePreset } from '#/modules/Arrangement/useCases/trackQueries';
 import { type FermenterPatch, DEFAULT_PATCH } from '../models/FermenterPatch';
+
+// Consumer-local shapes (AGENTS.md §95 — model isolation). Structurally identical to
+// Arrangement's SoundPreset/DevicePreset for the fields this factory emits.
+type DevicePreset = {
+    type: string;
+    name: string;
+    parameterValues: Record<string, number>;
+};
+type SoundPresetCategory =
+    | 'synth' | 'bass' | 'pad' | 'lead' | 'keys' | 'drums' | 'fx' | 'vocal' | 'guitar' | 'strings';
+type SoundPreset = {
+    id: string;
+    name: string;
+    category: SoundPresetCategory;
+    subcategory?: string;
+    description: string;
+    trackKind: 'midi' | 'audio';
+    devices: DevicePreset[];
+    tags: string[];
+    author: string;
+    isFactory: boolean;
+};
 
 const AUTHOR = 'Sourdaw';
 
@@ -22,7 +43,7 @@ function fermenterDevice(name: string, overrides: Partial<FermenterPatch> = {}):
     return { type: 'fermenter', name, parameterValues };
 }
 
-const p = (id: string, name: string, cat: SoundPreset['category'], desc: string, tags: string[], ov: Partial<FermenterPatch>): SoundPreset => ({
+const p = (id: string, name: string, cat: SoundPresetCategory, desc: string, tags: string[], ov: Partial<FermenterPatch>): SoundPreset => ({
     id: `fermenter-${id}`, name, category: cat, subcategory: 'fermenter', description: desc,
     trackKind: 'midi', devices: [fermenterDevice(name, ov)], tags: ['fermenter', ...tags], author: AUTHOR, isFactory: true,
 });

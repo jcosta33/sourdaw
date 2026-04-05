@@ -1,5 +1,5 @@
 import { getVcaGroupsState, setVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
-import { updateTrack } from '#/modules/Arrangement/repositories/track';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 
 export function removeFromVca(trackId: string): void {
     setVcaGroupsState(

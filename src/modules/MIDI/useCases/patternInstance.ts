@@ -5,10 +5,12 @@
  * except for properties explicitly overridden on the instance.
  */
 
-import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
-import { updateClip, setTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackMutations';
-import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
-import { getNotesForClip, setNotesForClip } from './midiNoteCrud';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
+import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import { type Clip } from '../models/TrackViewTypes';
+import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
+import { setNotesForClip } from './midiNoteCrud/setNotesForClip';
 
 let nextInstanceId = 5000;
 

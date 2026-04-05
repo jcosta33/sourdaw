@@ -8,7 +8,7 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
 import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
-import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
+import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores/pluginScanStore';
 import { startPluginScan } from '#/modules/Plugin/useCases/pluginScan/scanning';
 import type { ScannedPlugin } from '#/modules/Plugin/useCases/pluginScan/queries';
 import { createTrackForPlugin, loadExternalPlugin } from '#/modules/Plugin/useCases/pluginBrowserActions';

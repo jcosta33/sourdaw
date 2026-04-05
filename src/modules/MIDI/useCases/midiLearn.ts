@@ -16,7 +16,7 @@ import { setFermenterParamWithAudio } from '#/modules/Fermenter/useCases/ferment
 import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 
 const logger = Container.getInstance().get(Logger);
 

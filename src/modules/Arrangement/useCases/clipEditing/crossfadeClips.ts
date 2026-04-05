@@ -1,4 +1,5 @@
-import { getTrackState, mapAllTracks } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { mapAllTracks } from '#/modules/Arrangement/repositories/track/mapAllTracks';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 
 export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): void {

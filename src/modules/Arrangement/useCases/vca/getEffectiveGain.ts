@@ -1,4 +1,4 @@
-import { getTrackById } from '#/modules/Arrangement/repositories/track';
+import { getTrackById } from '#/modules/Arrangement/repositories/track/getTrackById';
 import { getVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
 
 /**

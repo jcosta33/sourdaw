@@ -5,7 +5,7 @@ import { type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { cn } from '#/helpers/Styles/cn';
-import { type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/useCases/automation/types';
+import { type AutomationPoint, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
 import { CURVE_OPTIONS, SHAPE_OPTIONS } from '../../helpers/automationLaneConstants';
 

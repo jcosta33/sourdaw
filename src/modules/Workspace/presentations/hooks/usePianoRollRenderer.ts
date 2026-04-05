@@ -33,7 +33,7 @@ import { type RefObject, useRef, useEffect } from 'react';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { type MidiNote } from '#/modules/MIDI/useCases/midi';
+import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import {
     NOTE_NAMES,
     GRID_BEATS,

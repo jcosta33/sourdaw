@@ -1,4 +1,5 @@
-import { getTrackState, mapAllTracks } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { mapAllTracks } from '#/modules/Arrangement/repositories/track/mapAllTracks';
 import { applySoloLogic } from '#/modules/Arrangement/services/applySoloLogic';
 
 export function soloTrackExclusive(trackId: string): void {

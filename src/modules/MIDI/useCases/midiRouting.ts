@@ -5,7 +5,7 @@
  * All store access goes through the Track repository.
  */
 
-import { updateTrack } from '#/modules/Arrangement/useCases/trackQueries/trackMutations';
+import { updateTrack } from '#/modules/Arrangement/useCases/updateTrack';
 
 /**
  * Set the MIDI output of a source track to route to a destination track.

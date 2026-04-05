@@ -10,8 +10,9 @@
  * - No extra "instrument" track — the folder IS the instrument
  */
 
-import { createTrack } from '#/modules/Arrangement/useCases/trackQueries';
-import { getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
 import { eventBus } from '#/app/bootstrap';

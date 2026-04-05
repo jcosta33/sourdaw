@@ -19,9 +19,8 @@ import { newProject } from '#/modules/Project/useCases/projectPersistence/newPro
 import {
     createFromTemplate,
     getTemplates,
-    type TemplateCategory,
-    type ProjectTemplate,
-} from '#/modules/Project/useCases/projectTemplates';
+} from '#/modules/Project/useCases/projectTemplates/templateDefinitions';
+import { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';

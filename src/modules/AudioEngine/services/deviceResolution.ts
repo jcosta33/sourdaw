@@ -1,5 +1,6 @@
-import { type OfflineDeviceNode } from '#/modules/AudioEngine/useCases/buildDeviceChain';
-import { getDrumKitByIndex, type DrumKit } from '#/modules/Synth/useCases/drumKitSynth';
+import { type OfflineDeviceNode } from '../repositories/devices/types';
+import { getDrumKitByIndex } from '../models/factoryDrumKits';
+import { type DrumKit } from '../models/SynthModels';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
     const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type.startsWith('builtin-drum-machine'));

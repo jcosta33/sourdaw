@@ -1,4 +1,5 @@
-import { getTrackState, updateTrack } from '../../repositories/track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateTrack } from '../../repositories/track/updateTrack';
 import { type Device } from '../../models/Track';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { loadPlugin } from '#/modules/Plugin/useCases/pluginLifecycle';

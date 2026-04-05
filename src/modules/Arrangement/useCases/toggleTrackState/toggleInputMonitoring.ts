@@ -1,5 +1,7 @@
-import { updateTrack, getTrackById } from '#/modules/Arrangement/repositories/track';
-import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
+import { getTrackById } from '#/modules/Arrangement/repositories/track/getTrackById';
+import { startInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring';
+import { stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder/stopInputMonitoring';
 
 export function toggleInputMonitoring(trackId: string): void {
     const track = getTrackById(trackId);

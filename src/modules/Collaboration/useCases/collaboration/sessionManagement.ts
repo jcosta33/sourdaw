@@ -13,14 +13,12 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 
 import { setupProjectionBridge } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
 import { branchStore } from '#/modules/CrdtDocument/stores/branchStore';
-import {
-    subscribeToCrdtChanges,
-    getCrdtDoc,
-    createCrdtDoc,
-    hasCrdtDoc,
-    removeCrdtDoc,
-    mutateCrdtDoc,
-} from '#/modules/CrdtDocument/useCases/crdtRepositoryAccess';
+import { subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases/subscribeToCrdtChanges';
+import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
+import { createCrdtDoc } from '#/modules/CrdtDocument/useCases/createCrdtDoc';
+import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
+import { removeCrdtDoc } from '#/modules/CrdtDocument/useCases/removeCrdtDoc';
+import { mutateCrdtDoc } from '#/modules/CrdtDocument/useCases/mutateCrdtDoc';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
 import { collaborationStore } from '../../stores/collaborationStore';
 import { PeerConnectionManager } from '../../repositories/peerConnection';

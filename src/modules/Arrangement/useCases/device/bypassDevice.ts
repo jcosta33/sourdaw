@@ -1,4 +1,5 @@
-import { getTrackState, mapAllTracks } from '../../repositories/track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 
 export function bypassDevice(deviceId: string, bypassed: boolean): void {
     const state = getTrackState();

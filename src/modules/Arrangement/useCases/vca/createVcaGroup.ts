@@ -1,5 +1,5 @@
 import { getVcaGroupsState, setVcaGroupsState, type VcaGroup } from '#/modules/Arrangement/stores/vcaGroupStore';
-import { updateTracks } from '#/modules/Arrangement/repositories/track';
+import { updateTracks } from '#/modules/Arrangement/repositories/track/updateTracks';
 
 export function createVcaGroup(name: string, trackIds: string[]): VcaGroup {
     const group: VcaGroup = {

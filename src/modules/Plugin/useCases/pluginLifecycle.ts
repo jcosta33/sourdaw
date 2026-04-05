@@ -9,8 +9,6 @@ import { processAudioIPC as processAudioIPCRepo } from '../repositories/pluginBr
 import { openPluginGui as openPluginGuiRepo } from '../repositories/pluginBridge/openPluginGui';
 import { closePluginGui as closePluginGuiRepo } from '../repositories/pluginBridge/closePluginGui';
 
-export type { PluginInstance, PluginGuiInfo } from '../repositories/pluginBridge/types';
-
 /** Load a plugin instance by plugin ID and instance ID. */
 export function loadPlugin(
     pluginId: string,

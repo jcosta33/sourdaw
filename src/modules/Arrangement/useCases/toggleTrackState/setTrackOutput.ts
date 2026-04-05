@@ -1,4 +1,4 @@
-import { updateTrack } from '#/modules/Arrangement/repositories/track';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 import { setTrackOutput as engineSetTrackOutput } from '#/modules/AudioEngine/useCases/trackAudioControls';
 
 export function setTrackOutput(trackId: string, outputId: string): void {

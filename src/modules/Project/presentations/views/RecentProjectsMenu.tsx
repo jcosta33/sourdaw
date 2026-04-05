@@ -20,8 +20,10 @@ import {
     loadRecentProject,
     type RecentProjectEntry,
 } from '../../useCases/recentProjects';
-import { type TemplateCategory } from '../../useCases/projectTemplates';
-import { newProject, saveProject, exportProjectFile, importProjectFile } from '../../useCases/projectPersistence';
+import { type TemplateCategory } from '#/modules/Project/models/ProjectTemplateTypes';
+import { newProject } from '../../useCases/projectPersistence/newProject';
+import { saveProject } from '../../useCases/projectPersistence/saveProject';
+import { exportProjectFile, importProjectFile } from '../../useCases/projectPersistence/fileIO';
 import { TemplateChooser } from './TemplateChooser';
 import { pickFiles } from '../../useCases/fileDialog';
 

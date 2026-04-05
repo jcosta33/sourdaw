@@ -5,9 +5,9 @@ import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
 import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDevices';
-import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
+import { getPlatformPlugins } from '#/modules/Arrangement/useCases/getPlatformPlugins';
 import { openInspector } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../../models/TrackViewTypes';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
 import { MixerSection } from '../../components/Mixer/MixerSection';

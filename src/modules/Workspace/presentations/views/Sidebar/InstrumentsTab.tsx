@@ -6,7 +6,7 @@ import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide-react';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
+import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import {
     getUserPresets,
@@ -14,7 +14,7 @@ import {
     deleteUserPreset,
 } from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 

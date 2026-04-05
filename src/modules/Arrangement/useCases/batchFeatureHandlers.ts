@@ -1,11 +1,13 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabase';
+import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabase/searchSamples';
 import { createCompGroup } from '#/modules/Arrangement/useCases/groupComping/compGroupOperations';
-import { togglePunchRecording } from '#/modules/Transport/useCases/punchRecording';
-import { toggleRecord, triggerScene } from '#/modules/Transport/useCases/loopStation';
-import { nextItem, previousItem } from '#/modules/Transport/useCases/setlist';
-import { detectProjectTempo } from '#/modules/Transport/useCases/tempoMapping';
+import { togglePunchRecording } from '#/modules/Transport/useCases/punchRecording/togglePunchRecording';
+import { toggleRecord } from '#/modules/Transport/useCases/loopStation/toggleRecord';
+import { triggerScene } from '#/modules/Transport/useCases/loopStation/triggerScene';
+import { nextItem } from '#/modules/Transport/useCases/setlist/nextItem';
+import { previousItem } from '#/modules/Transport/useCases/setlist/previousItem';
+import { detectProjectTempo } from '#/modules/Transport/useCases/tempoMapping/operations';
 import { createAdjustmentLayer } from '#/modules/Arrangement/useCases/adjustmentLayer/createAdjustmentLayer';
 import type { AdjustmentEffectType } from '#/modules/Arrangement/stores/adjustmentLayer';
 

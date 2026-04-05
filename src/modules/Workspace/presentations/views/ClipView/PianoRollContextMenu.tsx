@@ -4,7 +4,7 @@
  */
 import { type ReactElement, useEffect, useRef } from 'react';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
-import { type MidiNote } from '#/modules/MIDI/useCases/midi';
+import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { removeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/removeMidiNote';

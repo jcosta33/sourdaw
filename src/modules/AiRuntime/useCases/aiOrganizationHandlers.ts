@@ -2,7 +2,7 @@ import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/c
 import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import { groupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/groupTracks';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

@@ -5,7 +5,7 @@
 import { type ToasterKit, type DrumEngineType } from '../models/ToasterKit';
 import { loadKit } from '../stores/toasterStore';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 
 /**
  * Map TS engine type to Rust DrumEngineType index.

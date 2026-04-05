@@ -3,7 +3,7 @@
  */
 
 import { type Clip } from '#/modules/Arrangement/models/Track';
-import { type MidiNote } from '#/modules/MIDI/useCases/midi';
+import { type MidiNote } from '../models/MidiNoteViewTypes';
 
 export type ClipboardEntry = {
     clip: Clip;

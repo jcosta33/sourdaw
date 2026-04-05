@@ -11,7 +11,7 @@ import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/device/sendManagement';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../../models/TrackViewTypes';
 
 type SendsEditorProps = {
     track: Track;

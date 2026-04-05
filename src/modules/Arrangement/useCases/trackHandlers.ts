@@ -5,7 +5,7 @@ import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type MidiStoreState, midiStore } from '#/modules/MIDI/stores/midiStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setTrackState } from '#/modules/Arrangement/repositories/track';
+import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
@@ -23,7 +23,8 @@ import { groupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/gro
 import { ungroupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/ungroupTracks';
 import { toggleSoloSafe } from '#/modules/Arrangement/useCases/toggleTrackState/toggleSoloSafe';
 import { armTrack } from '#/modules/Arrangement/useCases/recording';
-import { freezeTrack, unfreezeTrack, bounceInPlace, bounceToNewTrack } from '#/modules/Arrangement/useCases/freezeBounce';
+import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce/freezeTrack';
+import { bounceInPlace, bounceToNewTrack } from '#/modules/Arrangement/useCases/freezeBounce/bounceOperations';
 import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
 import { createFolder } from '#/modules/Arrangement/useCases/folder';
 import { setTrackGain, setTrackPan, setTrackColor, setTrackNotes } from '#/modules/Arrangement/useCases/setTrackGainPan';
@@ -32,7 +33,7 @@ import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

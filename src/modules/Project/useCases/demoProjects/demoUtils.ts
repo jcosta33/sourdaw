@@ -3,8 +3,7 @@ import { arrangementStore, defaultArrangementId } from '../../stores/arrangement
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import type { MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
-import type { StretchMode } from '#/modules/Arrangement/useCases/trackQueries';
+import type { MidiNote, StretchMode } from '../../models/DemoProjectTypes';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 
 export function note(pitch: number, start: number, duration: number, vel = 100): MidiNote {

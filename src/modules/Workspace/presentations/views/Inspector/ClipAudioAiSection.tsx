@@ -4,7 +4,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
-import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Clip } from '../../../models/TrackViewTypes';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip';
 import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
 import { polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases/polyphonicAudioToMidi';

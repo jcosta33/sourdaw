@@ -1,5 +1,5 @@
 import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
-import { type AutomationLane, type AutomationPoint } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationLane, type AutomationPoint } from '../../models/AutomationViewTypes';
 import { type DeviceNodeEntry } from '../../useCases/buildDeviceChain';
 import { beatToSeconds } from '#/modules/AudioEngine/services/beatConversion';
 import { resolveDeviceParam } from '#/modules/AudioEngine/services/deviceResolution';

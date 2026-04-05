@@ -6,7 +6,8 @@
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { batchAddAutomationPoints } from '#/modules/Automation/useCases/automation/batchAddAutomationPoints';
 import { type AutomationPoint } from '#/modules/Automation/models/Automation';
-import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
+// Automation-local enum (AGENTS.md §95 — model isolation). Mirrors Arrangement's AutomationMode.
+type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
 export type RecordingSession = {
     parameterId: string;

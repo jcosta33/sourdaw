@@ -4,12 +4,12 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views/MidiLearnButton';
-import { type DeviceParameter } from '#/modules/Arrangement/models/DeviceParameter';
+import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Device } from '../../../models/TrackViewTypes';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;

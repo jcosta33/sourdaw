@@ -1,4 +1,6 @@
-import { getTrackState, setTrackState, updateTrack } from '../repositories/track';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
+import { updateTrack } from '../repositories/track/updateTrack';
 import { createTrack } from '../models/Track';
 
 export function createFolder(name: string): void {

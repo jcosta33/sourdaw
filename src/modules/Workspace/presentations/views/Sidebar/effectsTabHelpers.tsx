@@ -23,11 +23,11 @@ import { type LucideIcon } from 'lucide-react';
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type EffectPlugin = (typeof BUILTIN_PLUGINS)[number];
+export type EffectPlugin = PluginDescriptor;
 
 export type EffectGroup = {
     id: string;

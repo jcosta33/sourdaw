@@ -1,10 +1,12 @@
-import { getTrackStoreState, getMidiStoreState, getAutomationLanes } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
+import { getAutomationLanes } from '#/modules/Automation/useCases/getAutomationLanes';
 import { getTransportStoreValue, getTempoMapState } from '#/modules/Transport/useCases/transportQueries';
 import { audioBufferCache } from '../stores/audioBufferCache';
 import { buildDeviceChain } from './buildDeviceChain';
 import { scheduleNoteOffline, getSynthParamsFromDevices } from '#/modules/Synth/useCases/builtinSynth';
 import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
 import { beatToSeconds, resolveDrumKit, scheduleTrackAutomation } from '../repositories/offlineScheduler';
 

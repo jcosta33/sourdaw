@@ -7,8 +7,9 @@
  */
 
 import { workspaceStore } from '../stores/workspaceStore';
-import { getTrackStoreState as getTrackState, setTrackState } from '#/modules/Arrangement/useCases/trackQueries';
-import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import { type Clip } from '../models/TrackViewTypes';
 
 /**
  * Toggle ripple editing on/off.

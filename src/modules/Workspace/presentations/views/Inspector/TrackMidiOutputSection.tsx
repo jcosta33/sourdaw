@@ -4,7 +4,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
 import { toggleChordTrackFollow } from '#/modules/Arrangement/useCases/toggleTrackState/toggleChordTrackFollow';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackMidiOutputSectionProps = {

@@ -13,7 +13,6 @@ import { cycleChannelStripWidth } from '../../useCases/togglePanel/panelToggles'
 import { type ChannelStripWidth } from '../../models/WorkspaceState';
 import { ExpandedChannelStrip } from './Mixer/ExpandedChannelStrip';
 import { MasterChannelStrip } from './Mixer/MasterChannelStrip';
-import type { MixerSnapshot } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     saveMixerSnapshot,
     recallMixerSnapshot,
@@ -24,6 +23,9 @@ import {
 } from '#/modules/Arrangement/useCases/mixerSnapshot/operations';
 import { MixHealthDialog } from './Mixer/MixHealthDialog';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+
+// Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used by this view.
+type MixerSnapshot = { id: string; name: string };
 
 type MixerPanelProps = {
     style?: CSSProperties;

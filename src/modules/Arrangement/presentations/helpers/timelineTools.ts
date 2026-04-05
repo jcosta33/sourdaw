@@ -16,7 +16,7 @@ import {
     pushUndoEntry,
 } from '../../useCases/timelineViewActions';
 import { selectTrack } from '../../useCases/timelineViewActions';
-import { type AutomationPoint } from '#/modules/Automation/useCases/automation/types';
+import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';

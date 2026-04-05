@@ -5,7 +5,7 @@
  */
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { type BacteriaPatch } from '../models/BacteriaPatch';
 import { loadBacteriaPatch, setBacteriaParam, setBacteriaBandParam } from '../stores/bacteriaStore';
 

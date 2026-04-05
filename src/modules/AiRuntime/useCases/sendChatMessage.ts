@@ -1,7 +1,7 @@
 import { getLlmEngine } from '../repositories/webLlm';
 import { streamNativeCompletion, isNativeEngineReady } from '../repositories/nativeEngine';
 import { isCloudAvailable, streamCloudChatCompletion } from '../repositories/cloudLlm';
-import { resolveBackend } from './llmOrchestration';
+import { resolveBackend } from './llmOrchestration/backendResolution';
 import { chatStore, appendChatMessage, updateChatMessage, setChatGenerating } from '../stores/chatStore';
 import { getProjectContext } from './getProjectContext';
 import { type ChatMessage } from '../models/Chat';

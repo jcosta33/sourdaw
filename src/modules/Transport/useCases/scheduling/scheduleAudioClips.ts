@@ -6,13 +6,13 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache'
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases/trackAudioControls';
 import { getCurrentTime, createBufferSource } from '#/modules/AudioEngine/useCases/scheduling';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
+import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation/compensation';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
 import { getGainAtBeat } from '#/modules/Arrangement/useCases/clipGainEnvelope/getGainAtBeat';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
 import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
 
 const MICRO_FADE_SECONDS = 0.003;
 

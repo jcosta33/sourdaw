@@ -4,7 +4,7 @@
  * Handles adding, removing, and updating device parameters on tracks.
  */
 import { audioEngine } from '../repositories/createWebAudioEngine';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/isDeviceSupportedOnCurrentPlatform';
 
 export function addDeviceToStrip(
     trackId: string,

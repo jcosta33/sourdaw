@@ -1,4 +1,5 @@
-import { getTrackState, updateTrack } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 

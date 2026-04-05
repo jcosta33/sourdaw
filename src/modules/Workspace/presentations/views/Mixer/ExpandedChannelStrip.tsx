@@ -28,7 +28,7 @@ import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../../models/TrackViewTypes';
 import {
     getAllVCAGroups,
     assignTrackToVCA,

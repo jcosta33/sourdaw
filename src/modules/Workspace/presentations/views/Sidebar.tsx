@@ -7,7 +7,7 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles';
 import { useTracks } from '../hooks/useTracks';
 import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
-import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
+import { getPlatformPlugins } from '#/modules/Arrangement/useCases/getPlatformPlugins';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';

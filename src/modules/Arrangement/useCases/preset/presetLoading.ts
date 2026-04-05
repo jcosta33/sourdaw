@@ -10,7 +10,8 @@ import { type Device } from '../../models/Track';
 import { addTrack } from '../addTrack';
 import { addDevice } from '../device/addDevice';
 import { setDeviceParameter } from '../device/setDeviceParameter';
-import { updateTrack, getTrackById } from '../../repositories/track';
+import { updateTrack } from '../../repositories/track/updateTrack';
+import { getTrackById } from '../../repositories/track/getTrackById';
 import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 
 const logger = Container.getInstance().get(Logger);

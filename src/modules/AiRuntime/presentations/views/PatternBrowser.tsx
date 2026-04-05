@@ -26,7 +26,7 @@ import {
 } from '../../models/midiPatternLibrary';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 

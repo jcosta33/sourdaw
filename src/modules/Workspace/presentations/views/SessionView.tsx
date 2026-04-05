@@ -13,7 +13,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
 import { Play, Square, Plus } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../models/TrackViewTypes';
 
 const SCENE_COUNT = 8;
 

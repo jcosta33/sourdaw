@@ -22,7 +22,7 @@ import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackSta
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationView/AutomationControls';
 import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
-import { type AutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
 

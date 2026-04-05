@@ -1,2 +1,0 @@
-export { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
-export { getTemplates, createFromTemplate } from './templateDefinitions';

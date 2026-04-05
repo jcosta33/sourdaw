@@ -1,10 +1,10 @@
-import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
-import { setTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackMutations';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
 import { midiStore } from '../stores/midiStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { createTrack } from '#/modules/Arrangement/useCases/trackQueries';
-import { getNextClipId } from '#/modules/Arrangement/useCases/clipIdQueries';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
+import { getNextClipId } from '#/modules/Arrangement/useCases/getNextClipId';
+import { type Clip } from '../models/TrackViewTypes';
 import { type MidiNote } from '../models/MidiNote';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
 import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';

@@ -1,0 +1,14 @@
+import { trackStore } from '../../stores/trackStore';
+import { type Track } from '../../models/Track';
+
+/** Update multiple tracks matching a predicate. */
+export function updateTracks(predicate: (track: Track) => boolean, updater: (track: Track) => Track): void {
+    const state = trackStore.value;
+    if (!state) {
+        return;
+    }
+    trackStore.set({
+        ...state,
+        tracks: state.tracks.map((t) => (predicate(t) ? updater(t) : t)),
+    });
+}

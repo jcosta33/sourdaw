@@ -6,7 +6,7 @@
  */
 
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { analyzeMix } from '#/modules/AudioAnalysis/useCases/referenceMixComparison';
+import { analyzeMix } from '#/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix';
 import { type MentorCategory, type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
 
 let lessonCounter = 0;

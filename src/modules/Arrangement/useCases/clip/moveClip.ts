@@ -1,7 +1,8 @@
-import { getTrackState, setTrackState } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 import { shiftClipAutomation } from '#/modules/Automation/useCases/automation/shiftClipAutomation';
-import { shiftClipMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { shiftClipMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud/shiftClipMidiNotes';
 
 export function moveClip(clipId: string, targetTrackId: string, startBeat: number, originalStartBeat?: number): void {
     const state = getTrackState();

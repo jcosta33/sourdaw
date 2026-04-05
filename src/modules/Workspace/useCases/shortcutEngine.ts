@@ -5,7 +5,7 @@ import { undo, redo } from '#/modules/Command/useCases/undoRedo';
 import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
 import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
 import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { saveProject } from '#/modules/Project/useCases/projectPersistence';
+import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel/panelToggles';
 import { workspaceStore } from '../stores/workspaceStore';
 

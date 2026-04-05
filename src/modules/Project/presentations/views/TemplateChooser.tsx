@@ -2,13 +2,9 @@ import { type ReactElement, useState, useEffect, useRef } from 'react';
 import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
-import {
-    getTemplates,
-    createFromTemplate,
-    type TemplateCategory,
-    type ProjectTemplate,
-} from '../../useCases/projectTemplates';
-import { saveProject } from '../../useCases/projectPersistence';
+import { getTemplates, createFromTemplate } from '../../useCases/projectTemplates/templateDefinitions';
+import { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
+import { saveProject } from '../../useCases/projectPersistence/saveProject';
 
 // Inlined from Workspace/presentations/components/SourdawLogo to avoid
 // cross-module private-presentation import.

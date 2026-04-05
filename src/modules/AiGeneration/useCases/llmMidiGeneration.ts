@@ -6,7 +6,7 @@
  * Falls back to pattern-based generation if LLM output is malformed.
  */
 
-import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration';
+import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
 import { generateWebLlmCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { generateNativeCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { isNativeEngineReady } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';

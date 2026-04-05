@@ -1,4 +1,7 @@
-import { getTrackState, setTrackState, updateTrack, getTrackById } from '../repositories/track';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
+import { updateTrack } from '../repositories/track/updateTrack';
+import { getTrackById } from '../repositories/track/getTrackById';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { type Clip } from '../models/Track';

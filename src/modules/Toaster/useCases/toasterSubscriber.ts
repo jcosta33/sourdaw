@@ -3,7 +3,7 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { AudioDeviceLoadedEvent } from '#/modules/AudioEngine/events/AudioDeviceLoadedEvent';
 import { toasterStore } from '../stores/toasterStore';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { TOASTER_ENGINE_MAP } from '../useCases/loadToasterKit';
 import type { BuiltinDeviceNode } from '#/modules/AudioEngine/models/AudioEngineState';
 import { Logger } from '#/helpers/Logger/Logger';

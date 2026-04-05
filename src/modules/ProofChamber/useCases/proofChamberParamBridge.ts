@@ -3,7 +3,7 @@
  * to the WASM audio engine for the specific device instance.
  */
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 
 type DeviceRef = { trackId: string; deviceId: string };
 

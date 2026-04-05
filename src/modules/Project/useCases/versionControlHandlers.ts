@@ -1,9 +1,7 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
-import {
-    createProjectVersion,
-    restoreVersion,
-    createVersionBranch,
-} from '#/modules/Project/useCases/versionControl';
+import { createProjectVersion } from '#/modules/Project/useCases/versionControl/createProjectVersion';
+import { restoreVersion } from '#/modules/Project/useCases/versionControl/restoreVersion';
+import { createVersionBranch } from '#/modules/Project/useCases/versionControl/branching';
 
 export const versionControlHandlers: Record<string, ActionHandler<any>> = {
     createProjectVersion: {

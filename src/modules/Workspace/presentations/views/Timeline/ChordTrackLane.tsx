@@ -11,18 +11,18 @@ import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
 import { chordTrackStore, type ChordTrackState } from '#/modules/Arrangement/stores/chordTrackStore';
-import {
-    addChordEvent,
-    removeChordEvent,
-    moveChordEvent,
-    updateChordEvent,
-    toggleChordTrack,
-    clearChordTrack,
-    formatChordName,
-    ROOT_NAMES,
-    type ChordEvent,
-    type ChordType,
-} from '#/modules/MIDI/useCases/chordTrack';
+import { addChordEvent } from '#/modules/MIDI/useCases/chordTrack/addChordEvent';
+import { removeChordEvent } from '#/modules/MIDI/useCases/chordTrack/removeChordEvent';
+import { moveChordEvent } from '#/modules/MIDI/useCases/chordTrack/moveChordEvent';
+import { updateChordEvent } from '#/modules/MIDI/useCases/chordTrack/updateChordEvent';
+import { toggleChordTrack } from '#/modules/MIDI/useCases/chordTrack/toggleChordTrack';
+import { clearChordTrack } from '#/modules/MIDI/useCases/chordTrack/clearChordTrack';
+import { formatChordName } from '#/modules/MIDI/useCases/formatChordName';
+import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
+
+// Workspace-local (AGENTS.md §95 — derive ChordEvent shape from the public Arrangement store).
+type ChordEvent = ChordTrackState['events'][number];
+const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 import { cn } from '#/helpers/Styles/cn';
 
 type ChordTrackLaneProps = {

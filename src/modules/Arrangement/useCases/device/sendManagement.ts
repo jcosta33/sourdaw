@@ -1,4 +1,5 @@
-import { getTrackById, updateTrack } from '../../repositories/track';
+import { getTrackById } from '../../repositories/track/getTrackById';
+import { updateTrack } from '../../repositories/track/updateTrack';
 import { setSend as engineSetSend } from '#/modules/Routing/useCases/busControls';
 
 export function setSend(trackId: string, busId: string, level: number, preFader = false): void {

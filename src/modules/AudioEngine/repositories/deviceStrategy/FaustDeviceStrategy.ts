@@ -1,6 +1,6 @@
 import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
-import { type OfflineDeviceNode } from '../../useCases/buildDeviceChain';
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { type OfflineDeviceNode } from '../devices/types';
+import { type Device } from '../../models/TrackViewTypes';
 import { createFaustDevice } from '../faustDeviceFactory';
 
 export class FaustDeviceStrategy implements AudioDeviceStrategy {

@@ -3,7 +3,7 @@
  * No I/O — mathematical functions for simplifying and interpolating automation curves.
  */
 
-import { type AutomationPoint } from '#/modules/Automation/useCases/automation/types';
+import { type AutomationPoint } from '../models/AutomationViewTypes';
 
 function perpendicularDistance(
     point: { beat: number; value: number },

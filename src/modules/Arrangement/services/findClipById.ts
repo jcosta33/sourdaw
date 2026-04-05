@@ -1,4 +1,4 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 
 /**

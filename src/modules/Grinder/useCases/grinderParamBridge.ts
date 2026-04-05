@@ -3,7 +3,7 @@
  */
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { type GrinderPatch, type GrinderPedal, migrateGrinderPatch } from '../models/GrinderPatch';
 import { loadGrinderPatch, setGrinderParam } from '../stores/grinderStore';
 

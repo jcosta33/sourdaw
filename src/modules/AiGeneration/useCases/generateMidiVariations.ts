@@ -1,8 +1,9 @@
 import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries';
-import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
 import { createAlternativeClips } from '#/modules/Arrangement/useCases/clipEditing/createAlternativeClips';
-import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
+// Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
+type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
 
 export async function generateMidiVariations(clipId: string): Promise<void> {
     const state = getTrackState();

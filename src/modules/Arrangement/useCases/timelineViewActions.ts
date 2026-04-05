@@ -106,6 +106,6 @@ import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace/useCa
 export const setWorkspaceMode: typeof _setWorkspaceMode = (...args) => _setWorkspaceMode(...args);
 
 // ── Transport ─────────────────────────────────────────────────────
-import { setLoopRegion as _setLoopRegion } from '#/modules/Transport/useCases/transportControls';
+import { setLoopRegion as _setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
 
 export const setLoopRegion: typeof _setLoopRegion = (...args) => _setLoopRegion(...args);

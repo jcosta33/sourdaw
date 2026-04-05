@@ -7,8 +7,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { AutomationLaneRow } from './AutomationLaneRow';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationControls';
 import { getAutomatableParams } from '../../helpers/automationViewHelpers';
-import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
-import { type AutomationLane } from '#/modules/Automation/useCases/automation/types';
+import { type AutomationMode } from '../../../models/TrackViewTypes';
+import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
 
 type TrackAutomationSectionProps = {

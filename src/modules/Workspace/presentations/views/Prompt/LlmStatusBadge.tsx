@@ -1,7 +1,8 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap, Check } from 'lucide-react';
 
-import { isLlmAvailable, resolveBackend, unloadEngine } from '#/modules/AiRuntime/useCases/llmOrchestration';
+import { isLlmAvailable, resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
+import { unloadEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
 import { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, type ModelInfo, getActiveModelId } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { Button } from '#/components/ui/button';

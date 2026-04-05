@@ -7,7 +7,7 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud/batchAddMidiNotes';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';

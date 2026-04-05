@@ -1,5 +1,6 @@
-import { getTrackState, updateTrack } from '../../repositories/track';
-import { getPlatformPlugins } from '../trackQueries';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateTrack } from '../../repositories/track/updateTrack';
+import { getPlatformPlugins } from '../getPlatformPlugins';
 import { type Device } from '../../models/Track';
 import {
     addDeviceToStrip,

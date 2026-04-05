@@ -1,5 +1,5 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { createSession, joinSession, leaveSession } from '#/modules/Collaboration/useCases/collaboration';
+import { createSession, joinSession, leaveSession } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

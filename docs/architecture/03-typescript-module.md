@@ -339,6 +339,14 @@ useCases/
   trackActions.ts   // 900 lines, 14 exported use cases
 ```
 
+### Use cases are a typed contract, not a re-export surface
+
+A use case file must export its own typed function — never a pure re-export of a repository function. A file that only does `export { getX } from '../repositories/Y'` creates no real boundary; it launders private access through a fake public path. The **type signature** of the use case is the cross-module contract: the body may be thin (`return repo.method(input)`) but the signature uses the module's own types, or repo types only when the repository exposes pure models.
+
+When a repository returns something that is not a pure model, the use case must define its own output type exposing only what consumers need.
+
+See the `architecture-violations` skill (§6) for detailed rules and examples.
+
 ---
 
 ## 4.5 `stores/`

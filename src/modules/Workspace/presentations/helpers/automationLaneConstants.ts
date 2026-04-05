@@ -2,7 +2,7 @@
  * Constants for the automation lane view — curve types, shape presets,
  * and shared coordinate conversion helpers.
  */
-import { type AutomationCurveType } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationCurveType } from '../../models/AutomationViewTypes';
 import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
 
 export const CURVE_OPTIONS: { value: AutomationCurveType; label: string }[] = [

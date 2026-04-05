@@ -1,4 +1,5 @@
-import { getTrackState, updateTrack } from '../../repositories/track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type AutomationMode } from '../../models/Track';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';

@@ -44,7 +44,10 @@ import {
     loadTrackTemplate,
     deleteTrackTemplate,
 } from '#/modules/Arrangement/useCases/trackTemplate';
-import { createVcaGroup, assignToVca, removeFromVca, setVcaGain } from '#/modules/Arrangement/useCases/vca';
+import { createVcaGroup } from '#/modules/Arrangement/useCases/vca/createVcaGroup';
+import { assignToVca } from '#/modules/Arrangement/useCases/vca/assignToVca';
+import { removeFromVca } from '#/modules/Arrangement/useCases/vca/removeFromVca';
+import { setVcaGain } from '#/modules/Arrangement/useCases/vca/setVcaGain';
 import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
 
 const trackAlternativeHandlers: Record<string, ActionHandler<any>> = {
@@ -145,8 +148,8 @@ const midiRoutingHandlers: Record<string, ActionHandler<any>> = {
 const dsoSnapshotHandlers: Record<string, ActionHandler<any>> = {
     restoreDsoSnapshot: {
         execute: async (action) => {
-            const { automergeRepository } = await import('#/modules/CrdtDocument/repositories/automergeRepository');
-            automergeRepository.restoreSnapshot(action.payload.bundle);
+            const { restoreSnapshot } = await import('#/modules/CrdtDocument/useCases/restoreSnapshot');
+            restoreSnapshot(action.payload.bundle);
         },
         undoable: false,
         describe: () => ({ label: 'Restore DSO Snapshot' }),

@@ -4,7 +4,7 @@
  */
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { type GlutenPatch } from '../models/GlutenPatch';
 import { loadGlutenPatch, setGlutenParam } from '../stores/glutenStore';
 

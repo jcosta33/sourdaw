@@ -11,15 +11,17 @@
  */
 
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
-import { createMidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
+import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
+import { setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/setNotesForClip';
+import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
 import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCases/audioAnalysis';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration';
+import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration/inference';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 

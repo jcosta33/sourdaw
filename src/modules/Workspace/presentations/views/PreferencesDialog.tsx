@@ -42,7 +42,7 @@ import {
     removeCloudApi,
     isCloudAvailable,
 } from '#/modules/AiRuntime/useCases/cloudApiManagement';
-import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration';
+import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
 import { cn } from '#/helpers/Styles/cn';
 import {
     SectionTitle,

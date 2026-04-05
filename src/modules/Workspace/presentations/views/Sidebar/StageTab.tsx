@@ -11,7 +11,8 @@ import {
 } from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { type BUILTIN_PLUGINS, type SoundPreset } from '#/modules/Arrangement/useCases/trackQueries';
+import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
+import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
@@ -31,7 +32,7 @@ import {
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
 
 type StageTabProps = {
-    plugins: typeof BUILTIN_PLUGINS;
+    plugins: readonly PluginDescriptor[];
     selectedTrackId: string | null;
     searchQuery: string;
     currentRoute: SidebarRoute;
