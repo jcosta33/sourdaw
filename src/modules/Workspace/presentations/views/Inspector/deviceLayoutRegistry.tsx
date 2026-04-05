@@ -12,8 +12,8 @@
  */
 import { type ReactElement, type ComponentType } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
+import { type Device } from '../../../models/TrackViewTypes';
 
 export type DeviceLayoutProps = {
     device: Device;

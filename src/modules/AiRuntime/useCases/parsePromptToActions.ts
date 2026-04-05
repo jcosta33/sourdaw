@@ -3,17 +3,17 @@ import { Logger } from '#/helpers/Logger/Logger';
 import { type IntentResult } from '../models/IntentResult';
 import { type ProjectContext } from '../models/ProjectContext';
 import { validateActions } from './validateActions';
-import { isDsoBackendAvailable } from './llmOrchestration';
+import { isDsoBackendAvailable } from './llmOrchestration/backendResolution';
 import {
     tryPresetMatch,
     buildPresetContext,
     tryParameterizedPath,
     tryCompoundFastPath,
     requiresConfirmation,
-} from '../transformers/promptParser';
+} from '../transformers/promptParser/parsing';
 
 // Re-export for consumers
-export { isComplexPrompt } from '../transformers/promptParser';
+export { isComplexPrompt } from '../transformers/promptParser/parsing';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -76,7 +76,7 @@ export async function parsePromptToActions(
     // Cloud is NOT used for DSO planning (chat only). No model fallback.
     if (isDsoBackendAvailable()) {
         try {
-            const { executeDsoEdit } = await import('./dsoEditor');
+            const { executeDsoEdit } = await import('./dsoEditor/executeDsoEdit');
             const result = await executeDsoEdit(prompt);
 
             if (signal?.aborted) {

@@ -7,7 +7,7 @@ import { type ReactElement, useState } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { cn } from '#/helpers/Styles/cn';
 import { useTracks } from '../hooks/useTracks';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../models/TrackViewTypes';
 
 type RoutingConnection = {
     sourceId: string;

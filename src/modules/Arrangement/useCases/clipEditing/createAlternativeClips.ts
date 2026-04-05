@@ -1,5 +1,6 @@
-import { getTrackState, updateTrack } from '#/modules/Arrangement/repositories/track';
-import { setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
+import { setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/setNotesForClip';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 
 export function createAlternativeClips(

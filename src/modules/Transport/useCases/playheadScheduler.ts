@@ -8,7 +8,8 @@ import { startAutomationRecording } from '#/modules/Automation/useCases/automati
 import { stopAutomationRecording } from '#/modules/Automation/useCases/automationRecording/stopAutomationRecording';
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
+import { startAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording';
+import { stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording';
 import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recording';
 import { addTakeLane } from '#/modules/Arrangement/useCases/comping/addTakeLane';
 import { addTake } from '#/modules/Arrangement/useCases/comping/addTake';
@@ -119,7 +120,7 @@ export function startPlayheadScheduler(): void {
         let jumpToPosition = rawJumpToPosition;
 
         if (shouldStop) {
-            import('./transportControls').then(({ stopPlayback }) => stopPlayback());
+            import('./transportControls/stopPlayback').then(({ stopPlayback }) => stopPlayback());
             return;
         }
 

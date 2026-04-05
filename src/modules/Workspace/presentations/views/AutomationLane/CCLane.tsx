@@ -3,8 +3,10 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases/midiEvent';
-import { type MidiCC } from '#/modules/MIDI/useCases/midi';
+import { addMidiCC } from '#/modules/MIDI/useCases/midiEvent/addMidiCC';
+import { removeMidiCC } from '#/modules/MIDI/useCases/midiEvent/removeMidiCC';
+import { moveMidiCC } from '#/modules/MIDI/useCases/midiEvent/moveMidiCC';
+import { type MidiCC } from '../../../models/MidiNoteViewTypes';
 
 type CCLaneProps = {
     clipId: string | null;

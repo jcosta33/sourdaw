@@ -1,4 +1,5 @@
-import { getTrackState, updateTrack } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 

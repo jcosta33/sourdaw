@@ -1,26 +1,22 @@
 /**
- * Preset Action Registry — barrel re-export
+ * Preset Action Registry.
  *
- * Category implementations live in ./presets/*.ts.
- * This file assembles them into the PRESET_ACTIONS array and
- * re-exports the public API for backward compatibility.
+ * Category implementations live in ./presets/*.ts. This file assembles
+ * them into the PRESET_ACTIONS array and exposes the shared PresetContext /
+ * PresetAction / PresetCategory types from ./presets/types.
  */
 
-import {
-    transportPresets,
-    trackPresets,
-    devicePresets,
-    clipPresets,
-    midiPresets,
-    generatePresets,
-    workspacePresets,
-    mixPresets,
-    automationPresets,
-    filePresets,
-    collaborationPresets,
-} from './presets';
+import { transportPresets } from './presets/transport';
+import { trackPresets } from './presets/track';
+import { devicePresets } from './presets/device';
+import { clipPresets } from './presets/clip';
+import { midiPresets } from './presets/midi';
+import { generatePresets } from './presets/generate';
+import { workspacePresets } from './presets/workspace';
+import { mixPresets, automationPresets } from './presets/mixAndAutomation';
+import { filePresets, collaborationPresets } from './presets/fileAndCollaboration';
 
-export type { PresetContext, PresetAction, PresetCategory } from './presets';
+export type { PresetContext, PresetAction, PresetCategory } from './presets/types';
 
 // ── The Registry ────────────────────────────────────────────────────────
 

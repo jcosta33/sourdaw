@@ -19,7 +19,6 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { replaceClipAudioBuffer } from '#/modules/Arrangement/useCases/replaceClipAudioBuffer';
 import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
 import { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
-import { type WarpState } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     getWarpState,
     enableWarp,
@@ -34,6 +33,16 @@ import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/act
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
+
+// Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
+// Structurally compatible with the value returned by `getWarpState`.
+type WarpMarkerView = { id: string; originalBeat: number; warpedBeat: number };
+type WarpState = {
+    enabled: boolean;
+    markers: WarpMarkerView[];
+    stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    originalTempo: number | null;
+};
 
 const STRETCH_MODES: WarpState['stretchMode'][] = ['complex', 'repitch', 'texture', 'beats'];
 

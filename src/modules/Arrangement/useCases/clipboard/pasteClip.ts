@@ -1,9 +1,10 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { type MidiNote, createMidiNote } from '#/modules/MIDI/useCases/midi';
+import { type MidiNote } from '#/modules/Arrangement/models/MidiNoteViewTypes';
+import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
 import { clipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export function pasteClip(): void {

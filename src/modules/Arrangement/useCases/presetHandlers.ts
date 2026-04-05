@@ -1,7 +1,7 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { saveCurrentAsPreset, getUserPresets } from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { loadPresetToTrack, createTrackFromPreset } from '#/modules/Arrangement/useCases/preset/presetLoading';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { type SoundPresetCategory } from '#/modules/Arrangement/models/SoundPreset';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

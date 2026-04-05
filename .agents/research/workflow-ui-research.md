@@ -102,36 +102,44 @@ Let users drag samples directly from the library into a DAW timeline or sampler.
 ## 5. Clip Aliases, Pattern References & Automation Clips
 
 ## 6. Clip Aliases, Pattern References & Automation Clips
+
 **Codebase Annotation:** Basic "Figma-style linked clips" (Pattern Instances) are implemented in the codebase (`patternInstance.ts`), allowing edits to propagate. The ecosystem around them needs expansion.
 
 ### Missing Features:
-* **Automation Clips:** Automation clips as first-class reusable objects.
-* **Per-Instance Overrides:** Robust override tracking on top of shared source material.
-* **Variation Lanes:** Dedicated lanes for choruses / fills / alt endings.
-* **Groove Templates:** Apply project-wide or clip-local templates.
+
+- **Automation Clips:** Automation clips as first-class reusable objects.
+- **Per-Instance Overrides:** Robust override tracking on top of shared source material.
+- **Variation Lanes:** Dedicated lanes for choruses / fills / alt endings.
+- **Groove Templates:** Apply project-wide or clip-local templates.
 
 ## 7. World-Class Browser & Content System
+
 **Codebase Annotation:** Basic local folder scanning and favoriting exist (`src/modules/SampleLibrary/`), but advanced content discovery is missing.
 
 ### Missing Features:
-* **Sound Similarity Search:** "Find similar sound" for presets and samples based on spectral embeddings.
-* **Smart Collections & Auto-Tagging:** AI-driven categorization (kick, dark, atmospheric) upon import.
-* **Contextual Auditioning:** Drag-anything-anywhere auditioning with perfect tempo/key sync preview before dropping.
-* **Intelligence:** "Recently used / last-used chain" intelligent surfacing.
+
+- **Sound Similarity Search:** "Find similar sound" for presets and samples based on spectral embeddings.
+- **Smart Collections & Auto-Tagging:** AI-driven categorization (kick, dark, atmospheric) upon import.
+- **Contextual Auditioning:** Drag-anything-anywhere auditioning with perfect tempo/key sync preview before dropping.
+- **Intelligence:** "Recently used / last-used chain" intelligent surfacing.
 
 ## 8. Deep Per-Note Expression Editing (MPE UI)
+
 **Codebase Annotation:** The DSP supports MPE (pressure, slide, pitch bend), but the piano roll editing UI lacks the required depth to rival Bitwig/Ableton.
 
 ### Missing Features:
-* **Note Expression Lanes:** Dedicated lanes attached to the note object for pitch, timbre (CC74), pressure, and release velocity.
-* **Per-Note Transforms:** Random/spread/humanize applied at the note-expression level.
-* **Modulation Recording:** Recording macro movements directly into note-bound expression data.
-* **Clean UI:** A visualization strategy that handles dense MPE data without cluttering the main piano roll.
+
+- **Note Expression Lanes:** Dedicated lanes attached to the note object for pitch, timbre (CC74), pressure, and release velocity.
+- **Per-Note Transforms:** Random/spread/humanize applied at the note-expression level.
+- **Modulation Recording:** Recording macro movements directly into note-bound expression data.
+- **Clean UI:** A visualization strategy that handles dense MPE data without cluttering the main piano roll.
 
 ## 9. Hardware Controller Ecosystem & Scripting
+
 **Codebase Annotation:** The foundation exists (MIDI Learn, MCU/OSC/HUI support, basic scripting API), but the community/profile layer is missing.
 
 ### Missing Features:
-* **Controller Profiles:** Auto-detection and visual mapping for popular hardware (Push, Launchpad, KeyStep).
-* **Open Scripting Layer:** Expanded Javascript/TypeScript API for third-party controller scripts.
-* **Shared Mappings:** A system for users to share and download custom device/macro mappings for specific hardware.
+
+- **Controller Profiles:** Auto-detection and visual mapping for popular hardware (Push, Launchpad, KeyStep).
+- **Open Scripting Layer:** Expanded Javascript/TypeScript API for third-party controller scripts.
+- **Shared Mappings:** A system for users to share and download custom device/macro mappings for specific hardware.

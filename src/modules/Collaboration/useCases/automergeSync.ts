@@ -7,14 +7,12 @@ import {
     receiveSyncMessage,
 } from '@automerge/automerge';
 
-import {
-    subscribeToCrdtChanges,
-    getCrdtDoc,
-    createCrdtDoc,
-    replaceCrdtDoc,
-    hasCrdtDoc,
-    getCrdtDocIds,
-} from '#/modules/CrdtDocument/useCases/crdtRepositoryAccess';
+import { subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases/subscribeToCrdtChanges';
+import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
+import { createCrdtDoc } from '#/modules/CrdtDocument/useCases/createCrdtDoc';
+import { replaceCrdtDoc } from '#/modules/CrdtDocument/useCases/replaceCrdtDoc';
+import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
+import { getCrdtDocIds } from '#/modules/CrdtDocument/useCases/getCrdtDocIds';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../repositories/peerConnection';

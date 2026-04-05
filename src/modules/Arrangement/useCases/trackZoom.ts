@@ -1,4 +1,4 @@
-import { mapAllTracks } from '../repositories/track';
+import { mapAllTracks } from '../repositories/track/mapAllTracks';
 
 export function zoomTracksVertical(delta: number): void {
     mapAllTracks((t) => ({

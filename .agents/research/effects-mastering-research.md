@@ -60,10 +60,12 @@ Adds: VCA type selector, diode curve parameters, transformer harmonic controls, 
 ### Missing / Pending Features: AI & Translation Workflow
 
 **Translation & Reference Checks**
+
 - **Translation Curves:** Integrated monitor simulation EQ curves (Mono, Phone, Car, NS-10, Club) to check mix translation without leaving the DAW.
 - **Reference Workflow:** Easy "master bus compare A/B/C" against loaded reference tracks with synchronized loudness.
 
 **Analysis Features**
+
 - Needs feature extraction: Spectral centroid, spectral flatness, bass/mid/high energy ratios, tonal balance deviation, LRA, PLR, stereo correlation.
 
 **Heuristic Rule Engine / ONNX Model**

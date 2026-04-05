@@ -1,5 +1,5 @@
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
-import { type OfflineDeviceNode } from '../../useCases/buildDeviceChain';
+import { type Device } from '../../models/TrackViewTypes';
+import { type OfflineDeviceNode } from '../devices/types';
 
 export interface AudioDeviceStrategy {
     readonly node: OfflineDeviceNode;

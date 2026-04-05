@@ -64,7 +64,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: PARTIALLY RESOLVED - Inline `pushUndoEntry` closures have been removed, but heavy `onClick` handler orchestrations remain.
+- **Status**: RESOLVED (2026-04-05, convergence pass) — 7 async AI action handlers in `ClipContextMenu.tsx` collapsed behind `runAiActionWithToast` facade; inline `handleDuplicate` + `handleImportAudio` in `TrackContextMenu.tsx` replaced with `duplicateTrack` + new `importAudioClipToTrack` use cases. Multi-select loops kept in-view (4-line logic, not heavy). Remaining `pushUndoEntry` closures tracked by AUDIT-006.
 - **Title**: God Component Orchestration
 - **Severity**: P1
 - **Area**: frontend
@@ -85,7 +85,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: VERIFIED
+- **Status**: RESOLVED (2026-04-05, convergence pass) — `ExpandedChannelStrip.tsx` now imports a single `useChannelStripActions(track)` facade hook instead of 14 individual use cases. New multi-step use cases `toggleVcaMembership` and `createAndAssignVcaGroup` extracted from inline view branches. File shrank 407L → 364L. `MasterChannelStrip` deliberately uses its own shape (no mute/solo/arm) and does not need the hook.
 - **Title**: Channel Strip Orchestration Overload
 - **Severity**: P1
 - **Area**: frontend
@@ -238,7 +238,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: VERIFIED - Over 60 usages of the anonymous `pushUndoEntry` closure persist.
+- **Status**: PARTIAL (2026-04-05) — 2 most-egregious sites fixed (AppAction handlers using `pushUndoEntry` in their own `execute` body). Added `restoreTrack` / `restoreClip` typed inverse actions with snapshot-carrying payloads; `trackHandlers.removeTrack` + `clipHandlers.removeClip` now capture pre-execute snapshots in `describe()` and return a typed `inverseAction` instead of registering callback closures. `pushUndoEntry` imports removed from both handler files. **Remaining: 42 call sites in 15 files** — all are live-gesture commits (piano roll drags, timeline edits, automation drawing, clip resize) in presentations/hooks. These need a cross-cutting "snapshot-commit" AppAction pattern (new spec + ~8 new AppAction types + 15-file migration). Also needs a lifetime story for snapshot-bearing inverse actions in the sessionStorage-persisted undo stream (current snapshots would inflate storage). Track as a follow-up session.
 - **Title**: The Callbacks Trapdoor / Deep Orchestration Bypass
 - **Severity**: P1
 - **Area**: frontend
@@ -259,7 +259,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: VERIFIED
+- **Status**: RESOLVED (2026-04-05, convergence pass) — `polyphonicAudioToMidi.ts` returns `PolyphonicAudioToMidiResult` DTO (`{ notes, sourceClip }`) and has no `addTrack`/`addClip`/`addMidiNote` calls. Orchestration lives correctly in caller `ClipAudioAiSection.tsx`. Audit verified stale.
 - **Title**: Mixed DSP/Orchestration Responsibilities
 - **Severity**: P2
 - **Area**: frontend/wasm

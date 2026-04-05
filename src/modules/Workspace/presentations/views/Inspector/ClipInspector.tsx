@@ -14,7 +14,7 @@ import { setClipGain } from '#/modules/Arrangement/useCases/clipEditing/setClipG
 import { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
 import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
 import { setClipFollowAction } from '#/modules/Arrangement/useCases/clipEditing/setClipFollowAction';
-import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Clip } from '../../../models/TrackViewTypes';
 import { CLIP_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';

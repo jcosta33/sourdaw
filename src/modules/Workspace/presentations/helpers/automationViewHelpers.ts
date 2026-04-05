@@ -1,5 +1,5 @@
-import { type AutomationPoint } from '#/modules/Arrangement/useCases/trackQueries';
-import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationPoint } from '../../models/AutomationViewTypes';
+import { getBuiltinPlugins } from '#/modules/Arrangement/useCases/getBuiltinPlugins';
 
 export const LANE_HEIGHT = 100;
 
@@ -13,7 +13,7 @@ export const getAutomatableParams = (
     ];
 
     for (const device of devices) {
-        const plugin = BUILTIN_PLUGINS.find((p) => p.id === device.type);
+        const plugin = getBuiltinPlugins().find((p) => p.id === device.type);
         if (!plugin) {
             continue;
         }

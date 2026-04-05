@@ -4,7 +4,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Check, X, Sparkles } from 'lucide-react';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../../models/TrackViewTypes';
 import { acceptGhostClip } from '#/modules/Arrangement/useCases/clip/acceptGhostClip';
 import { dismissGhostClip } from '#/modules/Arrangement/useCases/clip/dismissGhostClip';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';

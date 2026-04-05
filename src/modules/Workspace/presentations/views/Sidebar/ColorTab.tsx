@@ -9,7 +9,7 @@ import {
 } from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
 import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
@@ -27,7 +27,7 @@ import {
 } from './effectsTabHelpers';
 
 type ColorTabProps = {
-    plugins: typeof BUILTIN_PLUGINS;
+    plugins: readonly PluginDescriptor[];
     selectedTrackId: string | null;
     searchQuery: string;
     currentRoute: SidebarRoute;

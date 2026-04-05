@@ -1,6 +1,7 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
-import { saveProject, newProject } from '#/modules/Project/useCases/projectPersistence';
+import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
+import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
 
 /** Project commands — new, save, export audio, import/export files, version control. */
 export const projectCommands: CommandEntry[] = [
@@ -66,7 +67,7 @@ export const projectCommands: CommandEntry[] = [
                 multiple: false,
             });
             if (files && files.length > 0) {
-                const { importProjectFile } = await import('#/modules/Project/useCases/projectPersistence');
+                const { importProjectFile } = await import('#/modules/Project/useCases/projectPersistence/fileIO');
                 await importProjectFile(files[0]!);
             }
         },

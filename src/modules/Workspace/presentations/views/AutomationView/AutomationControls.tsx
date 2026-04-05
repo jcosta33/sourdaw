@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { cn } from '#/helpers/Styles/cn';
 import { AUTOMATION_MODE_CONFIG } from '../../helpers/automationViewHelpers';
-import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationMode } from '../../../models/TrackViewTypes';
 
 export const AUTOMATION_MODE_OPTIONS: { value: AutomationMode; label: string }[] = [
     { value: 'read', label: 'Read' },

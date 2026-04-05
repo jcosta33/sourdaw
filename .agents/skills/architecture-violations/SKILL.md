@@ -165,6 +165,16 @@ If the architectural meaning did not improve, the refactor did not comply.
 
 If a layer exists only to satisfy the validator while the real logic still lives in the wrong place, it is non-compliant.
 
+### 4.4 Shim annotation-removal is not a refactor
+
+A `TEMPORARY MIGRATION SHIM` (or any similar annotation) is not a comment. It is a task marker: it exists to trigger a real refactor.
+
+Removing the annotation from a file that is still a pure re-export — e.g. `export { getX } from '../repositories/Y'` — does **not** make the file architecturally sound. The code still launders private access through a fake public surface, and the boundary is still non-existent.
+
+The refactor that discharges a shim annotation is creating a real typed boundary (see §6). Deleting the comment without doing the refactor is malicious compliance, regardless of whether `deps:validate` still passes.
+
+If you cannot complete the refactor in the current session, leave the annotation in place and document the reason in the task file.
+
 ---
 
 ## 5. Contract Folders
@@ -180,3 +190,86 @@ errors/                → AppError subclasses
 stores/                → Store<T> instances (business-layer, cross-module)
 presentations/views/   → composable UI entry points
 ```
+
+---
+
+## 6. Use Case Contract Types
+
+A use case is the implicit cross-module contract. Its **type signature** — not its body — is what other modules depend on.
+
+### 6.1 What a legitimate use case looks like
+
+Every use case file must export its own typed function signature:
+
+- The file exports a named function (or arrow) written by the module that owns the use case.
+- The input and output types are the module's own types, or pure-model types from another module that explicitly exports pure models.
+- The function body may be thin. `return someRepo.method(input)` is acceptable — a use case is allowed to delegate to a private repository.
+- The consumer imports the function by name from the use-case file. The consumer never sees the repository.
+
+```ts
+// Arrangement/useCases/getNextClipId.ts — legitimate thin use case
+import { getNextClipId as allocateClipIdFromCounter } from '../repositories/clipIdCounter';
+
+export function getNextClipId(): string {
+    return allocateClipIdFromCounter();
+}
+```
+
+The signature `() => string` is the contract. The repository is free to change its internal implementation; the use case absorbs the change.
+
+### 6.2 What is forbidden
+
+**Re-exporting a repository function through a use-case file:**
+
+```ts
+// FORBIDDEN — laundering private access through a fake boundary
+export { getNextClipId } from '../repositories/clipIdCounter';
+export * from '../repositories/automergeRepository';
+```
+
+This creates no boundary. The consumer imports the repository symbol verbatim, under a different path. If the repository signature changes, every consumer breaks. There is no translation, no contract, no ownership change across the file.
+
+This pattern is non-compliant even if:
+
+- `deps:validate` passes (the path is an allowed public folder)
+- the symbol name is the same as the one the consumer already uses
+- there is "nothing to add" to the body
+
+If there is nothing to add, define a proper typed function that calls the repo. The function _is_ the boundary.
+
+### 6.3 When repo return types are not pure models
+
+If the repository returns a framework-coupled object, an internal class instance, or anything that would leak private implementation into consumers, the use case **must** define its own output type exposing only what the consumer needs:
+
+```ts
+// Use case defines a DTO that hides the repository's internal entity shape.
+export type TrackSummary = { id: string; name: string; kind: TrackKind };
+
+export function getTrackSummary(input: { trackId: string }): TrackSummary | null {
+    const entity = trackRepository.get(input.trackId);
+    if (!entity) return null;
+    return { id: entity.id, name: entity.name, kind: entity.kind };
+}
+```
+
+The DTO is the contract. The repository's entity type stays private.
+
+### 6.4 Repo types may only cross module boundaries as pure models
+
+A repository may export types that the use case reuses directly _only when those types are pure models_ — plain data shapes with no behavior, no framework coupling, and no internal-implementation leakage. `type DocId = string` is a pure model. A class instance, a mutable handle, or a type tied to infrastructure is not.
+
+When in doubt, define a use-case-owned type.
+
+### 6.5 One function per file
+
+Each use case lives in its own file, named after the function. A file that exports many thin wrappers over a repository (e.g. `crdtRepositoryAccess.ts` with 8 re-exports) violates both §6.2 (laundering) and the One Function Per File rule. Split it into N files, one per function, each with a real typed signature.
+
+### 6.6 Summary test
+
+Before committing a use-case file, ask:
+
+1. Does this file export its own typed function, not a re-export?
+2. If the signature uses repo types, are those types pure models the repo has agreed to expose?
+3. Would a consumer know, from reading the use-case signature alone, what this operation does without reading the repository?
+
+If any answer is no, the boundary is fake.

@@ -1,5 +1,5 @@
 import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../deviceNodeFactory';
 
 export class WebAudioDeviceStrategy implements AudioDeviceStrategy {

@@ -1,4 +1,4 @@
-import { updateClip } from '#/modules/Arrangement/repositories/track';
+import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
 
 export function nudgeClip(clipId: string, beats: number): void {
     updateClip(clipId, (c) => {

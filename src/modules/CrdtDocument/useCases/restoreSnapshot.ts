@@ -1,3 +1,4 @@
+import { type DocumentBundle } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 
 /**
@@ -7,6 +8,6 @@ import { automergeRepository } from '../repositories/automergeRepository';
  * Public use-case surface so callers do not need to reach into the private
  * repositories/ folder.
  */
-export function restoreSnapshot(bundle: Map<string, Uint8Array>): void {
+export function restoreSnapshot(bundle: DocumentBundle): void {
     automergeRepository.restoreSnapshot(bundle);
 }

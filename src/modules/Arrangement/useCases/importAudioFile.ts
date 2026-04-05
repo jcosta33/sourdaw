@@ -1,4 +1,5 @@
-import { getTrackState, setTrackState } from '../repositories/track';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
 import { createTrack } from '../models/Track';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
@@ -7,7 +8,7 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { trackStore } from '../stores/trackStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
 import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
 
 export async function importAudioFile(file: File): Promise<void> {
     let bufferId: string;

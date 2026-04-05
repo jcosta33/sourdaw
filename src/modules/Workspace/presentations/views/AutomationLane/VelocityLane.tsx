@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { setNoteVelocity } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { setNoteVelocity } from '#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity';
 import { NotePropertyLane } from './NotePropertyLane';
 
 type VelocityLaneProps = {

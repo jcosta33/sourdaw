@@ -1,4 +1,4 @@
-import { updateTrack } from '#/modules/Arrangement/repositories/track';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 import { setTrackMute as engineSetTrackMute } from '#/modules/AudioEngine/useCases/trackAudioControls';
 import { applySoloLogic } from '#/modules/Arrangement/services/applySoloLogic';
 

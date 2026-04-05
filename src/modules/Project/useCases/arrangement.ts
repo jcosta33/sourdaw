@@ -9,7 +9,7 @@ import { arrangementStore } from '../stores/arrangementStore';
 import { type ArrangementData } from '../models/ProjectData';
 import { undoStore } from '#/modules/Command/stores/undoStore';
 import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
-import { markDirty } from './projectPersistence';
+import { markDirty } from './projectPersistence/saveProject';
 
 function takeSnapshot(id: string, name: string): ArrangementData {
     return {

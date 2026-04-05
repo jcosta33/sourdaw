@@ -1,14 +1,11 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
-import { type OfflineDeviceNode } from '../repositories/deviceNodeFactory';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
-import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy';
+import { type Device } from '../models/TrackViewTypes';
+import { type OfflineDeviceNode } from '../repositories/devices/types';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/isDeviceSupportedOnCurrentPlatform';
+import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 
 const logger = Container.getInstance().get(Logger);
-
-// Re-export for consumers
-export type { OfflineDeviceNode } from '../repositories/deviceNodeFactory';
 
 export type DeviceNodeEntry = {
     deviceId: string;

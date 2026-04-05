@@ -13,7 +13,7 @@ import { projectStore } from '../../stores/projectStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
-import { downloadProjectFile } from '../../repositories/project';
+import { downloadProjectFile } from '../../repositories/project/downloadProjectFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { clearUndoHistory, hydrateModuleStoresFromProjectData, verifyAudioBufferReferences } from './helpers';
 

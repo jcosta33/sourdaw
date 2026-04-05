@@ -1,4 +1,5 @@
-import { getTrackState, mapAllTracks } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { mapAllTracks } from '#/modules/Arrangement/repositories/track/mapAllTracks';
 
 export function groupTracks(trackIds: string[], _name: string): void {
     const state = getTrackState();

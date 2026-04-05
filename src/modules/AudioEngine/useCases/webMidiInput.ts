@@ -3,13 +3,12 @@
  * Import from the repository directly when possible.
  */
 
+export { type MidiInputInfo } from '../models/WebMidiTypes';
+export { subscribe, getSnapshot } from '../repositories/webMidi/state';
 export {
-    type MidiInputInfo,
-    setMpeEnabled,
-    subscribe,
-    getSnapshot,
     initWebMidi,
     selectMidiInput,
     setMidiInputTrack,
+    setMpeEnabled,
     resetMidiState,
-} from '../repositories/webMidi';
+} from '../repositories/webMidi/lifecycle';

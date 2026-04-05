@@ -4,8 +4,8 @@ import { timelineViewStore } from '../../stores/timelineViewStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
-import { setLoopRegion } from '#/modules/Transport/useCases/transportControls';
+import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
+import { setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
 import { disableLooping } from '#/modules/Transport/useCases/setLooping';
 
 const HEIGHT = 18;

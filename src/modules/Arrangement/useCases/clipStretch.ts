@@ -1,4 +1,5 @@
-import { updateClip, getTrackState } from '#/modules/Arrangement/repositories/track';
+import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { type StretchMode } from '#/modules/Arrangement/models/Track';
 
 const MIN_RATIO = 0.25;

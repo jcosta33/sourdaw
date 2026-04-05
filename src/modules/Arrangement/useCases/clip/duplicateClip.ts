@@ -1,4 +1,4 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation/duplicateClipAutomation';
 import { addClip } from './addClip';
 

@@ -7,7 +7,8 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
 
-import { getTrackState, setTrackState } from '../../repositories/track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
 import { type MixerChannelSnapshot, type MixerSnapshot } from '#/modules/Arrangement/models/MixerSnapshotTypes';
 
 const logger = Container.getInstance().get(Logger);

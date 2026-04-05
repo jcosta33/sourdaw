@@ -6,16 +6,11 @@ import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
 import { selectToolsForPrompt } from '../../transformers/toolSelector';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-import {
-    isNativeEngineReady,
-    generateNativeCompletion,
-} from '../../repositories/nativeEngine';
-import {
-    initWebLlmEngine,
-    isWebLlmLoaded,
-    generateWebLlmToolCalls,
-} from '../../repositories/webLlm';
-import { generateCloudToolCalls } from '../../repositories/cloudLlm';
+import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
+import { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
+import { initWebLlmEngine, isWebLlmLoaded } from '../../repositories/webLlm/engineLifecycle';
+import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
+import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference';
 import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
 import { getBackendChain } from './backendResolution';
 

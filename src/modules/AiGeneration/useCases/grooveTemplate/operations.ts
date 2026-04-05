@@ -1,5 +1,5 @@
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { type GrooveTemplate } from '#/modules/AiGeneration/models/GrooveTemplate';
 
 /** Local type matching Track module's MidiNote shape, avoids cross-module model import. */

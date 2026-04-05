@@ -12,7 +12,7 @@ import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
 type GetBeatFromX = (x: number) => number;

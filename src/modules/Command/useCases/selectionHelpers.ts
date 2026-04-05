@@ -2,10 +2,10 @@
  * Selection and navigation helpers used by CommandRegistry and
  * keyboard-shortcut handlers.
  */
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { getMarkerState } from '#/modules/Arrangement/useCases/timelineQueries';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
+import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
 import { getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
 
 // ── Track / clip selection readers ──────────────────────────────────────

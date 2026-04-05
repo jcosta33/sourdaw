@@ -1,10 +1,11 @@
 import { type ReactElement } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Button } from '#/components/ui/button';
-import { BUILTIN_PLUGINS, type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
+import { getBuiltinPlugins } from '#/modules/Arrangement/useCases/getBuiltinPlugins';
+import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Device } from '../../../models/TrackViewTypes';
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
 import { MetaText } from '../../components/Inspector/MetaText';
@@ -56,7 +57,7 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
 }
 
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
-    const plugin = BUILTIN_PLUGINS.find(
+    const plugin = getBuiltinPlugins().find(
         (p) =>
             p.id === device.type ||
             p.id === `builtin-${device.type}` ||

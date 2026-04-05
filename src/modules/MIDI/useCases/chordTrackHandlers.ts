@@ -1,10 +1,8 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import {
-    addChordEvent,
-    removeChordEvent,
-    toggleChordTrack,
-    clearChordTrack,
-} from '#/modules/MIDI/useCases/chordTrack';
+import { addChordEvent } from '#/modules/MIDI/useCases/chordTrack/addChordEvent';
+import { removeChordEvent } from '#/modules/MIDI/useCases/chordTrack/removeChordEvent';
+import { toggleChordTrack } from '#/modules/MIDI/useCases/chordTrack/toggleChordTrack';
+import { clearChordTrack } from '#/modules/MIDI/useCases/chordTrack/clearChordTrack';
 import { type ChordType, CHORD_TYPES } from '#/modules/MIDI/useCases/chordStamps';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

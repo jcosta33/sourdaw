@@ -3,11 +3,10 @@
  * Delegates to SynthModels for types/defaults.
  */
 
-import { getTrackById, type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
+// Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
+type Device = { type: string; parameterValues: Record<string, number> };
 import { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/useCases/audioEngineQueries';
-
-// Re-export model types for consumers
-export { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 
 const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'waveform',

@@ -1,8 +1,10 @@
-import { getTrackById, updateTrack } from '../repositories/track';
+import { getTrackById } from '../repositories/track/getTrackById';
+import { updateTrack } from '../repositories/track/updateTrack';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
 import { type AutomationMode, type InputMonitoring } from '../models/Track';
-import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder';
+import { startInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring';
+import { stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder/stopInputMonitoring';
 import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,

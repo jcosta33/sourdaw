@@ -6,7 +6,7 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
-import { PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases/advancedMetering';
+import { PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases/advancedMetering/phaseCorrelation';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type PhaseCorrelationDisplayProps = {

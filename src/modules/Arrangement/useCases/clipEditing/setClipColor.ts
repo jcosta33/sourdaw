@@ -1,4 +1,4 @@
-import { updateClip } from '#/modules/Arrangement/repositories/track';
+import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
 
 export function setClipColor(clipId: string, color: string): void {
     updateClip(clipId, (c) => ({ ...c, color }));

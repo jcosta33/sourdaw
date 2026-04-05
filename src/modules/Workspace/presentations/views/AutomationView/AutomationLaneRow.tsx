@@ -11,7 +11,7 @@ import { cn } from '#/helpers/Styles/cn';
 import {
     type AutomationLane,
     type AutomationCurveType,
-} from '#/modules/Automation/useCases/automation/types';
+} from '../../../models/AutomationViewTypes';
 import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
 import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
 import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automation/toggleAutomationVisibility';

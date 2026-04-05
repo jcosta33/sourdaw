@@ -4,12 +4,12 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
-import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { getBuiltinPlugins } from '#/modules/Arrangement/useCases/getBuiltinPlugins';
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automation/toggleAutomationVisibility';
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackAutomationSectionProps = {
@@ -92,7 +92,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     <>
                                         <DawMenuSeparator />
                                         {track.devices.map((device) => {
-                                            const plugin = BUILTIN_PLUGINS.find(
+                                            const plugin = getBuiltinPlugins().find(
                                                 (p) => p.name.toLowerCase() === device.type.toLowerCase()
                                             );
                                             if (!plugin) {

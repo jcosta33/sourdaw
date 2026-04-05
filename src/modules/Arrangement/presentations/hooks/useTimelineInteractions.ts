@@ -1,5 +1,5 @@
 import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
-import { broadcastPresence } from '#/modules/Collaboration/useCases/collaboration';
+import { broadcastPresence } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
 import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { useTimelineGestures } from './useTimelineGestures';
@@ -24,10 +24,10 @@ import {
     trimClipStart,
     trimClipEnd,
 } from '../../useCases/timelineViewActions';
-import { type AutomationPoint } from '#/modules/Automation/useCases/automation/types';
+import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { toggleLoop } from '#/modules/Transport/useCases/transportControls';
+import { toggleLoop } from '#/modules/Transport/useCases/transportControls/toggleLoop';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';

@@ -2,7 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases/automation/getAutomationValueAtBeat';
 import { isRecordingAutomation } from '#/modules/Automation/useCases/automationRecording/isRecordingAutomation';
-import { getEffectiveGain } from '#/modules/Arrangement/useCases/vca';
+import { getEffectiveGain } from '#/modules/Arrangement/useCases/vca/getEffectiveGain';
 import {
     ensureTrackStrip,
     setTrackGain as engineSetTrackGain,

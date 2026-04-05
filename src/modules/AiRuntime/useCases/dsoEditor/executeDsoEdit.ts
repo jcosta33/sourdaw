@@ -18,15 +18,16 @@ import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../mo
 import { serializeLogicalState, buildProjectSummary, logEdit } from './serializeLogicalState';
 import { buildDsoPrompt } from './dsoPrompt';
 import { resolveDsoNames, validateDsos, executeDsos } from './compileDso';
-import { resolveBackend, isDsoBackendAvailable } from '../llmOrchestration';
-import { isNativeEngineReady, streamNativeCompletion } from '../../repositories/nativeEngine';
-import { getLlmEngine } from '../../repositories/webLlm';
+import { resolveBackend, isDsoBackendAvailable } from '../llmOrchestration/backendResolution';
+import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
+import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
+import { getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
 import { createUndoEntry, generateGroupId } from '#/modules/Command/useCases/commandQueries';
-import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
+import { saveSnapshot } from '#/modules/CrdtDocument/useCases/saveSnapshot';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -237,13 +238,13 @@ async function commitDsos(plan: EditPlan, userRequest: string, assistantMsgId: s
     // Binary snapshot of ALL Automerge documents before the edit.
     // Much more compact than structuredClone(store.value) and correctly captures
     // every store — including midiStore — that the DSO may modify.
-    const bundleBefore = automergeRepository.saveAll();
+    const bundleBefore = saveSnapshot();
 
     // Execute
     const summaries = await executeDsos(plan.dsos);
 
     // Binary snapshot after — used for redo.
-    const bundleAfter = automergeRepository.saveAll();
+    const bundleAfter = saveSnapshot();
 
     // Undo entry — typed ActionUndoEntry (serializable data, no anonymous closures)
     const { groupId, groupLabel } = generateGroupId(userRequest);

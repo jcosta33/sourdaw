@@ -467,4 +467,7 @@ Distribute as FLAC. Decode to PCM at load time using Rust/symphonia in the Tauri
 
 - **Bundled:** Faust synthesis, Splendid Grand Piano (77 MB), Gogodze Phu drum kit.
 - **First-run download:** Salamander Grand Piano, Virtuosity Drums.
-- **On-demand download:** Naked Drums, Sofia MZ piano upgrade.d Drums, Sofia MZ piano upgrade.
+  <<<<<<< HEAD
+- # **On-demand download:** Naked Drums, Sofia MZ piano upgrade.d Drums, Sofia MZ piano upgrade.
+- **On-demand download:** Naked Drums, Sofia MZ piano upgrade.
+    > > > > > > > agent/convergence

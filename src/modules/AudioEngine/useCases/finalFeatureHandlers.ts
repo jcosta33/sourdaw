@@ -1,17 +1,20 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { toggleNodeView } from '#/modules/Plugin/useCases/nodeView/toggleNodeView';
-import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurface';
-import { addCvOutput, type CvOutputChannel } from '#/modules/Synth/useCases/cvGate';
+import { setProtocol } from '#/modules/AudioEngine/useCases/controlSurface/setProtocol';
+import { type ControlSurfaceProtocol } from '#/modules/AudioEngine/stores/controlSurface';
+import { addCvOutput } from '#/modules/Synth/useCases/cvGate/cvOutputOperations';
 import { connectPush } from '#/modules/Plugin/useCases/pushIntegration/connectPush';
 import { disconnectPush } from '#/modules/Plugin/useCases/pushIntegration/disconnectPush';
-import { loadModel, setTransferBlend } from '#/modules/AudioEngine/useCases/rave';
-import {
-    enableWarping,
-    setWarpAlgorithm,
-    setPitchShift,
-    type WarpAlgorithm,
-} from '#/modules/AudioEngine/useCases/audioWarping';
+import { loadModel } from '#/modules/AudioEngine/useCases/rave/loadModel';
+import { setTransferBlend } from '#/modules/AudioEngine/useCases/rave/setTransferBlend';
+import { enableWarping } from '#/modules/AudioEngine/useCases/audioWarping/enableWarping';
+import { setWarpAlgorithm } from '#/modules/AudioEngine/useCases/audioWarping/setWarpAlgorithm';
+import { setPitchShift } from '#/modules/AudioEngine/useCases/audioWarping/setPitchShift';
+import { type WarpAlgorithm } from '#/modules/AudioEngine/stores/audioWarp';
+
+// AudioEngine-local shape (AGENTS.md §95 — model isolation).
+type CvOutputType = 'cv-pitch' | 'cv-velocity' | 'cv-modulation' | 'gate' | 'trigger' | 'clock';
 
 export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     detectTransients: {
@@ -46,7 +49,7 @@ export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     },
     addCvOutput: {
         execute: async (a: { payload: { name: string; channel: number; type: string } }) => {
-            addCvOutput(a.payload.name, a.payload.channel, a.payload.type as CvOutputChannel['type']);
+            addCvOutput(a.payload.name, a.payload.channel, a.payload.type as CvOutputType);
         },
         undoable: true,
         describe: () => ({ label: 'Add CV/Gate Output' }),

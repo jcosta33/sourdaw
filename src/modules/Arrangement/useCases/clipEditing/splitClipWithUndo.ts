@@ -1,7 +1,7 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { splitClip } from './splitClip';
 import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { updateClip } from '#/modules/Arrangement/repositories/track/mutations';
+import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 
 /**

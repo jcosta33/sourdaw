@@ -1,6 +1,11 @@
-import { getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
 import { type AppAction } from '../models/AppAction';
-import { type Track, type TrackAlternative, type Clip } from '#/modules/Arrangement/useCases/trackQueries';
+// Types inferred from the store state returned by getTrackStoreState — no cross-module model import (AGENTS.md §95).
+type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
+type Track = TrackState['tracks'][number];
+type Clip = Track['clips'][number];
+type TrackAlternative = Track['alternatives'][number];
 
 export function handleCreateTrackAlternative(action: Extract<AppAction, { type: 'createTrackAlternative' }>): void {
     const state = getTrackStoreState();
@@ -12,7 +17,7 @@ export function handleCreateTrackAlternative(action: Extract<AppAction, { type: 
 
     setTrackStoreState({
         ...state,
-        tracks: state.tracks.map((track: Track) => {
+        tracks: state.tracks.map((track) => {
             if (track.id !== trackId) {
                 return track;
             }
@@ -21,7 +26,7 @@ export function handleCreateTrackAlternative(action: Extract<AppAction, { type: 
 
             // Deep clone active clips if duplicating, else empty
             const newClips: Clip[] = duplicateActive
-                ? track.clips.map((c: Clip) => ({ ...c, id: `clip-${crypto.randomUUID()}` })) // need novel IDs
+                ? track.clips.map((c) => ({ ...c, id: `clip-${crypto.randomUUID()}` })) // need novel IDs
                 : [];
 
             const newAlternative: TrackAlternative = {
@@ -31,7 +36,7 @@ export function handleCreateTrackAlternative(action: Extract<AppAction, { type: 
             };
 
             // Before switching, save current active clips to current active alternative in the array
-            const updatedAlternatives = track.alternatives.map((alt: TrackAlternative) =>
+            const updatedAlternatives = track.alternatives.map((alt) =>
                 alt.id === track.activeAlternativeId ? { ...alt, clips: [...track.clips] } : alt
             );
 
@@ -58,7 +63,7 @@ export function handleSwitchTrackAlternative(action: Extract<AppAction, { type: 
 
     setTrackStoreState({
         ...state,
-        tracks: state.tracks.map((track: Track) => {
+        tracks: state.tracks.map((track) => {
             if (track.id !== trackId) {
                 return track;
             }
@@ -72,7 +77,7 @@ export function handleSwitchTrackAlternative(action: Extract<AppAction, { type: 
             } // Doesn't exist
 
             // Save the currently active clips into the outgoing alternative array slot
-            const updatedAlternatives = track.alternatives.map((alt: TrackAlternative) => {
+            const updatedAlternatives = track.alternatives.map((alt) => {
                 if (alt.id === track.activeAlternativeId) {
                     return { ...alt, clips: [...track.clips] };
                 }
@@ -100,14 +105,14 @@ export function handleRenameTrackAlternative(action: Extract<AppAction, { type: 
 
     setTrackStoreState({
         ...state,
-        tracks: state.tracks.map((track: Track) => {
+        tracks: state.tracks.map((track) => {
             if (track.id !== trackId) {
                 return track;
             }
 
             return {
                 ...track,
-                alternatives: track.alternatives.map((alt: TrackAlternative) =>
+                alternatives: track.alternatives.map((alt) =>
                     alt.id === alternativeId ? { ...alt, name } : alt
                 ),
             };
@@ -125,7 +130,7 @@ export function handleDeleteTrackAlternative(action: Extract<AppAction, { type: 
 
     setTrackStoreState({
         ...state,
-        tracks: state.tracks.map((track: Track) => {
+        tracks: state.tracks.map((track) => {
             if (track.id !== trackId) {
                 return track;
             }
@@ -133,7 +138,7 @@ export function handleDeleteTrackAlternative(action: Extract<AppAction, { type: 
                 return track;
             } // Must keep at least one
 
-            const filteredAlts = track.alternatives.filter((alt: TrackAlternative) => alt.id !== alternativeId);
+            const filteredAlts = track.alternatives.filter((alt) => alt.id !== alternativeId);
 
             // If we deleted the active one, fallback to the first available
             if (track.activeAlternativeId === alternativeId) {

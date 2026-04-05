@@ -2,7 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { removeProjectJson } from '../../repositories/project';
+import { removeProjectJson } from '../../repositories/project/storageOperations';
 import { addTrack as addTrackUseCase } from '#/modules/Arrangement/useCases/addTrack';
 import { clearUndoHistory, resetModuleStoresToDefault } from './helpers';
 

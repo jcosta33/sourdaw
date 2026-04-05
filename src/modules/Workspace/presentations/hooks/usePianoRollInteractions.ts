@@ -23,7 +23,7 @@ import { removeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/removeMidiN
 import { moveMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/moveMidiNote';
 import { resizeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/resizeMidiNote';
 import { setNoteVelocity } from '#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity';
-import { type MidiNote } from '#/modules/MIDI/useCases/midi';
+import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { stampChord, removeNotesByIds, type ChordType } from '#/modules/MIDI/useCases/chordStamps';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
 

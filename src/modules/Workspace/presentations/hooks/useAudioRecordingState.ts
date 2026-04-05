@@ -2,7 +2,7 @@
  * Hook to subscribe to the actual hardware audio recording state.
  */
 import { useSyncExternalStore } from 'react';
-import { audioRecordingStore, type AudioRecordingState } from '#/modules/AudioEngine/useCases/audioRecorder';
+import { audioRecordingStore, type AudioRecordingState } from '#/modules/AudioEngine/stores/audioRecordingStore';
 
 const defaultState: AudioRecordingState = { isRecording: false, micPermissionGranted: false };
 

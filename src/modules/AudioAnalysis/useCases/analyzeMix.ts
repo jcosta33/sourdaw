@@ -3,12 +3,39 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases/trackAudioControls
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { readLevels, readFrequencyBalance } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { detectIssues, generateSuggestions } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { type MixAnalysis } from '#/modules/AiRuntime/models/MixAnalysis';
 
-// Re-export model types and formatMixAnalysis for consumers
-export type { MixAnalysis, MixIssue } from '#/modules/AiRuntime/models/MixAnalysis';
+// AudioAnalysis-local shape (AGENTS.md §95 — model isolation). Structurally
+// compatible with AiRuntime's MixAnalysis; no cross-module model import.
+type MixIssue = {
+    severity: 'info' | 'warning' | 'critical';
+    category: 'level' | 'frequency' | 'stereo' | 'dynamics';
+    message: string;
+    trackId?: string;
+};
 
-export type AnalyzeMixOutput = MixAnalysis;
+export type AnalyzeMixOutput = {
+    timestamp: number;
+    overallLevel: { peakDb: number; rmsDb: number };
+    frequencyBalance: {
+        sub: number;
+        bass: number;
+        lowMid: number;
+        mid: number;
+        highMid: number;
+        high: number;
+    };
+    trackLevels: Array<{
+        trackId: string;
+        trackName: string;
+        peakDb: number;
+        rmsDb: number;
+        isMuted: boolean;
+        isSoloed: boolean;
+        isClipping: boolean;
+    }>;
+    issues: MixIssue[];
+    suggestions: string[];
+};
 
 export async function analyzeMix(): Promise<AnalyzeMixOutput> {
     const masterAnalyser = getMasterAnalyser();
@@ -18,7 +45,7 @@ export async function analyzeMix(): Promise<AnalyzeMixOutput> {
     const state = trackStore.value;
     const tracks = state?.tracks ?? [];
 
-    const trackLevels: MixAnalysis['trackLevels'] = [];
+    const trackLevels: AnalyzeMixOutput['trackLevels'] = [];
 
     for (const track of tracks) {
         if (track.kind === 'folder' || track.kind === 'master') {

@@ -8,28 +8,34 @@
  *   - `OfflineDeviceNode` — shared node-graph descriptor
  */
 
+import { type OfflineDeviceNode } from './devices/types';
 import {
-    type OfflineDeviceNode,
     createEq, applyEqParams,
     createCompressor, applyCompressorParams,
     createSidechainCompressorFallback, applySidechainCompressorParams,
     createLimiter, applyLimiterParams,
+} from './devices/dynamics';
+import {
     createReverb, applyReverbParams,
     createDelay, applyDelayParams,
     createConvolutionReverb, applyConvolutionReverbParams,
+} from './devices/reverbDelay';
+import {
     createGainDevice, applyGainParams,
     createFilter, applyFilterParams,
     createDistortion, applyDistortionParams,
     createBitcrusher, applyBitcrusherParams,
     createDeEsser, applyDeEsserParams,
     createLufsMeter,
+} from './devices/toneShaping';
+import {
     createChorus, applyChorusParams,
     createPhaser, applyPhaserParams,
     createFlanger, applyFlangerParams,
     createTremolo, applyTremoloParams,
     createAutoPan, applyAutoPanParams,
     createStereoWidener, applyStereoWidenerParams,
-} from './devices';
+} from './devices/modulation';
 
 export type { OfflineDeviceNode };
 

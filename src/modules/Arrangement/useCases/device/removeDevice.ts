@@ -1,4 +1,5 @@
-import { getTrackState, mapAllTracks } from '../../repositories/track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { unloadPlugin } from '#/modules/Plugin/useCases/pluginLifecycle';
 

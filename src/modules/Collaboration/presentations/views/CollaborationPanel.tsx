@@ -16,7 +16,7 @@ import {
     leaveSession,
     generateInvite,
     acceptAnswer,
-} from '../../useCases/collaboration';
+} from '../../useCases/collaboration/sessionManagement';
 import { InviteCodeRow } from '../components/InviteCodeRow';
 import { PeerPresenceRow } from '../components/PeerPresenceRow';
 import { CollaborationBlock } from '../components/CollaborationBlock';

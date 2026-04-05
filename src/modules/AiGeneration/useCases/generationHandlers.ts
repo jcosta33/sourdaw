@@ -11,7 +11,7 @@ import {
 import { extractGroove, applyGroove } from '#/modules/AiGeneration/useCases/grooveTemplate/operations';
 import { getGrooveById } from '#/modules/AiGeneration/models/factoryGrooves';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

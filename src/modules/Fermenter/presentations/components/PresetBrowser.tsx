@@ -4,7 +4,13 @@
  */
 import { type ReactElement, useState } from 'react';
 import { Search, Star, ChevronRight } from 'lucide-react';
-import { type SoundPreset } from '#/modules/Arrangement/useCases/trackQueries';
+// Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields this browser renders.
+type SoundPreset = {
+    id: string;
+    name: string;
+    category: string;
+    tags?: string[];
+};
 
 type PresetBrowserProps = {
     currentName: string;

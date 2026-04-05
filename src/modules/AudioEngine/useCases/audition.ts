@@ -1,8 +1,8 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
 import { startFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
-import { getTrackById } from '#/modules/Arrangement/useCases/trackQueries';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
+import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 /**

@@ -3,7 +3,7 @@
  */
 
 import { toasterStore } from '../stores/toasterStore';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';

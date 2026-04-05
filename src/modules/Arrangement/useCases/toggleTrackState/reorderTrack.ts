@@ -1,4 +1,5 @@
-import { getTrackState, updateTrackState } from '#/modules/Arrangement/repositories/track';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { updateTrackState } from '#/modules/Arrangement/repositories/track/updateTrackState';
 
 export function reorderTrack(trackId: string, newIndex: number): void {
     const state = getTrackState();

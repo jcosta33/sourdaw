@@ -11,7 +11,8 @@
  * The Track model already has `vcaGroupId: string | null`.
  */
 
-import { getTrackState, setTrackState } from '../repositories/track';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
 
 export type VCAGroup = {
     id: string;

@@ -1,12 +1,9 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../stores/audioBufferCache';
-import {
-    decodeAudioFile as nativeDecodeAudioFile,
-    samplesToAudioBuffer,
-    decodeAudioBytesWasm,
-    wasmDecodedToAudioBuffer,
-} from '../repositories/audioDecoding';
+import { decodeAudioFile as nativeDecodeAudioFile } from '../repositories/audioDecoding/tauriDecoding';
+import { samplesToAudioBuffer } from '../repositories/audioDecoding/samplesToAudioBuffer';
 import { isTauri } from '#/helpers/tauriBridge';
+import { decodeAudioBytesWasm, wasmDecodedToAudioBuffer } from '../repositories/audioDecoding/wasmDecoding';
 
 /**
  * Decode an audio file from a File object.

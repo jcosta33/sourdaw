@@ -3,12 +3,25 @@
  * Delegates to factoryDrumKits for kit data and builtinSynth for audio scheduling.
  */
 
-import { scheduleNote } from './builtinSynth';
-import { type DrumKit } from '#/modules/AudioEngine/models/SynthModels';
+import { scheduleNote, getSynthParamsForTrack } from './builtinSynth';
 
-// Re-export model types and kit data for consumers
-export type { DrumKit, DrumKitVoice } from '#/modules/AudioEngine/models/SynthModels';
-export { getDrumKitById, getDrumKitByIndex } from '#/modules/AudioEngine/useCases/audioEngineQueries';
+// Synth-local shape (AGENTS.md §95 — derive from sibling use-case signature;
+// params are passed opaquely to scheduleNote, no fields read here).
+type SynthParams = ReturnType<typeof getSynthParamsForTrack>;
+
+// Synth-local shape (AGENTS.md §95 — model isolation). Structurally compatible
+// with AudioEngine's DrumKit model; no cross-module model import.
+export type DrumKitVoice = {
+    name: string;
+    pitchRange: [number, number];
+    params: SynthParams;
+};
+
+export type DrumKit = {
+    id: string;
+    name: string;
+    voices: DrumKitVoice[];
+};
 
 function findVoice(kit: DrumKit, pitch: number): DrumKit['voices'][number] | null {
     for (const v of kit.voices) {

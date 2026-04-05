@@ -18,7 +18,7 @@ import { lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
 import { crossfadeClips } from '#/modules/Arrangement/useCases/clipEditing/crossfadeClips';
 import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
 import { muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
-import { bounceSelection } from '#/modules/Arrangement/useCases/freezeBounce';
+import { bounceSelection } from '#/modules/Arrangement/useCases/freezeBounce/bounceOperations';
 import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
 import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
@@ -27,14 +27,12 @@ import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
 import { detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
 import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/MIDI/useCases/arpeggiator';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Arrangement/useCases/timeOperations';
 import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { updateTrack } from '#/modules/Arrangement/repositories/track';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { rippleDeleteClips, undoRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
+import { rippleDeleteClips, planRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
@@ -73,19 +71,32 @@ export const clipHandlers = {
 
     removeClip: {
         execute: (a) => {
-            // Find the clip and its track before deletion
             const state = getTrackStoreState();
-            let clipSnapshot: {
-                id: string;
-                trackId: string;
-                name: string;
-                startBeat: number;
-                endBeat: number;
-                type: string;
-                [key: string]: unknown;
-            } | null = null;
             let trackId: string | null = null;
-
+            if (state) {
+                for (const track of state.tracks) {
+                    if (track.clips.some((c) => c.id === a.payload.clipId)) {
+                        trackId = track.id;
+                        break;
+                    }
+                }
+            }
+            if (!trackId) {
+                removeClip(a.payload.clipId);
+                return;
+            }
+            const rippleResult = rippleDeleteClips(trackId, [a.payload.clipId]);
+            if (!rippleResult) {
+                removeClip(a.payload.clipId);
+            }
+        },
+        describe: (a) => {
+            // Pre-execute snapshot: clip + MIDI satellites + ripple plan. Used by
+            // the `restoreClip` inverse action. Runs before execute, so all state
+            // reads reflect pre-removal state.
+            const state = getTrackStoreState();
+            let clipSnapshot: unknown = null;
+            let trackId: string | null = null;
             if (state) {
                 for (const track of state.tracks) {
                     const clip = track.clips.find((c) => c.id === a.payload.clipId);
@@ -96,66 +107,40 @@ export const clipHandlers = {
                     }
                 }
             }
+            if (!clipSnapshot || !trackId) {
+                return { label: 'Remove clip' };
+            }
 
-            // Snapshot MIDI data for this clip
+            const plan = planRippleDelete(trackId, [a.payload.clipId]);
+            const ripplePlan = plan
+                ? {
+                      removedClips: structuredClone(plan.removedClips) as unknown[],
+                      shiftedClips: structuredClone(plan.shiftedClips) as unknown[],
+                  }
+                : null;
+
             const midiState = midiStore.value;
-            const notesSnapshot = midiState?.notesByClipId[a.payload.clipId]
-                ? structuredClone(midiState.notesByClipId[a.payload.clipId])
-                : null;
-            const ccSnapshot = midiState?.ccByClipId[a.payload.clipId]
-                ? structuredClone(midiState.ccByClipId[a.payload.clipId])
-                : null;
-            const pbSnapshot = midiState?.pitchBendByClipId[a.payload.clipId]
-                ? structuredClone(midiState.pitchBendByClipId[a.payload.clipId])
-                : null;
+            const notes = midiState?.notesByClipId[a.payload.clipId];
+            const cc = midiState?.ccByClipId[a.payload.clipId];
+            const pb = midiState?.pitchBendByClipId[a.payload.clipId];
 
-            // Execute the removal with optional ripple-shift
-            const rippleResult = trackId ? rippleDeleteClips(trackId, [a.payload.clipId]) : null;
-
-            // Fallback: if ripple returned null (clip already gone), do plain remove
-            if (!rippleResult) {
-                removeClip(a.payload.clipId);
-            }
-
-            // Push callback undo entry
-            if (clipSnapshot && trackId) {
-                const savedTrackId = trackId;
-                const savedClip = clipSnapshot;
-                const savedRipple = rippleResult;
-                pushUndoEntry(
-                    'Remove clip',
-                    () => {
-                        // Undo: restore clip (and reverse any ripple shift)
-                        if (savedRipple) {
-                            undoRippleDelete(savedTrackId, savedRipple.removedClips, savedRipple.shiftedClips);
-                        } else {
-                            updateTrack(savedTrackId, (t) => ({ ...t, clips: [...t.clips, savedClip as never] }));
-                        }
-                        // Restore MIDI data
-                        const currentMidi = midiStore.value;
-                        if (currentMidi && (notesSnapshot || ccSnapshot || pbSnapshot)) {
-                            midiStore.set({
-                                notesByClipId: notesSnapshot
-                                    ? { ...currentMidi.notesByClipId, [a.payload.clipId]: notesSnapshot }
-                                    : currentMidi.notesByClipId,
-                                ccByClipId: ccSnapshot
-                                    ? { ...currentMidi.ccByClipId, [a.payload.clipId]: ccSnapshot }
-                                    : currentMidi.ccByClipId,
-                                pitchBendByClipId: pbSnapshot
-                                    ? { ...currentMidi.pitchBendByClipId, [a.payload.clipId]: pbSnapshot }
-                                    : currentMidi.pitchBendByClipId,
-                            });
-                        }
+            return {
+                label: 'Remove clip',
+                inverseAction: {
+                    type: 'restoreClip',
+                    payload: {
+                        clipId: a.payload.clipId,
+                        trackId,
+                        clipSnapshot,
+                        ripplePlan,
+                        midiNotesSnapshot: notes ? structuredClone(notes) : null,
+                        midiCcSnapshot: cc ? structuredClone(cc) : null,
+                        midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
                     },
-                    () => {
-                        // Redo: remove again with ripple
-                        rippleDeleteClips(savedTrackId, [a.payload.clipId]);
-                    }
-                );
-            }
+                },
+            };
         },
-        describe: () => ({ label: 'Remove clip' }),
-        undoable: false, // handler manages its own undo entry
+        undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'removeClip'>>,
 
     renameClip: {

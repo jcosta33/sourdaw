@@ -3,7 +3,7 @@ import { Slider } from '#/components/ui/slider';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { useTracks } from '../../hooks/useTracks';
 import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/device/sendManagement';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '../../../models/TrackViewTypes';
 import { MixerSection } from '../../components/Mixer/MixerSection';
 
 type SendsSectionProps = {

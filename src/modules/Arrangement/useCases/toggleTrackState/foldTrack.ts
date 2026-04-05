@@ -1,4 +1,4 @@
-import { updateTrack } from '#/modules/Arrangement/repositories/track';
+import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 
 export function foldTrack(trackId: string, folded: boolean): void {
     updateTrack(trackId, (t) => ({ ...t, collapsed: folded }));

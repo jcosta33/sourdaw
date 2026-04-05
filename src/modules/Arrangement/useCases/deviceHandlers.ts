@@ -6,8 +6,8 @@ import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice
 import { setSend, removeSend } from '#/modules/Arrangement/useCases/device/sendManagement';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
-import { getLatencyReport } from '#/modules/AudioEngine/useCases/latencyCompensation';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getLatencyReport } from '#/modules/AudioEngine/useCases/latencyCompensation/compensation';
 import { setMpeEnabled } from '#/modules/AudioEngine/useCases/webMidiInput';
 import {
     addSidechainRoute,

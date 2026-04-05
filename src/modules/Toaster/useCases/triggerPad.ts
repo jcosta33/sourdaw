@@ -4,7 +4,7 @@
  */
 
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 
 export function triggerToasterPad(padIndex: number, velocity: number = 100): void {
     const toasterTrack = getAllTracks().find((t) =>

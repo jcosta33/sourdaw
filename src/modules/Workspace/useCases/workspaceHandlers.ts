@@ -12,23 +12,23 @@ import { zoomToFit, zoomToSelection } from '#/modules/Workspace/useCases/toggleP
 import { setEditingTool } from '#/modules/Workspace/useCases/setEditingTool';
 import { addMarker, removeMarker, setMarkerColor } from '#/modules/Arrangement/useCases/marker/markerOperations';
 import { addSection, removeSection, renameSection } from '#/modules/Arrangement/useCases/marker/sectionOperations';
-import {
-    quantizeNotes,
-    quantizeNoteLengths,
-    transposeNotes,
-    humanizeNotes,
-    invertNotes,
-    retrogradeNotes,
-    scaleVelocities,
-    scaleAllVelocities,
-    setAllVelocities,
-    type VelocityCurve,
-} from '#/modules/MIDI/useCases/midi';
+import { quantizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNotes';
+import { quantizeNoteLengths } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNoteLengths';
+import { transposeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes';
+import { humanizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes';
+import { invertNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/invertNotes';
+import { retrogradeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/retrogradeNotes';
+import { scaleVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/scaleVelocities';
+import { scaleAllVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/scaleAllVelocities';
+import { setAllVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/setAllVelocities';
+import { type VelocityCurve } from '#/modules/Arrangement/useCases/automationQueries';
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
 import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { getAutomationStoreState } from '#/modules/Arrangement/useCases/trackQueries';
-import { saveProject, newProject, exportProjectFile } from '#/modules/Project/useCases/projectPersistence';
+import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
+import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
+import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
+import { exportProjectFile } from '#/modules/Project/useCases/projectPersistence/fileIO';
 import { exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
 import { pickFiles } from '#/modules/Project/useCases/fileDialog';
 import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';

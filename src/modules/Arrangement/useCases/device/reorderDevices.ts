@@ -1,4 +1,4 @@
-import { updateTrack } from '../../repositories/track';
+import { updateTrack } from '../../repositories/track/updateTrack';
 
 export function reorderDevices(trackId: string, fromIndex: number, toIndex: number): void {
     updateTrack(trackId, (t) => {

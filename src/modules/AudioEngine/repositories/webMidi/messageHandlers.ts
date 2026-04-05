@@ -3,19 +3,18 @@
  * Handles both live monitoring (oscillator playback) and recording (note creation).
  */
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import {
-    getMidiStoreState,
-    setMidiStoreState,
-    getTrackStoreState,
-    getMidiLearnState,
-    createMidiNote,
-} from '#/modules/Arrangement/useCases/trackQueries';
+import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
+import { setMidiStoreState } from '#/modules/MIDI/useCases/setMidiStoreState';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getMidiLearnState } from '#/modules/MIDI/useCases/getMidiLearnState';
+import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/MIDI/useCases/midiLearn';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
-import { getDrumKitByIndex, scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
+import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
+import { getDrumKitByIndex } from '../../models/factoryDrumKits';
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
 import {
     MIDI_NOTE_ON,
     MIDI_NOTE_OFF,

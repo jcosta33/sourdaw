@@ -7,8 +7,9 @@
  */
 
 import { workspaceStore } from '../stores/workspaceStore';
-import { getTrackStoreState as getTrackState, setTrackState } from '#/modules/Arrangement/useCases/trackQueries';
-import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import { type Clip } from '../models/TrackViewTypes';
 
 /**
  * Toggle ripple editing on/off.
@@ -21,19 +22,19 @@ export function toggleRippleEditing(): void {
     workspaceStore.set({ ...state, rippleEditing: !state.rippleEditing });
 }
 
-/**
- * Delete clips and optionally ripple-shift: moves all subsequent clips
- * on the same track left to fill the gap.
- *
- * @returns The removed clips and their original positions (for undo).
- */
-export function rippleDeleteClips(
-    trackId: string,
-    clipIds: string[]
-): {
+export type RippleDeletePlan = {
     removedClips: Clip[];
     shiftedClips: Array<{ clipId: string; origStartBeat: number; origEndBeat: number }>;
-} | null {
+    nextClips: Clip[];
+};
+
+/**
+ * Compute (but do not apply) the effect of a ripple-delete.
+ * Pure — reads current state without mutating. Returns null if nothing would change.
+ * Used by command handlers that need to snapshot the reverse operation in describe()
+ * before calling `rippleDeleteClips` in execute().
+ */
+export function planRippleDelete(trackId: string, clipIds: string[]): RippleDeletePlan | null {
     const state = getTrackState();
     if (!state) {
         return null;
@@ -51,7 +52,6 @@ export function rippleDeleteClips(
         return null;
     }
 
-    // Find the earliest start and latest end of deleted clips
     const deleteStart = Math.min(...removedClips.map((c) => c.startBeat));
     const deleteEnd = Math.max(...removedClips.map((c) => c.endBeat));
     const gap = deleteEnd - deleteStart;
@@ -59,12 +59,11 @@ export function rippleDeleteClips(
     const ripple = workspaceStore.value?.rippleEditing ?? false;
     const shiftedClips: Array<{ clipId: string; origStartBeat: number; origEndBeat: number }> = [];
 
-    const newClips = track.clips.reduce<Clip[]>((acc, clip) => {
+    const nextClips = track.clips.reduce<Clip[]>((acc, clip) => {
         if (idSet.has(clip.id)) {
-            return acc; // Remove deleted clips
+            return acc;
         }
         if (ripple && clip.startBeat >= deleteEnd) {
-            // Shift left to fill the gap
             shiftedClips.push({ clipId: clip.id, origStartBeat: clip.startBeat, origEndBeat: clip.endBeat });
             acc.push({
                 ...clip,
@@ -77,12 +76,38 @@ export function rippleDeleteClips(
         return acc;
     }, []);
 
+    return { removedClips, shiftedClips, nextClips };
+}
+
+/**
+ * Delete clips and optionally ripple-shift: moves all subsequent clips
+ * on the same track left to fill the gap.
+ *
+ * @returns The removed clips and their original positions (for undo).
+ */
+export function rippleDeleteClips(
+    trackId: string,
+    clipIds: string[]
+): {
+    removedClips: Clip[];
+    shiftedClips: Array<{ clipId: string; origStartBeat: number; origEndBeat: number }>;
+} | null {
+    const plan = planRippleDelete(trackId, clipIds);
+    if (!plan) {
+        return null;
+    }
+
+    const state = getTrackState();
+    if (!state) {
+        return null;
+    }
+
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, clips: newClips } : t)),
+        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, clips: plan.nextClips } : t)),
     });
 
-    return { removedClips, shiftedClips };
+    return { removedClips: plan.removedClips, shiftedClips: plan.shiftedClips };
 }
 
 /**
