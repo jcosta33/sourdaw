@@ -105,7 +105,7 @@ export const useTimelineFileDrop = ({
                             durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
                             assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
                         } catch {
-                            notifyUser(`"${sample.name}" could not be decoded — this format may not be supported in the browser (e.g. ALAC or DRM-protected files).`, 'warning');
+                            notifyUser(`"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`, 'warning');
                         }
                     }
                 } catch {

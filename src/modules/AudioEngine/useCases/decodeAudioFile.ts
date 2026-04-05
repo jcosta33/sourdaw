@@ -1,14 +1,21 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../stores/audioBufferCache';
-import { decodeAudioFile as nativeDecodeAudioFile, samplesToAudioBuffer } from '../repositories/audioDecoding';
+import {
+    decodeAudioFile as nativeDecodeAudioFile,
+    samplesToAudioBuffer,
+    decodeAudioBytesWasm,
+    wasmDecodedToAudioBuffer,
+} from '../repositories/audioDecoding';
 import { isTauri } from '#/helpers/tauriBridge';
 
 /**
  * Decode an audio file from a File object.
  *
- * - In Tauri: uses the native symphonia decoder via `audioDecodingRepository`
+ * - In Tauri: uses the native symphonia decoder via `audioDecoding` repo
  *   for broad codec support (OGG, FLAC, AAC, ALAC, MP3 on WebKit).
- * - In browser: falls back to Web Audio `decodeAudioData`.
+ * - In browser: tries Web Audio `decodeAudioData` first (off-thread, fast,
+ *   hardware-accelerated), falls back to the symphonia-powered WASM decoder
+ *   for codecs the browser can't handle (ALAC, some m4a variants, …).
  *
  * The decoded buffer is automatically cached in `audioBufferCache`.
  */
@@ -42,8 +49,25 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
         }
     }
 
-    // Web Audio fallback
-    const buffer = await audioEngine.context.decodeAudioData(arrayBuffer);
+    // Browser path: native first — off-thread, fast, handles WAV/MP3/FLAC/OGG/AAC.
+    // decodeAudioData detaches the ArrayBuffer, so re-read from File for the
+    // WASM fallback below.
+    const ctx = audioEngine.context;
+    try {
+        const buffer = await ctx.decodeAudioData(arrayBuffer);
+        const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        audioBufferCache.set(id, buffer);
+        return { id, buffer };
+    } catch {
+        // Native decoder couldn't handle this file — try the symphonia WASM decoder.
+    }
+
+    const wasmBytes = await file.arrayBuffer();
+    const wasmDecoded = await decodeAudioBytesWasm(wasmBytes);
+    if (!wasmDecoded) {
+        throw new Error(`Unable to decode "${file.name}" — format not supported.`);
+    }
+    const buffer = wasmDecodedToAudioBuffer(wasmDecoded, ctx);
     const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     audioBufferCache.set(id, buffer);
     return { id, buffer };

@@ -1,0 +1,14 @@
+{
+  "name": "daw-wasm-decoder",
+  "type": "module",
+  "description": "WASM-compiled audio file decoder (wraps daw-io symphonia decoder for browser use).",
+  "version": "0.1.0",
+  "files": [
+    "daw_wasm_decoder_bg.wasm",
+    "daw_wasm_decoder.js"
+  ],
+  "main": "daw_wasm_decoder.js",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

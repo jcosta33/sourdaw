@@ -5,6 +5,7 @@ members = [
     "crates/daw-engine",
     "crates/daw-dsp",
     "crates/daw-io",
+    "crates/daw-wasm-decoder",
     "crates/daw-plugin-host",
     "crates/proof-chamber",
     "crates/scoring",
