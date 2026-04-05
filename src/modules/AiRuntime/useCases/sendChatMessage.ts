@@ -1,6 +1,8 @@
-import { getLlmEngine } from '../repositories/webLlm';
-import { streamNativeCompletion, isNativeEngineReady } from '../repositories/nativeEngine';
-import { isCloudAvailable, streamCloudChatCompletion } from '../repositories/cloudLlm';
+import { getLlmEngine } from '../repositories/webLlm/engineLifecycle';
+import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
+import { isNativeEngineReady } from '../repositories/nativeEngine/lifecycle';
+import { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
+import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference';
 import { resolveBackend } from './llmOrchestration/backendResolution';
 import { chatStore, appendChatMessage, updateChatMessage, setChatGenerating } from '../stores/chatStore';
 import { getProjectContext } from './getProjectContext';

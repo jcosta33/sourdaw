@@ -10,10 +10,10 @@ import {
     tryParameterizedPath,
     tryCompoundFastPath,
     requiresConfirmation,
-} from '../transformers/promptParser';
+} from '../transformers/promptParser/parsing';
 
 // Re-export for consumers
-export { isComplexPrompt } from '../transformers/promptParser';
+export { isComplexPrompt } from '../transformers/promptParser/parsing';
 
 const logger = Container.getInstance().get(Logger);
 

@@ -1,5 +1,5 @@
 import { isTauri } from '#/helpers/tauriBridge';
-import { isCloudAvailable } from '../../repositories/cloudLlm';
+import { isCloudAvailable } from '../../repositories/cloudLlm/keyManagement';
 import { type AiBackend } from '#/modules/AiRuntime/models/LlmOrchestrationTypes';
 
 /**

@@ -2,16 +2,9 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 
 import { llmStatusStore } from '../../stores/llmStatusStore';
-import {
-    initNativeEngine,
-    isNativeEngineReady,
-    stopNativeEngine,
-} from '../../repositories/nativeEngine';
-import {
-    initWebLlmEngine,
-    unloadWebLlmEngine,
-} from '../../repositories/webLlm';
-import { isCloudAvailable } from '../../repositories/cloudLlm';
+import { initNativeEngine, isNativeEngineReady, stopNativeEngine } from '../../repositories/nativeEngine/lifecycle';
+import { initWebLlmEngine, unloadWebLlmEngine } from '../../repositories/webLlm/engineLifecycle';
+import { isCloudAvailable } from '../../repositories/cloudLlm/keyManagement';
 import { resolveBackend } from './backendResolution';
 
 const logger = Container.getInstance().get(Logger);

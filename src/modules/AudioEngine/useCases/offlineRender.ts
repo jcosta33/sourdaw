@@ -8,10 +8,14 @@ import { scheduleNoteOffline, getSynthParamsFromDevices } from '#/modules/Synth/
 import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
 import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
-import { beatToSeconds, resolveDrumKit, scheduleTrackAutomation } from '../repositories/offlineScheduler';
+import { beatToSeconds } from '#/modules/AudioEngine/services/beatConversion';
+import { resolveDrumKit } from '#/modules/AudioEngine/services/deviceResolution';
+import { scheduleTrackAutomation } from '../repositories/offlineScheduler/automationScheduling';
 
 // Re-export encoders for consumers
-export { audioBufferToWav, audioBufferToMp3, audioBufferToFlac } from '../repositories/audioEncoders';
+export { audioBufferToWav } from '../repositories/audioEncoders/wavEncoder';
+export { audioBufferToMp3 } from '../repositories/audioEncoders/mp3Encoder';
+export { audioBufferToFlac } from '../repositories/audioEncoders/flacEncoder';
 
 // ── Cancel token ─────────────────────────────────────────────────────
 let cancelFlag = false;

@@ -12,7 +12,11 @@ import {
 import { getCurrentTime, createBufferSource } from '#/modules/AudioEngine/useCases/scheduling';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
-import { scheduleNote, getSynthParamsForTrack, type SynthParams } from '#/modules/Synth/useCases/builtinSynth';
+import { scheduleNote, getSynthParamsForTrack } from '#/modules/Synth/useCases/builtinSynth';
+
+// Transport-local shape (AGENTS.md §95 — derive from Synth's public use-case signature;
+// params are passed opaquely to scheduleKitNote, no fields read here).
+type SynthParams = ReturnType<typeof getSynthParamsForTrack>;
 import { scheduleFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
 import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
 import { getDrumKitByIndex } from '#/modules/AudioEngine/useCases/audioEngineQueries';

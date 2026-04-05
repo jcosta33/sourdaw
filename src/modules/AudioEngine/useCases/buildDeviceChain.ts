@@ -3,7 +3,7 @@ import { Logger } from '#/helpers/Logger/Logger';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/isDeviceSupportedOnCurrentPlatform';
-import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy';
+import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 
 const logger = Container.getInstance().get(Logger);
 

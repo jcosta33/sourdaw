@@ -19,8 +19,9 @@ import { serializeLogicalState, buildProjectSummary, logEdit } from './serialize
 import { buildDsoPrompt } from './dsoPrompt';
 import { resolveDsoNames, validateDsos, executeDsos } from './compileDso';
 import { resolveBackend, isDsoBackendAvailable } from '../llmOrchestration/backendResolution';
-import { isNativeEngineReady, streamNativeCompletion } from '../../repositories/nativeEngine';
-import { getLlmEngine } from '../../repositories/webLlm';
+import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
+import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
+import { getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';

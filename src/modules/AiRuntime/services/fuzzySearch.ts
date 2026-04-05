@@ -5,13 +5,7 @@
  * using substring and prefix matching on label + keywords.
  */
 
-import {
-    PRESET_ACTIONS,
-    type PresetAction,
-    type PresetContext,
-    type PresetCategory,
-    CATEGORY_ORDER,
-} from '../models/presetActions';
+import { PRESET_ACTIONS, CATEGORY_ORDER, type PresetAction, type PresetContext, type PresetCategory } from '../models/presetActions/registry';
 
 export type FuzzyResult = {
     preset: PresetAction;

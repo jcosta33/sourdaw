@@ -171,7 +171,15 @@ If step 2 or 3 returns results, investigate each one. If it is a legitimate file
 
 Update this table as you audit the codebase. The entries below are known at spec-write time; teams 5 and 6 may have added additional shims. The barrel/alias inventory must be built during §4.1 sweep 2 — it cannot be pre-populated here.
 
-### 5.1 `Arrangement/useCases/clipIdQueries.ts`
+> **STATUS (2026-04-05):** All 3 originally-annotated shims (§5.1–5.3) have been resolved. The barrel/alias inventory (§5.5) has been retroactively populated from Work D/E/K/L sweeps. See §10 for remaining open issues that emerged during execution.
+
+### 5.1 `Arrangement/useCases/clipIdQueries.ts` — ✅ RESOLVED (2026-04-04)
+
+**Resolution:** Replaced with `Arrangement/useCases/getNextClipId.ts` — a proper single-function use case with typed signature `() => string` wrapping the private `repositories/clipIdCounter`. Old shim deleted. MIDI consumer updated.
+
+---
+
+### ORIGINAL SHIM DETAIL (for reference)
 
 **What it does:** Re-exports `getNextClipId` from `Arrangement/repositories/clipIdCounter` at the public use-case layer, so MIDI does not reach into a private repository.
 
@@ -187,7 +195,13 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 ---
 
-### 5.2 `CrdtDocument/useCases/crdtRepositoryAccess.ts`
+### 5.2 `CrdtDocument/useCases/crdtRepositoryAccess.ts` — ✅ RESOLVED (2026-04-04)
+
+**Resolution:** Split into 8 single-function use-case files under `CrdtDocument/useCases/`: `subscribeToCrdtChanges`, `getCrdtDoc`, `createCrdtDoc`, `replaceCrdtDoc`, `hasCrdtDoc`, `getCrdtDocIds`, `removeCrdtDoc`, `mutateCrdtDoc`. Each typed against `DocId` (CrdtDocument's own pure-model alias) and Automerge library types. Old shim deleted. Collaboration consumers (`automergeSync.ts`, `sessionManagement.ts`) updated.
+
+---
+
+### ORIGINAL SHIM DETAIL (for reference)
 
 **What it does:** Exposes a restricted subset of `automergeRepository` operations (8 functions) at the public use-case layer so Collaboration does not reach into the private `repositories/` folder.
 
@@ -204,7 +218,13 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 ---
 
-### 5.3 `AudioEngine/stores/pluginScanStore.ts`
+### 5.3 `AudioEngine/stores/pluginScanStore.ts` — ✅ RESOLVED (2026-04-04)
+
+**Resolution:** File deleted. All 3 consumers (`Workspace/Inspector/TrackDevicesSection`, `AudioEngine/PluginScanSettings`, `AudioEngine/PluginBrowser`) updated to import `pluginScanStore` from `Plugin/stores/pluginScanStore` directly.
+
+---
+
+### ORIGINAL SHIM DETAIL (for reference)
 
 **What it does:** Re-exports `pluginScanStore`, `defaultPluginScanState`, and `PluginScanState` from the canonical location `Plugin/stores/pluginScanStore`. Plugin module owns scan state; this shim preserves the old AudioEngine import path.
 
@@ -222,23 +242,47 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 ---
 
-### 5.4 Teams 5 and 6 shims
+### 5.4 Teams 5 and 6 shims — ✅ NONE FOUND
 
-*(To be filled in from their task file handoffs before beginning work.)*
-
-| Shim file | What it does | Consumers | Canonical target |
-|-----------|-------------|-----------|-----------------|
-| | | | |
+No additional annotated `TEMPORARY MIGRATION SHIM` files were added by teams 5 or 6. Verified via `grep -r "TEMPORARY MIGRATION SHIM" src` (returns empty).
 
 ---
 
-### 5.5 Barrel and alias inventory
+### 5.5 Barrel and alias inventory — ✅ ALL REMOVED (Work D/E/K/L, 2026-04-04/05)
 
-*(To be filled in during §4.1 Sweep 2. One row per file found.)*
+All `index.ts` barrels and lazy-alias aggregator files have been removed. Consumers now import from specific files. The table below records what existed and what replaced it.
 
-| File | Type (barrel/alias/passthrough) | Consumers | Canonical target |
-|------|---------------------------------|-----------|-----------------|
-| | | | |
+| File | Type | Removed by | Canonical target after removal |
+|------|------|-----------|--------------------------------|
+| `MIDI/useCases/midi.ts` | aggregator barrel | Work D | direct file imports per symbol |
+| `MIDI/useCases/midi/{noteOps,clipOps,fileOps}/index.ts` (3 files) | sub-barrels | Work D | direct file imports |
+| `Automation/useCases/automation/types.ts` | type aggregator | Work E | local-type duplication per §95 in consumers |
+| `Arrangement/useCases/trackQueries/index.ts` | use-case barrel (30+ symbols, 105 import sites) | Work K | direct file imports; cross-module type leaks replaced with local types per §95 |
+| `Arrangement/useCases/vca/index.ts` | use-case barrel | Work K | direct file imports |
+| `Arrangement/useCases/freezeBounce/index.ts` | use-case barrel | Work K | direct file imports |
+| `Arrangement/repositories/track/index.ts` | private-repo barrel | Work K | direct file imports (intra-module) |
+| `AiRuntime/repositories/cloudLlm/index.ts` | repo barrel | Work L | `keyManagement.ts` + `cloudInference.ts` direct |
+| `AiRuntime/repositories/webLlm/index.ts` | repo barrel | Work L | `engineLifecycle.ts` + `toolCalling.ts` direct |
+| `AiRuntime/repositories/nativeEngine/index.ts` | repo barrel | Work L | `lifecycle.ts` + `completions.ts` + `streaming.ts` direct |
+| `AiRuntime/repositories/mixAnalysis/index.ts` | repo barrel | Work L | `readLevels.ts` + `readFrequencyBalance.ts` direct |
+| `AiRuntime/transformers/promptParser/index.ts` | transformer barrel | Work L | `parsing.ts` direct |
+| `AiRuntime/models/presetActions/index.ts` | model barrel | Work L | `registry.ts` direct |
+| `AiRuntime/models/presetActions/presets/index.ts` | model sub-barrel | Work L | per-category files direct |
+| `AiRuntime/models/tools/index.ts` | model barrel | Work L | per-domain tool files direct |
+| `AudioEngine/repositories/audioDecoding/index.ts` | repo barrel | Work L | `tauriDecoding.ts` + `samplesToAudioBuffer.ts` direct |
+| `AudioEngine/repositories/audioEncoders/index.ts` | repo barrel | Work L | per-encoder files direct |
+| `AudioEngine/repositories/devices/index.ts` | repo barrel | Work L | `types.ts` + per-category files direct |
+| `AudioEngine/repositories/nativeAIBridge/index.ts` | repo barrel | Work L | per-operation files direct |
+| `AudioEngine/repositories/offlineScheduler/index.ts` | repo barrel (with cross-module re-exports) | Work L | direct imports; cross-module re-exports routed to proper owners |
+| `AudioEngine/repositories/webMidi/index.ts` | repo barrel | Work L | `state.ts` + `lifecycle.ts` direct |
+| `AudioEngine/repositories/deviceStrategy/index.ts` | side-effect strategy-registration + re-export hybrid | Work L | **renamed** to `setupDeviceStrategies.ts` — not a barrel; runs registration side-effects on import |
+| `Project/repositories/project/index.ts` | repo barrel | Work L | `storageOperations.ts` + `downloadProjectFile.ts` direct |
+
+**Exempt from removal (kept intentionally):**
+
+| File | Reason |
+|------|--------|
+| `Workspace/presentations/views/Inspector/layouts/index.ts` | Side-effect layout-registration hub. Importing the file registers layout entries with the inspector; it is not a pure re-export barrel. Retained and documented. |
 
 ---
 
@@ -246,61 +290,66 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 The following violations were identified during module-by-module migration but were out of scope for the owning teams. Team Platform must resolve them as part of this convergence pass.
 
-### 6.1 `Command/useCases/executeAppAction.ts`
+### 6.1 `Command/useCases/executeAppAction.ts` — ✅ RESOLVED (2026-04-04)
 
-**Violation:** Imports from `CrdtDocument/repositories/automergeRepository` directly — a private repository import across module boundaries.
+**Resolution:** Dynamic import updated from `automergeRepository` to the `restoreSnapshot` use case.
 
-**Fix:** Update to use `CrdtDocument/useCases/restoreSnapshot` (added by Team 4 specifically for this update).
-
----
-
-### 6.2 `Synth/stores/cvGate.ts`
-
-**Violation:** Imports `DOC_PREFIX_ROOT` or similar from `CrdtDocument/models/CrdtDocumentTypes` — a cross-module model import.
-
-**Fix:** Inline `DOC_PREFIX_ROOT = 'root'` as a local constant. Do not promote a new export from CrdtDocument.
+**Original violation:** Imports from `CrdtDocument/repositories/automergeRepository` directly — a private repository import across module boundaries.
 
 ---
 
-### 6.3 `Workspace/presentations/components/MiniMasterSpectrum.tsx`
+### 6.2 `Synth/stores/cvGate.ts` — ✅ RESOLVED (2026-04-04)
 
-**Violation:** Imports from `Arrangement/presentations/hooks/useTracks` — a private presentation hook imported across module boundaries.
-
-**Fix:** `Arrangement/presentations/views/MiniMasterSpectrum.tsx` is now the canonical copy of this component (moved by Team 4). Update the import, or remove the Workspace copy entirely if it is now redundant. Read both files before deciding.
+**Resolution:** Inlined `DOC_PREFIX_ROOT = 'root'` as a local constant. Cross-module model import removed.
 
 ---
 
-### 6.4 `helpers/Store/Storage/AutomergeStorage.ts`
+### 6.3 `Workspace/presentations/components/MiniMasterSpectrum.tsx` — ✅ RESOLVED (2026-04-04)
 
-**Violation:** Imports from CrdtDocument internals.
-
-**Fix:** Update to use the appropriate public surface. If no public surface covers the need, document as a finding for the CrdtDocument team rather than adding a new shim.
+**Resolution:** Workspace copy deleted. Verified zero consumers via grep; body was identical to `Arrangement/presentations/views/MiniMasterSpectrum.tsx` which is now the canonical copy.
 
 ---
 
-### 6.5 Remaining violations from `pnpm deps:validate`
+### 6.4 `helpers/Store/Storage/AutomergeStorage.ts` — ⚠️ UNRESOLVED (structural finding, owned by CrdtDocument team)
 
-At the start of this pass, 26 violations were known across `SampleLibrary`, `AiRuntime`, `Workspace`, `Synth`, `Command`, `AiGeneration`, and `helpers`. Run `pnpm deps:validate` at the start of the pass to get the current count (teams 5 and 6 may have resolved some of these).
+**Status:** Two `helpers-no-module-imports` violations remain and cannot be resolved in a convergence pass:
 
-For each remaining violation, classify it using the table in §4.3 and act accordingly. The acceptance criterion is `deps:validate` at zero. But Team Platform should only reach zero by fixing legitimate convergence-pass items, not by suppressing, working around, or creating new re-export layers to satisfy the validator.
+- `helpers/Store/Storage/AutomergeStorage.ts → CrdtDocument/useCases/semanticChangeContext.ts`
+- `helpers/Store/Storage/AutomergeStorage.ts → CrdtDocument/repositories/automergeRepository.ts`
+
+**Root cause:** `AutomergeStorage` is CrdtDocument-specific logic misplaced in `helpers/`. Fix requires either:
+- (a) moving `AutomergeStorage` into `CrdtDocument/`, or
+- (b) inverting the dependency — defining a CRDT-write port in `helpers/` that `CrdtDocument` implements, so helpers depend on an abstraction rather than reaching into a module.
+
+Both options require real design decisions beyond a path-rewrite convergence pass. **Owner: CrdtDocument team.** Do not add a new shim to silence the validator.
+
+---
+
+### 6.5 Remaining violations from `pnpm deps:validate` — ✅ RESOLVED (2026-04-04)
+
+**Status (2026-04-05):** All convergence-category violations resolved. Current `pnpm deps:validate` output: **2 violations**, both in §6.4 (AutomergeStorage structural finding, owned by CrdtDocument team).
+
+At the start of this pass, 26 violations were known across `SampleLibrary`, `AiRuntime`, `Workspace`, `Synth`, `Command`, `AiGeneration`, and `helpers`. Teams 5 and 6 resolved a subset during their own passes; the remainder were fixed in this convergence pass via shim/barrel removal plus the §6.1–6.3 one-line fixes.
 
 ---
 
 ## 7. Acceptance criteria
 
+> **STATUS (2026-04-05):** Original acceptance criteria met for the path-rewrite convergence pass. The scope has since expanded to a broader "full compliance push" — open issues tracking the post-convergence work are consolidated in §10 below.
+
 This task is complete when **all** of the following are true:
 
-- [ ] `grep -r "TEMPORARY MIGRATION SHIM" src` returns no results
-- [ ] `grep -rn "^export \* from" src --include="*.ts" --include="*.tsx"` returns no results
-- [ ] No `index.ts` file anywhere in `src/` contains only re-exports
-- [ ] No file named `contracts.ts`, `public.ts`, or similar exists as a pure re-export shim
-- [ ] The barrel/alias inventory table in §5.5 is complete (every found file listed with disposition)
-- [ ] `pnpm deps:validate` returns **zero violations**
-- [ ] `pnpm typecheck` passes with zero errors
-- [ ] Every shim file in §5.1–5.4 has been deleted
-- [ ] Every consumer in §5.1–5.4 has been updated to the canonical import path
-- [ ] No new re-export shims, barrel files, aliases, or compatibility layers have been introduced
-- [ ] Every finding that could not be fixed in this pass is documented in the task Findings section with: the file, the violation type, why it was left, and which team owns it
+- [x] `grep -r "TEMPORARY MIGRATION SHIM" src` returns no results
+- [x] `grep -rn "^export \* from" src --include="*.ts" --include="*.tsx"` returns no results
+- [x] No `index.ts` file anywhere in `src/` contains only re-exports *(exception: `Workspace/.../Inspector/layouts/index.ts` — side-effect registration hub, documented in §5.5)*
+- [x] No file named `contracts.ts`, `public.ts`, or similar exists as a pure re-export shim
+- [x] The barrel/alias inventory table in §5.5 is complete (every found file listed with disposition)
+- [⚠️] `pnpm deps:validate` returns **zero violations** — 2 structural violations remain (AutomergeStorage, §6.4), owned by CrdtDocument team
+- [x] `pnpm typecheck` passes with zero errors
+- [x] Every shim file in §5.1–5.4 has been deleted
+- [x] Every consumer in §5.1–5.4 has been updated to the canonical import path
+- [x] No new re-export shims, barrel files, aliases, or compatibility layers have been introduced
+- [x] Every finding that could not be fixed in this pass is documented with: the file, the violation type, why it was left, and which team owns it (see §10)
 
 ---
 
@@ -328,3 +377,148 @@ If something belongs on this list but seems urgent, document it as a finding in 
 - `architecture-migration.md §9` — what shims must never do
 - `AGENTS.md — Frontend Domain-Driven Architecture` — NO BARREL FILES, model isolation, contract boundary rules
 - `AGENTS.md — Safety Rules` — do not delete files outside the shim/barrel/alias inventory
+- `.agents/skills/architecture-violations/SKILL.md §6` — use-case contract types, laundering, shim annotation-removal
+- `.agents/audits/global/refactor-audit.md` — source of AUDIT-001 through AUDIT-023 findings below
+
+---
+
+## 10. Open issues (deferred, for future sessions)
+
+This section consolidates every architectural follow-up that emerged during (or was descoped from) the convergence pass. It is the single source of truth for the next agent: read this section, pick an item, create a scoped task. Each issue below has its own verification gate — `deps:validate` alone is not sufficient.
+
+> **Classification key:**
+> - **Refactor** — can be done by a single agent in one session via pure file edits. No new domain design required.
+> - **Redesign** — requires cross-module design decisions (schemas, ownership changes, new contracts). Warrants its own spec.
+> - **Out of scope** — non-TypeScript (Rust/Tauri) or requires platform/tooling work.
+
+### 10.1 AUDIT-006 — Anonymous `pushUndoEntry` closures (**partial**, ~42 sites remaining) — Refactor
+
+**Status (2026-04-05):** 2 of 44 sites fixed.
+
+**What was fixed:** `Arrangement/useCases/trackHandlers.ts::removeTrack` and `Arrangement/useCases/clipHandlers.ts::removeClip` migrated from in-handler `pushUndoEntry` closures to typed `restoreTrack` / `restoreClip` AppAction `inverseAction` payloads. Snapshot capture moved to `describe()` (pre-execute). Handlers registered in `Arrangement/useCases/restoreHandlers.ts`.
+
+**What remains:** ~42 call sites across ~15 presentation files still push closure-based undo entries from live user gestures (slider drags, knob gestures, live edits). These are non-serializable (dropped from sessionStorage persistence) and violate the Command Pattern by inlining undo logic inside UI handlers.
+
+**Why it's deferred:** Requires a cross-cutting "snapshot-commit" pattern — a standard way for live-gesture UI to capture pre-gesture state and emit a typed AppAction at commit time. Several candidate design shapes (ref-held snapshots, transient action queues, gesture controllers). Also requires new typed AppAction variants for each commit type (`setTrackVolume`, `setClipFade`, etc.) and their inverse actions. Design decision, not pure refactor.
+
+**Verification when done:** `grep -rn "pushUndoEntry(" src/modules --include='*.ts' --include='*.tsx'` returns no results outside `Command/`. All undo entries persist through sessionStorage reload.
+
+---
+
+### 10.2 AUDIT-010 — `TrackNode` device-kind god switch — Refactor (significant)
+
+**What it is:** `TrackNode.ts` contains a monolithic switch on `device.type` to construct the correct engine node for every built-in device. Adding a new device requires editing this switch. Cross-cuts `engine/`, `models/`, and factory creation.
+
+**Fix shape:** Device registry pattern — each device module registers its constructor at import-time. Track node iterates the registry instead of switching on type.
+
+**Verification:** Adding a new device type does not require editing `TrackNode.ts`.
+
+---
+
+### 10.3 AUDIT-018 — Cross-module model aliasing via `export type` re-exports — ✅ RESOLVED (cross-module scope)
+
+**What it was:** ~30 `export type { ... }` / `export { type ... }` lines inside `useCases/` folders. Most were same-module re-exports (legitimate public-type-surface pattern per SKILL §6.4). Two were cross-module leaks violating §95 (model isolation):
+
+1. `AiRuntime/useCases/aiPanelActions.ts:10` — `export type { AppAction }` re-exporting Command's type. No external consumers — dead laundering re-export.
+2. `Synth/useCases/builtinSynth.ts:12` — `export { type SynthParams, defaultSynthParams, type MpeParams }` re-exporting AudioEngine's types. Consumed by `Transport/scheduleMidiNotes.ts` (passing `SynthParams` opaquely) and by `Synth/useCases/drumKitSynth.ts` (intra-module).
+
+**Resolution:**
+1. Removed the dead `AppAction` re-export in `aiPanelActions.ts`. Replaced the direct `AppAction` import with a local type derived from the public use-case signature: `type AppAction = Parameters<typeof executeAppAction>[0]` (§95 consumer-local shape, same pattern as `scheduleMidiNotes.ts:31` `DrumKitDef`).
+2. Removed the cross-module re-export in `builtinSynth.ts`. Migrated `Transport/scheduleMidiNotes.ts` to derive its local `SynthParams` from the Synth public signature: `type SynthParams = ReturnType<typeof getSynthParamsForTrack>` (§95). Migrated `Synth/useCases/drumKitSynth.ts` to the same ReturnType-of-sibling-signature pattern, avoiding any new cross-module model import.
+
+**Remaining `export type { ... }` lines in useCases/ folders** are all same-module re-exports (the module's own public type surface per SKILL §6.4 — e.g. `BacteriaPatch`, `Preferences`, `ToasterKit`, `Macro`, `ScratchPadSection`, `DocumentBundle`). These are legitimate and not violations. Inlining them into the consuming use-case file is a nice-to-have cleanup but not required.
+
+**Verification:** `pnpm typecheck` green; `pnpm deps:validate` unchanged (2 violations — both AutomergeStorage §6.4, known/deferred).
+
+---
+
+### 10.4 AUDIT-023 — Monolithic `offlineRender` god use case — Refactor (significant)
+
+**What it is:** `AudioEngine/useCases/offlineRender.ts` does EASE-to-audio compilation, scheduling, OfflineAudioContext setup, rendering, and encoding in one function. Cannot test compilation without rendering.
+
+**Fix shape:** Split into a compiler (`compileArrangementToSchedule`) that returns a typed schedule DTO, plus a renderer (`renderSchedule`) that consumes it. Encoding stays where it is.
+
+**Verification:** Compiler can be unit-tested without OfflineAudioContext. Renderer can be fed a hand-crafted schedule.
+
+---
+
+### 10.5 `Command/models/AppAction.ts:1` — cross-module private-internals import ✅ RESOLVED
+
+**What it was:** `AppAction.ts` imported `DocumentBundle` from `CrdtDocument/models/CrdtDocumentTypes` — a `no-cross-module-private-internals` violation invisible to `deps:validate` because the dependency-cruiser config does not enable `tsPreCompilationDeps`, so type-only imports are not cruised.
+
+**Resolution:** Updated import to `#/modules/CrdtDocument/useCases/crdtDocumentTypes` — the module's public pure-model type surface (per SKILL §6.4). Consistent with the 6 other cross-module consumers (Transport, Routing, Project stores).
+
+---
+
+### 10.6 `CrdtDocument/useCases/{saveSnapshot,restoreSnapshot}.ts` — snapshot-bundle naming hygiene ✅ RESOLVED
+
+**What it was:** `saveSnapshot()` returned `Map<string, Uint8Array>` and `restoreSnapshot()` accepted `Map<string, Uint8Array>` instead of the module's own `DocumentBundle` alias. Structurally identical (since `DocId = string`) but lost the named contract.
+
+**Resolution:** Both functions now use `DocumentBundle` imported from `../models/CrdtDocumentTypes`.
+
+---
+
+### 10.7 Zero tests for `CrdtDocument` module
+
+**What it is:** The 8 single-function use cases added during convergence Phase 2 (`subscribeToCrdtChanges`, `getCrdtDoc`, etc.) are thin wrappers over `automergeRepository`. They work, but are untested. Same for `saveSnapshot`, `restoreSnapshot`.
+
+**Fix:** Add unit tests using an in-memory Automerge instance.
+
+---
+
+### 10.8 `helpers/Store/Storage/AutomergeStorage.ts` — structural finding — Redesign
+
+See §6.4 above. Owner: CrdtDocument team.
+
+---
+
+### 10.9 Non-refactor audit items (Redesign / Out of scope)
+
+These are documented here for traceability; do **not** attempt to fix as a TS refactor session:
+
+| Audit | Title | Category |
+|-------|-------|----------|
+| AUDIT-003 | Singleton plugin stores (multi-instancing) | Redesign — CRDT schema change |
+| AUDIT-004 | Volatile CRDT memory trap | Redesign — background patching |
+| AUDIT-005 | Volatile domain state loss | Redesign — lift state into CRDT |
+| AUDIT-008 | JSON IPC audio loops | Deep engineering — SharedArrayBuffer ring |
+| AUDIT-009 | Main-thread DSP scheduling | Deep engineering — port to WASM |
+| AUDIT-011 | Rust crate workspace sprawl | Out of scope — Rust refactor |
+| AUDIT-012 | Controller fatality in `src-tauri` | Out of scope — Rust refactor |
+| AUDIT-014 | Tauri scope persistence | Out of scope — Tauri capabilities |
+| AUDIT-015 | Local branching split-brain | Redesign — migrate branchStore into Automerge |
+| AUDIT-016 | Volatile action history | Redesign — persist actionHistoryStore |
+
+**Resolved in this session (for cross-reference):**
+- AUDIT-001, AUDIT-007, AUDIT-017, AUDIT-022 — fully resolved
+- AUDIT-006 — partial (see §10.1)
+
+---
+
+### 10.10 Intra-module repository laundering in `AiRuntime/useCases/aiRuntimeQueries.ts` — Refactor
+
+**What it is:** `aiRuntimeQueries.ts:31-37` contains a block of `export { ... } from '../repositories/...'` pure re-exports, mislabeled "Cross-module re-exports" (they are intra-module). Per SKILL §6.2, a use-case file that only re-exports a repository symbol launders private repository access through a fake public boundary, even intra-module:
+
+```ts
+export { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference';
+export { readLevels } from '../repositories/mixAnalysis/readLevels';
+export { readFrequencyBalance } from '../repositories/mixAnalysis/readFrequencyBalance';
+export { generateWebLlmCompletion } from '../repositories/webLlm/engineLifecycle';
+export { generateNativeCompletion } from '../repositories/nativeEngine/completions';
+export { isNativeEngineReady } from '../repositories/nativeEngine/lifecycle';
+// ...
+```
+
+**Fix shape:** For each re-exported symbol, either (a) define a typed use-case function in its own file that wraps the repository call with a real signature, or (b) move the consumer to import directly from the repo path (if the consumer is intra-module and the repo symbol is genuinely the contract). Option (a) is SKILL §6.1 compliant; option (b) is honest. The current mix is neither.
+
+**Similar pattern elsewhere:** `AiRuntime/useCases/cloudApiManagement.ts:12` — `export { isCloudAvailable } from '../repositories/cloudLlm/keyManagement'` (single-line version of the same laundering pattern). `AiRuntime/useCases/parsePromptToActions.ts:16` — `export { isComplexPrompt } from '../transformers/promptParser/parsing'` (transformer laundering, same problem class).
+
+**Verification when done:** `grep -rn "^export {" src/modules/*/useCases --include='*.ts'` shows no pure repository or transformer re-exports (only same-file function exports).
+
+---
+
+### 10.11 `CrdtDocument/useCases/crdtDocumentTypes.ts` — documented pure-type re-export shim
+
+**What it is:** `crdtDocumentTypes.ts` contains only `export type { DocId, DocumentBundle, MergeResult } from '../models/CrdtDocumentTypes'` plus two constant re-exports. A strict reading of SKILL §6.2 would flag this as laundering. The maintainers' established middle-ground is explicit, with a header comment documenting the SKILL §6.4 pure-model path, used by 7+ cross-module consumers (Transport, Routing, Project stores, and now Command/models/AppAction.ts via §10.5).
+
+**Status:** Intentional, documented. Flagging here for traceability. If the team ever decides to remove the shim, consumers must inline the pure-model types per §95 strict.

@@ -1,4 +1,4 @@
-import { type DocumentBundle } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
+import { type DocumentBundle } from '#/modules/CrdtDocument/useCases/crdtDocumentTypes';
 
 export type AppAction =
     | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }

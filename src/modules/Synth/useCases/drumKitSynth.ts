@@ -3,7 +3,11 @@
  * Delegates to factoryDrumKits for kit data and builtinSynth for audio scheduling.
  */
 
-import { scheduleNote, type SynthParams } from './builtinSynth';
+import { scheduleNote, getSynthParamsForTrack } from './builtinSynth';
+
+// Synth-local shape (AGENTS.md §95 — derive from sibling use-case signature;
+// params are passed opaquely to scheduleNote, no fields read here).
+type SynthParams = ReturnType<typeof getSynthParamsForTrack>;
 
 // Synth-local shape (AGENTS.md §95 — model isolation). Structurally compatible
 // with AudioEngine's DrumKit model; no cross-module model import.

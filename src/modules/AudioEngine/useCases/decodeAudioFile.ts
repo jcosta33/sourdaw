@@ -1,6 +1,7 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../stores/audioBufferCache';
-import { decodeAudioFile as nativeDecodeAudioFile, samplesToAudioBuffer } from '../repositories/audioDecoding';
+import { decodeAudioFile as nativeDecodeAudioFile } from '../repositories/audioDecoding/tauriDecoding';
+import { samplesToAudioBuffer } from '../repositories/audioDecoding/samplesToAudioBuffer';
 import { isTauri } from '#/helpers/tauriBridge';
 
 /**
