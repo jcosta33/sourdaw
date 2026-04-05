@@ -1,8 +1,6 @@
 ---
-
 name: write-audit
 description: Load before creating or updating an audit file. Covers what an audit must contain, how to distinguish findings from current state, what makes an issue actionable, and when to create vs update.
-
 ---
 
 # SKILL: write-audit
@@ -39,11 +37,13 @@ Template: `docs/agents/templates/audit.template.md`.
 ## Create vs update
 
 **Update** an existing audit if:
+
 - It covers the same area and its issues are stale
 - Implementation during this session resolved or changed issues it tracks
 - New issues were discovered in an area already audited
 
 **Create** a new audit if:
+
 - No audit exists for this area
 - The existing audit covers a different scope or goal
 - The area has changed enough that updating would require rewriting most of it

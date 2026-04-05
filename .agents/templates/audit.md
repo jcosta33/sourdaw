@@ -52,6 +52,7 @@ inconsistencies, technical debt.
 **Problem:**
 
 **Representative files:**
+
 - `src/`
 
 **Needed:**

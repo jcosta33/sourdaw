@@ -50,6 +50,7 @@ This must surpass Logic's Drum Machine Designer, Ableton's Drum Rack, NI Battery
 ## Crate Structure
 
 Reuse the existing Fermenter crate's DSP modules where possible:
+
 - Filters (SVF, Moog, Diode, Formant, MS-20, SEM) → `fermenter/src/filter.rs`
 - Effects (Reverb, Delay, Chorus, Phaser, Distortion, Compressor, EQ) → `fermenter/src/effects.rs`
 - Envelopes (ADSR, MSEG) → `fermenter/src/envelope.rs`, `fermenter/src/mseg.rs`
@@ -57,6 +58,7 @@ Reuse the existing Fermenter crate's DSP modules where possible:
 - Noise → `fermenter/src/noise.rs`
 
 New drum-specific code in `src-tauri/grinder/` (or `fermenter/src/drums/`):
+
 - Kick synths (808, 909, analog, generic)
 - Snare synths
 - Hi-hat / cymbal synths
@@ -74,6 +76,7 @@ New drum-specific code in `src-tauri/grinder/` (or `fermenter/src/drums/`):
 Same as Fermenter — 128-frame blocks, control-rate updates once per block.
 
 **Canonical order per block:**
+
 1. Drain pending parameter changes from UI thread
 2. Advance step sequencer → generate trigger events
 3. Process incoming MIDI events + sequencer triggers
@@ -108,6 +111,7 @@ Same as Fermenter — 128-frame blocks, control-rate updates once per block.
 Each pad hosts **one or more layers**. Each layer is one of:
 
 ### Sample Player
+
 - Single sample: start, end, loop start/end, loop mode (off, forward, ping-pong), crossfade
 - Root note, coarse/fine tuning
 - Playback modes: one-shot, gated, loop, reverse, reverse one-shot
@@ -118,6 +122,7 @@ Each pad hosts **one or more layers**. Each layer is one of:
 - Velocity zones: each layer triggers only within a velocity range (enables velocity-switched layering)
 
 ### Multi-Sample Player
+
 - Multiple samples mapped across velocity layers and/or note zones
 - Round-robin: cycle through N samples on repeated triggers
 - Velocity crossfading between adjacent layers (smooth, not hard-switched)
@@ -135,6 +140,7 @@ Purpose-built synthesis algorithms per drum category — not generic oscillator+
 The TR-808 kick uses a bridged-T network (Zobel topology) in an op-amp feedback path. It has no separate VCA — oscillation is inherently self-damping (Werner, DAFx-14, CCRMA).
 
 Key physics:
+
 - **6ms frequency shift on attack**: envelope briefly raises Q and center frequency to ~130Hz (C3-11¢) for <1 period — "not long enough to be perceived as a pitch shift" but "greatly affects the attack, making it punchier and crisper"
 - **300ms pitch sigh**: leakage current creates voltage-dependent nonlinearity (softplus: α=14.315, V₀=-0.556) shifting frequency from ~58Hz → ~49Hz over 300ms
 - **Click transient**: the 1ms trigger pulse passes through to output via op-amp — not a separate circuit
@@ -142,6 +148,7 @@ Key physics:
 - **Decay**: high-shelf filter in feedback buffer controls recirculation (50–800ms)
 
 Simplified parametric model:
+
 ```
 body = amp_env * sin(phase)
 phase += (base_freq * (1 + pitch_amount * pitch_env)) / sample_rate
@@ -235,16 +242,20 @@ Any pad can use a full Fermenter voice — wavetable, VA, FM, granular, additive
 Critical for auto-slicing, transient shaping, and transient-preserving time-stretch.
 
 **Energy Envelope Derivative (cheapest)**
+
 ```
 e[m] = Σ_n w[n] x_m[n]²
 odf[m] = max(0, e[m] - e[m-1])
 ```
+
 Useful but misses soft onsets and false-triggers on loud sustain.
 
 **Spectral Flux (best for percussion)**
+
 ```
 odf[m] = Σ_k max(0, |X(m,k)| - |X(m-1,k)|)
 ```
+
 More robust — detects spectral change, not just energy. Requires STFT.
 
 **Complex-Domain / Phase Deviation**
@@ -254,16 +265,17 @@ Tracks phase evolution across STFT frames. Better for pitched onsets, fewer fals
 Compute ODF in bands (low/mid/high), combine. Most robust for drums with distinct spectral shapes. ~2–3× STFT cost.
 
 **Peak Picking Post-Processing**
+
 1. Smooth ODF with moving average
 2. Adaptive threshold: `T[m] = median_filter(odf) + k * std(odf)`
 3. Find local maxima where `odf[m] > T[m]` and separated by minimum inter-onset interval
 
-| Method | Feature | Pros | Cons | Best Use |
-|--------|---------|------|------|----------|
-| Energy derivative | Δ energy | Very cheap | Misses soft onsets | Simple slicing |
-| Spectral flux | Δ magnitude | Robust for percussion | Needs STFT | Loops/drums |
-| Phase/complex | Phase deviation | Fewer false positives | More complex | Melodic percussion |
-| Multi-band fusion | Band ODFs combined | Most robust | Most compute | Full auto-slice |
+| Method            | Feature            | Pros                  | Cons               | Best Use           |
+| ----------------- | ------------------ | --------------------- | ------------------ | ------------------ |
+| Energy derivative | Δ energy           | Very cheap            | Misses soft onsets | Simple slicing     |
+| Spectral flux     | Δ magnitude        | Robust for percussion | Needs STFT         | Loops/drums        |
+| Phase/complex     | Phase deviation    | Fewer false positives | More complex       | Melodic percussion |
+| Multi-band fusion | Band ODFs combined | Most robust           | Most compute       | Full auto-slice    |
 
 ## Transient Shaper Algorithm
 
@@ -284,6 +296,7 @@ output[n] = x_transient[n] * gain_attack + x_sustain[n] * gain_sustain
 ## Auto-Slice Workflow (sample import → kit)
 
 When user drops a drum loop:
+
 1. Compute ODF → onset times
 2. Refine each onset to closest zero-crossing or local minimum (reduces clicks)
 3. If tempo known, optionally snap to beat grid but preserve micro-timing as groove template
@@ -294,6 +307,7 @@ When user drops a drum loop:
 ## Sample Browser & Kit Management
 
 **Sample browser:**
+
 - Tag-based: category (kick, snare, hat, clap, tom, percussion, cymbal, FX), genre (hip-hop, electronic, acoustic, cinematic, lo-fi), character (punchy, warm, bright, dirty, clean)
 - Audio preview on hover/click (plays through browser output, not pad FX)
 - Waveform thumbnail per sample
@@ -302,12 +316,14 @@ When user drops a drum loop:
 - Drag from browser → pad
 
 **Kit management:**
+
 - Kit = complete state (all pads, layers, FX, routing, macros, patterns)
 - Save/load as JSON, tag-based browser
 - A/B compare between two loaded kits
 - Starter templates: 808 Kit, 909 Kit, Acoustic Kit, Lo-Fi Kit, Cinematic Kit, Empty Kit
 
 **Import workflows:**
+
 1. **File → pad**: auto-detect one-shot vs loop (length + pattern analysis). One-shot: trim silence, normalize. Loop: offer play-as-loop, auto-slice, or granular source.
 2. **Loop → machine**: transient detect → slice → assign to sequential pads → create replay pattern
 3. **Multi-sample folder**: detect velocity layers by filename convention or loudness analysis → assign with auto-configured velocity crossfading
@@ -315,18 +331,19 @@ When user drops a drum loop:
 ## Resampling & Pitch-Shifting
 
 **For drum one-shots** (default: resampling, not time-stretch):
+
 - Linear: 2 taps, fastest, audible HF loss
 - Cubic Hermite: 4 taps, good quality/CPU (recommended default)
 - Windowed-sinc: 8–64 taps, best quality, expensive
 
 **For loops** (time-stretch approaches):
 
-| Algorithm | Domain | Transient Handling | Good For | Bad For |
-|-----------|--------|-------------------|----------|---------|
-| Resampling | time | preserves transients | one-shots | loop tempo changes |
-| WSOLA | time | good with alignment | rhythmic loops | extreme polyphonic |
-| Phase vocoder | freq | smears unless phase-locked | pads, ambience | sharp drums |
-| Signalsmith Stretch | hybrid | designed for quality | general purpose | very large stretch |
+| Algorithm           | Domain | Transient Handling         | Good For        | Bad For            |
+| ------------------- | ------ | -------------------------- | --------------- | ------------------ |
+| Resampling          | time   | preserves transients       | one-shots       | loop tempo changes |
+| WSOLA               | time   | good with alignment        | rhythmic loops  | extreme polyphonic |
+| Phase vocoder       | freq   | smears unless phase-locked | pads, ambience  | sharp drums        |
+| Signalsmith Stretch | hybrid | designed for quality       | general purpose | very large stretch |
 
 **WSOLA core**: analysis frames of length L, for each synthesis frame search neighborhood for offset maximizing cross-correlation with previous tail, overlap-add with Hann window. Enhanced WSOLA preserves transients by detecting and protecting transient regions.
 
@@ -370,12 +387,14 @@ pub struct ModalPerc {
 ## DC Blocking & Denormal Protection
 
 **DC blocker** (Julius O. Smith):
+
 ```
 y[n] = x[n] - x[n-1] + R * y[n-1]
 R ≈ 0.995 at 44.1kHz (~32Hz cutoff)
 ```
 
 **Denormal protection:**
+
 - x86: set MXCSR register `_mm_setcsr(csr | 0x8040)` (FTZ bit 15, DAZ bit 6)
 - ARM/Apple Silicon: flush by default
 - Portable fallback: add `1e-15` (alternating sign each buffer) to IIR filter inputs
@@ -396,6 +415,7 @@ Scale all to runtime sample rate: `scaled = round(base * fs / 29761)`
 ## GPU Compute (WGSL Pseudocode)
 
 **Pattern Heatmap Visualization:**
+
 ```wgsl
 struct Step { vel: f32, prob: f32, trig: u32, pad: u32, step: u32 };
 
@@ -416,6 +436,7 @@ struct Step { vel: f32, prob: f32, trig: u32, pad: u32, step: u32 };
 ```
 
 **FFT (Stockham-style) for Spectrum:**
+
 ```wgsl
 @group(0) @binding(0) var<storage, read_write> buf: array<vec2f>; // complex
 @group(0) @binding(1) var<uniform> u: FFTUniforms;
@@ -436,6 +457,7 @@ fn fft_stage(@builtin(global_invocation_id) gid: vec3u) {
 ## Oversampling Filter Design
 
 **Halfband IIR filters** (allpass decomposition) are the standard for real-time:
+
 - ~1 sample latency vs hundreds for linear-phase FIR
 - For 4× oversampling, cascade two halfband stages; for 8×, three
 - Professional stopband: **100–144dB**
@@ -526,6 +548,7 @@ Interpolate between patterns A and B: triggers by probability crossfade, velocit
 ## Kit Macros
 
 8 knobs with kit-wide scope. Default mappings:
+
 - Tune, Decay, Color (filter), Punch (transient), Space (reverb send), Drive, Swing, Dynamics
 
 ---
@@ -569,6 +592,7 @@ The pitch envelope is NOT exponential — it's a coupled RC network with voltage
 ## Filter Secrets
 
 **Saturation INSIDE the feedback path = warm. OUTSIDE = harsh.** This is the single most important DSP insight:
+
 - Moog: each stage saturates inputs independently (`g * (tanh(Vin/2Vt) - tanh(Vfb/2Vt))`)
 - CEM3320 (Prophet): saturates the difference (`gm * tanh((Vin - Vfb) / 2Vt)`)
 - TB-303: inter-stage coupling, first capacitor half-value → "broken 24dB" slope
@@ -596,6 +620,7 @@ Square-law relationship: `amplitude = (m * velocity + b)²`. Apply power of 0.8 
 Sources: Velocity, Note number, Envelope 1 (amp), Envelope 2 (aux), LFO (tempo-syncable), Random (per-trigger), Macros 1–8
 
 Key routings:
+
 - Velocity → Volume (always), → Filter cutoff, → Pitch envelope depth (kicks), → Noise amount (snares)
 - Envelope 2 → Pitch (kick sweep), → Filter cutoff
 - LFO → Pan (auto-pan), → Filter for movement
@@ -712,6 +737,7 @@ Same drag-drop UX as Fermenter with colored rings on knobs.
 # Part 11: Integration with Sourdaw
 
 The drum machine (codename: **Grinder**) is a device type in the DAW, just like Fermenter:
+
 - Receives MIDI from track input
 - Audio output → DAW mixer (master or multi-out)
 - Automation of any parameter from DAW automation lanes

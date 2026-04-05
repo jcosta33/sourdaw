@@ -6,44 +6,49 @@ Done — all scope items complete, build verified clean.
 
 ## Crate checklist
 
-| Crate | Status | Notes |
-|---|---|---|
-| `crates/daw-dsp/` | done | Clean WASM + native DSP library. No violations. |
-| `crates/daw-core/` | done | Clean. IDs and newtypes only. serde + specta. |
-| `crates/proof-chamber/` | done | Clean WASM reverb crate. Correct scoping. |
-| `crates/scoring/` | done | Clean WASM tuner/pitch crate. Correct scoping. |
-| `crates/daw-io/` | done | Populated with `audio_decode` module (symphonia). |
-| `crates/daw-plugin-host/` | done | Fully populated from src-tauri/src/host/. |
-| `crates/daw-collab/` | done | Assessed — keep separate (automerge + mdns-sd justify boundary). |
-| `crates/daw-engine/` | done | RT engine clean. Removed unused clap-sys + libloading deps. |
-| `src-tauri/src/` | done | Commands thinned. host/ slimmed to native_bridge only. |
+| Crate                     | Status | Notes                                                            |
+| ------------------------- | ------ | ---------------------------------------------------------------- |
+| `crates/daw-dsp/`         | done   | Clean WASM + native DSP library. No violations.                  |
+| `crates/daw-core/`        | done   | Clean. IDs and newtypes only. serde + specta.                    |
+| `crates/proof-chamber/`   | done   | Clean WASM reverb crate. Correct scoping.                        |
+| `crates/scoring/`         | done   | Clean WASM tuner/pitch crate. Correct scoping.                   |
+| `crates/daw-io/`          | done   | Populated with `audio_decode` module (symphonia).                |
+| `crates/daw-plugin-host/` | done   | Fully populated from src-tauri/src/host/.                        |
+| `crates/daw-collab/`      | done   | Assessed — keep separate (automerge + mdns-sd justify boundary). |
+| `crates/daw-engine/`      | done   | RT engine clean. Removed unused clap-sys + libloading deps.      |
+| `src-tauri/src/`          | done   | Commands thinned. host/ slimmed to native_bridge only.           |
 
 ## Findings
 
 ### Critical — fixed in this session
 
-**F1: Plugin host code in src-tauri** *(fixed)*
+**F1: Plugin host code in src-tauri** _(fixed)_
+
 - `src-tauri/src/host/` contained full CLAP/VST3 host implementation that belongs in `daw-plugin-host`.
 - Moved: `traits.rs`, `clap_host_impl.rs → clap_host.rs`, `clap_wrapper.rs`, `vst3_wrapper.rs`, `scanner.rs`.
 - `src-tauri/src/host/` now contains only `native_bridge.rs`.
 
-**F2: Circular PluginParameter dependency** *(fixed)*
+**F2: Circular PluginParameter dependency** _(fixed)_
+
 - `host/traits.rs` and `host/clap_wrapper.rs` both imported `PluginParameter` from `commands::plugins`.
 - `PluginParameter` moved to `daw-plugin-host/src/params.rs` with `serde + specta::Type` derives.
 - `commands/plugins.rs` re-exports it as `pub use daw_plugin_host::PluginParameter`.
 
-**F3: Audio decode logic in a Tauri command** *(fixed)*
+**F3: Audio decode logic in a Tauri command** _(fixed)_
+
 - `commands/audio_decode.rs` contained symphonia decoding logic that belongs in `daw-io`.
 - Decode functions moved to `daw-io/src/audio_decode.rs`.
 - `commands/audio_decode.rs` is now a thin wrapper calling `daw_io::decode_audio_file()`.
 
-**F4: Unused deps in daw-engine** *(fixed)*
+**F4: Unused deps in daw-engine** _(fixed)_
+
 - `clap-sys` and `libloading` were in `daw-engine/Cargo.toml` but unused in source.
 - Removed.
 
 ### Non-critical — fixed in a follow-up pass
 
-**F5: RT violations in ClapPluginSlot and ClapWrapper** *(fixed)*
+**F5: RT violations in ClapPluginSlot and ClapWrapper** _(fixed)_
+
 - `ClapPluginSlot::process_with_events()` was allocating `Vec<(u8, u8, i16, bool)>` per block → replaced with a stack array `[(u8, u8, i16, bool); MAX_MIDI_EVENTS]`.
 - `ClapWrapper::process_with_midi()` was allocating `Vec<clap_event_note>` per block → replaced with `midi_scratch: Vec<clap_event_note>` preallocated in `ClapWrapper::new()`, cleared and reused each call.
 - `ClapWrapper::process_audio_internal()` and `ClapPluginSlot::process_audio()` were using temporary Vecs for I/O buffers → replaced with `Box<[[f32; MAX_BUFFER]; 2]>` scratch fields.

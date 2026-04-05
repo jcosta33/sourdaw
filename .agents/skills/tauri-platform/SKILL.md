@@ -1,8 +1,6 @@
 ---
-
 name: tauri-platform
 description: Apply when deciding whether a subsystem belongs in Web APIs or Rust/Tauri, configuring platform-specific behavior, using Tauri commands/events/channels, or dealing with macOS/Windows/Linux runtime differences. This is the authoritative skill for platform placement and shell discipline.
-
 ---
 
 # SKILL: tauri-platform

@@ -66,6 +66,7 @@ The target internal structure for each module is defined in `docs/architecture/0
 ## Your boundary
 
 You may only modify files inside:
+
 - `src/modules/Scoring/`
 - `src/modules/createWebAudioEngine/`
 - `src/modules/Yeast/`
@@ -80,6 +81,7 @@ Do not touch any other module's files for any reason.
 ## Real-time safety warning
 
 `AudioEngine` contains real-time audio paths. Before modifying anything RT-adjacent, verify:
+
 - no new allocations on the RT thread
 - no new locks on the RT thread
 - no React/DOM interaction introduced

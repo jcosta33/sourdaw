@@ -8,57 +8,70 @@ All issues have been verified against the current codebase.
 ## ✅ Done
 
 ### ICE gathering race condition
+
 `createOffer()` and `acceptOffer()` returned SDP before ICE candidates were gathered,
 producing candidate-less SDPs that caused data channels to never open.
 Fixed with `waitForIceGathering()` (10 s timeout, `icegatheringstatechange` event).
 
 ### QR code invite too large
+
 ICE-complete SDPs exceed QR capacity. Fixed with browser-native `CompressionStream`
 (deflate-raw, `z:` prefix for backward compat). `QrInvite` shows a fallback copy
 button if the compressed string is still too large.
 
 ### Peer matching in `acceptAnswer`
+
 Host stored the pending peer by joiner's own UUID but the answer had no way to
 correlate it back. Fixed by embedding `pendingPeerId` in both offer and answer.
 
 ### Color collisions
+
 `assignPeerColor(index)` used array position, causing duplicate colors when peers
 left and rejoined. Replaced with `pickPeerColor(excludeColors)` — first available
 color from `PEER_COLORS` not already in use.
 
 ### Dead ICE candidate code
+
 `onIceCandidate` callback, `addIceCandidate()`, and `getAllPeerIds()` were unused
 after switching to vanilla ICE (gather-then-send). All removed.
 
 ### Dead permissions code
+
 `setJoinRequestHandler`, `requestRole`, `getAllGrants`, and `role.request` message
 type removed — join approval flow was never implemented.
 
 ### Dead transport code
+
 `transferLeadership()`, `tempoRevision` on play, `continuePlayback` on seek —
 all removed. `electNewLeader()` is the only leadership change path.
 
 ### `AssetRef` type and `asset.complete` message
+
 `AssetRef` was never used. `asset.complete` was never sent or handled. Both removed.
 
 ### `approvalRequired` field
+
 `CollaborationState.approvalRequired` was set but never read anywhere. Removed from
 type, store, and all `defaultState` objects.
 
 ### Robustness — try/catch
+
 Added error boundaries in `assetTransfer.handleMessage`, `transportSync.handleMessage`,
 `permissions.handleMessage`, and `automergeSync.receiveSync` (malformed Automerge
 sync messages).
 
 ### Asset filename
+
 `addLocalAsset` now stores `{ blob, name }` so the manifest sent to peers carries
 the real filename instead of `'unknown'`.
 
 ### Backpressure for asset chunks
+
 `sendCrdtSyncBuffered()` added to `PeerConnection` and `PeerConnectionManager`.
 Asset chunk sending uses it to avoid overflowing the data channel buffer.
 
 ### LAN discovery removed
+
 `lanDiscovery.ts` and `NearbyPanel.tsx` deleted — the feature was unimplemented
 and had no consumers.
 
@@ -109,6 +122,7 @@ audio file is missing locally. Peers joining a session mid-project will have sil
 clips.
 
 All four steps completed:
+
 1. `assetHash?: string` was already in the `Clip` model
 2. `importAudioFile.ts` now calls `getAssetTransfer()?.addLocalAsset(file, file.name)` and passes hash to `addClip`
 3. `scheduleAudioClips.ts` already called `requestAsset` on cache miss; replaced `scheduledAudioClips.add` with a module-level `requestedAssets` guard so the clip stays schedulable until the buffer arrives
@@ -121,6 +135,7 @@ All four steps completed:
 ---
 
 ### CG-1 · `latencyMs` never updated
+
 **Severity:** P3 (downgraded — no UI currently shows it)
 
 `PeerInfo.latencyMs` is always `null`. `TransportSync` (which had clock ping/pong)

@@ -1,8 +1,6 @@
 ---
-
 name: ui-patterns
 description: Apply when building or reviewing React UI, accessibility behavior, dense editor surfaces, view composition, renderer surfaces, Tailwind styling, or presentation-layer patterns. This is the authoritative skill for frontend UI implementation.
-
 ---
 
 # SKILL: ui-patterns

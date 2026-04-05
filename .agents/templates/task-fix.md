@@ -52,9 +52,7 @@ What is wrong. Observable symptoms.
 
 List the specific files you expect to modify. If you find yourself touching more than this, stop and note it as a finding.
 
--
-
----
+- ***
 
 ## Constraints
 
@@ -112,20 +110,24 @@ Concrete starting points for the next session if this one ends incomplete.
 Before writing the Handoff, stop. The standard for a fix is brutal simplicity: the minimum change that addresses the root cause, nothing more. Act as a senior engineer reviewing this diff with maximum skepticism. You are looking for anything that shouldn't be there.
 
 **Root cause**
+
 - Does the fix address the root cause, or just the symptom? If the bug were triggered in a slightly different way, would it reappear?
 - Is the root cause documented accurately in the field above? A vague root cause is a sign the fix is also vague.
 
 **Minimality — the hardest part**
+
 - Count the files you changed. Could you fix this bug by touching fewer files? If yes, do it.
 - Read every line you changed. Is every single line necessary to fix the bug? Anything that isn't — revert it. Cleanup, refactoring, and improvements do not belong in a fix branch.
 - Did you change any behaviour beyond what was broken? Any change you cannot directly trace to the bug report is scope creep. Remove it.
 
 **Correctness**
+
 - Run `pnpm deps:validate`. Zero violations.
 - Does `pnpm typecheck` pass?
 - Could this fix introduce a regression in any code path that depends on what you changed? Search for callers.
 
 **Conventions**
+
 - Did you accidentally violate any React 19 rules, architectural boundaries, or coding conventions while fixing the bug? A fix is no excuse for a new violation.
 
 Only when you can answer every one of these honestly should you write the Handoff.

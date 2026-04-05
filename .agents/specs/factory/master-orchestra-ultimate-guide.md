@@ -102,11 +102,11 @@ The design centers around a **section + voice engine** where each voice can comb
 
 - **Native**: DFD-style streaming. Load the attack (first 64-240KB) into RAM, stream the remainder from disk via background thread. `creek` crate or equivalent for async file reading.
 - **Web/WASM**: No disk streaming inside AudioWorklet. Preload samples in memory, enforce hard caps via LOD strategies:
-  - Mic LOD (disable ambient mics first)
-  - Velocity layer LOD (reduce to 2-4)
-  - RR LOD (reduce RR count)
-  - Articulation LOD (disable interval transitions on large sections)
-  - Alternative: progressive loading where samples are fetched and decoded incrementally as needed
+    - Mic LOD (disable ambient mics first)
+    - Velocity layer LOD (reduce to 2-4)
+    - RR LOD (reduce RR count)
+    - Articulation LOD (disable interval transitions on large sections)
+    - Alternative: progressive loading where samples are fetched and decoded incrementally as needed
 
 ---
 
@@ -120,12 +120,12 @@ The design centers around a **section + voice engine** where each voice can comb
 ### `daw-dsp`
 
 - Stateless math primitives plus stateful DSP objects, fixed-size and allocation-free once constructed:
-  - Resamplers (linear / cubic Hermite / windowed-sinc tables)
-  - Filters: RBJ biquad (using the W3C-hosted Audio EQ Cookbook), SVF (TPT/ZDF) and ladder-derived models informed by Vadim Zavalishin's "The Art of VA Filter Design" (rev 2.1.0)
-  - Envelope and smoothing primitives (one-pole, piecewise exponential)
-  - Delay lines, fractional delay interpolators (linear, Lagrange, Thiran)
-  - STFT windows and overlap-add scaffolding
-  - Fast oscillators for additive/resynthesis (recursive sin/cos updates)
+    - Resamplers (linear / cubic Hermite / windowed-sinc tables)
+    - Filters: RBJ biquad (using the W3C-hosted Audio EQ Cookbook), SVF (TPT/ZDF) and ladder-derived models informed by Vadim Zavalishin's "The Art of VA Filter Design" (rev 2.1.0)
+    - Envelope and smoothing primitives (one-pole, piecewise exponential)
+    - Delay lines, fractional delay interpolators (linear, Lagrange, Thiran)
+    - STFT windows and overlap-add scaffolding
+    - Fast oscillators for additive/resynthesis (recursive sin/cos updates)
 
 ### `daw-synth` (orchestral engine module)
 
@@ -315,6 +315,7 @@ zone_list_offsets: [u32; LUT_SIZE + 1]
 ```
 
 On note-on:
+
 1. Compute `vel_bucket`
 2. Get slice of zone IDs
 3. Pick round robin deterministically
@@ -338,11 +339,11 @@ For each active note, per audio block:
 
 ### Resampling tiers
 
-| Resampler     | Math                            | Quality | CPU   | Best use              | Anti-aliasing notes                 |
-|---------------|---------------------------------|---------|-------|-----------------------|-------------------------------------|
-| Linear        | `y = (1-t)*x0 + t*x1`          | lowest  | lowest| draft, noisy textures | droops HF; minimal ringing          |
-| Cubic Hermite | 4-point polynomial              | high    | low-mid| default realtime     | good HF, stable                     |
-| Windowed-sinc | `y = sum x[n]*sinc(pi(n-t))*w[n]`| best  | highest| offline render, solo | can be bandlimited if designed well |
+| Resampler     | Math                              | Quality | CPU     | Best use              | Anti-aliasing notes                 |
+| ------------- | --------------------------------- | ------- | ------- | --------------------- | ----------------------------------- |
+| Linear        | `y = (1-t)*x0 + t*x1`             | lowest  | lowest  | draft, noisy textures | droops HF; minimal ringing          |
+| Cubic Hermite | 4-point polynomial                | high    | low-mid | default realtime      | good HF, stable                     |
+| Windowed-sinc | `y = sum x[n]*sinc(pi(n-t))*w[n]` | best    | highest | offline render, solo  | can be bandlimited if designed well |
 
 Smith's PAPS (Physical Audio Signal Processing) discussion of delay-line interpolation and windowed-sinc provides practical implementation details and highlights why naive interpolation affects frequency response. The interpolation taxonomy (linear, Lagrange/Farrow, windowed-sinc) is explicitly laid out there.
 
@@ -401,6 +402,7 @@ When sustain pedal or long releases are active: freeze the tail into an auxiliar
 ### Articulation scripting engine
 
 A deterministic state machine running on the audio thread, driven by:
+
 - MIDI events (note on/off)
 - CC (mod wheel, expression, vibrato, bow pressure)
 - Timers (time since last note, overlap duration)
@@ -412,6 +414,7 @@ A deterministic state machine running on the audio thread, driven by:
 **Strings (Violin, Viola, Cello, Double Bass — solo and ensemble)**
 
 Sustained:
+
 - **Long / Sustain**: standard bowed note with natural vibrato
 - **Long (non-vibrato)**: colder, more exposed. For pp passages and contemporary music
 - **Long (con sordino / muted)**: mute on bridge. Darker, softer, intimate
@@ -421,6 +424,7 @@ Sustained:
 - **Harmonics**: pure, bell-like overtones
 
 Short:
+
 - **Spiccato**: bouncing bow, short and articulate. Default "short note"
 - **Staccato**: shorter and more defined than spiccato, bowed with stop
 - **Staccatissimo**: extremely short
@@ -429,10 +433,12 @@ Short:
 - **Col legno**: hitting string with bow wood. Dry, percussive click
 
 Repeated/Rhythmic:
+
 - **Tremolo**: rapid back-and-forth bowing. Measured (in tempo) or unmeasured
 - **Trills**: rapid alternation between adjacent notes. Half-step and whole-step variants
 
 Legato:
+
 - **Slurred (fingered)**: change note without changing bow direction
 - **Portamento**: slide between notes. Triggered by lower velocity or CC
 - **Runs**: fast passages with abbreviated transitions
@@ -440,6 +446,7 @@ Legato:
 **Brass (Trumpet, Horn, Trombone, Tuba — solo and ensemble)**
 
 Sustained:
+
 - **Long / Sustain**: standard with natural vibrato
 - **Long (non-vibrato)**: more "military" or "heroic"
 - **Long (muted)**: straight mute, cup mute, harmon mute (with and without stem — each produces a different timbre), plunger mute
@@ -447,9 +454,11 @@ Sustained:
 - **Sforzando**: loud accent attack followed by immediate drop to sustain
 
 Short:
+
 - **Staccato**, **Staccatissimo**, **Marcato**
 
 Effects:
+
 - **Rips**: upward glissando into a note
 - **Falls**: downward glissando away
 - **Shakes / Doits**: lip trills and bends
@@ -457,6 +466,7 @@ Effects:
 - **Muted variants**: straight mute, cup mute, harmon mute (with and without stem), plunger mute — each produces a distinctly different timbre. Essential for jazz/film brass writing.
 
 Legato:
+
 - **Slurred**: smooth without re-tonguing
 - **Tongued**: re-articulated with tongue
 - **Lip trills**: rapid alternation between harmonics
@@ -464,15 +474,19 @@ Legato:
 **Woodwinds (Flute, Oboe, Clarinet, Bassoon, Piccolo, English Horn, Bass Clarinet, Contrabassoon)**
 
 Sustained:
+
 - **Long**, **Long (vibrato / non-vibrato)**, **Long (overblown)**, **Multiphonics**
 
 Short:
+
 - **Staccato**, **Staccatissimo**, **Kiss / Pop** (breathy attack for flute)
 
 Effects:
+
 - **Flutter tongue**, **Trills**, **Runs / Arpeggios**, **Key clicks**, **Overblowing**
 
 Legato:
+
 - **Slurred**, **Tongued legato**, **Speed-dependent** (fast passages auto-use shorter transitions)
 
 **Percussion (Timpani, Snare, Bass Drum, Cymbals, Glockenspiel, Xylophone, Marimba, Vibraphone, Celesta, Tubular Bells, Tam-tam, Triangle, Castanets, Tambourine, etc.)**
@@ -539,11 +553,11 @@ Map CC1 (0-127) to dynamic layer blending:
 - **Natural vibrato**: baked into samples at the performed dynamic level
 - **CC-controlled vibrato depth**: CC2 or dedicated CC crossfades between vibrato and non-vibrato versions
 - **Synthetic vibrato augmentation** for fine control beyond baked-in vibrato:
-  - Pitch LFO: rate 4-7Hz typical (5-9Hz for string vibrato specifically), depth 10-40 cents depending on instrument and dynamic, controllable via CC2
-  - Amplitude LFO: subtle ~1-3dB, slightly slower than pitch (bow pressure variation)
-  - Timbre LFO: modulate a formant filter (timbral change accompanying real vibrato)
-  - Vibrato onset delay: 100-300ms from note start (real players don't vibrate immediately)
-  - Per-note random variation in rate and depth
+    - Pitch LFO: rate 4-7Hz typical (5-9Hz for string vibrato specifically), depth 10-40 cents depending on instrument and dynamic, controllable via CC2
+    - Amplitude LFO: subtle ~1-3dB, slightly slower than pitch (bow pressure variation)
+    - Timbre LFO: modulate a formant filter (timbral change accompanying real vibrato)
+    - Vibrato onset delay: 100-300ms from note start (real players don't vibrate immediately)
+    - Per-note random variation in rate and depth
 - **Spectral envelope modulation (SEM)**: partial amplitudes change with vibrato due to body resonances. Perceptually important for bowed strings. Implement as subtle EQ tilt/formant shift, or spectral envelope interpolation in resynthesis domain.
 
 ### Humanization
@@ -566,6 +580,7 @@ For ensemble patches, crossfade between section sizes:
 - Solo (1 player), Small (2-4), Medium (6-10), Large (12-18, full section)
 
 Requires separate sample sets per size, OR intelligent layering of solo/small recordings:
+
 1. Duplicate the solo voice N times
 2. Per-instance tuning offset (+/-2-5 cents, Gaussian)
 3. Per-instance timing offset (+/-10-30ms)
@@ -583,6 +598,7 @@ This is the most critical component for realism. Bad legato = immediately sounds
 Musicians play note A, then while sustaining play the transition to note B. The actual bowed/blown transition is recorded.
 
 **Coverage typically recorded:**
+
 - Intervals: -12 to +12 semitones
 - Dynamics: 2-3 layers (p, mf, f)
 - Types: slurred/fingered, portamento
@@ -607,6 +623,7 @@ on note_on(new_note, velocity):
 ```
 
 **Crossfade math:**
+
 - `y = (1-a) * y_transition + a * y_sustain`
 - Equal-power: `g0 = cos(pi/2 * a)`, `g1 = sin(pi/2 * a)`
 
@@ -623,6 +640,7 @@ Measure time between previous and current note-on. Use this to select transition
 ### Polyphonic legato (divisi tracking)
 
 When an ensemble plays chords, track which notes are "new" vs "sustained":
+
 - Chord changes C-E-G to C-E-A: C and E sustain (no re-attack), only G->A triggers legato
 - Maintain voice list with pitch assignments
 - New note: find closest existing voice in pitch, trigger legato for that voice
@@ -631,11 +649,13 @@ When an ensemble plays chords, track which notes are "new" vs "sustained":
 ### Synthetic legato fallback
 
 When no recorded transition exists (e.g., interval > 12 semitones):
+
 1. Quick fade-out of old note (20-40ms)
 2. Pitch slide from old note to new note using pitch-bend during first 50-100ms
 3. Quick fade-in of new note
 
 For portamento curves:
+
 - Linear in cents: `p(t) = 2^{(delta * (t/T)) / 12}`
 - Exponential approach: `p(t) = 2^{(delta * (1 - exp(-t/tau))) / 12}`
 
@@ -670,6 +690,7 @@ pub struct MicPosition {
 ```
 
 Typical blends:
+
 - "Close + touch of Room" = punchy, present
 - "Decca Tree only" = classic film score
 - "Decca Tree + Ambient + Outrigger" = massive, cinematic
@@ -680,6 +701,7 @@ Typical blends:
 Room mics are supposed to arrive later; fully aligning them to close mics destroys depth. But close mic arrays at slightly different distances can benefit from small alignment to avoid comb filtering.
 
 **GCC-PHAT delay estimation (offline, UI thread):**
+
 1. Take short analysis segment of both mics (first 50-200ms of sample)
 2. Compute FFTs, cross-power spectrum, apply PHAT weighting, iFFT to correlation
 3. Peak location gives sample delay estimate
@@ -690,12 +712,14 @@ Hot-path: apply integer delay lines (or fractional if needed) per mic. Delay cha
 ### Virtual stage positioning
 
 Standard seating (from audience perspective):
+
 - Violin 1: far left | Violin 2: center-left | Violas: center | Cellos: center-right | Basses: far right (or behind cellos — alternative seating)
 - Flutes: center-left (behind strings) | Oboes: center | Clarinets: center-right | Bassoons: center-right
 - Horns: left (behind woodwinds) | Trumpets: center | Trombones: center-right | Tuba: right
 - Timpani: center-right (far back) | Percussion: right (far back) | Harp: far left
 
 When true mic positions aren't available, simulate:
+
 - **Panning**: orchestral seating position
 - **Distance via convolution**: short room IR, early reflections matching distance
 - **Distance via EQ**: attenuate HF (air absorption: ~1dB/10m above 5kHz)
@@ -712,10 +736,11 @@ Long orchestral IRs require partitioned convolution (direct convolution cost sca
 ### Uniform partitioned convolution
 
 Split IR `h[n]` into partitions of length `L`:
+
 - For each input block:
-  1. FFT input block (overlap-save)
-  2. Multiply spectrum with each partition spectrum
-  3. iFFT and overlap-add
+    1. FFT input block (overlap-save)
+    2. Multiply spectrum with each partition spectrum
+    3. iFFT and overlap-add
 
 ### Latency
 
@@ -752,6 +777,7 @@ Full physical models (e.g., FDTD brass models) are too expensive for real-time u
 ### Vibrato modeling layer
 
 Supplements baked-in sample vibrato:
+
 - Pitch LFO (4-7Hz typical, 5-9Hz for strings; depth 10-40 cents, CC2-controlled)
 - Amplitude LFO (~1-3dB, slightly slower, bow pressure variation)
 - Timbre LFO (formant filter modulation)
@@ -761,6 +787,7 @@ Supplements baked-in sample vibrato:
 ### Release modeling
 
 When release trigger samples aren't available:
+
 - Exponential decay of sustaining sample (~50-200ms)
 - Filtered noise burst for string lift / breath stop (~10-30ms)
 - Room tail (short convolution or algorithmic reverb)
@@ -768,6 +795,7 @@ When release trigger samples aren't available:
 ### String sympathetic resonance
 
 When a cello plays open G, other open strings (C, D, A) vibrate sympathetically:
+
 - Bank of bandpass filters tuned to open string frequencies, excited by main output
 - Subtle but adds physical resonance that samples alone don't capture
 - Controlled by "Sympathetic Resonance" knob (0-100%)
@@ -812,6 +840,7 @@ pub struct ReedTubeModel {
 ### Modal synthesis (percussion and body resonance)
 
 Modal synthesis models an instrument body as a sum of damped modes, consistent with physical modeling formulations in Smith's PAPS and related modal synthesis literature. Useful for:
+
 - Controllable resonance on short articulations
 - Instrument body response under dynamics
 - Subtle "room-body coupling" enhancement
@@ -856,11 +885,13 @@ on note_off(note, velocity):
 ### Auto-divisi
 
 Real orchestras divide (divisi) when playing chords:
+
 - 2-note chord: 8+8 violins
 - 3-note chord: 5+5+6
 - 4+ note chord: 4+4+4+4
 
 Engine detects polyphonic playing and:
+
 1. Reduces volume per note proportionally
 2. Applies per-divisi-group tuning and timing variation
 3. Optionally switches to smaller section size sample
@@ -868,6 +899,7 @@ Engine detects polyphonic playing and:
 ### Intelligent articulation selection
 
 "Auto-articulate" mode:
+
 - Short notes (<200ms) -> staccato
 - Medium (200-500ms) -> sustain with short release
 - Long (>500ms) -> sustain
@@ -918,6 +950,7 @@ For resynthesis, phrase morphing, vibrato SEM, and "texture layers":
 5. Store: partial tracks (f_i(t), A_i(t)), stochastic spectral envelope, transient events (time, band-limited snapshots)
 
 **Key implementation insights from Smith's Spectral Audio Signal Processing:**
+
 - Sinusoidal models are highly effective for tonal instruments (strings, winds, brass)
 - Noise-like components should be modeled as **filtered stochastic terms rather than many sinusoids** — the naive approach of using many sinusoids for noise is a common anti-pattern that wastes CPU
 - Explicit transient models help preserve attacks during time-stretch
@@ -941,18 +974,19 @@ Post-processing ODFs for reliable onset picks follows best practices from Bello/
 
 ### Time-stretch and pitch-shift
 
-| Method               | Domain | Strengths               | Weaknesses                      | Best use                   | Reference                             |
-|----------------------|--------|-------------------------|---------------------------------|----------------------------|---------------------------------------|
-| Resampling           | time   | preserves transients    | changes duration with pitch     | per-note tuning            | Smith PAPS interpolation              |
-| WSOLA                | time   | preserves transients    | wobble on sustained harmonics   | rhythmic phrases, legato   | Driedger's thesis; enhanced WSOLA     |
-| Phase vocoder        | freq   | strong harmonic sustain | transient smear ("phasiness")   | pads, long sustains        | Dolson's tutorial; phase locking improvements |
-| Signalsmith Stretch  | hybrid | strong general-purpose  | best for modest stretch factors | practical realtime control | MIT licensed; documents best ranges   |
+| Method              | Domain | Strengths               | Weaknesses                      | Best use                   | Reference                                     |
+| ------------------- | ------ | ----------------------- | ------------------------------- | -------------------------- | --------------------------------------------- |
+| Resampling          | time   | preserves transients    | changes duration with pitch     | per-note tuning            | Smith PAPS interpolation                      |
+| WSOLA               | time   | preserves transients    | wobble on sustained harmonics   | rhythmic phrases, legato   | Driedger's thesis; enhanced WSOLA             |
+| Phase vocoder       | freq   | strong harmonic sustain | transient smear ("phasiness")   | pads, long sustains        | Dolson's tutorial; phase locking improvements |
+| Signalsmith Stretch | hybrid | strong general-purpose  | best for modest stretch factors | practical realtime control | MIT licensed; documents best ranges           |
 
 ---
 
 ## GPU compute and visualization
 
 GPU is optional for audio generation (GPU readback latency and scheduling are not deterministic enough for the AudioWorklet hot path), but valuable for:
+
 - Visualization (spectrograms, waveform overviews, phase meters)
 - Offline/preview tasks (IR FFT preparation, peak computations)
 - Heavy resynthesis previews (partial-bank rendering and noise spectral shaping can be offloaded to GPU, but realtime audio output stays on CPU because GPU readback/jitter risks glitching)
@@ -1011,6 +1045,7 @@ fn fft_stage(@builtin(global_invocation_id) gid: vec3u) {
 ### Preset format
 
 JSON with:
+
 - `format_version`
 - Instrument racks (sections, articulations)
 - Mic mixer state
@@ -1040,6 +1075,7 @@ The MPE specification (defined by the MIDI Association) formalizes per-note pitc
 **ONNX for classifiers**: ONNX IR and opsets are versioned with monotonically increasing numbers. Native inference uses the `ort` crate (Rust bindings for ONNX Runtime).
 
 **Classifier architecture (practical)**:
+
 - Input: 2-second audio render (per patch or phrase) -> mel-spectrogram image
 - CNN: small 2D conv stack -> dense -> scalar score
 - Dual outputs: "quality score" and "artifact risk" (e.g., transient smear, phasey mic issues)
@@ -1055,6 +1091,7 @@ Each orchestral instrument loads as a separate instance in the DAW's instrument 
 ### Orchestral template system
 
 Pre-built templates with all standard sections loaded, routed, and positioned:
+
 - "Full Orchestra" (60+ tracks)
 - "String Orchestra" (Vln1, Vln2, Vla, Vc, Cb, solos)
 - "Brass Section" (Hrn, Tpt, Tbn, Tba)
@@ -1087,6 +1124,7 @@ All effects from `daw-dsp` available as per-instrument inserts. Same reverb, EQ,
 This is extremely expensive ($100K-$1M+) and time-consuming (months of recording + editing). Produces the highest quality, uniquely owned content.
 
 Recording spec:
+
 - Pitches: chromatic every minor third (C, Eb, F#, A); every semitone for solo/legato
 - Dynamic layers: 5 for sustains (pp, mp, mf, f, ff); 3 for shorts (pp, mf, ff)
 - Round robins: 4 per dynamic for shorts; 2-3 for sustains
@@ -1106,7 +1144,7 @@ Use generative audio models (e.g., MusicGen, Stable Audio) trained on orchestral
 Runtime "quality governor" dynamically disables heavy components when nearing deadline.
 
 | Patch archetype           | Mic count | WASM voices | Notes                              |
-|---------------------------|-----------|-------------|------------------------------------|
+| ------------------------- | --------- | ----------- | ---------------------------------- |
 | Solo violin sustain       | 1-2       | 16-32       | disable per-voice convolution      |
 | Solo violin legato        | 1-2       | 8-16        | interval transitions = extra loads |
 | String section (8 voices) | 2         | 8-12 total  | treat section as true polyphony    |
@@ -1136,6 +1174,7 @@ These are **visibility layers in the same patch format**, not separate products 
 The instrument should feel like **one orchestral section that reveals depth on demand**. A film composer should be able to load "Violins 1," play expressively with macros, and never see the internals unless they want to. A sampling expert should be able to access every legato crossfade parameter, mic alignment tool, and physical modeling knob without fighting through a simplified shell.
 
 The UI satisfies 4 goals:
+
 1. **Composers can play and perform immediately**
 2. **Sound designers can shape articulations and expression**
 3. **Orchestrators can build multi-section ensembles**
@@ -1155,6 +1194,7 @@ The UI satisfies 4 goals:
 #### 2. Macro strip (below top bar)
 
 8 macro knobs with musical labels:
+
 - **Dynamics** (CC1 mapped)
 - **Expression** (CC11 mapped)
 - **Vibrato** (depth/intensity)
@@ -1171,6 +1211,7 @@ This is the **composer safe zone**. A user should be able to browse presets and 
 #### 3. Left panel: Section / Instrument Stack
 
 Shows loaded instruments and their state:
+
 - Instrument name and icon (Violin 1, Cellos, etc.)
 - Current articulation badge
 - Level meter
@@ -1183,6 +1224,7 @@ Purpose: the user always sees "what's loaded" before "how it's configured."
 #### 4. Center panel: Context Inspector
 
 Shows details for the currently selected thing:
+
 - Instrument overview
 - Articulation editor
 - Legato tuning
@@ -1216,6 +1258,7 @@ Structure every inspector page: Header (name, type, bypass, reset) -> Primary co
 Default first-run view. For the composer who wants to write music, not program an instrument.
 
 **Visible:**
+
 - Instrument selector (visual grid: Strings, Brass, Woodwinds, Percussion)
 - Preset browser with musical categories
 - Macro strip (Dynamics, Vibrato, Space, Brightness, Attack, Release)
@@ -1224,6 +1267,7 @@ Default first-run view. For the composer who wants to write music, not program a
 - Basic output meter and oscilloscope
 
 **Hidden:**
+
 - Articulation editor internals
 - Mic position details
 - Legato tuning
@@ -1234,6 +1278,7 @@ Default first-run view. For the composer who wants to write music, not program a
 **User goal:** load an instrument, play expressively, switch articulations with keyswitches, never feel punished by complexity.
 
 **Rules:**
+
 - Only musical labels (no "crossfade time," "GCC-PHAT," "waveguide")
 - Every macro makes an obvious audible change
 - Articulation switching should be obvious and immediate (visual feedback on keyswitch)
@@ -1246,6 +1291,7 @@ Default first-run view. For the composer who wants to write music, not program a
 For users editing sound without needing architecture.
 
 **Visible:**
+
 - Current articulation detail panel
 - CC1/CC11 assignment display and response curves
 - Simple EQ and reverb send
@@ -1255,6 +1301,7 @@ For users editing sound without needing architecture.
 - Macro strip remains visible
 
 **Still hidden:**
+
 - Per-mic-position mixer
 - Deep legato parameters
 - Humanization internals
@@ -1264,6 +1311,7 @@ For users editing sound without needing architecture.
 **User goal:** adjust how an instrument responds to playing. Shape expression curves, tune the basic response.
 
 **Rules:**
+
 - Use large, high-value controls first (dynamics curve, vibrato depth, legato sensitivity)
 - Advanced parameters behind disclosure groups
 - "I want to shape how this instrument feels, not architect a system"
@@ -1275,6 +1323,7 @@ For users editing sound without needing architecture.
 The orchestral suite becomes visibly multi-instrument.
 
 **Visible:**
+
 - Full instrument stack with all loaded sections
 - Add instrument from template (with musical descriptions)
 - Per-instrument mixer (volume, pan, sends)
@@ -1287,6 +1336,7 @@ The orchestral suite becomes visibly multi-instrument.
 - Humanization panel (single Humanize knob + disclosure for per-parameter control)
 
 **Templates for adding instruments:**
+
 - "Add Strings" (Vln1 + Vln2 + Vla + Vc + Cb, pre-panned)
 - "Add Brass Section" (Hrn + Tpt + Tbn + Tba)
 - "Add Solo Violin" (close mic, full legato, detailed expression)
@@ -1296,6 +1346,7 @@ The orchestral suite becomes visibly multi-instrument.
 Each template: sensible defaults, preloaded routings, only important first controls exposed.
 
 **Rules:**
+
 - Creation is template-driven first, not a blank instrument list
 - Musical intent first ("Add warm strings"), technical details second
 
@@ -1306,6 +1357,7 @@ Each template: sensible defaults, preloaded routings, only important first contr
 Phrase-level editing and performance assembly.
 
 **Visible:**
+
 - Phrase tools: MIDI import preview, articulation timeline, tempo map overlay
 - Phrase morphing controls
 - Legato "glue" adjustments (transition timing, overlap behavior)
@@ -1316,6 +1368,7 @@ Phrase-level editing and performance assembly.
 **User goal:** refine how a written passage translates to a performed passage. This is where MIDI becomes music.
 
 **Rules:**
+
 - Every change should be auditionable before committing
 - Timeline visualization should clearly show articulation states over time
 - Non-destructive: original MIDI data preserved alongside performance interpretation
@@ -1327,6 +1380,7 @@ Phrase-level editing and performance assembly.
 Architecture becomes explicit.
 
 **Visible:**
+
 - Full mic position mixer (individual volume/pan/delay per mic)
 - Output routing (stereo, multi-out per mic position)
 - Per-mic EQ and dynamics
@@ -1339,6 +1393,7 @@ Architecture becomes explicit.
 **User goal:** deliberately shape the spatial mix. Control mic blends, tune the room, route to outputs.
 
 **Rules:**
+
 - Signal path must be visually traceable
 - Selecting any node highlights what feeds it and what it feeds
 - Route changes feel reversible and safe
@@ -1351,13 +1406,14 @@ Architecture becomes explicit.
 High-complexity surface for sample developers and sound researchers.
 
 **Visible:**
+
 - Legato engine tuning (crossfade times, velocity thresholds, transition behavior)
 - Humanization internals (per-parameter timing, tuning, dynamic, vibrato amounts)
 - Physical modeling augmentation controls:
-  - Bow noise synthesis (intensity, filtering, CC mapping)
-  - Breath noise (wind instruments)
-  - Sympathetic string resonance (0-100%)
-  - Waveguide / modal resonator parameters
+    - Bow noise synthesis (intensity, filtering, CC mapping)
+    - Breath noise (wind instruments)
+    - Sympathetic string resonance (0-100%)
+    - Waveguide / modal resonator parameters
 - Sample import and custom zone mapping tools
 - Auto-divisi configuration
 - Auto-articulation thresholds
@@ -1370,6 +1426,7 @@ High-complexity surface for sample developers and sound researchers.
 **User goal:** invention. System-level experimentation. Sound research.
 
 **Rules:**
+
 - Every heavy action needs status feedback
 - Every multi-step process shows progress and is cancelable
 - Every result previewable before commit
@@ -1392,11 +1449,13 @@ High-complexity surface for sample developers and sound researchers.
 ### Beginner onboarding
 
 First launch, 3 choices:
+
 - **Play an Orchestra** -> drops into Play level with a full template and macro-rich presets
 - **Build an Ensemble** -> guided flow: choose family, choose instruments, choose character, land in Shape
 - **Open Full Instrument** -> everything visible for advanced users
 
 If the suite is empty, show actionable cards:
+
 - Load Full Orchestra
 - Start with Strings
 - Start with Brass

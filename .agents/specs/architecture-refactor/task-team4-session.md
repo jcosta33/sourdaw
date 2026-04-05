@@ -8,31 +8,36 @@ All outbound violations from Team 4's 5 modules resolved. `pnpm deps:validate` a
 
 ## Module checklist
 
-| Module | Status | Notes |
-|---|---|---|
-| Automation | done | Inlined `DOC_PREFIX_ROOT` |
-| CrdtDocument | done | Migration shims for `automergeRepository`, `restoreSnapshot`, and `saveSnapshot`; `projectProjection` fixed |
-| Collaboration | done | Inlined constants + local types; uses CrdtDocument shims |
-| MIDI | done | Fixed `clipIdCounter` and `UndoEntry` import paths |
-| Arrangement | done | Inlined plugin param arrays; local `MiniMasterSpectrum`; `toggleLoop()` use case |
+| Module        | Status | Notes                                                                                                       |
+| ------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
+| Automation    | done   | Inlined `DOC_PREFIX_ROOT`                                                                                   |
+| CrdtDocument  | done   | Migration shims for `automergeRepository`, `restoreSnapshot`, and `saveSnapshot`; `projectProjection` fixed |
+| Collaboration | done   | Inlined constants + local types; uses CrdtDocument shims                                                    |
+| MIDI          | done   | Fixed `clipIdCounter` and `UndoEntry` import paths                                                          |
+| Arrangement   | done   | Inlined plugin param arrays; local `MiniMasterSpectrum`; `toggleLoop()` use case                            |
 
 ---
 
 ## Findings
 
 ### Model constant leakage (DOC_PREFIX_ROOT)
+
 `DOC_PREFIX_ROOT = 'root'` was imported from `CrdtDocument/models/CrdtDocumentTypes` by 5 external modules (Automation, MIDI, and 3 Arrangement stores). Per model isolation principle, the constant is intentionally opaque and must not be shared across module boundaries. Fix: inline the literal in each consumer. Promoting it to the public surface would maintain the coupling — inlining removes it.
 
 ### Plugin descriptor → instrument model imports (4 violations)
+
 `bacteriaDescriptor`, `crustDescriptor`, `glutenDescriptor`, `grinderDescriptor` all imported `*_PARAMS` arrays from instrument modules' private `models/`. Fix: added `PluginParamDef` type to `DeviceParameter.ts` (minimal shape with only the fields the mapping needs) and inlined each param array in the descriptor file. Duplication is intentional.
 
 ### MiniMasterSpectrum cross-presentation violation
+
 `TrackListView.tsx` (Arrangement) imported from `Workspace/presentations/components/MiniMasterSpectrum`. The component only depends on Arrangement hooks and AudioEngine use cases — it was misplaced. Fix: duplicated to `Arrangement/presentations/views/MiniMasterSpectrum.tsx`, updated TrackListView import. The Workspace original remains (Workspace team's concern).
 
 ### Direct `transportStore.set()` in presentation hook
+
 `useTimelineInteractions.ts` called `transportStore.set({ isLooping: true })` directly. Fix: replaced with `toggleLoop()` guarded by `getTransportState()?.isLooping` check.
 
 ### Collaboration LocalBranchState too narrow
+
 Initial `LocalBranchState` type only defined `branches: { branchId: string }[]`, but `branchStore.set()` requires the full `BranchRecord` shape. Fix: added `LocalBranchRecord` with all 7 fields, matching `BranchRecord` structurally.
 
 ---
@@ -41,12 +46,12 @@ Initial `LocalBranchState` type only defined `branches: { branchId: string }[]`,
 
 Paths created as public migration shims — other modules can import from these:
 
-| Shim path | Exposes | Consumers | Remove when |
-|---|---|---|---|
+| Shim path                                       | Exposes                         | Consumers                                                                                              | Remove when             |
+| ----------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------- |
 | `CrdtDocument/useCases/crdtRepositoryAccess.ts` | `automergeRepository` singleton | `Collaboration/useCases/automergeSync.ts`, `Collaboration/useCases/collaboration/sessionManagement.ts` | Global convergence pass |
-| `CrdtDocument/useCases/restoreSnapshot.ts` | `restoreSnapshot(bundle)` | `Command/useCases/executeAppAction.ts` (pending convergence) | Global convergence pass |
-| `CrdtDocument/useCases/saveSnapshot.ts` | `saveSnapshot()` | `AiRuntime/useCases/dsoEditor/executeDsoEdit.ts` (pending convergence) | Global convergence pass |
-| `Arrangement/useCases/clipIdQueries.ts` | `getNextClipId` | `MIDI/useCases/importMidiFile.ts` | Global convergence pass |
+| `CrdtDocument/useCases/restoreSnapshot.ts`      | `restoreSnapshot(bundle)`       | `Command/useCases/executeAppAction.ts` (pending convergence)                                           | Global convergence pass |
+| `CrdtDocument/useCases/saveSnapshot.ts`         | `saveSnapshot()`                | `AiRuntime/useCases/dsoEditor/executeDsoEdit.ts` (pending convergence)                                 | Global convergence pass |
+| `Arrangement/useCases/clipIdQueries.ts`         | `getNextClipId`                 | `MIDI/useCases/importMidiFile.ts`                                                                      | Global convergence pass |
 
 ---
 

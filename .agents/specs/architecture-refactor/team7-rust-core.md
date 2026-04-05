@@ -55,6 +55,7 @@ Your areas, in suggested order:
 ## Your boundary
 
 You may only modify files inside:
+
 - `crates/`
 - `src-tauri/src/`
 
@@ -69,6 +70,7 @@ Do not touch any TypeScript or frontend code.
 The architecture rule is: commands extract typed input, access app state, delegate to crate logic, and translate errors. They must not be the business layer.
 
 For each command file:
+
 - Business logic inside the handler → move it to the appropriate crate
 - Multi-step orchestration → extract a function in the relevant crate
 - Raw internal error chains leaked to frontend → translate at the bridge boundary
@@ -85,6 +87,7 @@ Lightweight foundation only: IDs, newtypes, units, project model fragments, tran
 ### `crates/daw-engine/`
 
 The RT boundary is absolute. On the audio callback path, verify there are:
+
 - No allocations
 - No locks (`Mutex::lock`, `RwLock::write`)
 - No file/network I/O

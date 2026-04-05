@@ -7,6 +7,7 @@
 > **Consolidated from**: master-plugin.md (structural backbone), master-plugin-research.md (deep Rust code, DSP formulas, academic references), master-plugin-research-2.md (Vital spectral engine complete analysis).
 >
 > **Contradiction resolutions**:
+>
 > - Spectral morph is applied at **runtime** during oscillator playback, not baked (Doc 3 authoritative).
 > - Dattorro plate reverb base sample rate is **29761 Hz** (Doc 2 authoritative).
 > - Quality classifier uses a **64-feature MLP** (Doc 1 authoritative).
@@ -1791,6 +1792,7 @@ impl NoiseState {
 **White noise (from Doc 2)**: uniform `[-1,1]` from a fast PRNG.
 
 **Pink noise -- both approaches (from Doc 2)**:
+
 1. Voss-McCartney (octave sources)
 2. Paul Kellet "pinking filter" (fast IIR cascade)
 
@@ -3405,6 +3407,7 @@ This is a visibility-layer decision, not an engine decision: the backend patch f
 ---
 
 **Tier 1 -- Core (Must Have)**:
+
 - Wavetable oscillator with mipmap anti-aliasing
 - VA oscillator with PolyBLEP
 - TPT SVF filter
@@ -3417,6 +3420,7 @@ This is a visibility-layer decision, not an engine decision: the backend patch f
 - Preset save/load (JSON)
 
 **Tier 2 -- Competitive (Should Have)**:
+
 - FM engine (6-op with DX7 algorithms)
 - Spectral warp modes (runtime, Vital-style)
 - Diode ladder, MS-20, SEM filters
@@ -3430,6 +3434,7 @@ This is a visibility-layer decision, not an engine decision: the backend patch f
 - Portamento/glide
 
 **Tier 3 -- Differentiating (Nice to Have)**:
+
 - Additive engine (CPU + GPU)
 - Granular engine
 - Sampler with SFZ
@@ -3444,6 +3449,7 @@ This is a visibility-layer decision, not an engine decision: the backend patch f
 - Classic synth templates
 
 **Tier 4 -- Advanced (Stretch Goals)**:
+
 - Physical modeling (Karplus-Strong)
 - AI quality classifier (ONNX)
 - Text-to-preset via LLM

@@ -5,6 +5,7 @@
 **Codebase Finding:** **Completely missing.** There is no implementation of the Sample Library Browser in the current codebase. The Rust data models (`PackIndex`, `SampleEntry`), Tauri commands (`search_samples`, etc.), and frontend components have not been built.
 
 ### Missing Features & Architecture:
+
 - **Freesound Integration:** OAuth2 authentication, advanced search API integration, and metadata extraction.
 - **Offline CC0 Libraries:** Integration with GitHub-hosted libraries (VCSL, LMMS Assets, etc.) and academic sources (University of Iowa MIS).
 - **Storage Model:** `index.json` per pack, deterministic sample ID generation (using `blake3`).
@@ -18,17 +19,19 @@
 **Codebase Finding:** **Completely missing.** The Slicer plugin does not exist in the TS frontend or Rust DSP. Only unrelated preset names contain the word "Slicer".
 
 ### Missing Features & Architecture:
+
 - **Progressive Disclosure UI (5 Levels):**
-  - **Level 1 (Play):** Drop a loop, instant auto-slice, playable 16-pad grid.
-  - **Level 2 (Shape):** Sensitivity slider (continuous threshold mapping) with "Suggest" AI detection, dual-color markers (auto vs. manual/locked), and per-pad tuning/envelopes.
-  - **Level 3 (Build):** 16/32 step sequencer with velocity, pitch offset, step retrigger (stutter), and generative Chaos/Randomize controls. Roger Linn-style swing.
-  - **Level 4 (Route):** Per-slice output routing (separate DAW mixer channels), choke groups, and velocity zone mapping.
-  - **Level 5 (Lab):** Advanced transient algorithms (HFC, Spectral Flux, etc.), per-slice time-stretch algorithms, REX2 import, and "Send to Toaster" integration.
+    - **Level 1 (Play):** Drop a loop, instant auto-slice, playable 16-pad grid.
+    - **Level 2 (Shape):** Sensitivity slider (continuous threshold mapping) with "Suggest" AI detection, dual-color markers (auto vs. manual/locked), and per-pad tuning/envelopes.
+    - **Level 3 (Build):** 16/32 step sequencer with velocity, pitch offset, step retrigger (stutter), and generative Chaos/Randomize controls. Roger Linn-style swing.
+    - **Level 4 (Route):** Per-slice output routing (separate DAW mixer channels), choke groups, and velocity zone mapping.
+    - **Level 5 (Lab):** Advanced transient algorithms (HFC, Spectral Flux, etc.), per-slice time-stretch algorithms, REX2 import, and "Send to Toaster" integration.
 - **Waveform Display:** 12-hue palette matching pad colors, draggable slice boundary handles with zero-crossing snap.
 
 ## 3. Levain Orchestral Plugin (Feature Audit)
 
 ### Still Missing / Incomplete (To Be Implemented):
+
 - **Stubbed Parameters:** `tone`, `attack`, and `release` in `engine.rs` are currently no-ops.
 - **Legato Engine:** Legato is off by default (`enabled: false`). No actual transition samples are loaded (relies purely on `SyntheticGlide`).
 - **Expression Engine:** Vibrato amplitude LFO (bow pressure variation) and vibrato timbre LFO (formant filter) are missing. Velocity does not independently select attack character samples.

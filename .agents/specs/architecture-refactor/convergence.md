@@ -43,7 +43,7 @@ Do not begin the convergence pass if any team branch is still open. A partially-
 >
 > Every other agent in this migration was restricted to their team's modules. **You are not.** Your task file may inject a team scope listing Team Platform's paths — ignore that scope for this task. Your working scope is **the entire `src/` directory**. You are explicitly authorized and required to read, edit, and delete files in any module owned by any team.
 >
-> This is not a violation of the architecture rules. It is the designated cleanup agent for the migration. Hesitating to touch a file in `Collaboration/` or `AudioEngine/` because it is "not your module" is the wrong instinct here. Every file in `src/` is in scope. The constraints below are about *what kinds of changes* you may make, not *where* you may make them.
+> This is not a violation of the architecture rules. It is the designated cleanup agent for the migration. Hesitating to touch a file in `Collaboration/` or `AudioEngine/` because it is "not your module" is the wrong instinct here. Every file in `src/` is in scope. The constraints below are about _what kinds of changes_ you may make, not _where_ you may make them.
 
 This pass is owned entirely by **Team Platform**. It requires deliberately crossing every module boundary in the codebase. That is the job.
 
@@ -77,15 +77,19 @@ If you discover a violation outside these categories (e.g. a genuine logic probl
 Before making any changes, build a complete picture. This takes four sweeps.
 
 **Sweep 1 — Migration shims:**
+
 ```bash
 grep -r "TEMPORARY MIGRATION SHIM" src --include="*.ts" --include="*.tsx" -l
 ```
+
 Read each file fully. Understand what it re-exports and why it exists. Find all consumers:
+
 ```bash
 grep -r "from '.*<shim-module-path>'" src --include="*.ts" --include="*.tsx"
 ```
 
 **Sweep 2 — Barrel files:**
+
 ```bash
 # Files that re-export everything from a subdirectory
 grep -rn "^export \* from" src --include="*.ts" --include="*.tsx" -l
@@ -93,15 +97,18 @@ grep -rn "^export \* from" src --include="*.ts" --include="*.tsx" -l
 # Named re-export files (potential pseudo-barrels or lazy aliases)
 grep -rn "^export {" src --include="*.ts" --include="*.tsx" -l
 ```
+
 For each hit, read the file. If the file contains ONLY `export` statements (no logic, no type declarations, no function bodies), it is a barrel or lazy alias.
 
 Look specifically for:
+
 - Any `index.ts` file in `src/` that has re-exports
 - Files named `contracts.ts`, `public.ts`, `api.ts`, `types.ts` in module roots that are pure re-exports
 
 **Sweep 3 — Pass-throughs:**
 
 A pass-through is a use case file where:
+
 - It imports exactly one thing from a repository (or another module)
 - It exports exactly one function
 - That function does nothing except call the import and return its result
@@ -109,9 +116,11 @@ A pass-through is a use case file where:
 Detection is manual — grep cannot reliably distinguish a thin wrapper from a real use case. For each use case file touched during shim removal, read it fully and apply the judgement: does this function add any domain logic (validation, transformation, orchestration, error handling, event emission)? If no, it is a pass-through.
 
 **Sweep 4 — Cross-module violations baseline:**
+
 ```bash
 pnpm deps:validate
 ```
+
 Record the full output. This is the baseline. Every violation must be resolved or documented as a finding before the pass is complete.
 
 Only once the full inventory is complete should you begin making changes.
@@ -132,6 +141,7 @@ Work through the inventory one file at a time. For each shim, barrel, alias, or 
 Do not delete a file before all its consumers are updated. Do not batch multiple files in one step.
 
 **The canonical location rule:**
+
 - If the deleted file was in `useCases/`, consumers should import from the real use case (or, if the pass-through was the only thing calling a repository, import from the repository directly — only if the consumer is inside the same module).
 - If the deleted file was a cross-module re-export (i.e., module A was re-exporting from module B), consumers in other modules must import from module B's public surface directly.
 - If the deleted file was an `index.ts` barrel, consumers should import from the specific file that contains what they need.
@@ -144,12 +154,12 @@ After shims, barrels, and aliases are removed, work through every remaining `pnp
 
 For each violation, determine which category it falls into:
 
-| Category | Action |
-|----------|--------|
-| Consumer of a shim that was just deleted, import not yet updated | Fix: update the import |
+| Category                                                                                                                                  | Action                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Consumer of a shim that was just deleted, import not yet updated                                                                          | Fix: update the import                                                                                       |
 | Direct import of a private path (`models/`, `repositories/`, `presentations/hooks/`, `presentations/components/`) from outside the module | Fix if the fix is a one-line import update; document as finding if it requires a new use case to be designed |
-| Cross-module constant import where the fix is to inline the value | Fix: inline the literal |
-| Architectural violation that requires real domain design work | Document as finding for owning team — do not fix |
+| Cross-module constant import where the fix is to inline the value                                                                         | Fix: inline the literal                                                                                      |
+| Architectural violation that requires real domain design work                                                                             | Document as finding for owning team — do not fix                                                             |
 
 ---
 
@@ -187,8 +197,8 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 **Known consumers:**
 
-| File | Import to update |
-|------|-----------------|
+| File                              | Import to update                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `MIDI/useCases/importMidiFile.ts` | `Arrangement/useCases/clipIdQueries` → `Arrangement/repositories/clipIdCounter` (or new use case) |
 
 **Remove when:** All consumers updated.
@@ -209,9 +219,9 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 **Known consumers:**
 
-| File | Import to update |
-|------|-----------------|
-| `Collaboration/useCases/automergeSync.ts` | All 8 shim functions |
+| File                                                        | Import to update     |
+| ----------------------------------------------------------- | -------------------- |
+| `Collaboration/useCases/automergeSync.ts`                   | All 8 shim functions |
 | `Collaboration/useCases/collaboration/sessionManagement.ts` | All 8 shim functions |
 
 **Remove when:** All consumers updated to call proper use cases.
@@ -232,11 +242,11 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 **Known consumers:**
 
-| File | Import to update |
-|------|-----------------|
+| File                                                          | Import to update                                                       |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `Workspace/presentations/views/Inspector/TrackDevicesSection` | `AudioEngine/stores/pluginScanStore` → `Plugin/stores/pluginScanStore` |
-| `AudioEngine/presentations/views/PluginBrowser` | same |
-| `AudioEngine/presentations/views/PluginScanSettings` | same |
+| `AudioEngine/presentations/views/PluginBrowser`               | same                                                                   |
+| `AudioEngine/presentations/views/PluginScanSettings`          | same                                                                   |
 
 **Remove when:** All three consumers updated.
 
@@ -252,36 +262,36 @@ No additional annotated `TEMPORARY MIGRATION SHIM` files were added by teams 5 o
 
 All `index.ts` barrels and lazy-alias aggregator files have been removed. Consumers now import from specific files. The table below records what existed and what replaced it.
 
-| File | Type | Removed by | Canonical target after removal |
-|------|------|-----------|--------------------------------|
-| `MIDI/useCases/midi.ts` | aggregator barrel | Work D | direct file imports per symbol |
-| `MIDI/useCases/midi/{noteOps,clipOps,fileOps}/index.ts` (3 files) | sub-barrels | Work D | direct file imports |
-| `Automation/useCases/automation/types.ts` | type aggregator | Work E | local-type duplication per §95 in consumers |
-| `Arrangement/useCases/trackQueries/index.ts` | use-case barrel (30+ symbols, 105 import sites) | Work K | direct file imports; cross-module type leaks replaced with local types per §95 |
-| `Arrangement/useCases/vca/index.ts` | use-case barrel | Work K | direct file imports |
-| `Arrangement/useCases/freezeBounce/index.ts` | use-case barrel | Work K | direct file imports |
-| `Arrangement/repositories/track/index.ts` | private-repo barrel | Work K | direct file imports (intra-module) |
-| `AiRuntime/repositories/cloudLlm/index.ts` | repo barrel | Work L | `keyManagement.ts` + `cloudInference.ts` direct |
-| `AiRuntime/repositories/webLlm/index.ts` | repo barrel | Work L | `engineLifecycle.ts` + `toolCalling.ts` direct |
-| `AiRuntime/repositories/nativeEngine/index.ts` | repo barrel | Work L | `lifecycle.ts` + `completions.ts` + `streaming.ts` direct |
-| `AiRuntime/repositories/mixAnalysis/index.ts` | repo barrel | Work L | `readLevels.ts` + `readFrequencyBalance.ts` direct |
-| `AiRuntime/transformers/promptParser/index.ts` | transformer barrel | Work L | `parsing.ts` direct |
-| `AiRuntime/models/presetActions/index.ts` | model barrel | Work L | `registry.ts` direct |
-| `AiRuntime/models/presetActions/presets/index.ts` | model sub-barrel | Work L | per-category files direct |
-| `AiRuntime/models/tools/index.ts` | model barrel | Work L | per-domain tool files direct |
-| `AudioEngine/repositories/audioDecoding/index.ts` | repo barrel | Work L | `tauriDecoding.ts` + `samplesToAudioBuffer.ts` direct |
-| `AudioEngine/repositories/audioEncoders/index.ts` | repo barrel | Work L | per-encoder files direct |
-| `AudioEngine/repositories/devices/index.ts` | repo barrel | Work L | `types.ts` + per-category files direct |
-| `AudioEngine/repositories/nativeAIBridge/index.ts` | repo barrel | Work L | per-operation files direct |
-| `AudioEngine/repositories/offlineScheduler/index.ts` | repo barrel (with cross-module re-exports) | Work L | direct imports; cross-module re-exports routed to proper owners |
-| `AudioEngine/repositories/webMidi/index.ts` | repo barrel | Work L | `state.ts` + `lifecycle.ts` direct |
-| `AudioEngine/repositories/deviceStrategy/index.ts` | side-effect strategy-registration + re-export hybrid | Work L | **renamed** to `setupDeviceStrategies.ts` — not a barrel; runs registration side-effects on import |
-| `Project/repositories/project/index.ts` | repo barrel | Work L | `storageOperations.ts` + `downloadProjectFile.ts` direct |
+| File                                                              | Type                                                 | Removed by | Canonical target after removal                                                                     |
+| ----------------------------------------------------------------- | ---------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------- |
+| `MIDI/useCases/midi.ts`                                           | aggregator barrel                                    | Work D     | direct file imports per symbol                                                                     |
+| `MIDI/useCases/midi/{noteOps,clipOps,fileOps}/index.ts` (3 files) | sub-barrels                                          | Work D     | direct file imports                                                                                |
+| `Automation/useCases/automation/types.ts`                         | type aggregator                                      | Work E     | local-type duplication per §95 in consumers                                                        |
+| `Arrangement/useCases/trackQueries/index.ts`                      | use-case barrel (30+ symbols, 105 import sites)      | Work K     | direct file imports; cross-module type leaks replaced with local types per §95                     |
+| `Arrangement/useCases/vca/index.ts`                               | use-case barrel                                      | Work K     | direct file imports                                                                                |
+| `Arrangement/useCases/freezeBounce/index.ts`                      | use-case barrel                                      | Work K     | direct file imports                                                                                |
+| `Arrangement/repositories/track/index.ts`                         | private-repo barrel                                  | Work K     | direct file imports (intra-module)                                                                 |
+| `AiRuntime/repositories/cloudLlm/index.ts`                        | repo barrel                                          | Work L     | `keyManagement.ts` + `cloudInference.ts` direct                                                    |
+| `AiRuntime/repositories/webLlm/index.ts`                          | repo barrel                                          | Work L     | `engineLifecycle.ts` + `toolCalling.ts` direct                                                     |
+| `AiRuntime/repositories/nativeEngine/index.ts`                    | repo barrel                                          | Work L     | `lifecycle.ts` + `completions.ts` + `streaming.ts` direct                                          |
+| `AiRuntime/repositories/mixAnalysis/index.ts`                     | repo barrel                                          | Work L     | `readLevels.ts` + `readFrequencyBalance.ts` direct                                                 |
+| `AiRuntime/transformers/promptParser/index.ts`                    | transformer barrel                                   | Work L     | `parsing.ts` direct                                                                                |
+| `AiRuntime/models/presetActions/index.ts`                         | model barrel                                         | Work L     | `registry.ts` direct                                                                               |
+| `AiRuntime/models/presetActions/presets/index.ts`                 | model sub-barrel                                     | Work L     | per-category files direct                                                                          |
+| `AiRuntime/models/tools/index.ts`                                 | model barrel                                         | Work L     | per-domain tool files direct                                                                       |
+| `AudioEngine/repositories/audioDecoding/index.ts`                 | repo barrel                                          | Work L     | `tauriDecoding.ts` + `samplesToAudioBuffer.ts` direct                                              |
+| `AudioEngine/repositories/audioEncoders/index.ts`                 | repo barrel                                          | Work L     | per-encoder files direct                                                                           |
+| `AudioEngine/repositories/devices/index.ts`                       | repo barrel                                          | Work L     | `types.ts` + per-category files direct                                                             |
+| `AudioEngine/repositories/nativeAIBridge/index.ts`                | repo barrel                                          | Work L     | per-operation files direct                                                                         |
+| `AudioEngine/repositories/offlineScheduler/index.ts`              | repo barrel (with cross-module re-exports)           | Work L     | direct imports; cross-module re-exports routed to proper owners                                    |
+| `AudioEngine/repositories/webMidi/index.ts`                       | repo barrel                                          | Work L     | `state.ts` + `lifecycle.ts` direct                                                                 |
+| `AudioEngine/repositories/deviceStrategy/index.ts`                | side-effect strategy-registration + re-export hybrid | Work L     | **renamed** to `setupDeviceStrategies.ts` — not a barrel; runs registration side-effects on import |
+| `Project/repositories/project/index.ts`                           | repo barrel                                          | Work L     | `storageOperations.ts` + `downloadProjectFile.ts` direct                                           |
 
 **Exempt from removal (kept intentionally):**
 
-| File | Reason |
-|------|--------|
+| File                                                       | Reason                                                                                                                                                           |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Workspace/presentations/views/Inspector/layouts/index.ts` | Side-effect layout-registration hub. Importing the file registers layout entries with the inspector; it is not a pure re-export barrel. Retained and documented. |
 
 ---
@@ -318,6 +328,7 @@ The following violations were identified during module-by-module migration but w
 - `helpers/Store/Storage/AutomergeStorage.ts → CrdtDocument/repositories/automergeRepository.ts`
 
 **Root cause:** `AutomergeStorage` is CrdtDocument-specific logic misplaced in `helpers/`. Fix requires either:
+
 - (a) moving `AutomergeStorage` into `CrdtDocument/`, or
 - (b) inverting the dependency — defining a CRDT-write port in `helpers/` that `CrdtDocument` implements, so helpers depend on an abstraction rather than reaching into a module.
 
@@ -341,7 +352,7 @@ This task is complete when **all** of the following are true:
 
 - [x] `grep -r "TEMPORARY MIGRATION SHIM" src` returns no results
 - [x] `grep -rn "^export \* from" src --include="*.ts" --include="*.tsx"` returns no results
-- [x] No `index.ts` file anywhere in `src/` contains only re-exports *(exception: `Workspace/.../Inspector/layouts/index.ts` — side-effect registration hub, documented in §5.5)*
+- [x] No `index.ts` file anywhere in `src/` contains only re-exports _(exception: `Workspace/.../Inspector/layouts/index.ts` — side-effect registration hub, documented in §5.5)_
 - [x] No file named `contracts.ts`, `public.ts`, or similar exists as a pure re-export shim
 - [x] The barrel/alias inventory table in §5.5 is complete (every found file listed with disposition)
 - [⚠️] `pnpm deps:validate` returns **zero violations** — 2 structural violations remain (AutomergeStorage, §6.4), owned by CrdtDocument team
@@ -387,6 +398,7 @@ If something belongs on this list but seems urgent, document it as a finding in 
 This section consolidates every architectural follow-up that emerged during (or was descoped from) the convergence pass. It is the single source of truth for the next agent: read this section, pick an item, create a scoped task. Each issue below has its own verification gate — `deps:validate` alone is not sufficient.
 
 > **Classification key:**
+>
 > - **Refactor** — can be done by a single agent in one session via pure file edits. No new domain design required.
 > - **Redesign** — requires cross-module design decisions (schemas, ownership changes, new contracts). Warrants its own spec.
 > - **Out of scope** — non-TypeScript (Rust/Tauri) or requires platform/tooling work.
@@ -423,6 +435,7 @@ This section consolidates every architectural follow-up that emerged during (or 
 2. `Synth/useCases/builtinSynth.ts:12` — `export { type SynthParams, defaultSynthParams, type MpeParams }` re-exporting AudioEngine's types. Consumed by `Transport/scheduleMidiNotes.ts` (passing `SynthParams` opaquely) and by `Synth/useCases/drumKitSynth.ts` (intra-module).
 
 **Resolution:**
+
 1. Removed the dead `AppAction` re-export in `aiPanelActions.ts`. Replaced the direct `AppAction` import with a local type derived from the public use-case signature: `type AppAction = Parameters<typeof executeAppAction>[0]` (§95 consumer-local shape, same pattern as `scheduleMidiNotes.ts:31` `DrumKitDef`).
 2. Removed the cross-module re-export in `builtinSynth.ts`. Migrated `Transport/scheduleMidiNotes.ts` to derive its local `SynthParams` from the Synth public signature: `type SynthParams = ReturnType<typeof getSynthParamsForTrack>` (§95). Migrated `Synth/useCases/drumKitSynth.ts` to the same ReturnType-of-sibling-signature pattern, avoiding any new cross-module model import.
 
@@ -476,20 +489,21 @@ See §6.4 above. Owner: CrdtDocument team.
 
 These are documented here for traceability; do **not** attempt to fix as a TS refactor session:
 
-| Audit | Title | Category |
-|-------|-------|----------|
-| AUDIT-003 | Singleton plugin stores (multi-instancing) | Redesign — CRDT schema change |
-| AUDIT-004 | Volatile CRDT memory trap | Redesign — background patching |
-| AUDIT-005 | Volatile domain state loss | Redesign — lift state into CRDT |
-| AUDIT-008 | JSON IPC audio loops | Deep engineering — SharedArrayBuffer ring |
-| AUDIT-009 | Main-thread DSP scheduling | Deep engineering — port to WASM |
-| AUDIT-011 | Rust crate workspace sprawl | Out of scope — Rust refactor |
-| AUDIT-012 | Controller fatality in `src-tauri` | Out of scope — Rust refactor |
-| AUDIT-014 | Tauri scope persistence | Out of scope — Tauri capabilities |
-| AUDIT-015 | Local branching split-brain | Redesign — migrate branchStore into Automerge |
-| AUDIT-016 | Volatile action history | Redesign — persist actionHistoryStore |
+| Audit     | Title                                      | Category                                      |
+| --------- | ------------------------------------------ | --------------------------------------------- |
+| AUDIT-003 | Singleton plugin stores (multi-instancing) | Redesign — CRDT schema change                 |
+| AUDIT-004 | Volatile CRDT memory trap                  | Redesign — background patching                |
+| AUDIT-005 | Volatile domain state loss                 | Redesign — lift state into CRDT               |
+| AUDIT-008 | JSON IPC audio loops                       | Deep engineering — SharedArrayBuffer ring     |
+| AUDIT-009 | Main-thread DSP scheduling                 | Deep engineering — port to WASM               |
+| AUDIT-011 | Rust crate workspace sprawl                | Out of scope — Rust refactor                  |
+| AUDIT-012 | Controller fatality in `src-tauri`         | Out of scope — Rust refactor                  |
+| AUDIT-014 | Tauri scope persistence                    | Out of scope — Tauri capabilities             |
+| AUDIT-015 | Local branching split-brain                | Redesign — migrate branchStore into Automerge |
+| AUDIT-016 | Volatile action history                    | Redesign — persist actionHistoryStore         |
 
 **Resolved in this session (for cross-reference):**
+
 - AUDIT-001, AUDIT-007, AUDIT-017, AUDIT-022 — fully resolved
 - AUDIT-006 — partial (see §10.1)
 

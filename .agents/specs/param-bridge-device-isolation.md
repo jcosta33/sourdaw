@@ -29,6 +29,7 @@ in persisted state.
 ## Scope
 
 **In scope**
+
 - Fermenter param bridge, store, and panel
 - Toaster param bridge, store, and panel
 - Crust param bridge, store, and panel
@@ -37,6 +38,7 @@ in persisted state.
 - InstrumentsTab event dispatch when creating a new track
 
 **Out of scope**
+
 - Levain (different architecture — single active-device registration)
 - Gluten, Bacteria, Grinder, Proof (already correct)
 - Multi-panel simultaneous editing (one panel per plugin type at a time, same as today)
@@ -77,12 +79,12 @@ in persisted state.
 
 ## Design decisions
 
-| Decision | Chosen | Rejected alternatives |
-|---|---|---|
-| Store shape | Per-device `Record<string, State>` keyed by `deviceId` (matches Gluten pattern) | Focused-device singleton ref — eliminated the stale-UI patch bug too |
-| Bridge signature | Add `deviceId: string` as explicit first param | Context via React prop drilling only — bridges are non-React modules |
-| AppShell panel state | `xxxDeviceId: string \| null` (null = closed) | Separate `open: bool + deviceId: string` — redundant state |
-| Event detail | `{ deviceId: string }` on CustomEvent | No change — inspector already sends deviceId; only AppShell handlers and InstrumentsTab needed updating |
+| Decision             | Chosen                                                                          | Rejected alternatives                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Store shape          | Per-device `Record<string, State>` keyed by `deviceId` (matches Gluten pattern) | Focused-device singleton ref — eliminated the stale-UI patch bug too                                    |
+| Bridge signature     | Add `deviceId: string` as explicit first param                                  | Context via React prop drilling only — bridges are non-React modules                                    |
+| AppShell panel state | `xxxDeviceId: string \| null` (null = closed)                                   | Separate `open: bool + deviceId: string` — redundant state                                              |
+| Event detail         | `{ deviceId: string }` on CustomEvent                                           | No change — inspector already sends deviceId; only AppShell handlers and InstrumentsTab needed updating |
 
 ---
 
@@ -122,6 +124,7 @@ each plugin. The 5-step migration per plugin:
    there.
 
 **Additional callers to update after Fermenter bridge:**
+
 - `src/modules/Fermenter/useCases/presetMorph.ts` — calls `setFermenterParamWithAudio`; needs
   `deviceId` threaded in from the call site (TransformPad).
 
@@ -130,6 +133,7 @@ each plugin. The 5-step migration per plugin:
 ## Test plan
 
 **Manual (per plugin)**
+
 1. Add two tracks of the same plugin type (e.g. two Fermenter tracks).
 2. Open Track A's panel. Move a knob. Confirm Track B's meters/audio are unchanged.
 3. Load a preset on Track A. Inspect Track B's device in the inspector — `parameterValues` must
@@ -137,6 +141,7 @@ each plugin. The 5-step migration per plugin:
 4. Close Track A's panel. Open Track B's panel. Confirm the panel shows Track B's saved values.
 
 **Automated**
+
 - `pnpm deps:validate` → zero violations
 - `pnpm typecheck` → zero errors
 
@@ -163,11 +168,11 @@ each plugin. The 5-step migration per plugin:
 
 ## Implementation progress
 
-| Plugin | Store | Bridge | Panel | AppShell | InstrumentsTab | Status |
-|---|---|---|---|---|---|---|
-| Fermenter | ✅ per-device Record | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | ✅ CustomEvent detail | complete |
-| Toaster | n/a (bridge-only) | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | ✅ CustomEvent detail | complete |
-| Crust | n/a (bridge-only) | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | n/a | complete |
-| ProofChamber | n/a | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | n/a | complete |
-| `pnpm deps:validate` | | | | | | ✅ 10 pre-existing violations (unchanged) |
-| `pnpm typecheck` | | | | | | ✅ zero errors |
+| Plugin               | Store                | Bridge           | Panel            | AppShell          | InstrumentsTab        | Status                                    |
+| -------------------- | -------------------- | ---------------- | ---------------- | ----------------- | --------------------- | ----------------------------------------- |
+| Fermenter            | ✅ per-device Record | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | ✅ CustomEvent detail | complete                                  |
+| Toaster              | n/a (bridge-only)    | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | ✅ CustomEvent detail | complete                                  |
+| Crust                | n/a (bridge-only)    | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | n/a                   | complete                                  |
+| ProofChamber         | n/a                  | ✅ findDeviceRef | ✅ deviceId prop | ✅ deviceId state | n/a                   | complete                                  |
+| `pnpm deps:validate` |                      |                  |                  |                   |                       | ✅ 10 pre-existing violations (unchanged) |
+| `pnpm typecheck`     |                      |                  |                  |                   |                       | ✅ zero errors                            |

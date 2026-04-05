@@ -53,8 +53,8 @@ New location and structure being migrated to.
 Every shim added to preserve backward compatibility while consumers migrate.
 
 | Old path | New path | Consumers | Safe to remove when |
-|----------|----------|-----------|---------------------|
-| | | | |
+| -------- | -------- | --------- | ------------------- |
+|          |          |           |                     |
 
 ---
 
@@ -62,9 +62,9 @@ Every shim added to preserve backward compatibility while consumers migrate.
 
 One row per module. Update status as you go: `pending` / `in-progress` / `done`.
 
-| Module | Status | Notes |
-|--------|--------|-------|
-| | pending | |
+| Module | Status  | Notes |
+| ------ | ------- | ----- |
+|        | pending |       |
 
 ---
 
@@ -124,21 +124,25 @@ Concrete starting points for the next session if this one ends incomplete.
 Before writing the Handoff, stop. A partial migration is a ticking time bomb — it leaves the codebase in an inconsistent state that quietly breaks things downstream. Act as a senior engineer about to approve this migration for merge.
 
 **Completeness — the most important thing**
+
 - Is every module in the checklist above marked `done`? If anything is `in-progress` or `pending`, this task is not complete.
 - Search the codebase right now for imports pointing at the source location. Do not assume you got them all. Use grep. If you find any, fix them before proceeding.
 - Are there empty directories or dead files left at the source location that should have been removed?
 
 **Architecture**
+
 - Run `pnpm deps:validate` right now. Not from a previous checkpoint — right now. Zero violations required.
 - Does `pnpm typecheck` pass cleanly?
 - Did you introduce any new violations while migrating? Moving code is not a license to restructure it.
 
 **Shim contracts**
+
 - Is every shim you added documented in the table with its old path, new path, known consumers, and the condition under which it can be removed?
 - Are the shim targets correct — do they point to the new location?
 - Is your Handoff unambiguous about which shims are still live and exactly what each consuming team needs to do?
 
 **Blast radius**
+
 - Did you touch files outside your team scope without documenting why? A migration that silently edits other teams' modules is a coordination failure.
 
 Only when you can answer every one of these honestly should you write the Handoff.

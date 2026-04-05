@@ -1,8 +1,6 @@
 ---
-
 name: manage-task
 description: Load at the start of every session. Covers how to fill in, maintain, and close out the task file — what goes in each section, when to update it, and what a complete handoff looks like.
-
 ---
 
 # SKILL: manage-task

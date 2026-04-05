@@ -66,6 +66,7 @@ The target internal structure for each module is defined in `docs/architecture/0
 ## Your boundary
 
 You may only modify files inside:
+
 - `src/modules/SoundLibrary/`
 - `src/modules/Levain/`
 - `src/modules/Bacteria/`

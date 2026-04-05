@@ -235,7 +235,7 @@ This pattern is non-compliant even if:
 - the symbol name is the same as the one the consumer already uses
 - there is "nothing to add" to the body
 
-If there is nothing to add, define a proper typed function that calls the repo. The function *is* the boundary.
+If there is nothing to add, define a proper typed function that calls the repo. The function _is_ the boundary.
 
 ### 6.3 When repo return types are not pure models
 
@@ -256,7 +256,7 @@ The DTO is the contract. The repository's entity type stays private.
 
 ### 6.4 Repo types may only cross module boundaries as pure models
 
-A repository may export types that the use case reuses directly *only when those types are pure models* — plain data shapes with no behavior, no framework coupling, and no internal-implementation leakage. `type DocId = string` is a pure model. A class instance, a mutable handle, or a type tied to infrastructure is not.
+A repository may export types that the use case reuses directly _only when those types are pure models_ — plain data shapes with no behavior, no framework coupling, and no internal-implementation leakage. `type DocId = string` is a pure model. A class instance, a mutable handle, or a type tied to infrastructure is not.
 
 When in doubt, define a use-case-owned type.
 
