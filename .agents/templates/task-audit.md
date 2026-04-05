@@ -44,6 +44,7 @@ Load `.agents/skills/write-audit/SKILL.md` before starting.
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
+- **Do not read other specs or research documents** beyond any linked doc provided to you. If context from another spec/research file is needed, ask the user — do not browse `.agents/specs/` or `.agents/research/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 

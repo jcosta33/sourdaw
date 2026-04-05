@@ -76,6 +76,7 @@ One row per module. Update status as you go: `pending` / `in-progress` / `done`.
 - Run `pnpm i` to install dependencies
 - **Run `pnpm deps:validate` after every 10 files — mandatory**
 - Document every shim contract in the table above before continuing past it
+- **Do not read other specs or research documents** beyond the linked doc above. If context from another spec/research file is needed, ask the user — do not browse `.agents/specs/` or `.agents/research/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 

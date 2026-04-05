@@ -58,6 +58,7 @@ Which modules will be touched and what changes in each.
 - Do not merge, rebase, or push unless explicitly instructed
 - Run `pnpm i` to install dependencies
 - Run `pnpm deps:validate` and `pnpm typecheck` after every batch of changes
+- **Do not read other specs or research documents** beyond the linked doc above. If context from another spec/research file is needed, ask the user — do not browse `.agents/specs/` or `.agents/research/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 
