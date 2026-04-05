@@ -10,6 +10,7 @@ import { createUndoEntry } from '../models/UndoEntry';
 import { pushUndo } from '../stores/undoStore';
 import { trackHandlers } from '#/modules/Arrangement/useCases/trackHandlers';
 import { clipHandlers } from '#/modules/Arrangement/useCases/clipHandlers';
+import { restoreHandlers } from '#/modules/Arrangement/useCases/restoreHandlers';
 import { transportHandlers } from '#/modules/Transport/useCases/transportHandlers';
 import { deviceHandlers } from '#/modules/Arrangement/useCases/deviceHandlers';
 import { workspaceHandlers } from '#/modules/Workspace/useCases/workspaceHandlers';
@@ -160,6 +161,7 @@ const dsoSnapshotHandlers: Record<string, ActionHandler<any>> = {
 const handlerRegistry: Record<string, ActionHandler<any>> = {
     ...trackHandlers,
     ...clipHandlers,
+    ...restoreHandlers,
     ...transportHandlers,
     ...deviceHandlers,
     ...workspaceHandlers,

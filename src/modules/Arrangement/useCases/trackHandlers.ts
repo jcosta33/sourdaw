@@ -3,10 +3,8 @@ import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { setTrackInput } from '#/modules/Arrangement/useCases/setTrackInput';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type MidiStoreState, midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
 import { soloTrack } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrack';
@@ -48,80 +46,64 @@ export const trackHandlers = {
 
     removeTrack: {
         execute: (a) => {
+            removeTrack(a.payload.trackId);
+        },
+        describe: (a) => {
+            // Snapshot everything that removeTrack will delete, so the inverse
+            // action (`restoreTrack`) can replay it. Runs pre-execute.
             const track = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
             if (!track) {
-                return;
+                return { label: 'Remove track' };
             }
 
-            // Snapshot everything that removeTrack deletes
             const trackSnapshot = structuredClone(track);
 
             const autoState = automationStore.value;
             const autoLanes = autoState ? autoState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
-            const autoLaneSnapshots = structuredClone(autoLanes);
+            const automationLaneSnapshots = structuredClone(autoLanes);
 
             const midiState = midiStore.value;
             const clipIds = track.clips.map((c) => c.id);
-            const midiSnapshots: MidiStoreState = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+            const midiNotesByClipId: Record<string, unknown> = {};
+            const midiCcByClipId: Record<string, unknown> = {};
+            const midiPitchBendByClipId: Record<string, unknown> = {};
             if (midiState) {
                 for (const cid of clipIds) {
                     if (midiState.notesByClipId[cid]) {
-                        midiSnapshots.notesByClipId[cid] = structuredClone(midiState.notesByClipId[cid]);
+                        midiNotesByClipId[cid] = structuredClone(midiState.notesByClipId[cid]);
                     }
                     if (midiState.ccByClipId[cid]) {
-                        midiSnapshots.ccByClipId[cid] = structuredClone(midiState.ccByClipId[cid]);
+                        midiCcByClipId[cid] = structuredClone(midiState.ccByClipId[cid]);
                     }
                     if (midiState.pitchBendByClipId[cid]) {
-                        midiSnapshots.pitchBendByClipId[cid] = structuredClone(midiState.pitchBendByClipId[cid]);
+                        midiPitchBendByClipId[cid] = structuredClone(midiState.pitchBendByClipId[cid]);
                     }
                 }
             }
 
             const takeLaneState = takeLaneStore.value;
-            const takeLanes = takeLaneState ? takeLaneState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
+            const takeLanes = takeLaneState
+                ? takeLaneState.lanes.filter((l) => l.trackId === a.payload.trackId)
+                : [];
             const takeLaneSnapshots = structuredClone(takeLanes);
 
-            // Execute the actual removal
-            removeTrack(a.payload.trackId);
-
-            // Push callback undo entry
-            pushUndoEntry(
-                'Remove track',
-                () => {
-                    // Undo: restore track, automation, MIDI, take lanes
-                    const state = getTrackStoreState();
-                    if (state) {
-                        setTrackState({ ...state, tracks: [...state.tracks, trackSnapshot] });
-                    }
-                    if (autoLaneSnapshots.length > 0) {
-                        const currentAuto = automationStore.value;
-                        if (currentAuto) {
-                            automationStore.set({ lanes: [...currentAuto.lanes, ...autoLaneSnapshots] });
-                        }
-                    }
-                    const currentMidi = midiStore.value;
-                    if (currentMidi) {
-                        midiStore.set({
-                            notesByClipId: { ...currentMidi.notesByClipId, ...midiSnapshots.notesByClipId },
-                            ccByClipId: { ...currentMidi.ccByClipId, ...midiSnapshots.ccByClipId },
-                            pitchBendByClipId: { ...currentMidi.pitchBendByClipId, ...midiSnapshots.pitchBendByClipId },
-                        });
-                    }
-                    if (takeLaneSnapshots.length > 0) {
-                        const currentTake = takeLaneStore.value;
-                        if (currentTake) {
-                            takeLaneStore.set({ lanes: [...currentTake.lanes, ...takeLaneSnapshots] });
-                        }
-                    }
+            return {
+                label: 'Remove track',
+                inverseAction: {
+                    type: 'restoreTrack',
+                    payload: {
+                        trackId: a.payload.trackId,
+                        trackSnapshot,
+                        automationLaneSnapshots,
+                        midiNotesByClipId,
+                        midiCcByClipId,
+                        midiPitchBendByClipId,
+                        takeLaneSnapshots,
+                    },
                 },
-                () => {
-                    // Redo: remove again
-                    removeTrack(a.payload.trackId);
-                }
-            );
+            };
         },
-        describe: () => ({ label: 'Remove track' }),
-        undoable: false, // handler manages its own undo entry
+        undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'removeTrack'>>,
 
     removeAllTracks: {

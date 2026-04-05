@@ -238,7 +238,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## Fields
 
-- **Status**: VERIFIED - Over 60 usages of the anonymous `pushUndoEntry` closure persist.
+- **Status**: PARTIAL (2026-04-05) — 2 most-egregious sites fixed (AppAction handlers using `pushUndoEntry` in their own `execute` body). Added `restoreTrack` / `restoreClip` typed inverse actions with snapshot-carrying payloads; `trackHandlers.removeTrack` + `clipHandlers.removeClip` now capture pre-execute snapshots in `describe()` and return a typed `inverseAction` instead of registering callback closures. `pushUndoEntry` imports removed from both handler files. **Remaining: 42 call sites in 15 files** — all are live-gesture commits (piano roll drags, timeline edits, automation drawing, clip resize) in presentations/hooks. These need a cross-cutting "snapshot-commit" AppAction pattern (new spec + ~8 new AppAction types + 15-file migration). Also needs a lifetime story for snapshot-bearing inverse actions in the sessionStorage-persisted undo stream (current snapshots would inflate storage). Track as a follow-up session.
 - **Title**: The Callbacks Trapdoor / Deep Orchestration Bypass
 - **Severity**: P1
 - **Area**: frontend

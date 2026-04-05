@@ -3,6 +3,37 @@ import { type DocumentBundle } from '#/modules/CrdtDocument/models/CrdtDocumentT
 export type AppAction =
     | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
+    | {
+          /** Inverse of `removeTrack`. Carries full snapshots of the removed track and its
+           *  satellite state (automation, MIDI, take lanes). Emitted only by the
+           *  `removeTrack` handler's `describe()` — not invoked directly. Payload shapes
+           *  are opaque to the command layer; the Arrangement restore handler casts them. */
+          type: 'restoreTrack';
+          payload: {
+              trackId: string;
+              trackSnapshot: unknown;
+              automationLaneSnapshots: unknown[];
+              midiNotesByClipId: Record<string, unknown>;
+              midiCcByClipId: Record<string, unknown>;
+              midiPitchBendByClipId: Record<string, unknown>;
+              takeLaneSnapshots: unknown[];
+          };
+      }
+    | {
+          /** Inverse of `removeClip`. Carries the removed clip and any ripple-shift plan
+           *  needed to restore neighbour positions. Emitted only by the `removeClip`
+           *  handler's `describe()` — not invoked directly. */
+          type: 'restoreClip';
+          payload: {
+              clipId: string;
+              trackId: string;
+              clipSnapshot: unknown;
+              ripplePlan: { removedClips: unknown[]; shiftedClips: unknown[] } | null;
+              midiNotesSnapshot: unknown | null;
+              midiCcSnapshot: unknown | null;
+              midiPitchBendSnapshot: unknown | null;
+          };
+      }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string } }
     | { type: 'createTrackAlternative'; payload: { trackId: string; name: string; duplicateActive: boolean } }
