@@ -43,7 +43,7 @@ Do not begin the convergence pass if any team branch is still open. A partially-
 >
 > Every other agent in this migration was restricted to their team's modules. **You are not.** Your task file may inject a team scope listing Team Platform's paths — ignore that scope for this task. Your working scope is **the entire `src/` directory**. You are explicitly authorized and required to read, edit, and delete files in any module owned by any team.
 >
-> This is not a violation of the architecture rules. It is the designated cleanup agent for the migration. Hesitating to touch a file in `Collaboration/` or `AudioEngine/` because it is "not your module" is the wrong instinct here. Every file in `src/` is in scope. The constraints below are about *what kinds of changes* you may make, not *where* you may make them.
+> This is not a violation of the architecture rules. It is the designated cleanup agent for the migration. Hesitating to touch a file in `Collaboration/` or `AudioEngine/` because it is "not your module" is the wrong instinct here. Every file in `src/` is in scope. The constraints below are about _what kinds of changes_ you may make, not _where_ you may make them.
 
 This pass is owned entirely by **Team Platform**. It requires deliberately crossing every module boundary in the codebase. That is the job.
 
@@ -77,15 +77,19 @@ If you discover a violation outside these categories (e.g. a genuine logic probl
 Before making any changes, build a complete picture. This takes four sweeps.
 
 **Sweep 1 — Migration shims:**
+
 ```bash
 grep -r "TEMPORARY MIGRATION SHIM" src --include="*.ts" --include="*.tsx" -l
 ```
+
 Read each file fully. Understand what it re-exports and why it exists. Find all consumers:
+
 ```bash
 grep -r "from '.*<shim-module-path>'" src --include="*.ts" --include="*.tsx"
 ```
 
 **Sweep 2 — Barrel files:**
+
 ```bash
 # Files that re-export everything from a subdirectory
 grep -rn "^export \* from" src --include="*.ts" --include="*.tsx" -l
@@ -93,15 +97,18 @@ grep -rn "^export \* from" src --include="*.ts" --include="*.tsx" -l
 # Named re-export files (potential pseudo-barrels or lazy aliases)
 grep -rn "^export {" src --include="*.ts" --include="*.tsx" -l
 ```
+
 For each hit, read the file. If the file contains ONLY `export` statements (no logic, no type declarations, no function bodies), it is a barrel or lazy alias.
 
 Look specifically for:
+
 - Any `index.ts` file in `src/` that has re-exports
 - Files named `contracts.ts`, `public.ts`, `api.ts`, `types.ts` in module roots that are pure re-exports
 
 **Sweep 3 — Pass-throughs:**
 
 A pass-through is a use case file where:
+
 - It imports exactly one thing from a repository (or another module)
 - It exports exactly one function
 - That function does nothing except call the import and return its result
@@ -109,9 +116,11 @@ A pass-through is a use case file where:
 Detection is manual — grep cannot reliably distinguish a thin wrapper from a real use case. For each use case file touched during shim removal, read it fully and apply the judgement: does this function add any domain logic (validation, transformation, orchestration, error handling, event emission)? If no, it is a pass-through.
 
 **Sweep 4 — Cross-module violations baseline:**
+
 ```bash
 pnpm deps:validate
 ```
+
 Record the full output. This is the baseline. Every violation must be resolved or documented as a finding before the pass is complete.
 
 Only once the full inventory is complete should you begin making changes.
@@ -132,6 +141,7 @@ Work through the inventory one file at a time. For each shim, barrel, alias, or 
 Do not delete a file before all its consumers are updated. Do not batch multiple files in one step.
 
 **The canonical location rule:**
+
 - If the deleted file was in `useCases/`, consumers should import from the real use case (or, if the pass-through was the only thing calling a repository, import from the repository directly — only if the consumer is inside the same module).
 - If the deleted file was a cross-module re-export (i.e., module A was re-exporting from module B), consumers in other modules must import from module B's public surface directly.
 - If the deleted file was an `index.ts` barrel, consumers should import from the specific file that contains what they need.
@@ -144,12 +154,12 @@ After shims, barrels, and aliases are removed, work through every remaining `pnp
 
 For each violation, determine which category it falls into:
 
-| Category | Action |
-|----------|--------|
-| Consumer of a shim that was just deleted, import not yet updated | Fix: update the import |
+| Category                                                                                                                                  | Action                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Consumer of a shim that was just deleted, import not yet updated                                                                          | Fix: update the import                                                                                       |
 | Direct import of a private path (`models/`, `repositories/`, `presentations/hooks/`, `presentations/components/`) from outside the module | Fix if the fix is a one-line import update; document as finding if it requires a new use case to be designed |
-| Cross-module constant import where the fix is to inline the value | Fix: inline the literal |
-| Architectural violation that requires real domain design work | Document as finding for owning team — do not fix |
+| Cross-module constant import where the fix is to inline the value                                                                         | Fix: inline the literal                                                                                      |
+| Architectural violation that requires real domain design work                                                                             | Document as finding for owning team — do not fix                                                             |
 
 ---
 
@@ -179,8 +189,8 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 **Known consumers:**
 
-| File | Import to update |
-|------|-----------------|
+| File                              | Import to update                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `MIDI/useCases/importMidiFile.ts` | `Arrangement/useCases/clipIdQueries` → `Arrangement/repositories/clipIdCounter` (or new use case) |
 
 **Remove when:** All consumers updated.
@@ -195,9 +205,9 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 **Known consumers:**
 
-| File | Import to update |
-|------|-----------------|
-| `Collaboration/useCases/automergeSync.ts` | All 8 shim functions |
+| File                                                        | Import to update     |
+| ----------------------------------------------------------- | -------------------- |
+| `Collaboration/useCases/automergeSync.ts`                   | All 8 shim functions |
 | `Collaboration/useCases/collaboration/sessionManagement.ts` | All 8 shim functions |
 
 **Remove when:** All consumers updated to call proper use cases.
@@ -212,11 +222,11 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 **Known consumers:**
 
-| File | Import to update |
-|------|-----------------|
+| File                                                          | Import to update                                                       |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `Workspace/presentations/views/Inspector/TrackDevicesSection` | `AudioEngine/stores/pluginScanStore` → `Plugin/stores/pluginScanStore` |
-| `AudioEngine/presentations/views/PluginBrowser` | same |
-| `AudioEngine/presentations/views/PluginScanSettings` | same |
+| `AudioEngine/presentations/views/PluginBrowser`               | same                                                                   |
+| `AudioEngine/presentations/views/PluginScanSettings`          | same                                                                   |
 
 **Remove when:** All three consumers updated.
 
@@ -224,21 +234,21 @@ Update this table as you audit the codebase. The entries below are known at spec
 
 ### 5.4 Teams 5 and 6 shims
 
-*(To be filled in from their task file handoffs before beginning work.)*
+_(To be filled in from their task file handoffs before beginning work.)_
 
 | Shim file | What it does | Consumers | Canonical target |
-|-----------|-------------|-----------|-----------------|
-| | | | |
+| --------- | ------------ | --------- | ---------------- |
+|           |              |           |                  |
 
 ---
 
 ### 5.5 Barrel and alias inventory
 
-*(To be filled in during §4.1 Sweep 2. One row per file found.)*
+_(To be filled in during §4.1 Sweep 2. One row per file found.)_
 
 | File | Type (barrel/alias/passthrough) | Consumers | Canonical target |
-|------|---------------------------------|-----------|-----------------|
-| | | | |
+| ---- | ------------------------------- | --------- | ---------------- |
+|      |                                 |           |                  |
 
 ---
 

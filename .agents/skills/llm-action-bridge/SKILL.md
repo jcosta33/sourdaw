@@ -1,8 +1,6 @@
 ---
-
 name: llm-action-bridge
 description: Apply when building or reviewing AI/copilot features, prompt handling, voice-command flows, structured-output parsing, tool/action registries, or execution of AI-generated actions. This is the authoritative skill for connecting local AI to safe DAW behavior.
-
 ---
 
 # SKILL: llm-action-bridge

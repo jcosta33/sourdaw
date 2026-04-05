@@ -21,11 +21,9 @@ What the user or system experiences — behavior described from the outside in.
 
 ## Scope
 
-**In scope:**
--
+## **In scope:**
 
-**Non-goals (explicitly out of scope):**
--
+## **Non-goals (explicitly out of scope):**
 
 ---
 
@@ -39,9 +37,7 @@ What the user or system experiences — behavior described from the outside in.
 ## Constraints
 
 - Must follow the domain-driven module architecture (`AGENTS.md`)
--
-
----
+- ***
 
 ## Design decisions
 
@@ -49,8 +45,7 @@ What the user or system experiences — behavior described from the outside in.
 
 **Chosen:**
 
-**Considered and rejected:**
--
+## **Considered and rejected:**
 
 ---
 

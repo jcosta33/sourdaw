@@ -47,8 +47,8 @@ Describe the target structure. What will it look like when done?
 Every public path you add a compatibility shim to. Do not remove a shim until all consumers are migrated.
 
 | Shim path | Forwards to | Safe to remove when |
-|-----------|-------------|---------------------|
-| | | |
+| --------- | ----------- | ------------------- |
+|           |             |                     |
 
 ---
 
@@ -109,25 +109,30 @@ Concrete starting points for the next session if this one ends incomplete.
 Before writing the Handoff, stop. Refactors are high-risk: they touch many files, they drift from intent, and they leave subtle breakage that only shows up later. Act as a senior engineer who did not write this refactor and is about to approve or reject it.
 
 **Architecture — the non-negotiable**
+
 - Run `pnpm deps:validate` right now. Not from memory. Not from a previous checkpoint. Right now. Zero violations required.
 - Did you introduce any new architectural violations while cleaning up old ones? Cross-module internals, barrel files, wrong import paths?
 - Does `pnpm typecheck` pass cleanly?
 
 **Completeness**
+
 - Is there anything still in the old location that should have moved? Search for the old paths explicitly — do not assume.
 - Did you leave behind any empty directories, dead files, or orphaned imports pointing at nothing?
 - Is every module in scope fully migrated, or did you stop partway through one?
 
 **Shim contracts**
+
 - Is every shim you added documented in the table above? Every single one.
 - Are all shim targets correct — do they point to the new location, not the old one?
 - Is it obvious from your Handoff which shims are still live and which consumers must act?
 
 **Behaviour preservation**
+
 - Did you change any behaviour while restructuring? Restructuring means moving and renaming, not rewriting. If you changed logic, justify it explicitly.
 - Did you delete anything that is still needed somewhere?
 
 **Scope**
+
 - Did you touch files outside your team scope without documenting why?
 - Did you make improvements or cleanups unrelated to the refactor? Revert them.
 

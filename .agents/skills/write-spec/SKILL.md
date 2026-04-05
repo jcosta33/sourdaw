@@ -1,8 +1,6 @@
 ---
-
 name: write-spec
 description: Load before creating or updating a spec file. Covers what a spec must contain, how to write verifiable acceptance criteria, when open questions block implementation, and what belongs in a spec vs an audit vs a task file.
-
 ---
 
 # SKILL: write-spec
@@ -50,11 +48,13 @@ Template: `docs/agents/templates/01-spec-template.md`.
 Write criteria as concrete, falsifiable statements:
 
 **Bad:**
+
 - "The UI is responsive"
 - "The feature feels fast"
 - "It handles errors gracefully"
 
 **Good:**
+
 - "The fader renders at the correct position for 0 dB, -6 dB, and -∞ dB"
 - "Response time is under 50 ms for payloads up to 1 MB (measured in Chromium)"
 - "`pnpm deps:validate` passes with zero violations after the migration"

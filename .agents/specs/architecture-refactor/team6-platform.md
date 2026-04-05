@@ -53,6 +53,7 @@ Your areas, in suggested order:
 ## Your boundary
 
 You may only modify files inside:
+
 - `src/helpers/`
 - `src/components/`
 - `src/app/`
@@ -72,6 +73,7 @@ The architecture explicitly flags this as an anti-pattern risk:
 > `src/helpers` absorbs module-specific logic → shadow architecture
 
 Your job:
+
 - Audit every helper for module-specific logic that leaked here from a module — flag it for the owning module's team
 - Ensure `Store/` is a clean, thin base — not a write API
 - Ensure `DependencyInjector/` (`Container.ts`) has a minimal, well-typed public API
@@ -83,6 +85,7 @@ Your job:
 ### `src/components/daw/`
 
 The DAW design system should be:
+
 - Presentation-only — no business logic, no store writes, no use-case calls
 - React 19 conventions throughout (no `forwardRef`, no manual memoization, no `useEffect` for state)
 - Each component does one visual job
@@ -94,6 +97,7 @@ Base Radix/shadcn primitives. Bring any customisations in line with React 19 con
 ### `src/app/`
 
 Bootstrap and initialisation. Look for:
+
 - Business logic buried in `bootstrap.ts` that belongs in a module's use case or repository
 - Incorrect initialisation order (RT-sensitive subsystems initialised too late or too early)
 

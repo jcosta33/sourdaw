@@ -48,9 +48,9 @@ Which files/modules are being worked on in this session, and what the testing go
 
 List every source file whose spec will be created, modified, or deleted in this session. One row per file.
 
-| Source file | Spec status | Action | Layer | Notes |
-|-------------|-------------|--------|-------|-------|
-| | none / exists | create / extend / rewrite / delete | | |
+| Source file | Spec status   | Action                             | Layer | Notes |
+| ----------- | ------------- | ---------------------------------- | ----- | ----- |
+|             | none / exists | create / extend / rewrite / delete |       |       |
 
 - **Spec status:** `none` if no spec exists yet, `exists` if a spec is already present.
 - **Action:** `create` (new spec), `extend` (add missing cases to existing spec), `rewrite` (existing spec is structurally wrong and must be replaced), `delete` (existing spec is testing the wrong thing and should be removed, optionally replaced).
@@ -62,9 +62,9 @@ List every source file whose spec will be created, modified, or deleted in this 
 
 Test utilities that are new to this session. A utility is shared if more than one spec file uses it.
 
-| Utility | Location | Purpose |
-|---------|----------|---------|
-| | `<Module>/_tests/` or `src/helpers/_tests/` | |
+| Utility | Location                                    | Purpose |
+| ------- | ------------------------------------------- | ------- |
+|         | `<Module>/_tests/` or `src/helpers/_tests/` |         |
 
 Examples: dummy factories (`TrackDummy`, `ClipDummy`), EventBus mock, Container reset helper, AudioContext mock extensions, Tauri `invoke` mock helpers.
 
@@ -160,58 +160,70 @@ Concrete starting points for the next session if this one ends incomplete. List 
 Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing these tests as if you didn't write them. You are looking for tests that will rot — flaky tests, tests that re-assert mocks, tests that test the framework instead of the code. Read every spec adversarially.
 
 **Conformance to the testing guide**
+
 - Did you read `docs/06-testing.md` in full? Open it now and scroll through each section while checking your work.
 - Are your examples structurally identical to the examples in the guide for each layer, or did you invent your own shape?
 - Did you use any of the anti-patterns listed in §9 of the guide? React Query wrappers, snapshot tests on dynamic content, real time dependencies, leaked mock state, reliance on the Container's lazy proxy? Remove them.
 
 **Test quality**
+
 - Does each test have a single clear reason to fail? If a test has multiple unrelated assertions, split it.
 - Are your `it` descriptions written as `should ...` / `should not ...` and do they describe the behaviour, not the implementation?
 - Are you asserting on behaviour (what the function does) or on implementation (what functions it called internally)? For use cases, asserting that a repository mock was called is correct — that is the use case's contract. For a transformer, assert on the return value only.
 - Are you testing the happy path AND at least one failure / edge path per exported function?
 
 **Mock hygiene**
+
 - Did you mock anything you should have constructed for real? `DomainEvent` and `AppError` subclasses must be real.
 - Did you mock internals of the file under test? That is wrong — only mock at module boundaries.
 - Does every `beforeEach` reset all mocks (`vi.resetAllMocks()` or explicit resets)? Test isolation is non-negotiable.
 - Is any mock shared via mutable module-level state across tests? Fix it — each test sets up its own.
 
 **Isolation**
+
 - Can every test file run in isolation without the others? Run `pnpm test:run <single-file>` for each and confirm.
 - Does any test depend on test ordering within its `describe`? Fix it.
 - Does any test depend on real time, real timers, real network, real localStorage, real AudioContext, or real Tauri `invoke`? Fix it.
 
 **Coverage of the target**
+
 - For each file in your Target files table, did you cover every exported function?
 - Did you test the clamping / validation paths, not just the happy path?
 - For components, did you test both rendering AND user interactions?
 
 **Architecture**
+
 - Run `pnpm deps:validate` right now. Did your test files introduce any new architectural violations (e.g. a spec importing from another module's internals)?
 - Did you create any `index.ts` files in `_tests/` folders? Don't.
 - Does `pnpm typecheck` pass cleanly?
 
 **Production code changes**
+
 - Did you modify any source file under test? If yes, is the change documented in Decisions with a justification? Is the change minimal (a constructor parameter, an injectable dep) rather than a redesign?
 - If you refactored for testability, did the original tests (if any) still pass after the refactor?
 
 **Completeness**
+
 - Are any `it.skip` / `it.todo` / `describe.skip` blocks left in your files? Remove or convert them to proper tests.
 - Is any test marked `it.only`? Remove.
 
 **If you extended existing specs**
+
 - Do the original tests still pass unchanged? If you had to modify them to add new ones, was the original test wrong, or did you just make them harder to read?
 - Did you keep the existing file's conventions (imports, setup, naming) instead of mixing styles?
 
 **If you rewrote existing specs**
+
 - Is the old behaviour coverage fully preserved? Line-by-line: for every `it` block you removed, is there an equivalent or better `it` in the new file?
 - If coverage was deliberately dropped, is it documented in Decisions with justification?
 
 **If you deleted specs**
+
 - Is each deletion justified in Decisions (e.g. "was asserting implementation details", "was testing the framework")?
 - If the underlying source file still exists and is still exported, did you leave behind a gap? Either replace the deleted spec or add the file to a follow-up Next steps entry.
 
 **If you de-flaked**
+
 - Can you name the specific source of non-determinism you fixed (real timer, shared mutable state, test ordering dependency, race on async work)?
 - Did you re-run the affected test at least 10 times in a row to confirm it is now stable?
 

@@ -1,8 +1,6 @@
 ---
-
 name: documentation-gatekeeper
 description: Load before any non-trivial session. Decides what documentation is required given the scope of the task, enforces sequencing rules, and gates on what must exist before code is written.
-
 ---
 
 # SKILL: documentation-gatekeeper

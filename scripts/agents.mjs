@@ -266,7 +266,6 @@ async function cmdNew(argv) {
     }
 
     const repoRootEarly = getRepoRoot();
-    const specsDir = join(repoRootEarly, '.agents', 'specs');
     const taskTypes = loadTaskTypes(repoRootEarly);
     const teams = loadTeams(repoRootEarly);
 
@@ -279,21 +278,33 @@ async function cmdNew(argv) {
     interactiveType = selectedTypeRaw.split(/\s+—\s+/)[0].trim();
     const taskTypeDef = taskTypes.find(t => t.id === interactiveType);
 
-    // Step 2: Spec (required for feature/migration, optional for others)
-    const specFiles = findMarkdownFiles(specsDir);
-    if (specFiles.length) {
-      const specItems = taskTypeDef?.requiresSpec
-        ? specFiles
-        : ['(skip — no spec)', ...specFiles];
-      const selectedSpec = fzfSelect(specItems, {
-        prompt: 'spec > ',
-        preview: `cat "${specsDir}/{}" 2>/dev/null || echo ""`,
-      });
-      if (!selectedSpec) process.exit(0);
-      if (selectedSpec !== '(skip — no spec)') {
-        specFile = `.agents/specs/${selectedSpec}`;
-        const derived = selectedSpec.split('/').pop().replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
-        title = promptInput(`Title [${derived}]: `, derived);
+    // Step 2: Reference doc — source folder depends on task type.
+    //   feature/audit/migration → .agents/specs
+    //   refactor                → .agents/audits
+    //   spec                    → .agents/research
+    //   fix/tests               → null (no picker)
+    const docsSource = taskTypeDef?.docsSource;
+    if (docsSource) {
+      const docsDir = join(repoRootEarly, '.agents', docsSource);
+      const docsLabel = taskTypeDef?.docsLabel || 'Reference';
+      const skipLabel = `(skip — no ${docsLabel.toLowerCase()})`;
+      const docFiles = findMarkdownFiles(docsDir);
+      if (docFiles.length) {
+        const docItems = taskTypeDef?.requiresDoc
+          ? docFiles
+          : [skipLabel, ...docFiles];
+        const selectedDoc = fzfSelect(docItems, {
+          prompt: `${docsSource} > `,
+          preview: `cat "${docsDir}/{}" 2>/dev/null || echo ""`,
+        });
+        if (!selectedDoc) process.exit(0);
+        if (selectedDoc !== skipLabel) {
+          specFile = `.agents/${docsSource}/${selectedDoc}`;
+          const derived = selectedDoc.split('/').pop().replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
+          title = promptInput(`Title [${derived}]: `, derived);
+        }
+      } else if (taskTypeDef?.requiresDoc) {
+        die(`No ${docsLabel.toLowerCase()} files found under .agents/${docsSource}/ — a ${docsLabel.toLowerCase()} is required for "${interactiveType}" tasks.`);
       }
     }
 

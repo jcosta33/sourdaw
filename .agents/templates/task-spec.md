@@ -107,22 +107,27 @@ Concrete starting points for the next session if this one ends incomplete.
 Before writing the Handoff, stop. A spec that ships with gaps, ambiguities, or unresolved questions will cause a developer to make incorrect assumptions during implementation — and those assumptions compound. Act as a senior engineer who is about to greenlight this spec for implementation and is looking for every reason not to.
 
 **The read-only constraint — check this first**
+
 - Run `git status` right now. Are there any modified source files, config files, or dependencies? If yes, revert them immediately. A spec session produces one output: the spec document.
 
 **Completeness**
+
 - Could a developer start implementation tomorrow with no follow-up questions, based solely on this spec? If the answer is "probably not," the spec is not done.
 - Go through every requirement. Does each one have a testable acceptance criterion? "Should feel responsive" is not an acceptance criterion. "Renders within 16ms on a mid-range device" is.
 - Is every edge case and failure mode addressed? What happens when the network is unavailable? When the input is invalid? When the user cancels mid-flow?
 
 **Scope and boundaries**
+
 - Is the scope of this spec clearly bounded? Could a developer accidentally implement something adjacent but out-of-scope and believe they were following the spec?
 - Does the spec inadvertently describe work that belongs to a different team or a different spec?
 
 **Open questions**
+
 - Are all unresolved questions flagged explicitly for stakeholders? A spec that silently assumes the answer to a contested question is a liability.
 - Is it clear who needs to answer each open question and by when?
 
 **Consistency**
+
 - Are all terms used consistently throughout? Does this spec contradict, duplicate, or conflict with anything in existing specs in `.agents/specs/`?
 
 Only when you can answer every one of these honestly should you write the Handoff.

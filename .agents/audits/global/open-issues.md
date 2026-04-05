@@ -33,6 +33,7 @@ Session-scoped branch metadata sync implemented. A `__branches__` Automerge doc 
 ### ~~RB-1 · Crate workspace sprawl~~ — DONE
 
 Dead reverb code removed:
+
 - `crates/daw-dsp/src/reverb/` — entire directory deleted (5 files: `dattorro.rs`, `engine.rs`, `allpass.rs`, `delay.rs`, `mod.rs`). `ProofChamberEngine` was never exported from `lib.rs`, never registered as a device type, never called from TypeScript.
 - `crates/daw-dsp/src/effects/proof_chamber.rs` — deleted. A 645-line copy of the full `ProofChamber` struct was wired into `WasmPluginInstance` as `"proof-chamber"` type, but had no TypeScript descriptor or device strategy registration — users could not instantiate it.
 - `crates/daw-dsp/src/effects/` — entire directory deleted (compressor, delay, eq, gain, gate, lib, limiter, reverb). All 7 `native-*` DSP effects removed as part of platform-agnostic cleanup.
@@ -40,6 +41,7 @@ Dead reverb code removed:
 - `proofChamberParamBridge.ts` — removed legacy `|| device.type === 'proof-chamber'` check.
 
 Platform-agnostic cleanup completed:
+
 - `NativeDspNode.ts`, `nativeDspProcessor.ts`, `audioCoreProcessor.ts` — deleted.
 - `audio_core.*` WASM files — deleted.
 - `NativeEffectLayouts.tsx` — deleted.
@@ -77,6 +79,7 @@ Live effect landscape: web-based builtins (available everywhere) + premium WASM 
 **Severity:** P1 · **Open** · `deps:validate` violation (`helpers-no-module-imports`)
 
 `src/helpers/Store/Storage/AutomergeStorage.ts` imports:
+
 - `DocId` from `src/modules/CrdtDocument/models/CrdtDocumentTypes`
 - `automergeRepository` from `src/modules/CrdtDocument/repositories/automergeRepository`
 - `getSemanticContext` from `src/modules/CrdtDocument/useCases/semanticChangeContext`
@@ -95,7 +98,7 @@ Platform helpers must not depend on modules. This creates a circular architectur
 
 `src/helpers/Event/appEvents.ts` contains 13 plugin-tab-show event constants (`SHOW_FERMENTER_TAB`, `SHOW_GRINDER_TAB`, `SHOW_TOASTER_TAB`, `SHOW_LEVAIN_TAB`, `SHOW_ORCHESTRAL_TAB`, `SHOW_PROOF_CHAMBER_TAB`, `SHOW_GLUTEN_TAB`, `SHOW_BACTERIA_TAB`, `SHOW_SCORING_TAB`, `SHOW_PROOF_TAB`, `SHOW_YEAST_TAB`, `SHOW_CRUST_TAB`, `SHOW_AUTOMATION_TAB`). These are module-specific domain knowledge baked into a generic platform helper.
 
-Generic cross-cutting events (SAVE_PROJECT, UNDO, REDO, ZOOM_*, etc.) belong here. Plugin-tab events should live in their owning module or in the Workspace module that consumes them.
+Generic cross-cutting events (SAVE*PROJECT, UNDO, REDO, ZOOM*\*, etc.) belong here. Plugin-tab events should live in their owning module or in the Workspace module that consumes them.
 
 **Ownership:** Module owners lead this — the initiative must come from the module side (relocate callers first, then the constants can move out of the helper).
 

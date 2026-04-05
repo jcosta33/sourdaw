@@ -3,7 +3,9 @@
     "id": "feature",
     "label": "Feature",
     "description": "Implement a new feature from a spec",
-    "requiresSpec": true,
+    "docsSource": "specs",
+    "docsLabel": "Spec",
+    "requiresDoc": true,
     "requiresDepsValidate": true,
     "readonly": false
   },
@@ -11,7 +13,9 @@
     "id": "refactor",
     "label": "Refactor",
     "description": "Restructure existing code — cross-module or large-scale changes",
-    "requiresSpec": false,
+    "docsSource": "audits",
+    "docsLabel": "Audit",
+    "requiresDoc": false,
     "requiresDepsValidate": true,
     "readonly": false
   },
@@ -19,7 +23,9 @@
     "id": "fix",
     "label": "Fix",
     "description": "Targeted bug fix — minimal blast radius",
-    "requiresSpec": false,
+    "docsSource": null,
+    "docsLabel": null,
+    "requiresDoc": false,
     "requiresDepsValidate": true,
     "readonly": false
   },
@@ -27,7 +33,9 @@
     "id": "audit",
     "label": "Audit",
     "description": "Read-only investigation — produces an audit document, no code changes",
-    "requiresSpec": false,
+    "docsSource": "specs",
+    "docsLabel": "Spec",
+    "requiresDoc": false,
     "requiresDepsValidate": false,
     "readonly": true
   },
@@ -35,7 +43,9 @@
     "id": "migration",
     "label": "Migration",
     "description": "Move code to a new structure — shim contracts required",
-    "requiresSpec": true,
+    "docsSource": "specs",
+    "docsLabel": "Spec",
+    "requiresDoc": true,
     "requiresDepsValidate": true,
     "readonly": false
   },
@@ -43,7 +53,9 @@
     "id": "spec",
     "label": "Spec",
     "description": "Write a spec document — no code changes",
-    "requiresSpec": false,
+    "docsSource": "research",
+    "docsLabel": "Research",
+    "requiresDoc": false,
     "requiresDepsValidate": false,
     "readonly": true
   },
@@ -51,7 +63,9 @@
     "id": "tests",
     "label": "Tests",
     "description": "Write new tests, improve existing ones, close coverage gaps — follows docs/06-testing.md",
-    "requiresSpec": false,
+    "docsSource": null,
+    "docsLabel": null,
+    "requiresDoc": false,
     "requiresDepsValidate": true,
     "readonly": false
   }

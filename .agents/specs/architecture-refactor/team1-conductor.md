@@ -64,6 +64,7 @@ The target internal structure for each module is defined in `docs/architecture/0
 ## Your boundary
 
 You may only modify files inside:
+
 - `src/modules/Routing/`
 - `src/modules/Toaster/`
 - `src/modules/Transport/`

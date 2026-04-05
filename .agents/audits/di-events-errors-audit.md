@@ -1,6 +1,7 @@
 # DI, Event Handling, and Error Handling Comprehensive Audit
 
 ## Goal
+
 The purpose of this audit is to provide an exhaustive list of architectural violations in the codebase and clear instructions on how to resolve them. This document is intended to be used as a checklist for agents or developers to systematically refactor the codebase.
 
 > **Context update (2026-04-05):** the DI and test primitives (`Container`, `inject()`, `spy`, `injectDependencies`) were redesigned as groundwork before migration began. See `docs/architecture/03-typescript-module.md §4.10` and `docs/06-testing.md §5` for the canonical API. Key facts that inform this audit:
@@ -13,44 +14,46 @@ The purpose of this audit is to provide an exhaustive list of architectural viol
 ---
 
 ## 1. Dependency Injection Violations
+
 **Standard:** Use the `inject` wrapper for all Use Cases, Repositories, and business-layer functions that depend on container-resolved services. This decouples the logic from its dependencies and facilitates testing by allowing dependencies to be swapped via the container at call time.
 
 ### Why it matters right now
+
 In strict mode (dev/test), `Container.getInstance().get(X)` at **module top-level** throws if the token isn't registered when the module evaluates. This catches bootstrap-order bugs that the old lazy-proxy was masking. Every violation below is a potential dev-time crash once you load a spec that transitively imports it.
 
 ### How to Resolve (The `inject` Pattern)
+
 1.  **Wrap the function** (Use Case, Repository, etc.) with `inject`.
 2.  **Define dependencies** in the first argument object — keys are the names the factory receives, values are classes, other injectables, or plain pass-through values.
 3.  **Provide a factory that returns a function.** The inner function is what callers invoke. `inject()`'s return is a callable that, on first call, resolves deps → calls factory(deps) → caches the returned function → calls it with user args.
 4.  **Do not declare Promise-valued deps.** `inject()` throws at construction time if any dep is a Promise — resolve the async module before passing it in (typically during bootstrap).
 
 **Example (Incorrect):**
+
 ```typescript
 const logger = Container.getInstance().get(Logger);
 const eventBus = Container.getInstance().get(EventBus);
 
 export const myUseCase = (data: string) => {
-  logger.info(data);
-  eventBus.emit(new DataEvent(data));
+    logger.info(data);
+    eventBus.emit(new DataEvent(data));
 };
 ```
 
 In dev/test this throws at module load if this file is imported before bootstrap registers `Logger`/`EventBus`. In production it silently returns a lazy proxy that no-ops calls until registration lands — a masked bug.
 
 **Example (Correct):**
+
 ```typescript
 import { inject } from '#/helpers/DependencyInjector/inject';
 import { Logger } from '#/helpers/Logger/Logger';
 import { EventBus } from '#/helpers/Event/EventBus';
 import { DataEvent } from '../events/DataEvent';
 
-export const myUseCase = inject(
-  { logger: Logger, eventBus: EventBus },
-  ({ logger, eventBus }) => (data: string) => {
+export const myUseCase = inject({ logger: Logger, eventBus: EventBus }, ({ logger, eventBus }) => (data: string) => {
     logger.info(data);
     eventBus.emit(new DataEvent(data));
-  }
-);
+});
 ```
 
 Caller side is unchanged: `myUseCase('hello')`. Dependencies resolve at call time, not import time — the file can load in any order.
@@ -69,17 +72,17 @@ import { DataEvent } from '../events/DataEvent';
 import { myUseCase } from './myUseCase';
 
 describe('myUseCase', () => {
-  it('should log the data and emit a DataEvent', () => {
-    const logger = spy<Logger>();
-    const eventBus = spy<EventBus>();
+    it('should log the data and emit a DataEvent', () => {
+        const logger = spy<Logger>();
+        const eventBus = spy<EventBus>();
 
-    injectDependencies(myUseCase, { logger, eventBus });
+        injectDependencies(myUseCase, { logger, eventBus });
 
-    myUseCase('hello');
+        myUseCase('hello');
 
-    expect(logger.info).toHaveBeenCalledWith('hello');
-    expect(eventBus.emit).toHaveBeenCalledWith(expect.any(DataEvent));
-  });
+        expect(logger.info).toHaveBeenCalledWith('hello');
+        expect(eventBus.emit).toHaveBeenCalledWith(expect.any(DataEvent));
+    });
 });
 ```
 
@@ -88,6 +91,7 @@ No `vi.mock()`. No casts. No `beforeEach` — `injectDependencies` resets the co
 ### Violation List
 
 #### Logger & EventBus Violations (using `Container.getInstance().get()`)
+
 - [ ] `src/modules/Bacteria/stores/bacteriaStore.ts:10` (Logger)
 - [ ] `src/modules/Gluten/stores/glutenStore.ts:10` (Logger)
 - [ ] `src/modules/Routing/stores/sidechainStore.ts:10` (Logger)
@@ -146,24 +150,27 @@ No `vi.mock()`. No casts. No `beforeEach` — `injectDependencies` resets the co
 ---
 
 ## 2. Event Handling Violations
+
 **Standard:** Use the Domain `EventBus` for cross-module/application logic. Move event triggers from UI layer (hooks/components) to **Use Cases**.
 
 ### How to Resolve
+
 1.  **Define a Domain Event:** Create a typed event in the module's `events/` folder (e.g., `ExportStartedEvent`).
 2.  **Move Logic to Use Case:**
-    -   Identify the action being performed (e.g., toggling a panel).
-    -   Create/Update a **Use Case** to perform this action.
-    -   Use `inject` in the Use Case to get the `EventBus`.
-    -   Call `eventBus.emit(new MyEvent())` from the Use Case.
+    - Identify the action being performed (e.g., toggling a panel).
+    - Create/Update a **Use Case** to perform this action.
+    - Use `inject` in the Use Case to get the `EventBus`.
+    - Call `eventBus.emit(new MyEvent())` from the Use Case.
 3.  **Update UI:**
-    -   The hook or component should only call the Use Case.
-    -   Example: Instead of `document.dispatchEvent(new CustomEvent('sourdaw:open-export'))`, call `openExportUseCase()`.
+    - The hook or component should only call the Use Case.
+    - Example: Instead of `document.dispatchEvent(new CustomEvent('sourdaw:open-export'))`, call `openExportUseCase()`.
 4.  **Subscribe via EventBus:**
-    -   In `AppShell.tsx` or other listeners, replace `document.addEventListener` with `eventBus.on(MyEvent, handler)`.
+    - In `AppShell.tsx` or other listeners, replace `document.addEventListener` with `eventBus.on(MyEvent, handler)`.
 
 ### Violation List
 
 #### Application Logic Triggered via DOM Events
+
 - [ ] `src/modules/Command/presentations/hooks/useGlobalKeyboardShortcuts.ts:127` (Voice command - should be Use Case)
 - [ ] `src/modules/Command/presentations/hooks/useGlobalKeyboardShortcuts.ts:155` (Scroll to playhead - should be Use Case)
 - [ ] `src/modules/Command/models/commands/projectCommands.ts:33` (OPEN_EXPORT - should be Use Case)
@@ -172,6 +179,7 @@ No `vi.mock()`. No casts. No `beforeEach` — `injectDependencies` resets the co
 - [ ] `src/modules/Workspace/useCases/togglePanel/zoomOperations.ts:10` (zoom-to-fit)
 
 #### UI Listeners for Domain Logic (Move to EventBus)
+
 - [ ] `src/modules/Workspace/presentations/views/AppShell.tsx:180-304` (Tab switching listeners)
 - [ ] `src/modules/Workspace/presentations/hooks/useAppEventHandlers.ts:41-47` (Save, Undo, Redo, etc.)
 - [ ] `src/modules/Workspace/presentations/components/NotificationToast.tsx:33` (sourdaw:notify)
@@ -179,13 +187,16 @@ No `vi.mock()`. No casts. No `beforeEach` — `injectDependencies` resets the co
 ---
 
 ## 3. Error Handling Violations
+
 **Standard:** Throw domain-specific errors instead of generic `Error`.
 
 ### How to Resolve
+
 1.  **Define Domain Error:** Create a class extending `Error` in the module's `errors/` folder.
 2.  **Replace Throw:** Replace `throw new Error('msg')` with `throw new MyModuleError('msg')`.
 
 ### Violation List
+
 - [ ] `src/modules/AiGeneration/useCases/generateMidiVariations.ts:24, 29`
 - [ ] `src/modules/AudioEngine/useCases/offlineRender.ts:29, 39`
 - [ ] `src/modules/CrdtDocument/useCases/sdawFileFormat.ts:82, 87, 96`
@@ -195,9 +206,11 @@ No `vi.mock()`. No casts. No `beforeEach` — `injectDependencies` resets the co
 ---
 
 ## 4. Heavy Hooks Refactoring Checklist
+
 **Standard:** Hooks should delegate business logic to Use Cases wrapped in `inject`.
 
 ### `useGlobalKeyboardShortcuts.ts`
+
 - [ ] Create `ExecuteKeyboardShortcut` Use Case wrapped in `inject`.
 - [ ] Move key-to-action mapping from the hook to the Use Case.
 - [ ] Inject necessary dependencies (e.g., `trackStore`, `workspaceStore`, `eventBus`) into the Use Case.
