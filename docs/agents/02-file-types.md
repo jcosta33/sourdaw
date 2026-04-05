@@ -11,6 +11,7 @@ Definitions, placement rules, required sections, and completion criteria for eac
 An audit is not a to-do list. It is an honest description of reality. It may contain a prioritised issue list, but the primary job is accurate observation — not prescription.
 
 **When to create one:**
+
 - Before refactoring, migrating, or significantly changing an area you do not already understand
 - When a feature area has known UX, architecture, or quality problems that need to be made legible before work begins
 - When handing off an area to another agent or session
@@ -18,6 +19,7 @@ An audit is not a to-do list. It is an honest description of reality. It may con
 **Where it lives:** `.agents/audits/<area>/<name>.md` or `.agents/audits/<name>.md` for repo-wide audits
 
 **Required sections:**
+
 ```
 # <Title>
 
@@ -70,6 +72,7 @@ The audit accurately reflects the current state of the area it covers. A reader 
 A spec is the contract between intent and code. An agent implementing from a spec should be able to verify completion mechanically against acceptance criteria.
 
 **When to create one:**
+
 - Before implementing any feature with more than trivial scope
 - When multiple agents or sessions need to work toward the same goal without diverging
 - When the implementation has real design choices that need to be made explicit before code is written
@@ -77,6 +80,7 @@ A spec is the contract between intent and code. An agent implementing from a spe
 **Where it lives:** `.agents/specs/<name>.md`
 
 **Required sections:**
+
 ```
 # <Feature name>
 
@@ -133,6 +137,7 @@ Research files are not opinion pieces. They synthesise external information and 
 **Relationship to other types:** Research is upstream of spec. If research exists for an area, a spec must also exist before implementation begins. The spec translates research findings into specific requirements and acceptance criteria.
 
 **When a developer creates one:**
+
 - When implementing a DSP algorithm with published math
 - When choosing between external libraries or approaches
 - When implementation depends on understanding a standard, protocol, or API
@@ -142,6 +147,7 @@ Research files are not opinion pieces. They synthesise external information and 
 Move to `.agents/research/done/<topic>.md` when the findings have been fully applied.
 
 **Required sections:**
+
 ```
 # <Topic>
 
@@ -178,6 +184,7 @@ The findings are specific enough to implement from. Every significant claim has 
 Skills are not tutorials. They are operational guides — written for an agent that is about to write or review code in that domain.
 
 **When to create one:**
+
 - When the same architectural rules need to be applied consistently across many sessions
 - When a domain has non-obvious constraints that agents repeatedly get wrong
 - When a major subsystem has enough nuance that starting work without it leads to violations
@@ -185,6 +192,7 @@ Skills are not tutorials. They are operational guides — written for an agent t
 **Where it lives:** `.agents/skills/<name>/SKILL.md`
 
 **Format:**
+
 ```
 # SKILL: <name>
 
@@ -236,6 +244,7 @@ At the start of any non-trivial agent session. The launcher (`anew "title"`) cre
 **Where it lives:** `.agents/tasks/<slug>.md` — gitignored, local to the worktree
 
 **Required sections:**
+
 ```
 # <Task title>
 

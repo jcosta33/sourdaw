@@ -330,7 +330,9 @@ impl NeuralCapture {
     }
 
     pub fn is_ready(&self) -> bool {
-        self.engine_mode != EngineMode::Circuit && self.model_loaded && self.warmup_samples_remaining == 0
+        self.engine_mode != EngineMode::Circuit
+            && self.model_loaded
+            && self.warmup_samples_remaining == 0
     }
 
     pub fn latency_samples(&self) -> u32 {

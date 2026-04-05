@@ -62,7 +62,10 @@ impl LanDiscovery {
         let service = ServiceInfo::new(
             SERVICE_TYPE,
             &instance_name,
-            &format!("{}.local.", hostname::get().unwrap_or_default().to_string_lossy()),
+            &format!(
+                "{}.local.",
+                hostname::get().unwrap_or_default().to_string_lossy()
+            ),
             "",
             port,
             properties,
@@ -119,11 +122,7 @@ impl LanDiscovery {
                                 .get_property_val_str(PROPERTY_APPROVAL_REQUIRED)
                                 .unwrap_or("false")
                                 == "true",
-                            addresses: info
-                                .get_addresses()
-                                .iter()
-                                .map(|a| a.to_string())
-                                .collect(),
+                            addresses: info.get_addresses().iter().map(|a| a.to_string()).collect(),
                             port: info.get_port(),
                         };
                         if let Ok(mut map) = discovered.lock() {

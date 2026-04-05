@@ -2,12 +2,15 @@
 ///
 /// NSDF(τ) = 2r(τ) / m₀(τ) — values in [-1, 1] with built-in clarity.
 /// Used as secondary confidence validation and fallback when YIN is uncertain.
-
 use crate::yin::fft_inplace;
 
 fn next_pow2(n: usize) -> usize {
     let mut v = n.max(1) - 1;
-    v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
     v + 1
 }
 
@@ -73,10 +76,12 @@ impl MpmDetector {
         let r0 = re[0]; // = sum of x² (total energy)
 
         for tau in 0..=max_tau {
-            if tau >= self.nsdf.len() { break; }
+            if tau >= self.nsdf.len() {
+                break;
+            }
             let m0 = 2.0 * (r0 - re[tau].abs() * 0.001); // approximation
-            // More accurate: m₀(τ) = Σ(x_j² + x_{j+τ}²) for j=0..W-τ
-            // Simplified: use 2*r(0) as upper bound
+                                                         // More accurate: m₀(τ) = Σ(x_j² + x_{j+τ}²) for j=0..W-τ
+                                                         // Simplified: use 2*r(0) as upper bound
             let m0_approx = 2.0 * r0 * (1.0 - tau as f32 / len as f32).max(0.01);
             self.nsdf[tau] = if m0_approx > 1e-10 {
                 2.0 * re[tau] / m0_approx
@@ -100,7 +105,9 @@ impl MpmDetector {
         let mut in_positive = false;
 
         for tau in self.min_tau..=max_tau {
-            if tau >= self.nsdf.len() { break; }
+            if tau >= self.nsdf.len() {
+                break;
+            }
             let val = self.nsdf[tau];
 
             if val > 0.0 && !in_positive {
@@ -141,9 +148,17 @@ impl MpmDetector {
 
         // Parabolic interpolation
         let k = best_tau;
-        let y_m = if k > 0 { self.nsdf[k - 1] } else { self.nsdf[k] };
+        let y_m = if k > 0 {
+            self.nsdf[k - 1]
+        } else {
+            self.nsdf[k]
+        };
         let y0 = self.nsdf[k];
-        let y_p = if k + 1 <= max_tau && k + 1 < self.nsdf.len() { self.nsdf[k + 1] } else { self.nsdf[k] };
+        let y_p = if k + 1 <= max_tau && k + 1 < self.nsdf.len() {
+            self.nsdf[k + 1]
+        } else {
+            self.nsdf[k]
+        };
         let denom = y_m - 2.0 * y0 + y_p;
         let delta = if denom.abs() > 1e-10 {
             ((y_m - y_p) / (2.0 * denom)).clamp(-0.5, 0.5)

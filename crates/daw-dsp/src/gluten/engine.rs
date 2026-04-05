@@ -340,7 +340,7 @@ impl GlutenEngine {
         // Store in temp fields — used by process_block when ext_sidechain is true
         let len_l = sc_left.len().min(self.ext_sc_left.len());
         self.ext_sc_left[..len_l].copy_from_slice(&sc_left[..len_l]);
-        
+
         let len_r = sc_right.len().min(self.ext_sc_right.len());
         self.ext_sc_right[..len_r].copy_from_slice(&sc_right[..len_r]);
     }

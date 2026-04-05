@@ -1,1 +1,12 @@
 .dependency-cruiser-known-violations.json
+node_modules
+target
+dist
+public/wasm
+.github
+.git
+.vscode
+.claude
+.gemini
+pnpm-lock.yaml
+Cargo.lock

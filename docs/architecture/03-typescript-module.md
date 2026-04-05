@@ -568,7 +568,7 @@ export const addTrack = inject(
             });
             eventBus.emit(new TrackAddedEvent({ trackId: track.id, name: track.name, kind: track.kind }));
             return track;
-        },
+        }
 );
 ```
 
@@ -580,11 +580,11 @@ At call time, `addTrack(input)` resolves each dependency from the `Container` an
 
 The dependency map accepts three kinds of values:
 
-| Value | Resolution |
-|-------|------------|
-| A class (e.g. `EventBus`) | Looked up via `Container.get(Class)` |
-| Another injectable (from `inject(...)`) | Recursively resolved — the injectable's factory is invoked with its own deps, and the resulting function is passed to the outer factory |
-| Anything else (plain function, object, constant) | Used as-is, no container lookup |
+| Value                                            | Resolution                                                                                                                              |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| A class (e.g. `EventBus`)                        | Looked up via `Container.get(Class)`                                                                                                    |
+| Another injectable (from `inject(...)`)          | Recursively resolved — the injectable's factory is invoked with its own deps, and the resulting function is passed to the outer factory |
+| Anything else (plain function, object, constant) | Used as-is, no container lookup                                                                                                         |
 
 Classes resolve to their registered instance in the container. Injectables resolve to their invoker function. Plain values pass through.
 
@@ -597,17 +597,17 @@ Classes resolve to their registered instance in the container. Injectables resol
 
 ### What to wrap with `inject()`
 
-| Layer | Wrap? | Why |
-|-------|-------|-----|
-| Use cases | **Yes** | Orchestrate repos/services, need to be mockable |
-| Event subscribers | **Yes** | Need the EventBus + a service chain |
-| Repositories with service dependencies | **Yes** | Logger, EventBus, Tauri shims |
-| Pure transformers | No | Pure functions need nothing from the container |
-| Validators / services (no I/O) | No | Pure functions |
-| Models | No | Data |
-| React hooks / components | No | Stay in the presentation layer; read stores directly |
-| Engine classes (`TrackNode`, etc.) | No | Constructor-injected (pass `AudioContext` as an arg) |
-| Audio-thread / hot-path code | **No** | The resolution + cached invocation has a cost; hot paths must not pay it |
+| Layer                                  | Wrap?   | Why                                                                      |
+| -------------------------------------- | ------- | ------------------------------------------------------------------------ |
+| Use cases                              | **Yes** | Orchestrate repos/services, need to be mockable                          |
+| Event subscribers                      | **Yes** | Need the EventBus + a service chain                                      |
+| Repositories with service dependencies | **Yes** | Logger, EventBus, Tauri shims                                            |
+| Pure transformers                      | No      | Pure functions need nothing from the container                           |
+| Validators / services (no I/O)         | No      | Pure functions                                                           |
+| Models                                 | No      | Data                                                                     |
+| React hooks / components               | No      | Stay in the presentation layer; read stores directly                     |
+| Engine classes (`TrackNode`, etc.)     | No      | Constructor-injected (pass `AudioContext` as an arg)                     |
+| Audio-thread / hot-path code           | **No**  | The resolution + cached invocation has a cost; hot paths must not pay it |
 
 If a function has no outbound side-effect dependencies, it does not need `inject()`. Wrapping pure code adds ceremony without benefit.
 
@@ -1230,7 +1230,7 @@ They are the public UI surface for the module.
 | use case directly calls browser/Tauri APIs everywhere       | write boundary leaks I/O details          | isolate I/O in repositories                     |
 | presentation hook owns validation + persistence + runtime   | UI becomes business layer                 | thin hook, explicit use case                    |
 | presentation store imported cross-module                    | private UI state becomes contract surface | move to business `stores/` only if truly shared |
-| renderer mutates truth during draw                          | hot path becomes hidden write layer       | route writes through useCases                    |
+| renderer mutates truth during draw                          | hot path becomes hidden write layer       | route writes through useCases                   |
 | giant `trackActions.ts` file                                | hidden coupling, hard review              | one function per file                           |
 | `src/helpers` absorbs module-specific logic                 | shadow architecture                       | keep module-owned logic in module               |
 | event used for every field change                           | event noise                               | emit only meaningful events                     |

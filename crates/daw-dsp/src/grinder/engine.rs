@@ -125,9 +125,7 @@ impl GrinderEngine {
 
             // Neural
             "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
-            | "neuralCpuBudget" => {
-                self.neural.set_param(name, value)
-            }
+            | "neuralCpuBudget" => self.neural.set_param(name, value),
 
             // Output
             "outputGain" => self.output_gain.set_target(db_to_linear(value)),

@@ -50,8 +50,7 @@ impl DecodedAudioWasm {
 /// handled by symphonia with the `all` feature set.
 #[wasm_bindgen]
 pub fn decode_audio_bytes(bytes: &[u8]) -> Result<DecodedAudioWasm, JsError> {
-    let decoded = daw_io::decode_audio_file_bytes(bytes.to_vec())
-        .map_err(|e| JsError::new(&e))?;
+    let decoded = daw_io::decode_audio_file_bytes(bytes.to_vec()).map_err(|e| JsError::new(&e))?;
 
     // daw-io returns per-channel Vec<Vec<f32>>; interleave for Web Audio consumption.
     let channels = decoded.channels as usize;
@@ -60,7 +59,12 @@ pub fn decode_audio_bytes(bytes: &[u8]) -> Result<DecodedAudioWasm, JsError> {
     let mut interleaved = Vec::with_capacity(total_frames * channels);
     for frame in 0..total_frames {
         for ch in 0..channels {
-            let sample = decoded.samples.get(ch).and_then(|c| c.get(frame)).copied().unwrap_or(0.0);
+            let sample = decoded
+                .samples
+                .get(ch)
+                .and_then(|c| c.get(frame))
+                .copied()
+                .unwrap_or(0.0);
             interleaved.push(sample);
         }
     }

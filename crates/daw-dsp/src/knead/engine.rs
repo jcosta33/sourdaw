@@ -55,11 +55,16 @@ impl KneadEngine {
     pub fn process_analysis_frame(&mut self, input: &mut [f32]) {
         for &sample in input.iter() {
             self.in_buffer.push(sample);
-            
+
             // Accumulate enough samples before calling yin_frame
             if self.in_buffer.len() >= self.yin_cfg.frame_size {
                 // Run YIN
-                let result = yin_frame(&self.in_buffer, &self.yin_cfg, &mut self.work_d, &mut self.work_cmnd);
+                let result = yin_frame(
+                    &self.in_buffer,
+                    &self.yin_cfg,
+                    &mut self.work_d,
+                    &mut self.work_cmnd,
+                );
 
                 // Gate voicing
                 let voiced = is_voiced(&self.in_buffer, result.periodicity, &self.voicing_cfg);
@@ -86,7 +91,12 @@ impl KneadEngine {
                         let target_f0_curve = vec![target_f0; self.in_buffer.len()];
 
                         // Apply pitch-shifting to the signal based on detected f0
-                        let out = psola_process_offline(&self.in_buffer, &pitch_marks, &target_f0_curve, &self.psola_cfg);
+                        let out = psola_process_offline(
+                            &self.in_buffer,
+                            &pitch_marks,
+                            &target_f0_curve,
+                            &self.psola_cfg,
+                        );
                         self.out_buffer.extend(out);
                     } else {
                         self.out_buffer.extend(self.in_buffer.iter());
@@ -94,7 +104,7 @@ impl KneadEngine {
                 } else {
                     self.out_buffer.extend(self.in_buffer.iter());
                 }
-                
+
                 // Reset accumulation buffer
                 self.in_buffer.clear();
             }

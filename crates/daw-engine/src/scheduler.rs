@@ -3,10 +3,10 @@
 //! Handles both built-in DSP effects (Knead) and external plugins (CLAP/VST3)
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
-use rtrb::Consumer;
-use daw_dsp::knead::engine::KneadEngine;
-use crate::plugin_slot::{NativePlugin, MidiNoteEvent, TransportState};
 use crate::audio_bridge::PluginAudioBridge;
+use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
+use daw_dsp::knead::engine::KneadEngine;
+use rtrb::Consumer;
 
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
@@ -76,7 +76,10 @@ impl AudioScheduler {
                     };
                     if let Some(inst) = instance {
                         self.effects.push(ActiveEffect {
-                            id, instance: inst, bypassed: false, pending_midi: Vec::new(),
+                            id,
+                            instance: inst,
+                            bypassed: false,
+                            pending_midi: Vec::new(),
                         });
                     }
                 }
@@ -179,7 +182,9 @@ impl AudioScheduler {
                         plugin.process_audio(left, right, num_samples);
                     } else {
                         plugin.process_with_events(
-                            left, right, num_samples,
+                            left,
+                            right,
+                            num_samples,
                             &effect.pending_midi,
                             &self.transport,
                         );

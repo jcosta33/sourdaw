@@ -163,7 +163,6 @@ Only when every answer above is written should you write the Handoff.
 
 > If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
 
-
 ### Done:
 
 ### Not done:

@@ -113,7 +113,8 @@ impl BacteriaInstance {
     ///
     /// Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset).
     pub fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
-        self.engine.add_mod_assignment(source_id, target_param, amount);
+        self.engine
+            .add_mod_assignment(source_id, target_param, amount);
     }
 
     /// Add a macro mapping: macro `macro_index` (0-7) → `target_param`, remapped
@@ -125,6 +126,7 @@ impl BacteriaInstance {
         min_value: f32,
         max_value: f32,
     ) {
-        self.engine.add_macro_mapping(macro_index, target_param, min_value, max_value);
+        self.engine
+            .add_macro_mapping(macro_index, target_param, min_value, max_value);
     }
 }

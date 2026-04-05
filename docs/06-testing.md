@@ -90,11 +90,11 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 
 ### When to use which
 
-| Subject under test | Mock its deps with |
-|--------------------|--------------------|
-| An injectable (function wrapped in `inject()`) | `spy<T>()` + `injectDependencies()` |
-| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)` |
-| An internal module that is NOT wrapped with `inject()` | `vi.mock()` as a fallback — but prefer refactoring the subject to use `inject()` |
+| Subject under test                                              | Mock its deps with                                                               |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                              |
+| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                       |
+| An internal module that is NOT wrapped with `inject()`          | `vi.mock()` as a fallback — but prefer refactoring the subject to use `inject()` |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
 
@@ -218,7 +218,7 @@ Notes:
 
 - We construct `TrackAddedEvent` for real (`expect.any(TrackAddedEvent)`). We do not stub the event class.
 - `injectDependencies` resets the Container and validates the mock map — no `beforeEach` reset is needed.
-- If `addTrack` is not yet wrapped with `inject()`, that refactor comes *with* the test. See `docs/architecture/03-typescript-module.md §4.10`.
+- If `addTrack` is not yet wrapped with `inject()`, that refactor comes _with_ the test. See `docs/architecture/03-typescript-module.md §4.10`.
 
 ### 6.2 Repositories — Tauri IPC
 
@@ -342,7 +342,10 @@ describe('interpolateAutomationValue', () => {
 
 describe('rdpSimplify', () => {
     it('should return the input unchanged when it has two or fewer points', () => {
-        const points = [{ beat: 0, value: 0 }, { beat: 1, value: 1 }];
+        const points = [
+            { beat: 0, value: 0 },
+            { beat: 1, value: 1 },
+        ];
         expect(rdpSimplify(points, 0.1)).toEqual(points);
     });
 });
@@ -547,18 +550,10 @@ describe('TrackNode', () => {
         const node = new TrackNode('track-1', { context: ctx });
 
         node.setGain(1.5);
-        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(
-            1,
-            ctx.currentTime,
-            0.01,
-        );
+        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(1, ctx.currentTime, 0.01);
 
         node.setGain(-0.2);
-        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(
-            0,
-            ctx.currentTime,
-            0.01,
-        );
+        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.01);
     });
 });
 ```
@@ -602,7 +597,7 @@ For injectables that depend on `EventBus`, build a local spy per test with `spy<
 
 ```typescript
 const eventBus = spy<EventBus>();
-injectDependencies(subjectUnderTest, { eventBus, /* other deps */ });
+injectDependencies(subjectUnderTest, { eventBus /* other deps */ });
 ```
 
 The spy gives you typed `eventBus.emit` and `eventBus.on` as `Mock`s directly. Retrieve registered handlers via `eventBus.on.mock.calls[n][1]` and invoke them to test subscriber behaviour (see §6.8).
@@ -653,7 +648,9 @@ const createAudioParam = () => ({
 });
 
 const createNode = (extra: Record<string, unknown> = {}) => ({
-    connect: vi.fn(function (this: unknown, target: unknown) { return target; }),
+    connect: vi.fn(function (this: unknown, target: unknown) {
+        return target;
+    }),
     disconnect: vi.fn(),
     ...extra,
 });
@@ -666,17 +663,21 @@ export function createMockAudioContext() {
         destination,
         createGain: vi.fn(() => createNode({ gain: createAudioParam() })),
         createStereoPanner: vi.fn(() => createNode({ pan: createAudioParam() })),
-        createAnalyser: vi.fn(() => createNode({
-            frequencyBinCount: 1024,
-            getByteTimeDomainData: vi.fn(),
-            getFloatFrequencyData: vi.fn(),
-        })),
-        createBufferSource: vi.fn(() => createNode({
-            buffer: null,
-            playbackRate: createAudioParam(),
-            start: vi.fn(),
-            stop: vi.fn(),
-        })),
+        createAnalyser: vi.fn(() =>
+            createNode({
+                frequencyBinCount: 1024,
+                getByteTimeDomainData: vi.fn(),
+                getFloatFrequencyData: vi.fn(),
+            })
+        ),
+        createBufferSource: vi.fn(() =>
+            createNode({
+                buffer: null,
+                playbackRate: createAudioParam(),
+                start: vi.fn(),
+                stop: vi.fn(),
+            })
+        ),
         createBuffer: vi.fn((channels: number, length: number, sampleRate: number) => ({
             numberOfChannels: channels,
             length,
@@ -762,12 +763,12 @@ Commands in `src-tauri/src/commands/` are not currently tested. When we add test
 
 ## 9. Running tests
 
-| Command | Purpose |
-|---------|---------|
-| `pnpm test` | Vitest in watch mode — use during development |
-| `pnpm test:run` | Vitest single run — use in CI |
-| `cargo test --workspace` | Run all Rust crate tests |
-| `cargo test -p daw-dsp` | Run tests for a single Rust crate |
+| Command                  | Purpose                                       |
+| ------------------------ | --------------------------------------------- |
+| `pnpm test`              | Vitest in watch mode — use during development |
+| `pnpm test:run`          | Vitest single run — use in CI                 |
+| `cargo test --workspace` | Run all Rust crate tests                      |
+| `cargo test -p daw-dsp`  | Run tests for a single Rust crate             |
 
 Vitest config is in `vite.config.ts` (`test` block). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`.
 

@@ -108,18 +108,14 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
 }
 
 /// Save a document bundle to an .sdaw file on disk.
-pub fn save_sdaw_bundle(
-    bundle: &HashMap<DocId, Vec<u8>>,
-    path: &Path,
-) -> Result<(), String> {
+pub fn save_sdaw_bundle(bundle: &HashMap<DocId, Vec<u8>>, path: &Path) -> Result<(), String> {
     let encoded = encode_sdaw(bundle);
     std::fs::write(path, &encoded).map_err(|e| format!("Failed to write .sdaw file: {}", e))
 }
 
 /// Load a document bundle from an .sdaw file on disk.
 pub fn load_sdaw_bundle(path: &Path) -> Result<HashMap<DocId, Vec<u8>>, String> {
-    let bytes =
-        std::fs::read(path).map_err(|e| format!("Failed to read .sdaw file: {}", e))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read .sdaw file: {}", e))?;
     decode_sdaw(&bytes)
 }
 

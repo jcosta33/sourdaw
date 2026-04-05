@@ -124,9 +124,7 @@ Stores are often updated in response to domain events. Subscribe to an event and
 getEventBus().on(MetricsToggledEvent, (event) => {
     const store = getWorkspacePreferencesStore();
 
-    store.update((current) =>
-        current ? { ...current, showMetrics: event.payload.isEnabled } : current
-    );
+    store.update((current) => (current ? { ...current, showMetrics: event.payload.isEnabled } : current));
 });
 ```
 

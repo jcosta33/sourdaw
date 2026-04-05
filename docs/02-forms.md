@@ -52,7 +52,10 @@ type ProjectSettingsDialogContentProps = {
     closeDialog: () => void;
 };
 
-export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps): ReactElement => {
+export const ProjectSettingsDialogContent = ({
+    projectId,
+    closeDialog,
+}: ProjectSettingsDialogContentProps): ReactElement => {
     const { t } = useTranslation();
     const { updateProjectSettings, isPending } = useUpdateProjectSettings();
 
@@ -295,7 +298,10 @@ const PluginEffectsFieldArray = ({ control }: { control: Control<PluginChainForm
         <>
             {fields.map((field, index) => (
                 <div key={field.id} className="tw-flex tw-flex-col tw-gap-2">
-                    <FormTextInput name={`plugins.${index}.pluginId`} label={{ children: 'Plugin ID', required: true }} />
+                    <FormTextInput
+                        name={`plugins.${index}.pluginId`}
+                        label={{ children: 'Plugin ID', required: true }}
+                    />
                     <FormTextInput name={`plugins.${index}.presets`} label={{ children: 'Preset' }} />
 
                     <Button type="button" onClick={() => remove(index)}>
@@ -357,7 +363,10 @@ import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 import { FormDropdown } from 'Common/Form/Dropdown/Dropdown';
 
-export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps): ReactElement => {
+export const ProjectSettingsDialogContent = ({
+    projectId,
+    closeDialog,
+}: ProjectSettingsDialogContentProps): ReactElement => {
     const { t } = useTranslation();
     const { saveProjectSettings, isPending } = useSaveProjectSettings();
 

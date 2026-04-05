@@ -1,7 +1,9 @@
 /// Tuning system — maps detected frequency to note name and cent deviation.
 /// Supports 12-TET (default), adjustable A4 reference, and cent offset tables.
 
-const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const NOTE_NAMES: [&str; 12] = [
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
 
 pub struct TuningSystem {
     pub a4_hz: f32,
@@ -32,7 +34,8 @@ impl TuningSystem {
         let midi_continuous = 69.0 + semitones_from_a4;
 
         // Apply transpose and capo
-        let adjusted = midi_continuous - self.transpose_semitones as f32 - self.capo_semitones as f32;
+        let adjusted =
+            midi_continuous - self.transpose_semitones as f32 - self.capo_semitones as f32;
 
         // Nearest integer MIDI note
         let midi_note = adjusted.round() as i32;

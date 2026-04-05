@@ -25,7 +25,8 @@ impl ScalaScale {
     /// Parse a Scala .scl file from text content.
     pub fn parse_scl(text: &str) -> Option<Self> {
         let mut scale = Self::new();
-        let mut lines = text.lines()
+        let mut lines = text
+            .lines()
             .filter(|l| !l.starts_with('!') && !l.trim().is_empty());
 
         // First non-comment line = description
@@ -95,7 +96,7 @@ impl ScalaScale {
 
 /// A parsed AnaMark .tun tuning.
 pub struct AnaMarkTuning {
-    pub base_freq: f32, // default: A=440 at note 69
+    pub base_freq: f32,    // default: A=440 at note 69
     pub cents: [f32; 128], // per-note cent values relative to base
 }
 
@@ -106,7 +107,10 @@ impl AnaMarkTuning {
         for i in 0..128 {
             cents[i] = (i as f32 - 69.0) * 100.0;
         }
-        Self { base_freq: 440.0, cents }
+        Self {
+            base_freq: 440.0,
+            cents,
+        }
     }
 
     /// Parse an AnaMark .tun file from text.

@@ -3,7 +3,6 @@
 /// Uses libloading to dlopen the VST3 binary and call GetPluginFactory().
 /// Full COM initialization (IComponent → IAudioProcessor) is pending —
 /// audio processing is passthrough until then.
-
 use crate::params::PluginParameter;
 use crate::traits::AudioPlugin;
 use libloading::Library;
@@ -32,7 +31,8 @@ impl Vst3Wrapper {
 
         // Verify GetPluginFactory exists
         let _factory_fn: libloading::Symbol<GetPluginFactoryFn> = unsafe {
-            library.get(b"GetPluginFactory\0")
+            library
+                .get(b"GetPluginFactory\0")
                 .map_err(|e| format!("No GetPluginFactory in {}: {}", binary_path, e))?
         };
 
@@ -52,7 +52,8 @@ impl Vst3Wrapper {
 
     fn resolve_binary_path(bundle_path: &str) -> Result<String, String> {
         let bundle = std::path::Path::new(bundle_path);
-        let stem = bundle.file_stem()
+        let stem = bundle
+            .file_stem()
             .ok_or("Invalid bundle path")?
             .to_string_lossy();
 
@@ -60,27 +61,44 @@ impl Vst3Wrapper {
         #[cfg(target_os = "macos")]
         {
             let binary = bundle.join("Contents").join("MacOS").join(stem.as_ref());
-            if binary.exists() { return Ok(binary.to_string_lossy().into_owned()); }
+            if binary.exists() {
+                return Ok(binary.to_string_lossy().into_owned());
+            }
         }
 
         // Windows: Contents/x86_64-win/<name>.vst3
         #[cfg(target_os = "windows")]
         {
-            let binary = bundle.join("Contents").join("x86_64-win").join(format!("{}.vst3", stem));
-            if binary.exists() { return Ok(binary.to_string_lossy().into_owned()); }
+            let binary = bundle
+                .join("Contents")
+                .join("x86_64-win")
+                .join(format!("{}.vst3", stem));
+            if binary.exists() {
+                return Ok(binary.to_string_lossy().into_owned());
+            }
         }
 
         // Linux: Contents/x86_64-linux/<name>.so
         #[cfg(target_os = "linux")]
         {
-            let binary = bundle.join("Contents").join("x86_64-linux").join(format!("{}.so", stem));
-            if binary.exists() { return Ok(binary.to_string_lossy().into_owned()); }
+            let binary = bundle
+                .join("Contents")
+                .join("x86_64-linux")
+                .join(format!("{}.so", stem));
+            if binary.exists() {
+                return Ok(binary.to_string_lossy().into_owned());
+            }
         }
 
-        Err(format!("Could not find VST3 binary in bundle: {}", bundle_path))
+        Err(format!(
+            "Could not find VST3 binary in bundle: {}",
+            bundle_path
+        ))
     }
 
-    pub fn get_name(&self) -> &str { &self.name }
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
 }
 
 impl AudioPlugin for Vst3Wrapper {
@@ -93,9 +111,17 @@ impl AudioPlugin for Vst3Wrapper {
         }
     }
     fn set_parameter(&mut self, _param_id: u32, _value: f64) {}
-    fn get_parameters(&self) -> Vec<PluginParameter> { vec![] }
-    fn get_state(&self) -> Vec<u8> { vec![] }
+    fn get_parameters(&self) -> Vec<PluginParameter> {
+        vec![]
+    }
+    fn get_state(&self) -> Vec<u8> {
+        vec![]
+    }
     fn set_state(&mut self, _state: &[u8]) {}
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }

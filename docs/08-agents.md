@@ -141,26 +141,31 @@ When you create a sandbox, `agents/tasks/<slug>.md` is created from the template
 # Fix auth redirect loop
 
 ## Metadata
+
 - Slug: fix-auth-redirect-loop
 - Agent: claude
 - Branch: agent/fix-auth-redirect-loop
-...
+  ...
 
 ## Objective
+
 After login, users are redirected to /login again instead of /dashboard.
 Happens only when coming from an OAuth callback. Investigate the middleware
 stack in src/modules/Auth and fix the redirect logic.
 
 ## Constraints
+
 - Stay inside this worktree only.
 - Do not switch branches.
 - Do not merge.
 - Do not push unless explicitly asked.
 
 ## Notes
+
 - Might be related to the recent session middleware refactor (commit 97c46d0)
 
 ## Handoff
+
 -
 ```
 
@@ -334,6 +339,7 @@ adoctor
 ```
 
 Checks:
+
 - Inside a git repo
 - `git` installed
 - `agents/config.json` valid
@@ -351,32 +357,32 @@ Checks:
 
 ```json
 {
-  "defaultBaseBranch": "main",
-  "worktreeDirPattern": "../{repoName}--{slug}",
-  "defaultTerminal": "auto",
-  "defaultAgent": "claude",
-  "agents": {
-    "claude":  { "command": "claude", "args": [] },
-    "gemini":  { "command": "gemini", "args": [] },
-    "codex":   { "command": "codex",  "args": [] }
-  },
-  "reuseExistingByDefault": true,
-  "writeTaskTemplateOnCreate": true,
-  "slugMaxLen": 60
+    "defaultBaseBranch": "main",
+    "worktreeDirPattern": "../{repoName}--{slug}",
+    "defaultTerminal": "auto",
+    "defaultAgent": "claude",
+    "agents": {
+        "claude": { "command": "claude", "args": [] },
+        "gemini": { "command": "gemini", "args": [] },
+        "codex": { "command": "codex", "args": [] }
+    },
+    "reuseExistingByDefault": true,
+    "writeTaskTemplateOnCreate": true,
+    "slugMaxLen": 60
 }
 ```
 
 Fields worth knowing:
 
-| Field | What it controls |
-|---|---|
-| `defaultAgent` | Which agent `anew "title"` launches without an explicit name |
-| `defaultBaseBranch` | Branch worktrees are created from by default |
-| `worktreeDirPattern` | Where worktrees land. `{repoName}` and `{slug}` are substituted |
-| `defaultTerminal` | `auto` picks Terminal.app on macOS, falls back to current session. Other options: `current`, `terminal`, `iterm` |
-| `reuseExistingByDefault` | If true, `anew "same title"` reopens instead of erroring |
-| `slugMaxLen` | Truncation length for generated slugs |
-| `preferredEditor` | Set to `"cursor"`, `"code"`, `"zed"`, etc. to pin `agents:focus`. If absent, auto-detects |
+| Field                    | What it controls                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `defaultAgent`           | Which agent `anew "title"` launches without an explicit name                                                     |
+| `defaultBaseBranch`      | Branch worktrees are created from by default                                                                     |
+| `worktreeDirPattern`     | Where worktrees land. `{repoName}` and `{slug}` are substituted                                                  |
+| `defaultTerminal`        | `auto` picks Terminal.app on macOS, falls back to current session. Other options: `current`, `terminal`, `iterm` |
+| `reuseExistingByDefault` | If true, `anew "same title"` reopens instead of erroring                                                         |
+| `slugMaxLen`             | Truncation length for generated slugs                                                                            |
+| `preferredEditor`        | Set to `"cursor"`, `"code"`, `"zed"`, etc. to pin `agents:focus`. If absent, auto-detects                        |
 
 All config values can be overridden per-command with flags.
 
@@ -384,12 +390,12 @@ All config values can be overridden per-command with flags.
 
 ## Terminal backends
 
-| Backend | Behavior |
-|---|---|
-| `auto` | Terminal.app on macOS, `current` everywhere else |
-| `terminal` | Opens a new Terminal.app window |
-| `iterm` | Opens a new iTerm2 tab (requires iTerm2) |
-| `current` | Stays in the current terminal session, agent takes over |
+| Backend    | Behavior                                                |
+| ---------- | ------------------------------------------------------- |
+| `auto`     | Terminal.app on macOS, `current` everywhere else        |
+| `terminal` | Opens a new Terminal.app window                         |
+| `iterm`    | Opens a new iTerm2 tab (requires iTerm2)                |
+| `current`  | Stays in the current terminal session, agent takes over |
 
 `current` is the fastest option if you're already in the right place or prefer not to open a new window:
 
@@ -455,22 +461,22 @@ These may exist as opt-in features in future. For now, the agent does whatever i
 
 ## Command reference
 
-| npm script | Shell alias | What it does |
-|---|---|---|
-| `agents:new -- [agent] "title"` | `anew [agent] "title"` | Create or reopen a sandbox |
-| `agents:new:claude -- "title"` | `anewc "title"` | Create with Claude |
-| `agents:new:gemini -- "title"` | `anewg "title"` | Create with Gemini |
-| `agents:new:codex -- "title"` | `anewx "title"` | Create with Codex |
-| `agents:open -- <slug> [agent]` | `aopen <slug> [agent]` | Reopen a sandbox |
-| `agents:list` | `alist` | List active sandboxes |
-| `agents:show -- <slug>` | `ashow <slug>` | Detailed info |
-| `agents:task -- <slug> --append "note"` | `atask <slug> --append "note"` | Append note to task file |
-| `agents:task -- <slug> --set-status <s>` | `atask <slug> --set-status <s>` | Update status |
-| `agents:remove -- <slug>` | `arm <slug>` | Remove sandbox |
-| `agents:archive -- <slug>` | `aarchive <slug>` | Archive without deleting |
-| `agents:prune` | `aprune` | Clean stale metadata |
-| `agents:doctor` | `adoctor` | Preflight checks |
-| `agents:pick` | `apick` | fzf picker |
-| `agents:focus -- <slug>` | `afocus <slug>` | Open in editor |
-| `agents:path -- <slug>` | `apath <slug>` | Print worktree path |
-| — | `acd <slug>` | cd into worktree |
+| npm script                               | Shell alias                     | What it does               |
+| ---------------------------------------- | ------------------------------- | -------------------------- |
+| `agents:new -- [agent] "title"`          | `anew [agent] "title"`          | Create or reopen a sandbox |
+| `agents:new:claude -- "title"`           | `anewc "title"`                 | Create with Claude         |
+| `agents:new:gemini -- "title"`           | `anewg "title"`                 | Create with Gemini         |
+| `agents:new:codex -- "title"`            | `anewx "title"`                 | Create with Codex          |
+| `agents:open -- <slug> [agent]`          | `aopen <slug> [agent]`          | Reopen a sandbox           |
+| `agents:list`                            | `alist`                         | List active sandboxes      |
+| `agents:show -- <slug>`                  | `ashow <slug>`                  | Detailed info              |
+| `agents:task -- <slug> --append "note"`  | `atask <slug> --append "note"`  | Append note to task file   |
+| `agents:task -- <slug> --set-status <s>` | `atask <slug> --set-status <s>` | Update status              |
+| `agents:remove -- <slug>`                | `arm <slug>`                    | Remove sandbox             |
+| `agents:archive -- <slug>`               | `aarchive <slug>`               | Archive without deleting   |
+| `agents:prune`                           | `aprune`                        | Clean stale metadata       |
+| `agents:doctor`                          | `adoctor`                       | Preflight checks           |
+| `agents:pick`                            | `apick`                         | fzf picker                 |
+| `agents:focus -- <slug>`                 | `afocus <slug>`                 | Open in editor             |
+| `agents:path -- <slug>`                  | `apath <slug>`                  | Print worktree path        |
+| —                                        | `acd <slug>`                    | cd into worktree           |

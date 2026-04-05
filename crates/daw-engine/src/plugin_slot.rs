@@ -58,5 +58,7 @@ pub trait NativePlugin: Send {
     fn name(&self) -> &str;
 
     /// Whether this plugin accepts MIDI input (instruments).
-    fn accepts_midi(&self) -> bool { false }
+    fn accepts_midi(&self) -> bool {
+        false
+    }
 }

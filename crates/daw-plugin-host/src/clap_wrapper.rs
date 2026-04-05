@@ -14,32 +14,31 @@ const MAX_MIDI: usize = 64;
 use crate::clap_host::create_host_descriptor;
 use crate::params::PluginParameter;
 use crate::traits::AudioPlugin;
-use clap_sys::entry::clap_plugin_entry;
-use clap_sys::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
-use clap_sys::host::clap_host;
-use clap_sys::plugin::clap_plugin;
-use clap_sys::process::clap_process;
 use clap_sys::audio_buffer::clap_audio_buffer;
+use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    clap_input_events, clap_output_events, clap_event_header,
-    clap_event_param_value, clap_event_note,
-    CLAP_EVENT_PARAM_VALUE, CLAP_EVENT_NOTE_ON, CLAP_EVENT_NOTE_OFF,
-    CLAP_CORE_EVENT_SPACE_ID,
+    clap_event_header, clap_event_note, clap_event_param_value, clap_input_events,
+    clap_output_events, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON,
+    CLAP_EVENT_PARAM_VALUE,
+};
+use clap_sys::ext::gui::{
+    clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA,
+    CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
 };
 use clap_sys::ext::params::{
-    clap_plugin_params, clap_param_info, CLAP_EXT_PARAMS,
-    CLAP_PARAM_IS_AUTOMATABLE, CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
+    clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
+    CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
-use clap_sys::ext::gui::{
-    clap_plugin_gui, clap_window, clap_window_handle,
-    CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA, CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
-};
+use clap_sys::host::clap_host;
+use clap_sys::plugin::clap_plugin;
+use clap_sys::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
+use clap_sys::process::clap_process;
 use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
-use std::ffi::{CStr, CString, c_void};
-use std::ptr;
+use std::ffi::{c_void, CStr, CString};
 use std::mem;
+use std::ptr;
 
 /// Holds a loaded CLAP plugin instance and its associated resources.
 pub struct ClapWrapper {
@@ -188,8 +187,7 @@ impl ClapWrapper {
 
             // 3. Call init
             if let Some(init_fn) = entry_ref.init {
-                let path_c = CString::new(plugin_path)
-                    .map_err(|_| "Invalid plugin path")?;
+                let path_c = CString::new(plugin_path).map_err(|_| "Invalid plugin path")?;
                 let ok = init_fn(path_c.as_ptr());
                 if !ok {
                     return Err("clap_entry.init() returned false".to_string());
@@ -215,8 +213,7 @@ impl ClapWrapper {
             let host_ptr: *const clap_host = &*host;
 
             // 6. Create the plugin instance
-            let id_c = CString::new(plugin_id)
-                .map_err(|_| "Invalid plugin ID")?;
+            let id_c = CString::new(plugin_id).map_err(|_| "Invalid plugin ID")?;
 
             let create_plugin = factory
                 .create_plugin
@@ -252,7 +249,8 @@ impl ClapWrapper {
             };
 
             // 8. Query extensions BEFORE activation
-            let params_ext = Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
+            let params_ext =
+                Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
             let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
             let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
 
@@ -277,7 +275,10 @@ impl ClapWrapper {
                         start_processing(plugin);
                     }
                 } else {
-                    eprintln!("[CLAP] Warning: plugin.activate() returned false for {}", name);
+                    eprintln!(
+                        "[CLAP] Warning: plugin.activate() returned false for {}",
+                        name
+                    );
                 }
             }
 
@@ -353,11 +354,17 @@ impl ClapWrapper {
     /// Get the platform-specific window API string for CLAP.
     fn platform_api() -> &'static CStr {
         #[cfg(target_os = "macos")]
-        { CLAP_WINDOW_API_COCOA }
+        {
+            CLAP_WINDOW_API_COCOA
+        }
         #[cfg(target_os = "windows")]
-        { CLAP_WINDOW_API_WIN32 }
+        {
+            CLAP_WINDOW_API_WIN32
+        }
         #[cfg(target_os = "linux")]
-        { CLAP_WINDOW_API_X11 }
+        {
+            CLAP_WINDOW_API_X11
+        }
     }
 
     /// Open the plugin GUI, parenting it into the given native window handle.
@@ -390,7 +397,10 @@ impl ClapWrapper {
             // 1. Check API support
             if let Some(is_supported) = gui.is_api_supported {
                 if !is_supported(self.plugin, api.as_ptr(), false) {
-                    return Err(format!("Plugin '{}' does not support embedded GUI on this platform", self.name));
+                    return Err(format!(
+                        "Plugin '{}' does not support embedded GUI on this platform",
+                        self.name
+                    ));
                 }
             }
 
@@ -417,11 +427,19 @@ impl ClapWrapper {
                 api: api.as_ptr(),
                 specific: {
                     #[cfg(target_os = "macos")]
-                    { clap_window_handle { cocoa: handle_ptr } }
+                    {
+                        clap_window_handle { cocoa: handle_ptr }
+                    }
                     #[cfg(target_os = "windows")]
-                    { clap_window_handle { win32: handle_ptr } }
+                    {
+                        clap_window_handle { win32: handle_ptr }
+                    }
                     #[cfg(target_os = "linux")]
-                    { clap_window_handle { x11: handle_ptr as u64 } }
+                    {
+                        clap_window_handle {
+                            x11: handle_ptr as u64,
+                        }
+                    }
                 },
             };
 
@@ -441,7 +459,10 @@ impl ClapWrapper {
             }
 
             self.gui_open = true;
-            eprintln!("[CLAP] Opened GUI for '{}' ({}x{})", self.name, width, height);
+            eprintln!(
+                "[CLAP] Opened GUI for '{}' ({}x{})",
+                self.name, width, height
+            );
             Ok((width, height))
         }
     }
@@ -491,7 +512,11 @@ impl ClapWrapper {
                     size: mem::size_of::<clap_event_note>() as u32,
                     time: 0,
                     space_id: CLAP_CORE_EVENT_SPACE_ID,
-                    type_: if is_on { CLAP_EVENT_NOTE_ON } else { CLAP_EVENT_NOTE_OFF },
+                    type_: if is_on {
+                        CLAP_EVENT_NOTE_ON
+                    } else {
+                        CLAP_EVENT_NOTE_OFF
+                    },
                     flags: 0,
                 },
                 note_id: -1,
@@ -528,7 +553,10 @@ impl ClapWrapper {
             &(*(*ctx).events.add(index as usize)).header as *const clap_event_header
         }
 
-        let mut ctx = EventListCtx { events: events_ptr, count: events_count };
+        let mut ctx = EventListCtx {
+            events: events_ptr,
+            count: events_count,
+        };
         let input_events = clap_input_events {
             ctx: &mut ctx as *mut EventListCtx as *mut c_void,
             size: Some(event_list_size),

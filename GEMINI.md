@@ -53,10 +53,10 @@ There are no confirmation prompts. Actions are immediate. Read the full safety s
 
 ## Artifact placement
 
-| Type | Location |
-|---|---|
-| Audit | `.agents/audits/<name>.md` |
-| Spec | `.agents/specs/<name>.md` |
-| Research | `.agents/research/<name>.md` |
-| Skill | `.agents/skills/<name>/SKILL.md` |
-| Task | `.agents/tasks/<slug>.md` (gitignored) |
+| Type     | Location                               |
+| -------- | -------------------------------------- |
+| Audit    | `.agents/audits/<name>.md`             |
+| Spec     | `.agents/specs/<name>.md`              |
+| Research | `.agents/research/<name>.md`           |
+| Skill    | `.agents/skills/<name>/SKILL.md`       |
+| Task     | `.agents/tasks/<slug>.md` (gitignored) |

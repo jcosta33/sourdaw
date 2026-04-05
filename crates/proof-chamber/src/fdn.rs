@@ -6,7 +6,6 @@
 /// - Per-delay-line absorptive filters for frequency-dependent decay (Jot formula)
 /// - Tapped delay line early reflections
 /// - Multiple incommensurate-frequency LFOs for modulation
-
 use std::f32::consts::TAU;
 
 // ---------------------------------------------------------------------------
@@ -105,10 +104,21 @@ impl AbsorptiveFilter {
         let crossover_hz = 2000.0;
         let coeff = (-TAU * crossover_hz / sample_rate).exp();
 
-        Self { g_low, g_high, state: 0.0, coeff }
+        Self {
+            g_low,
+            g_high,
+            state: 0.0,
+            coeff,
+        }
     }
 
-    fn update_rt60(&mut self, delay_samples: usize, sample_rate: f32, rt60_low: f32, rt60_high: f32) {
+    fn update_rt60(
+        &mut self,
+        delay_samples: usize,
+        sample_rate: f32,
+        rt60_low: f32,
+        rt60_high: f32,
+    ) {
         let m = delay_samples as f32;
         self.g_low = if rt60_low > 0.01 {
             10.0_f32.powf(-3.0 * m / (sample_rate * rt60_low))
@@ -146,8 +156,8 @@ struct EarlyReflections {
 impl EarlyReflections {
     fn new(sample_rate: f32, room_size: f32) -> Self {
         let max_delay = (sample_rate * 0.1) as usize; // 100ms max
-        // Generate tap pattern based on room size
-        // First reflections from 6 walls, decreasing as 1/sqrt(t)
+                                                      // Generate tap pattern based on room size
+                                                      // First reflections from 6 walls, decreasing as 1/sqrt(t)
         let base_delay_ms = 5.0 + room_size * 45.0; // 5-50ms for first reflection
         let mut taps = Vec::new();
 
@@ -272,7 +282,9 @@ impl FdnReverb {
             .collect();
 
         // Incommensurate LFO frequencies (Costello-inspired)
-        let base_freqs = [0.7, 1.1, 1.7, 2.3, 0.5, 1.3, 1.9, 2.9, 0.6, 1.4, 2.1, 0.8, 1.6, 2.7, 0.9, 1.2];
+        let base_freqs = [
+            0.7, 1.1, 1.7, 2.3, 0.5, 1.3, 1.9, 2.9, 0.6, 1.4, 2.1, 0.8, 1.6, 2.7, 0.9, 1.2,
+        ];
         let mut lfo_freqs = [0.0_f32; MAX_FDN_CHANNELS];
         let mut lfo_phases = [0.0_f32; MAX_FDN_CHANNELS];
         for i in 0..n {
@@ -325,8 +337,10 @@ impl FdnReverb {
             "size" => {
                 self.size = value.clamp(0.0, 1.0);
                 self.update_delay_lengths();
-                self.early_reflections_l.update_room_size(self.sample_rate, value);
-                self.early_reflections_r.update_room_size(self.sample_rate, value);
+                self.early_reflections_l
+                    .update_room_size(self.sample_rate, value);
+                self.early_reflections_r
+                    .update_room_size(self.sample_rate, value);
             }
             "mod_depth" => self.mod_depth = value.clamp(0.0, 1.0),
             "early_late" => self.early_late_balance = value.clamp(0.0, 1.0),
@@ -343,14 +357,19 @@ impl FdnReverb {
     fn update_absorptive_filters(&mut self) {
         for (i, filter) in self.absorptive_filters.iter_mut().enumerate() {
             if i < self.delay_lengths.len() {
-                filter.update_rt60(self.delay_lengths[i], self.sample_rate, self.rt60, self.rt60_hf);
+                filter.update_rt60(
+                    self.delay_lengths[i],
+                    self.sample_rate,
+                    self.rt60,
+                    self.rt60_hf,
+                );
             }
         }
     }
 
     fn update_delay_lengths(&mut self) {
-        let min_ms = 10.0 + self.size * 20.0;  // 10-30ms
-        let max_ms = 30.0 + self.size * 50.0;  // 30-80ms
+        let min_ms = 10.0 + self.size * 20.0; // 10-30ms
+        let max_ms = 30.0 + self.size * 50.0; // 30-80ms
         let min_samples = (min_ms / 1000.0 * self.sample_rate) as usize;
         let max_samples = (max_ms / 1000.0 * self.sample_rate) as usize;
         let new_delays = generate_prime_power_delays(self.num_channels, min_samples, max_samples);
@@ -396,7 +415,8 @@ impl FdnReverb {
                 }
 
                 let mod_offset = (lfo * self.mod_depth * 8.0) as isize;
-                let effective_delay = (base_delay as isize + mod_offset).clamp(1, (buf_len - 1) as isize) as usize;
+                let effective_delay =
+                    (base_delay as isize + mod_offset).clamp(1, (buf_len - 1) as isize) as usize;
 
                 let read_pos = (self.write_positions[ch] + buf_len - effective_delay) % buf_len;
                 self.mix_buf[ch] = self.buffers[ch][read_pos];

@@ -644,7 +644,8 @@ impl BacteriaEngine {
                     let source_val = self.macros[mapping.macro_index as usize];
                     let idx = mapping.target_param as usize;
                     if idx < self.param_offsets.len() {
-                        let mapped = mapping.min_value + source_val * (mapping.max_value - mapping.min_value);
+                        let mapped = mapping.min_value
+                            + source_val * (mapping.max_value - mapping.min_value);
                         self.param_offsets[idx] += mapped;
                     }
                 }
@@ -669,8 +670,11 @@ impl BacteriaEngine {
                         }
                         // param_offsets[1..=6] carry per-band gain offsets (linear scale).
                         let gain_offset = self.param_offsets[1 + b];
-                        let (bl, br) =
-                            self.bands[b].process_sample(self.bands_l[b], self.bands_r[b], gain_offset);
+                        let (bl, br) = self.bands[b].process_sample(
+                            self.bands_l[b],
+                            self.bands_r[b],
+                            gain_offset,
+                        );
                         sum_l += bl;
                         sum_r += br;
                         self.band_levels[b] = self.bands[b].peak_level;

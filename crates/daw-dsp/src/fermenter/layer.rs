@@ -378,7 +378,7 @@ impl Layer {
             // Use small stack buffers for the layer render
             let mut scratch_l = [0.0f32; 4096];
             let mut scratch_r = [0.0f32; 4096];
-            
+
             let l_slice = &mut scratch_l[..block_size];
             let r_slice = &mut scratch_r[..block_size];
 

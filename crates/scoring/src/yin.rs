@@ -6,7 +6,6 @@
 ///
 /// Candidate selection uses harmonic-weighted scoring to suppress octave errors.
 /// Sub-sample interpolation via parabolic fit around the best minimum.
-
 use std::f32::consts::TAU;
 
 /// Maximum analysis window / max tau.
@@ -38,13 +37,21 @@ fn fft_autocorrelation(input: &[f32], output: &mut [f32], n: usize) {
 
 pub fn fft_inplace(re: &mut [f32], im: &mut [f32], inverse: bool) {
     let n = re.len();
-    if !n.is_power_of_two() || n < 2 { return; }
+    if !n.is_power_of_two() || n < 2 {
+        return;
+    }
 
     let mut j = 0;
     for i in 0..n {
-        if i < j { re.swap(i, j); im.swap(i, j); }
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
         let mut m = n >> 1;
-        while m >= 1 && j >= m { j -= m; m >>= 1; }
+        while m >= 1 && j >= m {
+            j -= m;
+            m >>= 1;
+        }
         j += m;
     }
 
@@ -60,10 +67,13 @@ pub fn fft_inplace(re: &mut [f32], im: &mut [f32], inverse: bool) {
                 let (i1, i2) = (k + jj, k + jj + half);
                 let t_re = w_re * re[i2] - w_im * im[i2];
                 let t_im = w_re * im[i2] + w_im * re[i2];
-                re[i2] = re[i1] - t_re; im[i2] = im[i1] - t_im;
-                re[i1] += t_re; im[i1] += t_im;
+                re[i2] = re[i1] - t_re;
+                im[i2] = im[i1] - t_im;
+                re[i1] += t_re;
+                im[i1] += t_im;
                 let nw = (w_re * cos_a - w_im * sin_a, w_re * sin_a + w_im * cos_a);
-                w_re = nw.0; w_im = nw.1;
+                w_re = nw.0;
+                w_im = nw.1;
             }
         }
         size *= 2;
@@ -71,13 +81,20 @@ pub fn fft_inplace(re: &mut [f32], im: &mut [f32], inverse: bool) {
 
     if inverse {
         let s = 1.0 / n as f32;
-        for i in 0..n { re[i] *= s; im[i] *= s; }
+        for i in 0..n {
+            re[i] *= s;
+            im[i] *= s;
+        }
     }
 }
 
 fn next_pow2(n: usize) -> usize {
     let mut v = n.max(1) - 1;
-    v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
     v + 1
 }
 
@@ -152,7 +169,11 @@ impl YinDetector {
         for tau in 0..=max_tau {
             if tau < self.diff.len() {
                 let s_tau = self.autocorr[0]; // approximation: use s0 (valid for normalized signals)
-                let r_tau = if tau < self.autocorr.len() { self.autocorr[tau] } else { 0.0 };
+                let r_tau = if tau < self.autocorr.len() {
+                    self.autocorr[tau]
+                } else {
+                    0.0
+                };
                 self.diff[tau] = s0 + s_tau - 2.0 * r_tau;
             }
         }
@@ -176,13 +197,19 @@ impl YinDetector {
         let mut best_score = -1.0_f32;
 
         for tau in self.min_tau..=max_tau {
-            if tau >= self.cmndf.len() { break; }
+            if tau >= self.cmndf.len() {
+                break;
+            }
 
             // Check for local minimum
             if tau > 0 && tau < max_tau {
                 let prev = if tau > 0 { self.cmndf[tau - 1] } else { 1.0 };
                 let curr = self.cmndf[tau];
-                let next = if tau + 1 < self.cmndf.len() { self.cmndf[tau + 1] } else { 1.0 };
+                let next = if tau + 1 < self.cmndf.len() {
+                    self.cmndf[tau + 1]
+                } else {
+                    1.0
+                };
 
                 if curr <= prev && curr <= next && curr < self.threshold * 2.0 {
                     // Harmonic bias: prefer shorter periods (higher fundamentals)
@@ -205,9 +232,17 @@ impl YinDetector {
 
         // Sub-sample interpolation (parabolic fit)
         let k = best_tau;
-        let y_minus = if k > 0 && k - 1 < self.cmndf.len() { self.cmndf[k - 1] } else { self.cmndf[k] };
+        let y_minus = if k > 0 && k - 1 < self.cmndf.len() {
+            self.cmndf[k - 1]
+        } else {
+            self.cmndf[k]
+        };
         let y0 = self.cmndf[k];
-        let y_plus = if k + 1 < self.cmndf.len() { self.cmndf[k + 1] } else { self.cmndf[k] };
+        let y_plus = if k + 1 < self.cmndf.len() {
+            self.cmndf[k + 1]
+        } else {
+            self.cmndf[k]
+        };
 
         let denom = y_minus - 2.0 * y0 + y_plus;
         let delta = if denom.abs() > 1e-10 {

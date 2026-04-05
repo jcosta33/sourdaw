@@ -55,12 +55,8 @@ impl DocumentStore {
             .ok();
         root.put_object(&project, KEY_TEMPO_MAP, automerge::ObjType::Map)
             .ok();
-        root.put_object(
-            &project,
-            KEY_TIME_SIGNATURE_MAP,
-            automerge::ObjType::Map,
-        )
-        .ok();
+        root.put_object(&project, KEY_TIME_SIGNATURE_MAP, automerge::ObjType::Map)
+            .ok();
 
         // Initialize routing.connections sub-map
         if let Some((_, routing_id)) = root.get(&project, KEY_ROUTING).ok().flatten() {
@@ -260,7 +256,9 @@ mod tests {
         store_b.create_child_doc("track_2".to_string());
 
         let bundle_b = store_b.save_all();
-        let result = store_a.merge_bundle(bundle_b).expect("merge should succeed");
+        let result = store_a
+            .merge_bundle(bundle_b)
+            .expect("merge should succeed");
 
         assert!(result.new_doc_ids.contains(&"track_2".to_string()));
         assert!(result.merged_doc_ids.contains(&"root".to_string()));

@@ -4,21 +4,21 @@
 //! multiple tuning systems. Analyzer plugin: audio passes through unchanged,
 //! pitch telemetry sent to UI via shared state.
 
-pub mod preprocess;
-pub mod yin;
 pub mod mpm;
 pub mod poly;
-pub mod tuning;
-pub mod tone;
+pub mod preprocess;
 pub mod scala;
+pub mod tone;
+pub mod tuning;
+pub mod yin;
 
-use preprocess::{DcBlocker, Bandpass, RmsTracker, apply_hann_window, normalize};
-use yin::YinDetector;
 use mpm::MpmDetector;
 use poly::PolyStringTracker;
-use tuning::TuningSystem;
+use preprocess::{apply_hann_window, normalize, Bandpass, DcBlocker, RmsTracker};
 use tone::ToneGenerator;
+use tuning::TuningSystem;
 use wasm_bindgen::prelude::*;
+use yin::YinDetector;
 
 // ---------------------------------------------------------------------------
 // Analysis ring buffer
@@ -94,12 +94,16 @@ impl TemporalStabilizer {
         self.freqs[self.pos] = freq;
         self.confs[self.pos] = confidence;
         self.pos = (self.pos + 1) % HISTORY_SIZE;
-        if self.count < HISTORY_SIZE { self.count += 1; }
+        if self.count < HISTORY_SIZE {
+            self.count += 1;
+        }
     }
 
     /// Weighted median of recent frequencies.
     fn stable_freq(&self) -> f32 {
-        if self.count == 0 { return 0.0; }
+        if self.count == 0 {
+            return 0.0;
+        }
 
         // Sort by frequency, weighted by confidence
         let mut pairs: [(f32, f32); HISTORY_SIZE] = [(0.0, 0.0); HISTORY_SIZE];
@@ -119,7 +123,9 @@ impl TemporalStabilizer {
 
         // Weighted median: find the frequency where cumulative weight crosses 50%
         let total_weight: f32 = pairs[..self.count].iter().map(|p| p.1).sum();
-        if total_weight < 0.01 { return 0.0; }
+        if total_weight < 0.01 {
+            return 0.0;
+        }
 
         let mut cumulative = 0.0;
         for i in 0..self.count {
@@ -158,14 +164,18 @@ impl VibratoDetector {
     fn update(&mut self, freq: f32, confidence: f32) {
         self.freq_history[self.pos] = freq;
         self.pos = (self.pos + 1) % 32;
-        if self.count < 32 { self.count += 1; }
+        if self.count < 32 {
+            self.count += 1;
+        }
 
         // Compute variance of recent frequencies
         if self.count > 4 {
             let mean: f32 = self.freq_history[..self.count].iter().sum::<f32>() / self.count as f32;
-            let variance: f32 = self.freq_history[..self.count].iter()
+            let variance: f32 = self.freq_history[..self.count]
+                .iter()
                 .map(|f| (f - mean) * (f - mean))
-                .sum::<f32>() / self.count as f32;
+                .sum::<f32>()
+                / self.count as f32;
 
             // Vibrato threshold: variance > 2 Hz² suggests vibrato
             self.detected = variance > 2.0;
@@ -262,13 +272,11 @@ impl ScoringEngine {
             "tone" => self.tone.set_enabled(value > 0.5),
             "mute" => self.mute_output = value > 0.5,
             "poly" => self.poly.enabled = value > 0.5,
-            "instrument" => {
-                match value as u8 {
-                    0 => self.poly.set_guitar_standard(),
-                    1 => self.poly.set_bass_4(),
-                    _ => {}
-                }
-            }
+            "instrument" => match value as u8 {
+                0 => self.poly.set_guitar_standard(),
+                1 => self.poly.set_bass_4(),
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -291,7 +299,8 @@ impl ScoringEngine {
 
             if should_analyze && rms > GATE_THRESHOLD {
                 // Extract window
-                self.analysis_buf.extract(&mut self.analysis_window, ANALYSIS_WINDOW);
+                self.analysis_buf
+                    .extract(&mut self.analysis_window, ANALYSIS_WINDOW);
                 apply_hann_window(&mut self.analysis_window);
                 normalize(&mut self.analysis_window);
 
@@ -321,7 +330,11 @@ impl ScoringEngine {
 
                     // Map to note
                     let stable = self.stabilizer.stable_freq();
-                    let use_freq = if stable > 0.0 { stable } else { self.smoothed_freq };
+                    let use_freq = if stable > 0.0 {
+                        stable
+                    } else {
+                        self.smoothed_freq
+                    };
                     let (midi, note_idx, oct, cts) = self.tuning.map_frequency(use_freq);
 
                     self.frequency = use_freq;
@@ -389,7 +402,8 @@ impl ScoringInstance {
         let size = (frames as usize).min(1024);
         self.out_left[..size].copy_from_slice(&left_in[..size]);
         self.out_right[..size].copy_from_slice(&right_in[..size]);
-        self.engine.process(&mut self.out_left[..size], &mut self.out_right[..size]);
+        self.engine
+            .process(&mut self.out_left[..size], &mut self.out_right[..size]);
         self.out_left.as_ptr()
     }
 
@@ -398,24 +412,55 @@ impl ScoringInstance {
     }
 
     // Telemetry accessors (called from JS to read current state)
-    pub fn get_frequency(&self) -> f32 { self.engine.frequency }
-    pub fn get_cents(&self) -> f32 { self.engine.cents }
-    pub fn get_confidence(&self) -> f32 { self.engine.confidence }
-    pub fn get_note_index(&self) -> u32 { self.engine.note_index as u32 }
-    pub fn get_octave(&self) -> i32 { self.engine.octave }
-    pub fn get_midi_note(&self) -> i32 { self.engine.midi_note }
-    pub fn is_active(&self) -> bool { self.engine.active }
+    pub fn get_frequency(&self) -> f32 {
+        self.engine.frequency
+    }
+    pub fn get_cents(&self) -> f32 {
+        self.engine.cents
+    }
+    pub fn get_confidence(&self) -> f32 {
+        self.engine.confidence
+    }
+    pub fn get_note_index(&self) -> u32 {
+        self.engine.note_index as u32
+    }
+    pub fn get_octave(&self) -> i32 {
+        self.engine.octave
+    }
+    pub fn get_midi_note(&self) -> i32 {
+        self.engine.midi_note
+    }
+    pub fn is_active(&self) -> bool {
+        self.engine.active
+    }
 
     // Poly telemetry
-    pub fn get_poly_string_count(&self) -> u32 { self.engine.poly.string_count() as u32 }
+    pub fn get_poly_string_count(&self) -> u32 {
+        self.engine.poly.string_count() as u32
+    }
     pub fn get_poly_string_cents(&self, idx: u32) -> f32 {
-        self.engine.poly.results.get(idx as usize).map(|r| r.cents).unwrap_or(0.0)
+        self.engine
+            .poly
+            .results
+            .get(idx as usize)
+            .map(|r| r.cents)
+            .unwrap_or(0.0)
     }
     pub fn get_poly_string_confidence(&self, idx: u32) -> f32 {
-        self.engine.poly.results.get(idx as usize).map(|r| r.confidence).unwrap_or(0.0)
+        self.engine
+            .poly
+            .results
+            .get(idx as usize)
+            .map(|r| r.confidence)
+            .unwrap_or(0.0)
     }
     pub fn is_poly_string_active(&self, idx: u32) -> bool {
-        self.engine.poly.results.get(idx as usize).map(|r| r.active).unwrap_or(false)
+        self.engine
+            .poly
+            .results
+            .get(idx as usize)
+            .map(|r| r.active)
+            .unwrap_or(false)
     }
 
     /// Import a Scala .scl file and apply as tuning offsets.

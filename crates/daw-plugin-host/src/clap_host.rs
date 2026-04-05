@@ -1,13 +1,12 @@
+use clap_sys::ext::gui::{clap_host_gui, CLAP_EXT_GUI};
+use clap_sys::ext::params::{clap_host_params, CLAP_EXT_PARAMS};
+use clap_sys::ext::state::{clap_host_state, CLAP_EXT_STATE};
 /// CLAP Host implementation — provides the `clap_host_t` and host extensions.
 ///
 /// The CLAP spec requires the host to provide callback function pointers
 /// that plugins call for services like param changes, GUI resize, state dirty.
-
 use clap_sys::host::clap_host;
 use clap_sys::version::CLAP_VERSION;
-use clap_sys::ext::params::{clap_host_params, CLAP_EXT_PARAMS};
-use clap_sys::ext::gui::{clap_host_gui, CLAP_EXT_GUI};
-use clap_sys::ext::state::{clap_host_state, CLAP_EXT_STATE};
 use std::ffi::CStr;
 use std::os::raw::c_void;
 
@@ -82,26 +81,17 @@ static HOST_PARAMS: clap_host_params = clap_host_params {
     request_flush: Some(host_params_request_flush),
 };
 
-unsafe extern "C" fn host_params_rescan(
-    _host: *const clap_host,
-    _flags: u32,
-) {
+unsafe extern "C" fn host_params_rescan(_host: *const clap_host, _flags: u32) {
     // Plugin is telling us its parameter list changed.
     // In a full implementation, re-enumerate parameters and update the UI.
     eprintln!("[CLAP Host] Plugin requested param rescan");
 }
 
-unsafe extern "C" fn host_params_clear(
-    _host: *const clap_host,
-    _param_id: u32,
-    _flags: u32,
-) {
+unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, _flags: u32) {
     // Plugin is telling us to clear automation for a parameter.
 }
 
-unsafe extern "C" fn host_params_request_flush(
-    _host: *const clap_host,
-) {
+unsafe extern "C" fn host_params_request_flush(_host: *const clap_host) {
     // Plugin wants us to call params.flush() outside of process().
     // We'll handle this in the next audio callback via a flag.
 }
@@ -125,7 +115,10 @@ unsafe extern "C" fn host_gui_request_resize(
     width: u32,
     height: u32,
 ) -> bool {
-    eprintln!("[CLAP Host] Plugin requested resize to {}x{}", width, height);
+    eprintln!(
+        "[CLAP Host] Plugin requested resize to {}x{}",
+        width, height
+    );
     // TODO: Resize the Tauri window to match
     // For now, accept but don't actually resize
     true

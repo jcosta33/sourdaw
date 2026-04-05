@@ -173,7 +173,7 @@ impl DrumVoice {
         self.age += 1;
 
         let mut sample = self.engine.tick(sample_rate);
-        
+
         // Apply choke fade out if released
         sample *= self.choke_multiplier;
         if self.choke_decay < 1.0 {

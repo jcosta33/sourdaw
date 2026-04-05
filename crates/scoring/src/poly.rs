@@ -2,7 +2,6 @@
 ///
 /// Targets known string frequencies (guitar, bass, custom). Much cheaper than
 /// NMF or transcription because the problem is constrained to known pitches.
-
 use crate::preprocess::Bandpass;
 use crate::yin::YinDetector;
 
@@ -26,7 +25,13 @@ impl StringTarget {
         // ±2 semitones bandwidth
         let lo = freq_hz * 2.0_f32.powf(-2.0 / 12.0);
         let hi = freq_hz * 2.0_f32.powf(2.0 / 12.0);
-        Self { label: l, midi_note, freq_hz, lo_hz: lo, hi_hz: hi }
+        Self {
+            label: l,
+            midi_note,
+            freq_hz,
+            lo_hz: lo,
+            hi_hz: hi,
+        }
     }
 
     pub fn label_str(&self) -> &str {
@@ -100,19 +105,28 @@ impl PolyStringTracker {
     fn set_strings(&mut self, targets: &[StringTarget]) {
         let n = targets.len().min(MAX_STRINGS);
         self.strings = targets[..n].to_vec();
-        self.filters = targets[..n].iter().map(|t| {
-            let center = t.freq_hz;
-            let q = center / (t.hi_hz - t.lo_hz);
-            Bandpass::new(center, q.max(0.5), self.sample_rate)
-        }).collect();
-        self.detectors = targets[..n].iter().map(|t| {
-            YinDetector::new(self.sample_rate, t.lo_hz, t.hi_hz)
-        }).collect();
+        self.filters = targets[..n]
+            .iter()
+            .map(|t| {
+                let center = t.freq_hz;
+                let q = center / (t.hi_hz - t.lo_hz);
+                Bandpass::new(center, q.max(0.5), self.sample_rate)
+            })
+            .collect();
+        self.detectors = targets[..n]
+            .iter()
+            .map(|t| YinDetector::new(self.sample_rate, t.lo_hz, t.hi_hz))
+            .collect();
         self.buffers = (0..n).map(|_| vec![0.0; self.buf_size]).collect();
         self.buf_positions = vec![0; n];
-        self.results = (0..n).map(|_| StringResult {
-            cents: 0.0, confidence: 0.0, active: false, freq: 0.0,
-        }).collect();
+        self.results = (0..n)
+            .map(|_| StringResult {
+                cents: 0.0,
+                confidence: 0.0,
+                active: false,
+                freq: 0.0,
+            })
+            .collect();
     }
 
     /// Feed one audio sample and optionally run analysis.

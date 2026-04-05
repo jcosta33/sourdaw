@@ -4,22 +4,22 @@
 //! Features: shimmer, freeze, gravity, saturation, decay rate EQ, vintage modes.
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 
-pub mod proof_chamber;
-pub mod fdn;
-pub mod spring;
-pub mod decay_eq;
 pub mod convolution;
+pub mod decay_eq;
+pub mod fdn;
 pub mod hybrid;
-pub mod vintage;
+pub mod proof_chamber;
 pub mod reverse;
+pub mod spring;
+pub mod vintage;
 
-use proof_chamber::ProofChamber;
-use fdn::FdnReverb;
-use spring::SpringReverb;
 use convolution::ConvolutionEngine;
-use hybrid::{HybridReverb, HybridMode};
-use vintage::{VintageProcessor, VintageMode};
+use fdn::FdnReverb;
+use hybrid::{HybridMode, HybridReverb};
+use proof_chamber::ProofChamber;
 use reverse::ReverseReverb;
+use spring::SpringReverb;
+use vintage::{VintageMode, VintageProcessor};
 use wasm_bindgen::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -118,16 +118,29 @@ impl ProofChamberInstance {
         self.out_right[..size].copy_from_slice(&right_in[..size]);
 
         match &mut self.engine {
-            ReverbEngine::Plate(p) => p.process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Fdn8(f) | ReverbEngine::Fdn16(f) => f.process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Spring(s) => s.process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Convolution(c) => c.process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Hybrid(h) => h.process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Reverse(r) => r.process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Plate(p) => {
+                p.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
+            ReverbEngine::Fdn8(f) | ReverbEngine::Fdn16(f) => {
+                f.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
+            ReverbEngine::Spring(s) => {
+                s.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
+            ReverbEngine::Convolution(c) => {
+                c.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
+            ReverbEngine::Hybrid(h) => {
+                h.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
+            ReverbEngine::Reverse(r) => {
+                r.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
         }
 
         // Apply vintage character
-        self.vintage.process(&mut self.out_left[..size], &mut self.out_right[..size]);
+        self.vintage
+            .process(&mut self.out_left[..size], &mut self.out_right[..size]);
 
         self.out_left.as_ptr()
     }
@@ -151,8 +164,15 @@ impl ProofChamberInstance {
         let engine_names: Vec<&str> = match &self.engine {
             ReverbEngine::Plate(p) => p.param_names(),
             ReverbEngine::Fdn8(_) | ReverbEngine::Fdn16(_) => vec![
-                "mix", "rt60", "damping", "predelay", "size",
-                "mod_depth", "early_late", "matrix", "saturation",
+                "mix",
+                "rt60",
+                "damping",
+                "predelay",
+                "size",
+                "mod_depth",
+                "early_late",
+                "matrix",
+                "saturation",
             ],
             ReverbEngine::Spring(s) => s.param_names(),
             ReverbEngine::Convolution(c) => c.param_names(),

@@ -22,8 +22,8 @@ pub struct VintageProcessor {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum VintageMode {
-    Modern,   // Clean, full bandwidth
-    Eighties, // Full rate, dark modulation, 15kHz bandwidth
+    Modern,    // Clean, full bandwidth
+    Eighties,  // Full rate, dark modulation, 15kHz bandwidth
     Seventies, // ~20kHz effective rate, dark, noisy, 10kHz bandwidth
 }
 

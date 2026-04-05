@@ -3,7 +3,6 @@
 /// Each band's gain/cut maps to a decay time multiplier (0.25x - 4.0x of base RT60).
 /// Implemented as a cascade of biquad sections per FDN delay line, where each biquad's
 /// gain is computed from the Jot formula: g = 10^(-3 * M / (fs * RT60_band)).
-
 use std::f32::consts::TAU;
 
 // ---------------------------------------------------------------------------
@@ -12,17 +11,25 @@ use std::f32::consts::TAU;
 
 #[derive(Clone)]
 pub struct Biquad {
-    b0: f32, b1: f32, b2: f32,
-    a1: f32, a2: f32,
-    z1: f32, z2: f32,
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    z1: f32,
+    z2: f32,
 }
 
 impl Biquad {
     pub fn new() -> Self {
         Self {
-            b0: 1.0, b1: 0.0, b2: 0.0,
-            a1: 0.0, a2: 0.0,
-            z1: 0.0, z2: 0.0,
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+            z1: 0.0,
+            z2: 0.0,
         }
     }
 
@@ -117,12 +124,42 @@ pub enum BandType {
 /// Default 6-band configuration per the research doc.
 pub fn default_bands() -> [DecayEqBand; NUM_BANDS] {
     [
-        DecayEqBand { freq: 100.0,  multiplier: 1.0, q: 0.707, band_type: BandType::LowShelf },
-        DecayEqBand { freq: 400.0,  multiplier: 1.0, q: 1.0,   band_type: BandType::Bell },
-        DecayEqBand { freq: 1200.0, multiplier: 1.0, q: 1.0,   band_type: BandType::Bell },
-        DecayEqBand { freq: 3500.0, multiplier: 1.0, q: 1.0,   band_type: BandType::Bell },
-        DecayEqBand { freq: 8000.0, multiplier: 1.0, q: 1.0,   band_type: BandType::Bell },
-        DecayEqBand { freq: 12000.0, multiplier: 1.0, q: 0.707, band_type: BandType::HighShelf },
+        DecayEqBand {
+            freq: 100.0,
+            multiplier: 1.0,
+            q: 0.707,
+            band_type: BandType::LowShelf,
+        },
+        DecayEqBand {
+            freq: 400.0,
+            multiplier: 1.0,
+            q: 1.0,
+            band_type: BandType::Bell,
+        },
+        DecayEqBand {
+            freq: 1200.0,
+            multiplier: 1.0,
+            q: 1.0,
+            band_type: BandType::Bell,
+        },
+        DecayEqBand {
+            freq: 3500.0,
+            multiplier: 1.0,
+            q: 1.0,
+            band_type: BandType::Bell,
+        },
+        DecayEqBand {
+            freq: 8000.0,
+            multiplier: 1.0,
+            q: 1.0,
+            band_type: BandType::Bell,
+        },
+        DecayEqBand {
+            freq: 12000.0,
+            multiplier: 1.0,
+            q: 0.707,
+            band_type: BandType::HighShelf,
+        },
     ]
 }
 
@@ -196,9 +233,15 @@ impl DecayRateEq {
         let gain_db = 20.0 * ratio.log10();
 
         match band.band_type {
-            BandType::LowShelf => self.biquads[i].design_low_shelf(band.freq, gain_db, self.sample_rate),
-            BandType::Bell => self.biquads[i].design_peak(band.freq, gain_db, band.q, self.sample_rate),
-            BandType::HighShelf => self.biquads[i].design_high_shelf(band.freq, gain_db, self.sample_rate),
+            BandType::LowShelf => {
+                self.biquads[i].design_low_shelf(band.freq, gain_db, self.sample_rate)
+            }
+            BandType::Bell => {
+                self.biquads[i].design_peak(band.freq, gain_db, band.q, self.sample_rate)
+            }
+            BandType::HighShelf => {
+                self.biquads[i].design_high_shelf(band.freq, gain_db, self.sample_rate)
+            }
         }
     }
 

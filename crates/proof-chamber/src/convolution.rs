@@ -4,7 +4,6 @@
 /// with increasing partition sizes (256 → 512 → 1024 → 2048 → 4096).
 /// True stereo support (4-channel IR: LL, LR, RL, RR).
 /// IR management: auto-trim, exponential decay stretching, frequency-domain EQ.
-
 use std::f32::consts::TAU;
 
 // ---------------------------------------------------------------------------
@@ -167,7 +166,11 @@ impl ConvStage {
             in_re[..self.partition_size].copy_from_slice(&self.input_acc);
             fft(&mut in_re, &mut in_im, false);
 
-            self.fdl_pos = if self.fdl_pos == 0 { self.num_partitions.saturating_sub(1) } else { self.fdl_pos - 1 };
+            self.fdl_pos = if self.fdl_pos == 0 {
+                self.num_partitions.saturating_sub(1)
+            } else {
+                self.fdl_pos - 1
+            };
             if self.fdl_pos < self.fdl_re.len() {
                 self.fdl_re[self.fdl_pos] = in_re;
                 self.fdl_im[self.fdl_pos] = in_im;
@@ -179,8 +182,10 @@ impl ConvStage {
                 let fdl_idx = (self.fdl_pos + p) % self.num_partitions;
                 for k in 0..self.fft_size {
                     let (r, i) = complex_mul(
-                        self.fdl_re[fdl_idx][k], self.fdl_im[fdl_idx][k],
-                        self.ir_re[p][k], self.ir_im[p][k],
+                        self.fdl_re[fdl_idx][k],
+                        self.fdl_im[fdl_idx][k],
+                        self.ir_re[p][k],
+                        self.ir_im[p][k],
                     );
                     acc_re[k] += r;
                     acc_im[k] += i;
@@ -324,9 +329,7 @@ impl ConvolutionEngine {
         let frame_count = ir_data.len() / channels;
 
         // Extract left channel (or LL for true stereo)
-        let mut left_ir: Vec<f32> = (0..frame_count)
-            .map(|i| ir_data[i * channels])
-            .collect();
+        let mut left_ir: Vec<f32> = (0..frame_count).map(|i| ir_data[i * channels]).collect();
 
         // Auto-trim
         let trim_len = {
@@ -360,7 +363,11 @@ impl ConvolutionEngine {
             let mut right_ir: Vec<f32> = (0..frame_count.min(trim_len))
                 .map(|i| {
                     let idx = i * channels + 2; // RL channel
-                    if idx < ir_data.len() { ir_data[idx] } else { 0.0 }
+                    if idx < ir_data.len() {
+                        ir_data[idx]
+                    } else {
+                        0.0
+                    }
                 })
                 .collect();
 
@@ -406,7 +413,8 @@ impl ConvolutionEngine {
             self.input_history[self.input_pos] = mono;
             let mut head_out = 0.0_f32;
             for k in 0..self.head_len {
-                let idx = (self.input_pos + self.input_history.len() - k) % self.input_history.len();
+                let idx =
+                    (self.input_pos + self.input_history.len() - k) % self.input_history.len();
                 head_out += self.input_history[idx] * self.head_ir[k];
             }
             self.input_pos = (self.input_pos + 1) % self.input_history.len();
@@ -423,7 +431,8 @@ impl ConvolutionEngine {
             let wet_r = if self.has_true_stereo {
                 let mut stereo_head = 0.0_f32;
                 for k in 0..self.stereo_head_ir.len() {
-                    let idx = (self.input_pos + self.input_history.len() - k) % self.input_history.len();
+                    let idx =
+                        (self.input_pos + self.input_history.len() - k) % self.input_history.len();
                     stereo_head += self.input_history[idx] * self.stereo_head_ir[k];
                 }
                 let mut stereo_tail = 0.0_f32;
@@ -441,7 +450,16 @@ impl ConvolutionEngine {
     }
 
     pub fn param_names(&self) -> Vec<&str> {
-        vec!["mix", "ir_stretch", "ir_eq_1", "ir_eq_2", "ir_eq_3", "ir_eq_4", "ir_eq_5", "ir_eq_6"]
+        vec![
+            "mix",
+            "ir_stretch",
+            "ir_eq_1",
+            "ir_eq_2",
+            "ir_eq_3",
+            "ir_eq_4",
+            "ir_eq_5",
+            "ir_eq_6",
+        ]
     }
 }
 

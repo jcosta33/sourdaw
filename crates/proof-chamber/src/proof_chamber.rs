@@ -6,7 +6,6 @@
 ///
 /// Features: modulated tank with allpass interpolation, 14-tap stereo output,
 /// freeze, shimmer (granular pitch shifter in feedback), and pre-delay.
-
 use std::f32::consts::{PI, TAU};
 
 // ---------------------------------------------------------------------------
@@ -38,23 +37,23 @@ const EXCURSION: f32 = 16.0; // peak excursion in samples at ref rate
 // delay IDs: 0=left_delay1 (24→30), 1=left_ap (31→33), 2=left_delay2 (33→39)
 //            3=right_delay1 (48→54), 4=right_ap (55→59), 5=right_delay2 (59→63)
 const LEFT_TAPS: [(usize, usize, f32); 7] = [
-    (3, 266, 0.6),    // +delay_48_54[266]
-    (3, 2974, 0.6),   // +delay_48_54[2974]
-    (4, 1913, -0.6),  // -allpass_55_59[1913]
-    (5, 1996, 0.6),   // +delay_59_63[1996]
-    (0, 1990, -0.6),  // -delay_24_30[1990]
-    (1, 187, -0.6),   // -allpass_31_33[187]
-    (2, 1066, -0.6),  // -delay_33_39[1066]
+    (3, 266, 0.6),   // +delay_48_54[266]
+    (3, 2974, 0.6),  // +delay_48_54[2974]
+    (4, 1913, -0.6), // -allpass_55_59[1913]
+    (5, 1996, 0.6),  // +delay_59_63[1996]
+    (0, 1990, -0.6), // -delay_24_30[1990]
+    (1, 187, -0.6),  // -allpass_31_33[187]
+    (2, 1066, -0.6), // -delay_33_39[1066]
 ];
 
 const RIGHT_TAPS: [(usize, usize, f32); 7] = [
-    (0, 353, 0.6),    // +delay_24_30[353]
-    (0, 3627, 0.6),   // +delay_24_30[3627]
-    (1, 1228, -0.6),  // -allpass_31_33[1228]
-    (2, 2673, 0.6),   // +delay_33_39[2673]
-    (3, 2111, -0.6),  // -delay_48_54[2111]
-    (4, 335, -0.6),   // -allpass_55_59[335]
-    (5, 121, -0.6),   // -delay_59_63[121]
+    (0, 353, 0.6),   // +delay_24_30[353]
+    (0, 3627, 0.6),  // +delay_24_30[3627]
+    (1, 1228, -0.6), // -allpass_31_33[1228]
+    (2, 2673, 0.6),  // +delay_33_39[2673]
+    (3, 2111, -0.6), // -delay_48_54[2111]
+    (4, 335, -0.6),  // -allpass_55_59[335]
+    (5, 121, -0.6),  // -delay_59_63[121]
 ];
 
 // ---------------------------------------------------------------------------
@@ -242,7 +241,7 @@ impl GranularShifter {
             buffer: vec![0.0; buf_size],
             write_pos: 0,
             phase1: 0.0,
-            phase2: 0.5, // 180° offset for overlap
+            phase2: 0.5,      // 180° offset for overlap
             pitch_ratio: 2.0, // octave up
             grain_size,
             enabled: false,
@@ -280,8 +279,12 @@ impl GranularShifter {
 
         self.phase1 += (self.pitch_ratio - 1.0) / gs;
         self.phase2 += (self.pitch_ratio - 1.0) / gs;
-        if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
-        if self.phase2 >= 1.0 { self.phase2 -= 1.0; }
+        if self.phase1 >= 1.0 {
+            self.phase1 -= 1.0;
+        }
+        if self.phase2 >= 1.0 {
+            self.phase2 -= 1.0;
+        }
 
         // Hann envelope
         let env1 = (0.5 * (1.0 - (TAU as f64 * self.phase1).cos())) as f32;
@@ -318,8 +321,8 @@ pub struct ProofChamber {
     low_cut_freq: f32,
     width: f32,
     freeze: bool,
-    gravity: f32,         // -1 to +1: negative = reverse swell, positive = normal
-    saturation_type: u8,  // 0=tanh, 1=chebyshev, 2=hard clip
+    gravity: f32,        // -1 to +1: negative = reverse swell, positive = normal
+    saturation_type: u8, // 0=tanh, 1=chebyshev, 2=hard clip
     saturation_enabled: bool,
 
     // Input section
@@ -331,7 +334,7 @@ pub struct ProofChamber {
     predelay_len: usize,
 
     // Tank — left half
-    left_mod_ap: DelayLine,  // modulated allpass delay
+    left_mod_ap: DelayLine, // modulated allpass delay
     left_mod_ap_gain: f32,
     left_delay_1: DelayLine,
     left_damp: OnePole,
@@ -377,8 +380,10 @@ impl ProofChamber {
     pub fn new(sample_rate: f32) -> Self {
         let s = |d: usize| scale_delay(d, sample_rate);
 
-        let scaled_left_mod = s(LEFT_MOD_AP_DELAY) + (EXCURSION * sample_rate / REF_RATE) as usize + 2;
-        let scaled_right_mod = s(RIGHT_MOD_AP_DELAY) + (EXCURSION * sample_rate / REF_RATE) as usize + 2;
+        let scaled_left_mod =
+            s(LEFT_MOD_AP_DELAY) + (EXCURSION * sample_rate / REF_RATE) as usize + 2;
+        let scaled_right_mod =
+            s(RIGHT_MOD_AP_DELAY) + (EXCURSION * sample_rate / REF_RATE) as usize + 2;
 
         let left_d1_len = s(LEFT_DELAY_1);
         let left_ap_len = s(LEFT_AP_DELAY);
@@ -387,7 +392,14 @@ impl ProofChamber {
         let right_ap_len = s(RIGHT_AP_DELAY);
         let right_d2_len = s(RIGHT_DELAY_2);
 
-        let scaled_delays = [left_d1_len, left_ap_len, left_d2_len, right_d1_len, right_ap_len, right_d2_len];
+        let scaled_delays = [
+            left_d1_len,
+            left_ap_len,
+            left_d2_len,
+            right_d1_len,
+            right_ap_len,
+            right_d2_len,
+        ];
 
         // Scale output taps
         let scale_taps = |taps: &[(usize, usize, f32); 7]| -> [(usize, usize, f32); 7] {
@@ -572,8 +584,12 @@ impl ProofChamber {
             let lfo_r = (self.lfo_phase_r * TAU).sin();
             self.lfo_phase_l += self.mod_rate / self.sample_rate;
             self.lfo_phase_r += (self.mod_rate * 0.707) / self.sample_rate;
-            if self.lfo_phase_l >= 1.0 { self.lfo_phase_l -= 1.0; }
-            if self.lfo_phase_r >= 1.0 { self.lfo_phase_r -= 1.0; }
+            if self.lfo_phase_l >= 1.0 {
+                self.lfo_phase_l -= 1.0;
+            }
+            if self.lfo_phase_r >= 1.0 {
+                self.lfo_phase_r -= 1.0;
+            }
 
             let mod_l = self.excursion * 0.5 * mod_depth * lfo_l;
             let mod_r = self.excursion * 0.5 * mod_depth * lfo_r;
@@ -693,11 +709,25 @@ impl ProofChamber {
 
     pub fn param_names(&self) -> Vec<&str> {
         vec![
-            "mix", "decay", "damping", "predelay", "size",
-            "mod_rate", "mod_depth", "diffusion",
-            "high_cut", "low_cut", "width",
-            "freeze", "shimmer", "shimmer_amount", "shimmer_pitch",
-            "gravity", "saturation", "saturation_type", "density",
+            "mix",
+            "decay",
+            "damping",
+            "predelay",
+            "size",
+            "mod_rate",
+            "mod_depth",
+            "diffusion",
+            "high_cut",
+            "low_cut",
+            "width",
+            "freeze",
+            "shimmer",
+            "shimmer_amount",
+            "shimmer_pitch",
+            "gravity",
+            "saturation",
+            "saturation_type",
+            "density",
         ]
     }
 }

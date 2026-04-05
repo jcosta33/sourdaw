@@ -55,11 +55,13 @@ impl NoiseGate {
             }
             "gateThreshold" => self.threshold_linear = db_to_linear(value),
             "gateAttack" => {
-                self.detector_attack_coeff = Self::time_to_coeff((value * 0.5).max(0.1), self.sample_rate);
+                self.detector_attack_coeff =
+                    Self::time_to_coeff((value * 0.5).max(0.1), self.sample_rate);
                 self.gain_attack_coeff = Self::time_to_coeff(value.max(0.1), self.sample_rate);
             }
             "gateRelease" => {
-                self.detector_release_coeff = Self::time_to_coeff((value * 0.6).max(5.0), self.sample_rate);
+                self.detector_release_coeff =
+                    Self::time_to_coeff((value * 0.6).max(5.0), self.sample_rate);
                 self.gain_release_coeff = Self::time_to_coeff(value.max(5.0), self.sample_rate);
             }
             _ => {}

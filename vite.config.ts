@@ -50,9 +50,7 @@ export default defineConfig({
             // the ESM Wasm integration proposal syntax that Rolldown (Vite 8) does
             // not support. The base64 entrypoint is functionally identical but
             // inlines the .wasm as a base64 string, sidestepping the issue entirely.
-            '@automerge/automerge': resolve(
-                'node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js',
-            ),
+            '@automerge/automerge': resolve('node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js'),
         },
     },
     build: {

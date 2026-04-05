@@ -4,7 +4,6 @@
 /// group delay (dispersion), placed in a feedback loop with a long delay line
 /// representing the spring length. The result is the characteristic chirp/drip
 /// sound of a real helical spring reverberator.
-
 use std::f32::consts::TAU;
 
 // ---------------------------------------------------------------------------
@@ -147,7 +146,8 @@ impl SpringReverb {
                 self.mod_phase -= 1.0;
             }
             let mod_offset = (lfo * self.mod_depth * 4.0) as isize;
-            let effective_delay = (self.delay_len as isize + mod_offset).clamp(1, (buf_len - 1) as isize) as usize;
+            let effective_delay =
+                (self.delay_len as isize + mod_offset).clamp(1, (buf_len - 1) as isize) as usize;
 
             // Read from feedback delay
             let read_pos = (self.delay_write + buf_len - effective_delay) % buf_len;

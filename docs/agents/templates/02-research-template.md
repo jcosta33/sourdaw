@@ -17,7 +17,7 @@ Be concrete: "Which Web Audio API scheduling approach minimises jitter at 10ms l
 
 All sources consulted. Every significant factual claim in Findings must trace to one of these.
 
-- **[S1]** Author(s). *Title*. Venue/Publisher, Year. URL if available.
+- **[S1]** Author(s). _Title_. Venue/Publisher, Year. URL if available.
 - **[S2]** Library/product name. Documentation section. URL.
 - **[S3]** ...
 
@@ -53,11 +53,11 @@ directly applicable to this repo's problem. These are the parts an implementer w
 
 Where multiple options, algorithms, or libraries exist, compare them explicitly.
 
-| | Option A | Option B | Option C |
-|---|---|---|---|
-| Criterion 1 | | | |
-| Criterion 2 | | | |
-| Criterion 3 | | | |
+|             | Option A | Option B | Option C |
+| ----------- | -------- | -------- | -------- |
+| Criterion 1 |          |          |          |
+| Criterion 2 |          |          |          |
+| Criterion 3 |          |          |          |
 
 ---
 

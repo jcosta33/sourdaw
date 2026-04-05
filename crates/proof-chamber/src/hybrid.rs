@@ -1,3 +1,4 @@
+use crate::convolution::ConvolutionEngine;
 /// Hybrid reverb — combines convolution (early reflections / room character)
 /// with algorithmic reverb (controllable tail with modulation).
 ///
@@ -6,15 +7,13 @@
 /// - Series: convolution first (early), then algorithmic (tail extension)
 ///
 /// Power-complementary crossfade: w_conv² + w_algo² = 1 at all times.
-
 use crate::proof_chamber::ProofChamber;
-use crate::convolution::ConvolutionEngine;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum HybridMode {
-    Off,       // Algorithm only
-    Parallel,  // Both process input, blend output
-    Series,    // Convolution → algorithm
+    Off,      // Algorithm only
+    Parallel, // Both process input, blend output
+    Series,   // Convolution → algorithm
 }
 
 pub struct HybridReverb {
@@ -79,7 +78,8 @@ impl HybridReverb {
 
                 // Process both
                 self.algorithmic.process(left, right);
-                self.convolution.process(&mut self.scratch_l[..len], &mut self.scratch_r[..len]);
+                self.convolution
+                    .process(&mut self.scratch_l[..len], &mut self.scratch_r[..len]);
 
                 // Power-complementary crossfade
                 let angle = self.blend * std::f32::consts::FRAC_PI_2;

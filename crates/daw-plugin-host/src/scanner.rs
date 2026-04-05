@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
@@ -41,7 +41,10 @@ pub fn stable_id(path: &Path) -> String {
     let mut hasher = Sha256::new();
     hasher.update(path.to_string_lossy().as_bytes());
     let digest = hasher.finalize();
-    format!("{:016x}", u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes")))
+    format!(
+        "{:016x}",
+        u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
+    )
 }
 
 fn detect_format(path: &Path, is_dir: bool) -> Option<&'static str> {
@@ -200,7 +203,9 @@ unsafe fn extract_from_factory(entry_ref: &clap_plugin_entry) -> (String, String
 
     let desc_ref = &*desc;
     let vendor = if !desc_ref.vendor.is_null() {
-        CStr::from_ptr(desc_ref.vendor).to_string_lossy().into_owned()
+        CStr::from_ptr(desc_ref.vendor)
+            .to_string_lossy()
+            .into_owned()
     } else {
         String::new()
     };

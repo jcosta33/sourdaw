@@ -1,12 +1,12 @@
-pub mod scheduler;
+pub mod audio_bridge;
 pub mod audio_thread;
 pub mod plugin_slot;
-pub mod audio_bridge;
+pub mod scheduler;
 
-use rtrb::{RingBuffer, Producer};
-use scheduler::GraphCommand;
 use audio_thread::{spawn_audio_thread, AudioThreadHandle};
 use plugin_slot::NativePlugin;
+use rtrb::{Producer, RingBuffer};
+use scheduler::GraphCommand;
 use std::sync::{Arc, Mutex};
 
 pub struct EngineHandle {
@@ -30,13 +30,15 @@ impl EngineHandle {
 
     /// Add a built-in effect to the native rendering graph.
     pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::AddEffect(id, plugin_type.to_string()))
+        self.command_tx
+            .push(GraphCommand::AddEffect(id, plugin_type.to_string()))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
     /// Update an effect parameter natively.
     pub fn set_effect_param(&mut self, id: usize, param: &str, value: f32) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::SetParam(id, param.to_string(), value))
+        self.command_tx
+            .push(GraphCommand::SetParam(id, param.to_string(), value))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
@@ -45,40 +47,53 @@ impl EngineHandle {
     pub fn add_plugin(&mut self, plugin: Box<dyn NativePlugin>) -> Result<usize, String> {
         let id = self.next_plugin_id;
         self.next_plugin_id += 1;
-        self.command_tx.push(GraphCommand::AddPlugin(id, plugin))
+        self.command_tx
+            .push(GraphCommand::AddPlugin(id, plugin))
             .map_err(|_| "Audio command queue full".to_string())?;
         Ok(id)
     }
 
     /// Remove a native plugin from the audio thread.
     pub fn remove_plugin(&mut self, id: usize) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::RemovePlugin(id))
+        self.command_tx
+            .push(GraphCommand::RemovePlugin(id))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
     /// Set a parameter on a native plugin (lock-free, from any thread).
     pub fn set_plugin_param(&mut self, id: usize, param_id: u32, value: f64) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::SetPluginParam(id, param_id, value))
+        self.command_tx
+            .push(GraphCommand::SetPluginParam(id, param_id, value))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
     /// Send a MIDI note event to a specific plugin (lock-free).
-    pub fn send_midi_note(&mut self, plugin_id: usize, event: plugin_slot::MidiNoteEvent) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::SendMidiNote(plugin_id, event))
+    pub fn send_midi_note(
+        &mut self,
+        plugin_id: usize,
+        event: plugin_slot::MidiNoteEvent,
+    ) -> Result<(), String> {
+        self.command_tx
+            .push(GraphCommand::SendMidiNote(plugin_id, event))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
     /// Update the global transport state (lock-free).
     pub fn set_transport(&mut self, state: plugin_slot::TransportState) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::SetTransport(state))
+        self.command_tx
+            .push(GraphCommand::SetTransport(state))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
     /// Create and register a ring-buffer audio bridge for a plugin.
     /// Returns the handle that the main thread uses to push/pop audio blocks.
-    pub fn create_audio_bridge(&mut self, plugin_id: usize) -> Result<audio_bridge::PluginAudioBridgeHandle, String> {
+    pub fn create_audio_bridge(
+        &mut self,
+        plugin_id: usize,
+    ) -> Result<audio_bridge::PluginAudioBridgeHandle, String> {
         let (bridge, handle) = audio_bridge::create_audio_bridge(plugin_id);
-        self.command_tx.push(GraphCommand::RegisterAudioBridge(bridge))
+        self.command_tx
+            .push(GraphCommand::RegisterAudioBridge(bridge))
             .map_err(|_| "Audio command queue full".to_string())?;
         Ok(handle)
     }

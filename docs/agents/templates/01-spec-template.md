@@ -24,9 +24,11 @@ detail here.
 ## Scope
 
 **In scope:**
+
 - Item
 
 **Non-goals (explicitly out of scope):**
+
 - Item (and why, if not obvious)
 
 ---
@@ -58,6 +60,7 @@ Significant decisions made during spec-writing, and why alternatives were reject
 **Chosen:** ...
 
 **Considered and rejected:**
+
 - Option A — rejected because ...
 - Option B — rejected because ...
 

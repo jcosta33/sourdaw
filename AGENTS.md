@@ -8,23 +8,23 @@ This document provides the canonical instructions and architectural rules that Y
 
 Before starting significant implementation work, read the shared process documentation:
 
-| Document | What it covers |
-|---|---|
-| `docs/agents/01-process.md` | Why documentation-first exists and the five document types |
+| Document                       | What it covers                                                        |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `docs/agents/01-process.md`    | Why documentation-first exists and the five document types            |
 | `docs/agents/02-file-types.md` | Definitions, required sections, and completion criteria for each type |
-| `docs/agents/03-workflow.md` | Step-by-step execution flow for agent sessions |
-| `docs/agents/04-standards.md` | Writing quality, citation, certainty, and scope rules |
-| `agents/templates/` | Ready-to-use templates: `audit.md`, `spec.md`, `task.md` |
+| `docs/agents/03-workflow.md`   | Step-by-step execution flow for agent sessions                        |
+| `docs/agents/04-standards.md`  | Writing quality, citation, certainty, and scope rules                 |
+| `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`              |
 
 Working artifacts for this repo live in:
 
-| Directory | Contains |
-|---|---|
-| `.agents/audits/` | Codebase state reports relative to a goal |
-| `.agents/specs/` | Feature specs, requirements, acceptance criteria |
-| `.agents/research/` | Technical findings from external sources |
-| `.agents/skills/` | Reusable domain knowledge — load before working in a domain |
-| `.agents/tasks/` | Active work items (gitignored, worktree-specific) |
+| Directory           | Contains                                                    |
+| ------------------- | ----------------------------------------------------------- |
+| `.agents/audits/`   | Codebase state reports relative to a goal                   |
+| `.agents/specs/`    | Feature specs, requirements, acceptance criteria            |
+| `.agents/research/` | Technical findings from external sources                    |
+| `.agents/skills/`   | Reusable domain knowledge — load before working in a domain |
+| `.agents/tasks/`    | Active work items (gitignored, worktree-specific)           |
 
 **Before implementing any non-trivial feature:** load `.agents/skills/documentation-gatekeeper/SKILL.md` — it encodes the sequencing invariants for this repo. Then check `.agents/specs/` for an existing spec and `.agents/audits/` for an existing audit of the area. Read relevant domain skills from `.agents/skills/` before touching their domains. Do not skip this step.
 

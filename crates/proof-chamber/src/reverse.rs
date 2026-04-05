@@ -4,7 +4,6 @@
 /// in reverse, Hann-windowed crossfades at buffer boundaries.
 /// Buffer size equals the desired reverse time (0.5-3 seconds).
 /// Produces the classic pre-vocal swell / reverse wash effect.
-
 use std::f32::consts::TAU;
 
 /// Maximum reverse time (3 seconds at 48kHz).

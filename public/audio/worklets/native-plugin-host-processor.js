@@ -1,7 +1,7 @@
 const BYTES_PER_SAMPLE = 4; // Float32
 
 class NativePluginHostProcessor extends AudioWorkletProcessor {
-    instanceId = "";
+    instanceId = '';
     isReady = false;
     hasError = false;
     lastProcessedBuffer = null;
@@ -9,10 +9,10 @@ class NativePluginHostProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         this.port.onmessage = (event) => {
-            if (event.data.type === "init") {
+            if (event.data.type === 'init') {
                 this.instanceId = event.data.instanceId;
                 this.isReady = true;
-            } else if (event.data.type === "processed") {
+            } else if (event.data.type === 'processed') {
                 // Buffer received back from Rust via main thread
                 // In a production system this goes into a ring buffer.
                 // For MVP, we store the latest returned frame.
@@ -38,7 +38,7 @@ class NativePluginHostProcessor extends AudioWorkletProcessor {
 
         const inputBuffer = inputs[0];
         const outputBuffer = outputs[0];
-        
+
         if (!inputBuffer || inputBuffer.length === 0) return true;
 
         const numChannels = inputBuffer.length;
@@ -53,13 +53,13 @@ class NativePluginHostProcessor extends AudioWorkletProcessor {
         // Send over the port. Using web workers, we post the message.
         // We expect the main thread to handle the Tauri IPC call since worklets don't have access to the Tauri API directly.
         this.port.postMessage(
-            { 
-               type: "process", 
-               instanceId: this.instanceId,
-               channels: numChannels,
-               samples: numSamples,
-               buffer: flatInput.buffer 
-            }, 
+            {
+                type: 'process',
+                instanceId: this.instanceId,
+                channels: numChannels,
+                samples: numSamples,
+                buffer: flatInput.buffer,
+            },
             [flatInput.buffer] // transfer ownership for performance
         );
 
@@ -73,16 +73,16 @@ class NativePluginHostProcessor extends AudioWorkletProcessor {
                 }
             }
         } else {
-             // Fallback to passthrough if rust hasn't responded yet (latency gap)
+            // Fallback to passthrough if rust hasn't responded yet (latency gap)
             for (let ch = 0; ch < numChannels; ch++) {
                 if (outputBuffer[ch] && inputBuffer[ch]) {
                     outputBuffer[ch].set(inputBuffer[ch]);
                 }
             }
         }
-        
+
         return true;
     }
 }
 
-registerProcessor("native-plugin-host-processor", NativePluginHostProcessor);
+registerProcessor('native-plugin-host-processor', NativePluginHostProcessor);

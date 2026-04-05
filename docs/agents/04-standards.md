@@ -20,6 +20,7 @@ Documents must be written for the reader, not the writer.
 Do not state things you are not sure about as if they are facts.
 
 If you are uncertain:
+
 - Say so explicitly: "This is an assumption — not yet confirmed"
 - Record it in `## Assumptions` in the task file
 - Do not implement on top of an unverified assumption without flagging it
@@ -39,6 +40,7 @@ Every document type has a place for unknowns. Use it.
 Unknown things that are not recorded do not exist for the next session. Record them even if you think they are obvious.
 
 A blocker is anything that prevents correct or confident implementation:
+
 - a design decision that was not made
 - an API behavior that was not confirmed
 - a performance constraint that was not measured
@@ -53,6 +55,7 @@ Record blockers immediately. Do not work around them silently.
 Every significant factual claim in a research file must trace back to a source.
 
 Acceptable sources:
+
 - published papers (cite author, title, venue, year)
 - official documentation (cite the doc URL and section)
 - library source code (cite repo, file, and commit or version)
@@ -60,6 +63,7 @@ Acceptable sources:
 - standards documents (cite the spec and section number)
 
 Not acceptable as citation:
+
 - vague attribution ("according to common practice")
 - circular reference to this codebase
 - unverified memory
@@ -73,11 +77,13 @@ When you are not sure if something is true, say so. "This is the behavior docume
 Acceptance criteria in specs must be verifiable — meaning a person or automated test can determine true or false for each item.
 
 **Bad:**
+
 - "The compressor sounds good"
 - "The UI is responsive"
 - "Performance is acceptable"
 
 **Good:**
+
 - "The gain computer produces ≤ 0.1 dB error at all threshold values compared to the reference formula from Giannoulis et al. (2012)"
 - "The fader cap renders at correct position across 0 dB, -6 dB, and -∞ dB in Chromium and WebKit"
 - "`pnpm deps:validate` passes with zero violations after the migration"
@@ -91,6 +97,7 @@ If you cannot write a verifiable criterion, the requirement is not well-defined 
 When a significant design decision is made, record what was considered and why the other options were not chosen.
 
 Do not record tradeoffs for trivial decisions. Do record them when:
+
 - the choice has real performance, correctness, or maintainability consequences
 - the choice will be hard or expensive to reverse
 - a reviewer might reasonably ask "why didn't you do X instead?"
@@ -128,6 +135,7 @@ When writing audits, findings go in `## Findings` and `## Open issues`. When wri
 A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch.
 
 A useful handoff answers these questions:
+
 - What work is actually complete (not what was planned — what was done and verified)?
 - What is explicitly not done, and why?
 - What should the next session watch out for — fragile areas, known gaps, surprising behaviour?

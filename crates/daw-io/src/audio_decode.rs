@@ -21,15 +21,17 @@ pub struct DecodedAudio {
 /// Prefer this over `decode_audio_file_bytes` when the file is on disk — avoids reading
 /// the entire file into memory before passing it over the Tauri IPC boundary.
 pub fn decode_audio_file(path: &str) -> Result<DecodedAudio, String> {
-    let file = std::fs::File::open(path)
-        .map_err(|e| format!("Failed to open file: {e}"))?;
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
     decode_from_stream(MediaSourceStream::new(Box::new(file), Default::default()))
 }
 
 /// Decode audio from an in-memory byte buffer.
 /// Use this when bytes are already loaded (e.g. from a network fetch or embedded archive).
 pub fn decode_audio_file_bytes(file_bytes: Vec<u8>) -> Result<DecodedAudio, String> {
-    decode_from_stream(MediaSourceStream::new(Box::new(Cursor::new(file_bytes)), Default::default()))
+    decode_from_stream(MediaSourceStream::new(
+        Box::new(Cursor::new(file_bytes)),
+        Default::default(),
+    ))
 }
 
 fn decode_from_stream(mss: MediaSourceStream) -> Result<DecodedAudio, String> {
@@ -49,8 +51,15 @@ fn decode_from_stream(mss: MediaSourceStream) -> Result<DecodedAudio, String> {
         .ok_or("No audio track found")?;
 
     let codec_name = track.codec_params.codec.to_string();
-    let sample_rate = track.codec_params.sample_rate.ok_or("Unknown sample rate")?;
-    let channels = track.codec_params.channels.map(|c| c.count() as u32).unwrap_or(2);
+    let sample_rate = track
+        .codec_params
+        .sample_rate
+        .ok_or("Unknown sample rate")?;
+    let channels = track
+        .codec_params
+        .channels
+        .map(|c| c.count() as u32)
+        .unwrap_or(2);
     let track_id = track.id;
 
     let mut decoder = symphonia::default::get_codecs()
@@ -114,8 +123,7 @@ pub struct AudioStreamMeta {
 
 /// Read metadata from an audio file on disk without fully decoding it.
 pub fn get_audio_file_metadata(file_path: &str) -> Result<AudioStreamMeta, String> {
-    let file = std::fs::File::open(file_path)
-        .map_err(|e| format!("Failed to open file: {e}"))?;
+    let file = std::fs::File::open(file_path).map_err(|e| format!("Failed to open file: {e}"))?;
 
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let hint = Hint::new();
@@ -130,7 +138,11 @@ pub fn get_audio_file_metadata(file_path: &str) -> Result<AudioStreamMeta, Strin
 
     Ok(AudioStreamMeta {
         sample_rate: track.codec_params.sample_rate.unwrap_or(44100),
-        channels: track.codec_params.channels.map(|c| c.count() as u32).unwrap_or(2),
+        channels: track
+            .codec_params
+            .channels
+            .map(|c| c.count() as u32)
+            .unwrap_or(2),
         total_frames: track.codec_params.n_frames.unwrap_or(0),
         codec: track.codec_params.codec.to_string(),
     })

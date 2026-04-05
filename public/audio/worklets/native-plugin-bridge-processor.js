@@ -28,7 +28,7 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
                 this.lastOutputL = new Float32Array(numSamples);
                 this.lastOutputR = new Float32Array(numSamples);
                 for (let i = 0; i < numSamples; i++) {
-                    this.lastOutputL[i] = view.getFloat32(i * 8, true);       // little-endian
+                    this.lastOutputL[i] = view.getFloat32(i * 8, true); // little-endian
                     this.lastOutputR[i] = view.getFloat32(i * 8 + 4, true);
                 }
             }
@@ -69,14 +69,11 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
         const bytes = new Uint8Array(frames * 8); // 4 bytes L + 4 bytes R per frame
         const view = new DataView(bytes.buffer);
         for (let i = 0; i < frames; i++) {
-            view.setFloat32(i * 8, left[i], true);       // little-endian
+            view.setFloat32(i * 8, left[i], true); // little-endian
             view.setFloat32(i * 8 + 4, right[i], true);
         }
 
-        this.port.postMessage(
-            { type: 'process', audio: bytes.buffer },
-            [bytes.buffer]
-        );
+        this.port.postMessage({ type: 'process', audio: bytes.buffer }, [bytes.buffer]);
 
         return true;
     }

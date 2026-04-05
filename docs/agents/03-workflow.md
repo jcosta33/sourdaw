@@ -15,6 +15,7 @@ npm run agents:new -- "Implement limiter DSP backend"
 ```
 
 This creates:
+
 - a dedicated branch (`agent/implement-limiter-dsp-backend`)
 - an isolated worktree (`../webdaw--implement-limiter-dsp-backend`)
 - a task file at `.agents/tasks/implement-limiter-dsp-backend.md`
@@ -152,21 +153,21 @@ Documentation is proportionate to scope. A two-line bug fix in a single isolated
 
 **Allowed sequences:**
 
-| Sequence | When it applies |
-|---|---|
-| Research → Spec → Task → Implementation → Audit | Non-trivial feature with external technical dependencies |
-| Spec → Task → Implementation → Audit | Non-trivial work, no external research needed |
-| Task → Implementation → Audit | Localised change with design choices but contained scope |
-| Implementation only | Trivial fix: single file, obviously correct, no design decisions, no cross-module impact |
+| Sequence                                        | When it applies                                                                          |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Research → Spec → Task → Implementation → Audit | Non-trivial feature with external technical dependencies                                 |
+| Spec → Task → Implementation → Audit            | Non-trivial work, no external research needed                                            |
+| Task → Implementation → Audit                   | Localised change with design choices but contained scope                                 |
+| Implementation only                             | Trivial fix: single file, obviously correct, no design decisions, no cross-module impact |
 
 **Disallowed sequences:**
 
-| Sequence | Why it is forbidden |
-|---|---|
-| Research → Implementation (no spec) | Research is input, not a spec — findings must be translated before code is written |
-| Research → Task without spec | Same reason |
-| Spec → Implementation without task | A spec in place means the work has enough scope to warrant tracking |
-| Implementation without task when spec exists | The spec demands it |
+| Sequence                                     | Why it is forbidden                                                                |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Research → Implementation (no spec)          | Research is input, not a spec — findings must be translated before code is written |
+| Research → Task without spec                 | Same reason                                                                        |
+| Spec → Implementation without task           | A spec in place means the work has enough scope to warrant tracking                |
+| Implementation without task when spec exists | The spec demands it                                                                |
 
 **Special case — research triggers spec requirement:**
 If research files exist for the area being worked on and no spec exists, the spec must be written before implementation begins. Do not implement directly from research.
@@ -177,14 +178,14 @@ If research files exist for the area being worked on and no spec exists, the spe
 
 Steps can be skipped when there is a genuine reason, not by default.
 
-| Step | Acceptable reason to skip |
-|---|---|
-| Task file | The change is trivial — single file, no design choices, obviously correct |
-| Research | Knowledge already captured in an existing research file or skill |
-| Audit (pre) | Single isolated change with no cross-module impact |
-| Spec | Trivial fix with no design choices |
-| Skills | No skill exists for the relevant domain |
-| Audit (post) | Trivial fix that does not change observable behavior |
-| Handoff | Session was exploratory and produced no durable work |
+| Step         | Acceptable reason to skip                                                 |
+| ------------ | ------------------------------------------------------------------------- |
+| Task file    | The change is trivial — single file, no design choices, obviously correct |
+| Research     | Knowledge already captured in an existing research file or skill          |
+| Audit (pre)  | Single isolated change with no cross-module impact                        |
+| Spec         | Trivial fix with no design choices                                        |
+| Skills       | No skill exists for the relevant domain                                   |
+| Audit (post) | Trivial fix that does not change observable behavior                      |
+| Handoff      | Session was exploratory and produced no durable work                      |
 
 When skipping steps on a non-trivial task, the reason should be noted somewhere — in the task file if one exists, or briefly in a commit message if not. "I didn't write a spec because this is a one-line style fix" is fine. Silence on a non-trivial change is not.

@@ -1,11 +1,11 @@
 class SidechainCompressorProcessor extends AudioWorkletProcessor {
     static get parameterDescriptors() {
         return [
-            { name: "threshold", defaultValue: -20, minValue: -60, maxValue: 0, automationRate: "k-rate" },
-            { name: "ratio", defaultValue: 4, minValue: 1, maxValue: 20, automationRate: "k-rate" },
-            { name: "attack", defaultValue: 0.01, minValue: 0.001, maxValue: 0.1, automationRate: "k-rate" },
-            { name: "release", defaultValue: 0.1, minValue: 0.01, maxValue: 1, automationRate: "k-rate" },
-            { name: "makeup", defaultValue: 0, minValue: 0, maxValue: 30, automationRate: "k-rate" },
+            { name: 'threshold', defaultValue: -20, minValue: -60, maxValue: 0, automationRate: 'k-rate' },
+            { name: 'ratio', defaultValue: 4, minValue: 1, maxValue: 20, automationRate: 'k-rate' },
+            { name: 'attack', defaultValue: 0.01, minValue: 0.001, maxValue: 0.1, automationRate: 'k-rate' },
+            { name: 'release', defaultValue: 0.1, minValue: 0.01, maxValue: 1, automationRate: 'k-rate' },
+            { name: 'makeup', defaultValue: 0, minValue: 0, maxValue: 30, automationRate: 'k-rate' },
         ];
     }
 
@@ -84,4 +84,4 @@ class SidechainCompressorProcessor extends AudioWorkletProcessor {
     }
 }
 
-registerProcessor("sidechain-compressor-processor", SidechainCompressorProcessor);
+registerProcessor('sidechain-compressor-processor', SidechainCompressorProcessor);

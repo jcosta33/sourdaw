@@ -12,9 +12,11 @@ description: <When to load this skill. Be specific — name the modules, operati
 What this skill is for. What it protects against.
 
 What this subsystem IS:
+
 - ...
 
 What this subsystem IS NOT:
+
 - ...
 
 ---
@@ -24,15 +26,19 @@ What this subsystem IS NOT:
 How this subsystem fits into the overall architecture.
 
 What it owns:
+
 - ...
 
 What it does not own:
+
 - ...
 
 What it depends on:
+
 - ...
 
 What depends on it:
+
 - ...
 
 ---

@@ -1,6 +1,5 @@
 /// Audio preprocessing for pitch detection.
 /// DC removal, adaptive bandpass, RMS gate, Hann windowing.
-
 use std::f32::consts::TAU;
 
 /// First-order IIR highpass for DC removal (~20 Hz cutoff).
@@ -14,7 +13,11 @@ impl DcBlocker {
     pub fn new(sample_rate: f32) -> Self {
         // Highpass at ~20 Hz
         let coeff = 1.0 - (TAU * 20.0 / sample_rate);
-        Self { prev_in: 0.0, prev_out: 0.0, coeff }
+        Self {
+            prev_in: 0.0,
+            prev_out: 0.0,
+            coeff,
+        }
     }
 
     #[inline]
@@ -38,7 +41,12 @@ impl Bandpass {
     pub fn new(center_hz: f32, q: f32, sample_rate: f32) -> Self {
         let g = (TAU * center_hz / sample_rate * 0.5).tan();
         let k = 1.0 / q;
-        Self { ic1: 0.0, ic2: 0.0, g, k }
+        Self {
+            ic1: 0.0,
+            ic2: 0.0,
+            g,
+            k,
+        }
     }
 
     pub fn set_freq(&mut self, center_hz: f32, q: f32, sample_rate: f32) {
@@ -91,7 +99,9 @@ impl RmsTracker {
 /// Apply Hann window to a buffer in-place.
 pub fn apply_hann_window(buffer: &mut [f32]) {
     let n = buffer.len();
-    if n == 0 { return; }
+    if n == 0 {
+        return;
+    }
     let inv_n = 1.0 / n as f32;
     for i in 0..n {
         let w = 0.5 * (1.0 - (TAU * i as f32 * inv_n).cos());

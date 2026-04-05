@@ -31,7 +31,8 @@ impl KneadInstance {
         let size = (frames as usize).min(self.left_buf.len());
 
         // Apply processing into buffer natively
-        self.engine.process_analysis_frame(&mut self.left_buf[..size]);
+        self.engine
+            .process_analysis_frame(&mut self.left_buf[..size]);
 
         self.left_buf.as_ptr()
     }

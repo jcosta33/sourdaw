@@ -1,5 +1,4 @@
 /// Reference tone generator — sine wave at the target note frequency.
-
 use std::f32::consts::TAU;
 
 pub struct ToneGenerator {
@@ -43,7 +42,9 @@ impl ToneGenerator {
         }
 
         self.phase += self.freq / self.sample_rate;
-        if self.phase >= 1.0 { self.phase -= 1.0; }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
 
         (self.phase * TAU).sin() * self.amplitude
     }

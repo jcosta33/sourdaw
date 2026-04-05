@@ -182,7 +182,11 @@ impl BusEffects {
     fn process(&mut self, sample: f32) -> f32 {
         // One-pole envelope follower
         let abs = sample.abs();
-        let coeff = if abs > self.comp_env { self.attack_coeff } else { self.release_coeff };
+        let coeff = if abs > self.comp_env {
+            self.attack_coeff
+        } else {
+            self.release_coeff
+        };
         self.comp_env += coeff * (abs - self.comp_env);
 
         let gain = if self.comp_env > self.comp_threshold && self.comp_threshold > 0.0 {
