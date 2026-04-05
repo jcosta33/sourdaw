@@ -13,5 +13,13 @@ export const command = 'codex';
 export function buildArgs(slug, extraArgs = [], options = {}) {
   // Codex does not support session naming. Pass sandbox/profile args via --agent-args.
   // Session context is provided via .agents/tasks/ which CLAUDE.md instructs the agent to read.
-  return [...extraArgs];
+  //
+  // --full-auto: sandbox=workspace-write, approval=on-request. Best available
+  // baseline — Codex has no per-command allow/deny list, so bulk-modification
+  // patterns (sed -i, perl -i, find -exec, codemods, xargs pipelines) cannot
+  // be blocked declaratively the way they are for Claude/Gemini. The sandbox
+  // limits writes to the workspace; denial of specific edit patterns must be
+  // enforced via the agent's CLAUDE.md / AGENTS.md instructions.
+  const args = ['--full-auto'];
+  return [...args, ...extraArgs];
 }

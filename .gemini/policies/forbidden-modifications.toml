@@ -1,0 +1,134 @@
+# Policies to forbid systematic/scripted file modifications.
+# Reads remain unrestricted — these rules target only in-place editing,
+# codemod tools, and batch file modification via find/xargs pipelines.
+#
+# Docs: https://geminicli.com/docs/reference/policy-engine
+
+# --- In-place editors ---
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "sed -i"
+decision = "deny"
+priority = 100
+denyMessage = "In-place editing via `sed -i` is forbidden. Use the edit tool per-file."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "gsed -i"
+decision = "deny"
+priority = 100
+denyMessage = "In-place editing via `gsed -i` is forbidden. Use the edit tool per-file."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "perl -i"
+decision = "deny"
+priority = 100
+denyMessage = "In-place editing via `perl -i` is forbidden. Use the edit tool per-file."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "perl -pi"
+decision = "deny"
+priority = 100
+denyMessage = "In-place editing via `perl -pi` is forbidden. Use the edit tool per-file."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "perl -ni"
+decision = "deny"
+priority = 100
+denyMessage = "In-place editing via `perl -ni` is forbidden. Use the edit tool per-file."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "awk -i inplace"
+decision = "deny"
+priority = 100
+denyMessage = "In-place editing via `awk -i inplace` is forbidden. Use the edit tool per-file."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "gawk -i inplace"
+decision = "deny"
+priority = 100
+denyMessage = "In-place editing via `gawk -i inplace` is forbidden. Use the edit tool per-file."
+
+# --- find + modification actions ---
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^find .* -delete"
+decision = "deny"
+priority = 100
+denyMessage = "Bulk file deletion via `find -delete` is forbidden."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^find .* -exec(dir)? (rm|mv|sed|gsed|perl|awk) "
+decision = "deny"
+priority = 100
+denyMessage = "Bulk file modification via `find -exec` is forbidden. Use the edit tool per-file."
+
+# --- xargs piping into modification commands ---
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "xargs( -[a-zA-Z0-9]+)* (rm|mv|sed|gsed|perl|awk)( |$)"
+decision = "deny"
+priority = 100
+denyMessage = "Piping into `xargs rm/mv/sed/perl/awk` is forbidden. Use the edit tool per-file."
+
+# --- Codemod tools ---
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^(npx( -y)? )?jscodeshift( |$)"
+decision = "deny"
+priority = 100
+denyMessage = "Codemods via jscodeshift are forbidden."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^(npx( -y)? )?codemod( |$)"
+decision = "deny"
+priority = 100
+denyMessage = "Codemod CLI tools are forbidden."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^(ast-grep|sg) .*(--rewrite|--update-all)"
+decision = "deny"
+priority = 100
+denyMessage = "ast-grep rewrite/update-all is forbidden. Use the edit tool per-file."
+
+# --- Existing safety baseline ---
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "git push"
+decision = "deny"
+priority = 100
+denyMessage = "git push requires explicit user action."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "sudo"
+decision = "deny"
+priority = 100
+denyMessage = "sudo is forbidden."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "rm -rf /"
+decision = "deny"
+priority = 100
+denyMessage = "Dangerous rm."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "rm -rf ~"
+decision = "deny"
+priority = 100
+denyMessage = "Dangerous rm."
