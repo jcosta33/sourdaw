@@ -25,14 +25,18 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                         <ChoiceCard
                             key={clip.id}
                             className={`flex flex-col justify-center ${
-                                clip.isGhost ? 'border-[var(--color-accent-lavender)]/60 border-dashed' : 'border-border/50'
+                                clip.isGhost
+                                    ? 'border-[var(--color-accent-lavender)]/60 border-dashed'
+                                    : 'border-border/50'
                             }`}
                             onClick={() => {
                                 onSelectClip(clip.id);
                             }}
                         >
                             <div className="flex items-center gap-1.5">
-                                {clip.isGhost ? <Sparkles className="size-3 text-[var(--color-accent-lavender)] shrink-0" /> : null}
+                                {clip.isGhost ? (
+                                    <Sparkles className="size-3 text-[var(--color-accent-lavender)] shrink-0" />
+                                ) : null}
                                 <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
                                 {clip.isGhost ? <DawMicroBadge tone="primary">Ghost</DawMicroBadge> : null}
                             </div>

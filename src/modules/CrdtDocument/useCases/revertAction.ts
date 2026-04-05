@@ -1,10 +1,6 @@
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
-import {
-    type ActionHistoryEntry,
-    actionHistoryStore,
-    markEntryReverted,
-} from '../stores/actionHistoryStore';
+import { type ActionHistoryEntry, actionHistoryStore, markEntryReverted } from '../stores/actionHistoryStore';
 
 /**
  * Revert a specific historical action by applying its inverse at the current head.

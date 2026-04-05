@@ -17,7 +17,11 @@ type SignalFlowDiagramProps = {
 type FlowNode = { id: string; label: string; x: number; y: number; active: boolean; color: string };
 type FlowEdge = { from: string; to: string; label?: string };
 
-function getFlowForAlgorithm(algorithm: AlgorithmType, shimmer: boolean, freeze: boolean): { nodes: FlowNode[]; edges: FlowEdge[] } {
+function getFlowForAlgorithm(
+    algorithm: AlgorithmType,
+    shimmer: boolean,
+    freeze: boolean
+): { nodes: FlowNode[]; edges: FlowEdge[] } {
     const accent = '#7fb8c4';
     const dim = '#444';
 
@@ -32,7 +36,9 @@ function getFlowForAlgorithm(algorithm: AlgorithmType, shimmer: boolean, freeze:
                     { id: 'tank_r', label: 'Tank R', x: 280, y: 45, active: true, color: '#a89bc4' },
                     { id: 'taps', label: '14 Taps', x: 380, y: 30, active: true, color: accent },
                     { id: 'out', label: 'Stereo Out', x: 470, y: 30, active: true, color: accent },
-                    ...(shimmer ? [{ id: 'shim', label: 'Shimmer', x: 340, y: 55, active: true, color: '#c9a07a' }] : []),
+                    ...(shimmer
+                        ? [{ id: 'shim', label: 'Shimmer', x: 340, y: 55, active: true, color: '#c9a07a' }]
+                        : []),
                 ],
                 edges: [
                     { from: 'in', to: 'bw' },
@@ -44,7 +50,12 @@ function getFlowForAlgorithm(algorithm: AlgorithmType, shimmer: boolean, freeze:
                     { from: 'tank_l', to: 'taps' },
                     { from: 'tank_r', to: 'taps' },
                     { from: 'taps', to: 'out' },
-                    ...(shimmer ? [{ from: 'tank_l', to: 'shim' }, { from: 'shim', to: 'tank_r' }] : []),
+                    ...(shimmer
+                        ? [
+                              { from: 'tank_l', to: 'shim' },
+                              { from: 'shim', to: 'tank_r' },
+                          ]
+                        : []),
                 ],
             };
 
@@ -106,17 +117,8 @@ export const SignalFlowDiagram = ({
     const { nodes, edges } = getFlowForAlgorithm(algorithm, shimmerEnabled, freezeEnabled);
 
     return (
-        <DawDiagramFrame
-            title="Signal flow"
-            compact
-            className="bg-black/[0.16]"
-            viewportClassName="p-2"
-        >
-            <svg
-                viewBox="0 0 500 65"
-                className="h-[65px] w-full"
-                xmlns="http://www.w3.org/2000/svg"
-            >
+        <DawDiagramFrame title="Signal flow" compact className="bg-black/[0.16]" viewportClassName="p-2">
+            <svg viewBox="0 0 500 65" className="h-[65px] w-full" xmlns="http://www.w3.org/2000/svg">
                 {edges.map((edge, i) => {
                     const from = nodes.find((n) => n.id === edge.from);
                     const to = nodes.find((n) => n.id === edge.to);
@@ -130,7 +132,10 @@ export const SignalFlowDiagram = ({
                     return (
                         <g key={i}>
                             <line
-                                x1={x1} y1={y1} x2={x2} y2={y2}
+                                x1={x1}
+                                y1={y1}
+                                x2={x2}
+                                y2={y2}
                                 stroke="rgba(127,184,196,0.3)"
                                 strokeWidth="1"
                                 markerEnd="url(#arrowhead)"

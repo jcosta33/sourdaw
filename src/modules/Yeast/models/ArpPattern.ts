@@ -16,13 +16,13 @@ export type ArpStep = {
     active: boolean;
     stepType: StepType;
     noteSelector: NoteSelector;
-    velocity: number;          // 1-127
+    velocity: number; // 1-127
     velocityOverride: boolean; // if false, use source velocity
-    gateMul: number;           // 0.1-2.0 multiplier on base gate
-    octaveOffset: number;      // -3 to +3
-    semitoneOffset: number;    // -12 to +12
-    probability: number;       // 0.0-1.0
-    ratchet: number;           // 1-4 subdivisions within this step
+    gateMul: number; // 0.1-2.0 multiplier on base gate
+    octaveOffset: number; // -3 to +3
+    semitoneOffset: number; // -12 to +12
+    probability: number; // 0.0-1.0
+    ratchet: number; // 1-4 subdivisions within this step
 };
 
 export function defaultStep(): ArpStep {

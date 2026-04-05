@@ -11,9 +11,9 @@ export const command = 'claude';
  * @returns {string[]}
  */
 export function buildArgs(slug, extraArgs = [], options = {}) {
-  const args = [];
-  if (slug) args.push('--name', slug);
-  // Session context is provided via .agents/tasks/ which CLAUDE.md instructs Claude to read.
-  // --append-system-prompt is not used: it only works with --print (non-interactive mode).
-  return [...args, ...extraArgs];
+    const args = [];
+    if (slug) args.push('--name', slug);
+    // Session context is provided via .agents/tasks/ which CLAUDE.md instructs Claude to read.
+    // --append-system-prompt is not used: it only works with --print (non-interactive mode).
+    return [...args, ...extraArgs];
 }

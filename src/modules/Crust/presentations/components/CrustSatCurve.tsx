@@ -22,8 +22,10 @@ function drawCurve(ctx: CanvasRenderingContext2D, algo: CrustSatAlgorithm, drive
     ctx.strokeStyle = '#1E1E22';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(W / 2, P); ctx.lineTo(W / 2, H - P);
-    ctx.moveTo(P, H / 2); ctx.lineTo(W - P, H / 2);
+    ctx.moveTo(W / 2, P);
+    ctx.lineTo(W / 2, H - P);
+    ctx.moveTo(P, H / 2);
+    ctx.lineTo(W - P, H / 2);
     ctx.stroke();
 
     // 45° reference (linear = no saturation)
@@ -55,23 +57,33 @@ function drawCurve(ctx: CanvasRenderingContext2D, algo: CrustSatAlgorithm, drive
 
         let outSig: number;
         switch (algo) {
-            case 'hard': outSig = Math.max(-1, Math.min(1, inSig)); break;
-            case 'tape': outSig = Math.tanh(inSig * 0.8) * 1.1 * (inSig < 0 ? 0.9 : 1.0); break;
-            case 'tube': outSig = inSig > 0
-                ? Math.tanh(inSig * 1.2) + inSig * 0.05
-                : Math.tanh(inSig); break;
+            case 'hard':
+                outSig = Math.max(-1, Math.min(1, inSig));
+                break;
+            case 'tape':
+                outSig = Math.tanh(inSig * 0.8) * 1.1 * (inSig < 0 ? 0.9 : 1.0);
+                break;
+            case 'tube':
+                outSig = inSig > 0 ? Math.tanh(inSig * 1.2) + inSig * 0.05 : Math.tanh(inSig);
+                break;
             case 'fold': {
                 const s = inSig;
                 outSig = s > 1 ? 2 - s : s < -1 ? -2 - s : s;
                 outSig = Math.max(-1, Math.min(1, outSig));
                 break;
             }
-            default: outSig = Math.tanh(inSig); break; // soft
+            default:
+                outSig = Math.tanh(inSig);
+                break; // soft
         }
 
         const normalized = outSig / (gain * 1.2);
         const y = P + (1 - (normalized + 1) / 2) * usableH;
-        if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
     }
     ctx.stroke();
 }
@@ -81,9 +93,13 @@ export const CrustSatCurve = ({ algorithm, drive }: Props): ReactElement => {
 
     useEffect(() => {
         const canvas = ref.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) { return; }
+        if (!ctx) {
+            return;
+        }
         drawCurve(ctx, algorithm, drive);
     }, [algorithm, drive]);
 

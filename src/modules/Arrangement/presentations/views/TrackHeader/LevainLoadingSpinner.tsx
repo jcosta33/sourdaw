@@ -10,7 +10,7 @@ type Props = {
 export const LevainLoadingSpinner = ({ track }: Props): ReactElement | null => {
     // Only bother checking if this track actually has a levain device
     const isLevainTrack = track.devices.some((d: any) => d.type === 'levain');
-    
+
     // We only subscribe if it's a levain track to avoid unnecessary re-renders on pure audio tracks
     const isLoading = useSyncExternalStore(
         (cb) => {
@@ -29,9 +29,9 @@ export const LevainLoadingSpinner = ({ track }: Props): ReactElement | null => {
     }
 
     return (
-        <Loader2 
-            className="size-3 shrink-0 text-[var(--color-accent-amber)] animate-spin" 
-            aria-hidden="true" 
+        <Loader2
+            className="size-3 shrink-0 text-[var(--color-accent-amber)] animate-spin"
+            aria-hidden="true"
             aria-label="Loading Orchestral Samples"
         />
     );

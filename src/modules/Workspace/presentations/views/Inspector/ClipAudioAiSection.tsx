@@ -183,9 +183,7 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                         className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
                         onClick={() => {
                             audioToMidi({ clipId: clip.id, trackId });
-                            notifyAiChange('Audio converted to MIDI', [
-                                'New MIDI clip created from detected onsets',
-                            ]);
+                            notifyAiChange('Audio converted to MIDI', ['New MIDI clip created from detected onsets']);
                         }}
                     >
                         MIDI (Basic)
@@ -195,9 +193,7 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                 <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
                     <div className="flex items-center gap-1.5">
                         <Music className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                        <span className="text-[10px] font-medium text-foreground/90">
-                            Polyphonic MIDI (AI)
-                        </span>
+                        <span className="text-[10px] font-medium text-foreground/90">Polyphonic MIDI (AI)</span>
                     </div>
                     <p className="text-[9px] text-muted-foreground leading-relaxed">
                         Neural network detects chords, melodies, and pitch bends.
@@ -244,9 +240,7 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                         )}
                     </Button>
                     {analysisResult ? (
-                        <p className="text-[9px] text-muted-foreground font-mono leading-relaxed">
-                            {analysisResult}
-                        </p>
+                        <p className="text-[9px] text-muted-foreground font-mono leading-relaxed">{analysisResult}</p>
                     ) : null}
                     {pitchResult ? (
                         <p className="text-[9px] text-[var(--color-state-success)]/80 font-mono">{pitchResult}</p>

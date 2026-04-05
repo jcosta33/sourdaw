@@ -1,16 +1,15 @@
-import {
-    type ReactElement,
-    type MouseEvent,
-    useState,
-    useRef,
-    useEffect,
-    useSyncExternalStore,
-} from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { markerStore } from '../../stores/markerStore';
-import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/marker/markerOperations';
+import {
+    addMarker,
+    removeMarker,
+    renameMarker,
+    setMarkerColor,
+    moveMarker,
+} from '../../useCases/marker/markerOperations';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
 
@@ -22,10 +21,10 @@ type MarkerLaneProps = {
 const MARKER_COLORS = [
     'oklch(0.40 0.07 200)', // deep teal
     'oklch(0.40 0.08 150)', // deep sage
-    'oklch(0.40 0.08 70)',  // deep amber
+    'oklch(0.40 0.08 70)', // deep amber
     'oklch(0.38 0.08 340)', // deep rose
     'oklch(0.38 0.08 270)', // deep indigo
-    'oklch(0.38 0.09 20)',  // deep coral
+    'oklch(0.38 0.09 20)', // deep coral
     'oklch(0.40 0.08 250)', // deep blue
 ];
 
@@ -267,9 +266,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                     )}
                     {contextMenu.kind === 'marker' && (
                         <>
-                            <DawMenuButton onClick={handleStartRename}>
-                                Rename Marker
-                            </DawMenuButton>
+                            <DawMenuButton onClick={handleStartRename}>Rename Marker</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <div className="flex gap-1 px-2 pb-1">
                                 {MARKER_COLORS.map((c) => (

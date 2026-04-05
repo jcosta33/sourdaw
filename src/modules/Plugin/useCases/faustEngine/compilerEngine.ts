@@ -149,9 +149,7 @@ export async function createFaustNode(
 ): Promise<IFaustMonoWebAudioNode | null> {
     const mod = modules.get(moduleId);
     if (!mod?.generator || !mod.compiled) {
-        const reason = compilerError
-            ? `Compiler unavailable: ${compilerError}`
-            : 'Module not compiled';
+        const reason = compilerError ? `Compiler unavailable: ${compilerError}` : 'Module not compiled';
         console.error(`[Faust] Cannot create node for "${moduleId}": ${reason}`);
         return null;
     }

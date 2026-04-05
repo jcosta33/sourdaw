@@ -31,7 +31,11 @@ export function setProofParam(deviceId: string, name: string, value: number): vo
 }
 
 /** Set a patch parameter and send to audio engine. */
-export function setProofParamWithPatch<K extends keyof ProofPatch>(deviceId: string, key: K, value: ProofPatch[K]): void {
+export function setProofParamWithPatch<K extends keyof ProofPatch>(
+    deviceId: string,
+    key: K,
+    value: ProofPatch[K]
+): void {
     updateProofPatch(deviceId, { [key]: value });
 
     const bridge = bridges.get(deviceId);

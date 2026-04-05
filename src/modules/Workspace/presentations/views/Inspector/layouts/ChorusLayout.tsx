@@ -8,7 +8,15 @@ import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ModulationLFO } from '../../../components/ModulationLFO';
 
 type P = DeviceLayoutProps['parameters'][number];
-const Param = ({ p, device, trackId }: { p: P; device: DeviceLayoutProps['device']; trackId: string }): ReactElement => (
+const Param = ({
+    p,
+    device,
+    trackId,
+}: {
+    p: P;
+    device: DeviceLayoutProps['device'];
+    trackId: string;
+}): ReactElement => (
     <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
         <DeviceParameterControl param={p} device={device} trackId={trackId} />
     </Card>
@@ -36,13 +44,17 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
                 }
                 return pairs.map((pair, idx) => (
                     <div key={idx} className="grid grid-cols-2 gap-2">
-                        {pair.map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
+                        {pair.map((p) => (
+                            <Param key={p.id} p={p} device={device} trackId={trackId} />
+                        ))}
                     </div>
                 ));
             })()}
 
             {/* Phaser stages (int, non-automatable) shown separately */}
-            {filterParams(parameters, ['phaser-stages']).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
+            {filterParams(parameters, ['phaser-stages']).map((p) => (
+                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            ))}
         </div>
     );
 };

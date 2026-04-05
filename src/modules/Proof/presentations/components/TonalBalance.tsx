@@ -16,8 +16,7 @@ const MAX_DB = 10;
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
-const dbToY = (db: number, h: number): number =>
-    ((db - MAX_DB) / (MIN_DB - MAX_DB)) * h;
+const dbToY = (db: number, h: number): number => ((db - MAX_DB) / (MIN_DB - MAX_DB)) * h;
 
 /** Harman target curve key points (simplified, relative to 1kHz). */
 const HARMAN_CURVE: Array<{ freq: number; db: number }> = [
@@ -41,12 +40,18 @@ const HARMAN_CURVE: Array<{ freq: number; db: number }> = [
 /** Genre target adjustments. */
 const GENRE_ADJUSTMENTS: Record<string, Array<{ freq: number; db: number }>> = {
     edm: [
-        { freq: 30, db: 5 }, { freq: 60, db: 4 }, { freq: 80, db: 3 },
-        { freq: 3000, db: 2 }, { freq: 5000, db: 2 },
+        { freq: 30, db: 5 },
+        { freq: 60, db: 4 },
+        { freq: 80, db: 3 },
+        { freq: 3000, db: 2 },
+        { freq: 5000, db: 2 },
     ],
     hiphop: [
-        { freq: 30, db: 4 }, { freq: 50, db: 3.5 }, { freq: 60, db: 3 },
-        { freq: 3000, db: 1.5 }, { freq: 5000, db: 1 },
+        { freq: 30, db: 4 },
+        { freq: 50, db: 3.5 },
+        { freq: 60, db: 3 },
+        { freq: 3000, db: 1.5 },
+        { freq: 5000, db: 1 },
     ],
     classical: [], // close to Harman neutral
 };
@@ -91,12 +96,18 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
         for (const freq of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
             const x = freqToX(freq, w);
             ctx.strokeStyle = freq === 1000 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
         }
         for (const db of [-40, -30, -20, -10, 0]) {
             const y = dbToY(db, h);
             ctx.strokeStyle = db === -20 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
         }
 
         // Frequency labels
@@ -141,7 +152,8 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
             const pt = HARMAN_CURVE[i]!;
             const x = freqToX(pt.freq, w);
             const y = dbToY(pt.db - 20 + 3, h);
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
         }
         for (let i = HARMAN_CURVE.length - 1; i >= 0; i--) {
             const pt = HARMAN_CURVE[i]!;
@@ -164,8 +176,10 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
                 const x = freqToX(freq, w);
                 const db = Math.max(MIN_DB, fftData[i]!);
                 const y = dbToY(db, h);
-                if (!started) { ctx.moveTo(x, y); started = true; }
-                else ctx.lineTo(x, y);
+                if (!started) {
+                    ctx.moveTo(x, y);
+                    started = true;
+                } else ctx.lineTo(x, y);
             }
             // Filled area
             if (started) {
@@ -190,8 +204,10 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
                 const x = freqToX(freq, w);
                 const db = Math.max(MIN_DB, fftData[i]!);
                 const y = dbToY(db, h);
-                if (!started) { ctx.moveTo(x, y); started = true; }
-                else ctx.lineTo(x, y);
+                if (!started) {
+                    ctx.moveTo(x, y);
+                    started = true;
+                } else ctx.lineTo(x, y);
             }
             ctx.save();
             ctx.shadowColor = 'rgba(178,140,255,0.4)';

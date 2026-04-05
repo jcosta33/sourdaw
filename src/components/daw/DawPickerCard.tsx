@@ -35,7 +35,9 @@ export const DawPickerCard = ({
                 {action ? <div className="shrink-0">{action}</div> : null}
             </div>
             {meta ? <div>{meta}</div> : null}
-            {description ? <div className="text-[9px] leading-tight text-muted-foreground/60">{description}</div> : null}
+            {description ? (
+                <div className="text-[9px] leading-tight text-muted-foreground/60">{description}</div>
+            ) : null}
             {children}
         </div>
     </div>

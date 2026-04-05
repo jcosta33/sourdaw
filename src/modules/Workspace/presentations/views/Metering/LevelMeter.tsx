@@ -27,11 +27,7 @@ const linearToDb = (linear: number): number => {
 
 const dbToPercent = (db: number): number => Math.max(0, Math.min(100, ((db - MIN_DB) / (0 - MIN_DB)) * 100));
 
-export const LevelMeter = ({
-    trackId,
-    height = 'h-full',
-    width = 'w-2',
-}: LevelMeterProps): ReactElement => {
+export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelMeterProps): ReactElement => {
     const id = crypto.randomUUID();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -184,14 +180,7 @@ export const LevelMeter = ({
                 ))}
             </div>
 
-            <DawMeterFrame
-                overlay="vertical"
-                ref={containerRef}
-                className={cn(
-                    'rounded-sm',
-                    width,
-                )}
-            >
+            <DawMeterFrame overlay="vertical" ref={containerRef} className={cn('rounded-sm', width)}>
                 <canvas ref={canvasRef} className="absolute inset-0 block w-full h-full" />
             </DawMeterFrame>
         </div>

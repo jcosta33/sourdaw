@@ -13,8 +13,6 @@ export type MutateCrdtDocInput<DocShape> = {
  * This is the single write boundary through which Collaboration's sync
  * code applies incremental changes to local documents.
  */
-export function mutateCrdtDoc<DocShape = Record<string, unknown>>(
-    input: MutateCrdtDocInput<DocShape>
-): void {
+export function mutateCrdtDoc<DocShape = Record<string, unknown>>(input: MutateCrdtDocInput<DocShape>): void {
     automergeRepository.changeDoc<DocShape>(input.id, input.changeFn);
 }

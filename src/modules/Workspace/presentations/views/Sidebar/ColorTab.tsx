@@ -1,12 +1,7 @@
 import { type ReactElement } from 'react';
 import { GitBranch, Bug, Guitar, Sliders, Waves } from 'lucide-react';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
-import {
-    InstrumentCard,
-    YEAST_THEME,
-    BACTERIA_THEME,
-    GRINDER_THEME,
-} from '../../components/Sidebar/InstrumentCard';
+import { InstrumentCard, YEAST_THEME, BACTERIA_THEME, GRINDER_THEME } from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
@@ -17,14 +12,7 @@ import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
-import {
-    NavCard,
-    EffectItem,
-    SoonBadge,
-    EFFECT_GROUPS,
-    type EffectPlugin,
-    Music2,
-} from './effectsTabHelpers';
+import { NavCard, EffectItem, SoonBadge, EFFECT_GROUPS, type EffectPlugin, Music2 } from './effectsTabHelpers';
 
 type ColorTabProps = {
     plugins: readonly PluginDescriptor[];
@@ -46,16 +34,29 @@ export const ColorTab = ({
 }: ColorTabProps): ReactElement => {
     // Premium plugins have their own cards
     const premiumIds = new Set(['bacteria', 'grinder', 'yeast']);
-    
+
     // Filter out premium and only include color-related plugins
     const isColorPlugin = (p: EffectPlugin) => {
         if (p.category === 'instrument' || premiumIds.has(p.id)) return false;
         if (p.id.startsWith('faust')) return true; // Most faust are color
-        const idKey = p.id.replace(/^builtin-/, '').replace(/^native-/, '').toLowerCase();
-        const colorCats = ['distortion', 'bitcrusher', 'saturation', 'overdrive', 'chorus', 'flanger', 'phaser', 'tremolo', 'filter'];
-        return colorCats.some(c => idKey.includes(c));
+        const idKey = p.id
+            .replace(/^builtin-/, '')
+            .replace(/^native-/, '')
+            .toLowerCase();
+        const colorCats = [
+            'distortion',
+            'bitcrusher',
+            'saturation',
+            'overdrive',
+            'chorus',
+            'flanger',
+            'phaser',
+            'tremolo',
+            'filter',
+        ];
+        return colorCats.some((c) => idKey.includes(c));
     };
-    
+
     const effects = plugins.filter(isColorPlugin);
     const query = searchQuery.toLowerCase().trim();
 
@@ -104,7 +105,11 @@ export const ColorTab = ({
                 {total === 0 ? <EmptyState message="No color effects found." /> : null}
                 {filteredEffects.length > 0 && (
                     <>
-                        <DawSectionDivider label="Tone FX" className="mt-1 px-1.5 py-0.5" lineClassName="bg-border/15" />
+                        <DawSectionDivider
+                            label="Tone FX"
+                            className="mt-1 px-1.5 py-0.5"
+                            lineClassName="bg-border/15"
+                        />
                         <div className="flex flex-col gap-[2px]">
                             {filteredEffects.map((plugin) => (
                                 <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />
@@ -176,7 +181,7 @@ export const ColorTab = ({
                     labelClassName="font-bold text-[var(--color-accent-orange)]"
                     lineClassName="bg-[var(--color-accent-orange)]/15"
                 />
-                
+
                 <InstrumentCard
                     icon={Guitar}
                     label="Grinder"
@@ -185,12 +190,14 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'grinder');
-                            document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_GRINDER_TAB, { detail: { deviceId: device?.id } }));
+                            document.dispatchEvent(
+                                new CustomEvent(APP_EVENTS.SHOW_GRINDER_TAB, { detail: { deviceId: device?.id } })
+                            );
                         }
                     }}
                     theme={GRINDER_THEME}
                 />
-                
+
                 <InstrumentCard
                     icon={Bug}
                     label="Bacteria"
@@ -199,12 +206,14 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'bacteria');
-                            document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_BACTERIA_TAB, { detail: { deviceId: device?.id } }));
+                            document.dispatchEvent(
+                                new CustomEvent(APP_EVENTS.SHOW_BACTERIA_TAB, { detail: { deviceId: device?.id } })
+                            );
                         }
                     }}
                     theme={BACTERIA_THEME}
                 />
-                
+
                 <InstrumentCard
                     icon={GitBranch}
                     label="Yeast"
@@ -235,7 +244,7 @@ export const ColorTab = ({
                 color="bg-[var(--color-state-danger)]/20 text-[var(--color-state-danger)]"
                 onClick={() => pushRoute({ id: 'color-audiofx', title: 'Tone FX' })}
             />
-            
+
             <NavCard
                 icon={Sliders}
                 label="Modulators"
@@ -246,7 +255,7 @@ export const ColorTab = ({
                 badge={<SoonBadge />}
                 onClick={() => pushRoute({ id: 'color-modulators', title: 'Modulators' })}
             />
-            
+
             <NavCard
                 icon={Music2}
                 label="MIDI FX"

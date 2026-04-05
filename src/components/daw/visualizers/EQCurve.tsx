@@ -23,7 +23,9 @@ type EQCurveProps = {
 };
 
 const peakingMag = (f: number, fc: number, gainDb: number, Q: number): number => {
-    if (Math.abs(gainDb) < 0.01) { return 0; }
+    if (Math.abs(gainDb) < 0.01) {
+        return 0;
+    }
     const w = f / fc;
     const w2 = w * w;
     const bw = w / Q;
@@ -40,8 +42,7 @@ const DB_RANGE = 24;
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
-const xToFreq = (x: number, w: number): number =>
-    MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
+const xToFreq = (x: number, w: number): number => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
 
 type BandId = 'low' | 'mid' | 'high';
 
@@ -61,15 +62,21 @@ const BAND_FREQ_RANGES: Record<BandId, [number, number]> = {
     high: [2000, 20000],
 };
 const BAND_COLORS: Record<BandId, string> = {
-    low: '#f0944c',  // warm orange (saturated)
-    mid: '#50d0e8',  // cyan (saturated)
-    high: '#c488f0',  // lavender (saturated)
+    low: '#f0944c', // warm orange (saturated)
+    mid: '#50d0e8', // cyan (saturated)
+    high: '#c488f0', // lavender (saturated)
 };
 
 export const EQCurve = ({
-    lowGain, lowFreq, lowQ,
-    midGain, midFreq, midQ,
-    highGain, highFreq, highQ,
+    lowGain,
+    lowFreq,
+    lowQ,
+    midGain,
+    midFreq,
+    midQ,
+    highGain,
+    highFreq,
+    highQ,
     width = 200,
     height = 80,
     onParamChange,
@@ -86,9 +93,13 @@ export const EQCurve = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) { return; }
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -150,7 +161,9 @@ export const EQCurve = ({
         // Fill gradient below curve
         ctx.beginPath();
         ctx.moveTo(0, zeroY);
-        for (const [x, y] of points) { ctx.lineTo(x, y); }
+        for (const [x, y] of points) {
+            ctx.lineTo(x, y);
+        }
         ctx.lineTo(width, zeroY);
         ctx.closePath();
         const fillGrad = ctx.createLinearGradient(0, 0, 0, height);
@@ -163,8 +176,11 @@ export const EQCurve = ({
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
-            if (i === 0) { ctx.moveTo(x, y); }
-            else { ctx.lineTo(x, y); }
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = `${accentCyan}30`;
         ctx.lineWidth = 5;
@@ -174,8 +190,11 @@ export const EQCurve = ({
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
-            if (i === 0) { ctx.moveTo(x, y); }
-            else { ctx.lineTo(x, y); }
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = accentCyan;
         ctx.lineWidth = 1.5;
@@ -220,7 +239,11 @@ export const EQCurve = ({
         ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
-        for (const [label, freq] of [['100', 100], ['1k', 1000], ['10k', 10000]] as const) {
+        for (const [label, freq] of [
+            ['100', 100],
+            ['1k', 1000],
+            ['10k', 10000],
+        ] as const) {
             ctx.fillText(label, freqToX(freq, width), height - 2);
         }
 
@@ -230,7 +253,21 @@ export const EQCurve = ({
             ctx.textAlign = 'left';
             ctx.fillText('drag bands', 4, 10);
         }
-    }, [lowGain, lowFreq, lowQ, midGain, midFreq, midQ, highGain, highFreq, highQ, width, height, isInteractive, bands]);
+    }, [
+        lowGain,
+        lowFreq,
+        lowQ,
+        midGain,
+        midFreq,
+        midQ,
+        highGain,
+        highFreq,
+        highQ,
+        width,
+        height,
+        isInteractive,
+        bands,
+    ]);
 
     const findNearestBand = (x: number): BandId | null => {
         let closest: BandId | null = null;
@@ -247,22 +284,32 @@ export const EQCurve = ({
     };
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) { return; }
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const band = findNearestBand(x);
-        if (!band) { return; }
+        if (!band) {
+            return;
+        }
         dragBand.current = band;
         canvas.setPointerCapture(e.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!dragBand.current || !onParamChange) { return; }
+        if (!dragBand.current || !onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;

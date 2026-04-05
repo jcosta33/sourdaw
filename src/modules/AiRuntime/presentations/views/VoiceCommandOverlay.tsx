@@ -33,7 +33,9 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                     onClick={voice.stopListening}
                     className={cn(
                         'flex size-8 items-center justify-center rounded-full transition-colors',
-                        voice.errorText ? 'bg-[var(--color-state-warning)]/20' : 'bg-[var(--color-state-danger)]/20 hover:bg-[var(--color-state-danger)]/30'
+                        voice.errorText
+                            ? 'bg-[var(--color-state-warning)]/20'
+                            : 'bg-[var(--color-state-danger)]/20 hover:bg-[var(--color-state-danger)]/30'
                     )}
                     aria-label="Stop voice input"
                 >

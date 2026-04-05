@@ -1,7 +1,4 @@
-import {
-    type ChatCompletionMessageParam,
-    type ChatCompletionTool,
-} from '@mlc-ai/web-llm';
+import { type ChatCompletionMessageParam, type ChatCompletionTool } from '@mlc-ai/web-llm';
 
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
@@ -31,14 +28,14 @@ export async function generateWebLlmToolCalls(
         // locks the GPU and can freeze the compositor.
         await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
-        const response = await eng.chat.completions.create({
+        const response = (await eng.chat.completions.create({
             messages,
             tools,
             tool_choice: 'auto',
             stream: false,
             temperature: 0.1,
             seed: 0,
-        }) as {
+        })) as {
             choices: Array<{
                 message: {
                     content: string | null;
@@ -122,7 +119,9 @@ function tryParseRawFunctionCalls(text: string, tools: ChatCompletionTool[]): To
     }
 
     if (results.length > 0) {
-        logger.info(`[WebLLM] Parsed ${String(results.length)} raw function call(s): ${results.map((r) => r.name).join(', ')}`);
+        logger.info(
+            `[WebLLM] Parsed ${String(results.length)} raw function call(s): ${results.map((r) => r.name).join(', ')}`
+        );
     }
     return results;
 }

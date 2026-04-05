@@ -9,15 +9,15 @@ import { basename, resolve } from 'path';
  * @returns {string}
  */
 function git(args, opts = {}) {
-  const result = spawnSync('git', args, {
-    cwd: opts.cwd,
-    encoding: 'utf8',
-  });
-  if (result.error) throw new Error(`git error: ${result.error.message}`);
-  if (result.status !== 0) {
-    throw new Error((result.stderr || '').trim() || `git ${args[0]} failed`);
-  }
-  return (result.stdout || '').trim();
+    const result = spawnSync('git', args, {
+        cwd: opts.cwd,
+        encoding: 'utf8',
+    });
+    if (result.error) throw new Error(`git error: ${result.error.message}`);
+    if (result.status !== 0) {
+        throw new Error((result.stderr || '').trim() || `git ${args[0]} failed`);
+    }
+    return (result.stdout || '').trim();
 }
 
 /**
@@ -25,11 +25,11 @@ function git(args, opts = {}) {
  * @returns {string}
  */
 export function getRepoRoot() {
-  try {
-    return git(['rev-parse', '--show-toplevel']);
-  } catch {
-    throw new Error('Not inside a git repository. Run this command from within the repo.');
-  }
+    try {
+        return git(['rev-parse', '--show-toplevel']);
+    } catch {
+        throw new Error('Not inside a git repository. Run this command from within the repo.');
+    }
 }
 
 /**
@@ -38,7 +38,7 @@ export function getRepoRoot() {
  * @returns {string}
  */
 export function getRepoName(repoRoot) {
-  return basename(repoRoot);
+    return basename(repoRoot);
 }
 
 /**
@@ -47,29 +47,29 @@ export function getRepoName(repoRoot) {
  * @returns {Array<{path: string, head: string, branch: string, bare: boolean}>}
  */
 export function worktreeList(repoRoot) {
-  let raw;
-  try {
-    raw = git(['worktree', 'list', '--porcelain'], { cwd: repoRoot });
-  } catch (e) {
-    console.warn(`Warning: could not list worktrees: ${e.message}`);
-    return [];
-  }
-  const worktrees = [];
-  let current = null;
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('worktree ')) {
-      if (current) worktrees.push(current);
-      current = { path: line.slice(9), head: null, branch: null, bare: false };
-    } else if (line.startsWith('HEAD ') && current) {
-      current.head = line.slice(5);
-    } else if (line.startsWith('branch ') && current) {
-      current.branch = line.slice(7).replace('refs/heads/', '');
-    } else if (line === 'bare' && current) {
-      current.bare = true;
+    let raw;
+    try {
+        raw = git(['worktree', 'list', '--porcelain'], { cwd: repoRoot });
+    } catch (e) {
+        console.warn(`Warning: could not list worktrees: ${e.message}`);
+        return [];
     }
-  }
-  if (current) worktrees.push(current);
-  return worktrees;
+    const worktrees = [];
+    let current = null;
+    for (const line of raw.split('\n')) {
+        if (line.startsWith('worktree ')) {
+            if (current) worktrees.push(current);
+            current = { path: line.slice(9), head: null, branch: null, bare: false };
+        } else if (line.startsWith('HEAD ') && current) {
+            current.head = line.slice(5);
+        } else if (line.startsWith('branch ') && current) {
+            current.branch = line.slice(7).replace('refs/heads/', '');
+        } else if (line === 'bare' && current) {
+            current.bare = true;
+        }
+    }
+    if (current) worktrees.push(current);
+    return worktrees;
 }
 
 /**
@@ -79,11 +79,11 @@ export function worktreeList(repoRoot) {
  * @returns {boolean}
  */
 export function branchExists(branch, repoRoot) {
-  const result = spawnSync('git', ['rev-parse', '--verify', `refs/heads/${branch}`], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  return result.status === 0;
+    const result = spawnSync('git', ['rev-parse', '--verify', `refs/heads/${branch}`], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+    });
+    return result.status === 0;
 }
 
 /**
@@ -93,9 +93,9 @@ export function branchExists(branch, repoRoot) {
  * @returns {string|null} - worktree path, or null
  */
 export function findWorktreeForBranch(branch, repoRoot) {
-  const list = worktreeList(repoRoot);
-  const found = list.find(w => w.branch === branch);
-  return found ? found.path : null;
+    const list = worktreeList(repoRoot);
+    const found = list.find((w) => w.branch === branch);
+    return found ? found.path : null;
 }
 
 /**
@@ -106,12 +106,12 @@ export function findWorktreeForBranch(branch, repoRoot) {
  * @param {string} repoRoot
  */
 export function worktreeCreate(worktreePath, branch, baseBranch, repoRoot) {
-  const exists = branchExists(branch, repoRoot);
-  if (exists) {
-    git(['worktree', 'add', worktreePath, branch], { cwd: repoRoot });
-  } else {
-    git(['worktree', 'add', '-b', branch, worktreePath, baseBranch], { cwd: repoRoot });
-  }
+    const exists = branchExists(branch, repoRoot);
+    if (exists) {
+        git(['worktree', 'add', worktreePath, branch], { cwd: repoRoot });
+    } else {
+        git(['worktree', 'add', '-b', branch, worktreePath, baseBranch], { cwd: repoRoot });
+    }
 }
 
 /**
@@ -121,10 +121,10 @@ export function worktreeCreate(worktreePath, branch, baseBranch, repoRoot) {
  * @param {string} repoRoot
  */
 export function worktreeRemove(worktreePath, force, repoRoot) {
-  const args = ['worktree', 'remove'];
-  if (force) args.push('--force');
-  args.push(worktreePath);
-  git(args, { cwd: repoRoot });
+    const args = ['worktree', 'remove'];
+    if (force) args.push('--force');
+    args.push(worktreePath);
+    git(args, { cwd: repoRoot });
 }
 
 /**
@@ -132,7 +132,7 @@ export function worktreeRemove(worktreePath, force, repoRoot) {
  * @param {string} repoRoot
  */
 export function worktreePrune(repoRoot) {
-  git(['worktree', 'prune'], { cwd: repoRoot });
+    git(['worktree', 'prune'], { cwd: repoRoot });
 }
 
 /**
@@ -141,13 +141,13 @@ export function worktreePrune(repoRoot) {
  * @returns {boolean}
  */
 export function isWorktreeDirty(worktreePath) {
-  if (!existsSync(worktreePath)) return false;
-  const result = spawnSync('git', ['status', '--porcelain'], {
-    cwd: worktreePath,
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) return false;
-  return (result.stdout || '').trim().length > 0;
+    if (!existsSync(worktreePath)) return false;
+    const result = spawnSync('git', ['status', '--porcelain'], {
+        cwd: worktreePath,
+        encoding: 'utf8',
+    });
+    if (result.status !== 0) return false;
+    return (result.stdout || '').trim().length > 0;
 }
 
 /**
@@ -156,16 +156,16 @@ export function isWorktreeDirty(worktreePath) {
  * @returns {string}
  */
 export function getStatusSummary(worktreePath) {
-  if (!existsSync(worktreePath)) return 'missing';
-  const result = spawnSync('git', ['status', '--porcelain'], {
-    cwd: worktreePath,
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) return 'unknown';
-  const lines = (result.stdout || '').trim();
-  if (!lines) return 'clean';
-  const count = lines.split('\n').length;
-  return `dirty (${count} change${count !== 1 ? 's' : ''})`;
+    if (!existsSync(worktreePath)) return 'missing';
+    const result = spawnSync('git', ['status', '--porcelain'], {
+        cwd: worktreePath,
+        encoding: 'utf8',
+    });
+    if (result.status !== 0) return 'unknown';
+    const lines = (result.stdout || '').trim();
+    if (!lines) return 'clean';
+    const count = lines.split('\n').length;
+    return `dirty (${count} change${count !== 1 ? 's' : ''})`;
 }
 
 /**
@@ -179,23 +179,21 @@ export function getStatusSummary(worktreePath) {
  * @returns {boolean}
  */
 export function isBranchMergedInto(branch, baseBranch, repoRoot) {
-  const refs = [baseBranch, `origin/${baseBranch}`];
-  for (const ref of refs) {
-    try {
-      // A branch with 0 unique commits relative to this ref is empty, not merged
-      const uniqueCount = parseInt(
-        git(['rev-list', '--count', `${ref}..${branch}`], { cwd: repoRoot }), 10
-      );
-      if (uniqueCount === 0) continue;
+    const refs = [baseBranch, `origin/${baseBranch}`];
+    for (const ref of refs) {
+        try {
+            // A branch with 0 unique commits relative to this ref is empty, not merged
+            const uniqueCount = parseInt(git(['rev-list', '--count', `${ref}..${branch}`], { cwd: repoRoot }), 10);
+            if (uniqueCount === 0) continue;
 
-      const output = git(['branch', '--merged', ref], { cwd: repoRoot });
-      const merged = output.split('\n').map(l => l.trim().replace(/^[*+]\s*/, ''));
-      if (merged.includes(branch)) return true;
-    } catch (e) {
-      console.warn(`Warning: could not check merged status of "${branch}" against "${ref}": ${e.message}`);
+            const output = git(['branch', '--merged', ref], { cwd: repoRoot });
+            const merged = output.split('\n').map((l) => l.trim().replace(/^[*+]\s*/, ''));
+            if (merged.includes(branch)) return true;
+        } catch (e) {
+            console.warn(`Warning: could not check merged status of "${branch}" against "${ref}": ${e.message}`);
+        }
     }
-  }
-  return false;
+    return false;
 }
 
 /**
@@ -205,7 +203,7 @@ export function isBranchMergedInto(branch, baseBranch, repoRoot) {
  * @param {boolean} force  - use -D instead of -d
  */
 export function deleteBranch(branch, repoRoot, force = false) {
-  git(['branch', force ? '-D' : '-d', branch], { cwd: repoRoot });
+    git(['branch', force ? '-D' : '-d', branch], { cwd: repoRoot });
 }
 
 /**
@@ -215,16 +213,16 @@ export function deleteBranch(branch, repoRoot, force = false) {
  * @returns {string[]}
  */
 export function listBranchesByPrefix(prefix, repoRoot) {
-  try {
-    const output = git(['branch', '--list', `${prefix}*`], { cwd: repoRoot });
-    return output
-      .split('\n')
-      .map(l => l.trim().replace(/^[*+]\s*/, ''))  // * = current branch, + = checked out in worktree
-      .filter(Boolean);
-  } catch (e) {
-    console.warn(`Warning: could not list branches with prefix "${prefix}": ${e.message}`);
-    return [];
-  }
+    try {
+        const output = git(['branch', '--list', `${prefix}*`], { cwd: repoRoot });
+        return output
+            .split('\n')
+            .map((l) => l.trim().replace(/^[*+]\s*/, '')) // * = current branch, + = checked out in worktree
+            .filter(Boolean);
+    } catch (e) {
+        console.warn(`Warning: could not list branches with prefix "${prefix}": ${e.message}`);
+        return [];
+    }
 }
 
 /**
@@ -232,6 +230,6 @@ export function listBranchesByPrefix(prefix, repoRoot) {
  * @returns {boolean}
  */
 export function gitAvailable() {
-  const r = spawnSync('git', ['--version'], { encoding: 'utf8' });
-  return r.status === 0;
+    const r = spawnSync('git', ['--version'], { encoding: 'utf8' });
+    return r.status === 0;
 }

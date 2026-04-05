@@ -7,11 +7,13 @@ export function bypassDevice(deviceId: string, bypassed: boolean): void {
         for (const track of state.tracks) {
             if (track.devices.some((d) => d.id === deviceId)) {
                 // Forward bypass to live engine for native DSP devices
-                import('#/modules/AudioEngine/useCases/deviceControls').then(({ updateDeviceBypass }) => {
-                    updateDeviceBypass(track.id, deviceId, bypassed);
-                }).catch(() => {
-                    // Engine bypass forwarding is best-effort
-                });
+                import('#/modules/AudioEngine/useCases/deviceControls')
+                    .then(({ updateDeviceBypass }) => {
+                        updateDeviceBypass(track.id, deviceId, bypassed);
+                    })
+                    .catch(() => {
+                        // Engine bypass forwarding is best-effort
+                    });
                 break;
             }
         }

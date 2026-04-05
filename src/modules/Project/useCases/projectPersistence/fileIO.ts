@@ -11,7 +11,8 @@ import { syncCurrentArrangementToStore } from '../arrangement';
 import { type ProjectData } from '../../models/ProjectData';
 import { projectStore } from '../../stores/projectStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
+import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
 import { downloadProjectFile } from '../../repositories/project/downloadProjectFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
@@ -115,6 +116,11 @@ export async function importProjectFile(file: File): Promise<boolean> {
         if (data.version !== 1 || !data.tracks || !data.transport) {
             return false;
         }
+
+        // Validated — stop any in-flight playback and tear down the previous
+        // project's audio graph before we hydrate stores for the imported project.
+        stopPlayback();
+        resetAudioGraph();
 
         hydrateModuleStoresFromProjectData(data);
         projectStore.set({

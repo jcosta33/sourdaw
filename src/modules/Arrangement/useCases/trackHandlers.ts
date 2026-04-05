@@ -25,7 +25,12 @@ import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freez
 import { bounceInPlace, bounceToNewTrack } from '#/modules/Arrangement/useCases/freezeBounce/bounceOperations';
 import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
 import { createFolder } from '#/modules/Arrangement/useCases/folder';
-import { setTrackGain, setTrackPan, setTrackColor, setTrackNotes } from '#/modules/Arrangement/useCases/setTrackGainPan';
+import {
+    setTrackGain,
+    setTrackPan,
+    setTrackColor,
+    setTrackNotes,
+} from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { zoomTracksVertical } from '#/modules/Arrangement/useCases/trackZoom';
 import {
     setTrackGain as engineSetTrackGain,
@@ -82,9 +87,7 @@ export const trackHandlers = {
             }
 
             const takeLaneState = takeLaneStore.value;
-            const takeLanes = takeLaneState
-                ? takeLaneState.lanes.filter((l) => l.trackId === a.payload.trackId)
-                : [];
+            const takeLanes = takeLaneState ? takeLaneState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
             const takeLaneSnapshots = structuredClone(takeLanes);
 
             return {

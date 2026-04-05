@@ -11,9 +11,7 @@ export function setLayerParameter(layerIdVal: string, paramName: string, value: 
                 ? {
                       ...l,
                       parameters: l.parameters.map((p) =>
-                          p.name === paramName
-                              ? { ...p, value: Math.max(p.min, Math.min(p.max, value)) }
-                              : p
+                          p.name === paramName ? { ...p, value: Math.max(p.min, Math.min(p.max, value)) } : p
                       ),
                   }
                 : l

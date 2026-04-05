@@ -3,11 +3,14 @@ if (typeof TextDecoder === 'undefined') {
     globalThis.TextDecoder = class TextDecoder {
         decode(input) {
             if (!input) return '';
-            const bytes = input instanceof Uint8Array ? input : new Uint8Array(
-                input instanceof ArrayBuffer ? input : input.buffer,
-                input instanceof ArrayBuffer ? 0 : input.byteOffset,
-                input instanceof ArrayBuffer ? input.byteLength : input.byteLength,
-            );
+            const bytes =
+                input instanceof Uint8Array
+                    ? input
+                    : new Uint8Array(
+                          input instanceof ArrayBuffer ? input : input.buffer,
+                          input instanceof ArrayBuffer ? 0 : input.byteOffset,
+                          input instanceof ArrayBuffer ? input.byteLength : input.byteLength
+                      );
             let result = '';
             for (let i = 0; i < bytes.length; i++) {
                 result += String.fromCharCode(bytes[i]);
@@ -589,8 +592,53 @@ export class LevainInstance {
      * @param {number} sustain
      * @param {number} release
      */
-    add_zone(zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release) {
-        wasm.levaininstance_add_zone(this.__wbg_ptr, zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release);
+    add_zone(
+        zone_id,
+        sample_id,
+        articulation_id,
+        root_note,
+        lo_key,
+        hi_key,
+        lo_vel,
+        hi_vel,
+        rr_pos,
+        rr_len,
+        mic_id,
+        is_release,
+        loop_mode,
+        loop_start,
+        loop_end,
+        loop_crossfade,
+        gain_db,
+        attack,
+        decay,
+        sustain,
+        release
+    ) {
+        wasm.levaininstance_add_zone(
+            this.__wbg_ptr,
+            zone_id,
+            sample_id,
+            articulation_id,
+            root_note,
+            lo_key,
+            hi_key,
+            lo_vel,
+            hi_vel,
+            rr_pos,
+            rr_len,
+            mic_id,
+            is_release,
+            loop_mode,
+            loop_start,
+            loop_end,
+            loop_crossfade,
+            gain_db,
+            attack,
+            decay,
+            sustain,
+            release
+        );
     }
     /**
      * Build the zone lookup table after all zones and samples are loaded.
@@ -749,7 +797,16 @@ export class ProofChamberEngine {
      * @param {number} excursion_samples
      */
     set_parameters(mix, pre_delay_ms, decay, bandwidth, damping, diffusion, excursion_samples) {
-        wasm.proofchamberengine_set_parameters(this.__wbg_ptr, mix, pre_delay_ms, decay, bandwidth, damping, diffusion, excursion_samples);
+        wasm.proofchamberengine_set_parameters(
+            this.__wbg_ptr,
+            mix,
+            pre_delay_ms,
+            decay,
+            bandwidth,
+            damping,
+            diffusion,
+            excursion_samples
+        );
     }
     /**
      * @param {number} arg0
@@ -1035,10 +1092,10 @@ if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
+        __wbg___wbindgen_throw_5549492daedad139: function (arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbindgen_init_externref_table: function() {
+        __wbindgen_init_externref_table: function () {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
             table.set(0, undefined);
@@ -1050,37 +1107,46 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./daw_dsp_bg.js": import0,
+        './daw_dsp_bg.js': import0,
     };
 }
 
-const BacteriaInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_bacteriainstance_free(ptr >>> 0, 1));
-const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr >>> 0, 1));
-const GlutenInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
-const GrinderInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_grinderinstance_free(ptr >>> 0, 1));
-const KneadInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_kneadinstance_free(ptr >>> 0, 1));
-const LevainInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_levaininstance_free(ptr >>> 0, 1));
-const ProofChamberEngineFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_proofchamberengine_free(ptr >>> 0, 1));
-const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_proofinstance_free(ptr >>> 0, 1));
-const ToasterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_toasterinstance_free(ptr >>> 0, 1));
+const BacteriaInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_bacteriainstance_free(ptr >>> 0, 1));
+const FermenterInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_fermenterinstance_free(ptr >>> 0, 1));
+const GlutenInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
+const GrinderInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_grinderinstance_free(ptr >>> 0, 1));
+const KneadInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_kneadinstance_free(ptr >>> 0, 1));
+const LevainInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_levaininstance_free(ptr >>> 0, 1));
+const ProofChamberEngineFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_proofchamberengine_free(ptr >>> 0, 1));
+const ProofInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_proofinstance_free(ptr >>> 0, 1));
+const ToasterInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_toasterinstance_free(ptr >>> 0, 1));
 
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
@@ -1119,7 +1185,9 @@ function passStringToWasm0(arg, malloc, realloc) {
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;
-        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        getUint8ArrayMemory0()
+            .subarray(ptr, ptr + buf.length)
+            .set(buf);
         WASM_VECTOR_LEN = buf.length;
         return ptr;
     }
@@ -1133,14 +1201,14 @@ function passStringToWasm0(arg, malloc, realloc) {
 
     for (; offset < len; offset++) {
         const code = arg.charCodeAt(offset);
-        if (code > 0x7F) break;
+        if (code > 0x7f) break;
         mem[ptr + offset] = code;
     }
     if (offset !== len) {
         if (offset !== 0) {
             arg = arg.slice(offset);
         }
-        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        ptr = realloc(ptr, len, (len = offset + arg.length * 3), 1) >>> 0;
         const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
         const ret = cachedTextEncoder.encodeInto(arg, view);
 
@@ -1174,7 +1242,7 @@ if (!('encodeInto' in cachedTextEncoder)) {
         view.set(buf);
         return {
             read: arg.length,
-            written: buf.length
+            written: buf.length,
         };
     };
 }
@@ -1200,9 +1268,13 @@ async function __wbg_load(module, imports) {
                 const validResponse = module.ok && expectedResponseType(module.type);
 
                 if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
-                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
-
-                } else { throw e; }
+                    console.warn(
+                        '`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n',
+                        e
+                    );
+                } else {
+                    throw e;
+                }
             }
         }
 
@@ -1220,7 +1292,10 @@ async function __wbg_load(module, imports) {
 
     function expectedResponseType(type) {
         switch (type) {
-            case 'basic': case 'cors': case 'default': return true;
+            case 'basic':
+            case 'cors':
+            case 'default':
+                return true;
         }
         return false;
     }
@@ -1229,12 +1304,11 @@ async function __wbg_load(module, imports) {
 function initSync(module) {
     if (wasm !== undefined) return wasm;
 
-
     if (module !== undefined) {
         if (Object.getPrototypeOf(module) === Object.prototype) {
-            ({module} = module)
+            ({ module } = module);
         } else {
-            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead');
         }
     }
 
@@ -1249,21 +1323,24 @@ function initSync(module) {
 async function __wbg_init(module_or_path) {
     if (wasm !== undefined) return wasm;
 
-
     if (module_or_path !== undefined) {
         if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
-            ({module_or_path} = module_or_path)
+            ({ module_or_path } = module_or_path);
         } else {
-            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
+            console.warn('using deprecated parameters for the initialization function; pass a single object instead');
         }
     }
 
     if (module_or_path === undefined) {
-        module_or_path = "/wasm/daw-dsp/daw_dsp_bg.wasm"; // served from public/
+        module_or_path = '/wasm/daw-dsp/daw_dsp_bg.wasm'; // served from public/
     }
     const imports = __wbg_get_imports();
 
-    if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
+    if (
+        typeof module_or_path === 'string' ||
+        (typeof Request === 'function' && module_or_path instanceof Request) ||
+        (typeof URL === 'function' && module_or_path instanceof URL)
+    ) {
         module_or_path = fetch(module_or_path);
     }
 

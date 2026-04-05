@@ -1,4 +1,13 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, type DragEvent, useSyncExternalStore, useState, useRef, useEffect, useLayoutEffect } from 'react';
+import {
+    type ReactElement,
+    type MouseEvent as ReactMouseEvent,
+    type DragEvent,
+    useSyncExternalStore,
+    useState,
+    useRef,
+    useEffect,
+    useLayoutEffect,
+} from 'react';
 import { TimelineSurface } from '#/modules/Arrangement/presentations/views/TimelineSurface';
 import { TimelineMinimap } from '#/modules/Arrangement/presentations/views/TimelineMinimap';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
@@ -23,7 +32,6 @@ import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
 import { clamp } from '#/helpers/Math/clamp';
-
 
 const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;
@@ -184,10 +192,7 @@ const TimelineHScrollbar = ({
     };
 
     return (
-        <div
-            className="relative shrink-0 select-none"
-            style={{ height: 10, background: 'rgba(0,0,0,0.25)' }}
-        >
+        <div className="relative shrink-0 select-none" style={{ height: 10, background: 'rgba(0,0,0,0.25)' }}>
             <div
                 className="absolute rounded-full"
                 style={{

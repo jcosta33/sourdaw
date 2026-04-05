@@ -47,7 +47,6 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const scrollX = viewState?.scrollX ?? 0;
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
-
         const collapsedFolders = new Set(
             (trackState?.tracks ?? []).filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id)
         );

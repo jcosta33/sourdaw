@@ -90,10 +90,7 @@ pub fn run() {
             commands::collab::collab_start_browsing,
             commands::collab::collab_get_nearby_sessions,
         ])
-        .setup(|_app| {
-            Ok(())
-        })
+        .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

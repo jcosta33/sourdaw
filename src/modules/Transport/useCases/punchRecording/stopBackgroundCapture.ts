@@ -7,8 +7,6 @@ export function stopBackgroundCapture(captureId: string): void {
     }
     punchRecordingStore.set({
         ...state,
-        captures: state.captures.map((c) =>
-            c.id === captureId ? { ...c, recording: false } : c
-        ),
+        captures: state.captures.map((c) => (c.id === captureId ? { ...c, recording: false } : c)),
     });
 }

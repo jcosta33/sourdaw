@@ -274,15 +274,12 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         className={menuBtnClass}
                         role="menuitem"
                         onClick={act(() =>
-                            runAiActionWithToast(
-                                () => executeAppAction({ type: 'audioToMidi', payload: { clipId } }),
-                                {
-                                    startMsg: 'Converting audio to MIDI…',
-                                    successMsg: 'Audio converted to MIDI',
-                                    successDetails: ['New MIDI clip created from detected onsets'],
-                                    failMsg: 'Audio-to-MIDI conversion failed',
-                                }
-                            )
+                            runAiActionWithToast(() => executeAppAction({ type: 'audioToMidi', payload: { clipId } }), {
+                                startMsg: 'Converting audio to MIDI…',
+                                successMsg: 'Audio converted to MIDI',
+                                successDetails: ['New MIDI clip created from detected onsets'],
+                                failMsg: 'Audio-to-MIDI conversion failed',
+                            })
                         )}
                     >
                         <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
@@ -295,9 +292,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         onClick={act(() =>
                             runAiActionWithToast(
                                 async () => {
-                                    const { handleAiDenoiseClip } = await import(
-                                        '#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip'
-                                    );
+                                    const { handleAiDenoiseClip } =
+                                        await import('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip');
                                     await handleAiDenoiseClip(clipId, 0.7);
                                 },
                                 {

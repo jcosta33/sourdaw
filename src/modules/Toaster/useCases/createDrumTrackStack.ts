@@ -20,19 +20,23 @@ import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
 
 export function createDrumTrackStack(): string | null {
     const state = getTrackStoreState();
-    if (!state) { return null; }
+    if (!state) {
+        return null;
+    }
 
     // Parent is a folder — gives it collapse/expand UI, smaller height, groups children
     const parent = createTrack({ name: 'Toaster Kit', kind: 'folder' });
     parent.collapsed = false;
     const toasterId = `toaster-${crypto.randomUUID().slice(0, 8)}`;
-    parent.devices = [{
-        id: toasterId,
-        name: 'Toaster',
-        type: 'toaster',
-        bypassed: false,
-        parameterValues: {},
-    }];
+    parent.devices = [
+        {
+            id: toasterId,
+            name: 'Toaster',
+            type: 'toaster',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
 
     // 16 child tracks — one per pad, nested under the parent
     const children = Array.from({ length: 16 }, (_, i) => {
@@ -41,8 +45,8 @@ export function createDrumTrackStack(): string | null {
             kind: 'midi',
             parentId: parent.id,
         });
-        child.devices = [];           // no default synth — routes to parent Toaster
-        child.outputId = parent.id;    // audio routes through parent
+        child.devices = []; // no default synth — routes to parent Toaster
+        child.outputId = parent.id; // audio routes through parent
         child.color = PAD_COLORS[i] ?? child.color;
         return child;
     });

@@ -31,14 +31,17 @@ export const usePresence = (): Map<string, PresenceData> => {
             if (existing) {
                 clearTimeout(existing);
             }
-            timers.set(data.peerId, setTimeout(() => {
-                setPresenceMap((prev) => {
-                    const next = new Map(prev);
-                    next.delete(data.peerId);
-                    return next;
-                });
-                timers.delete(data.peerId);
-            }, PRESENCE_EXPIRY_MS));
+            timers.set(
+                data.peerId,
+                setTimeout(() => {
+                    setPresenceMap((prev) => {
+                        const next = new Map(prev);
+                        next.delete(data.peerId);
+                        return next;
+                    });
+                    timers.delete(data.peerId);
+                }, PRESENCE_EXPIRY_MS)
+            );
         });
 
         return () => {

@@ -12,9 +12,7 @@ const VALID_CHORD_QUALITIES = new Set(Object.keys(CHORD_TYPES));
 export const chordTrackHandlers = {
     addChordEvent: {
         execute: (a) => {
-            const quality = VALID_CHORD_QUALITIES.has(a.payload.quality)
-                ? (a.payload.quality as ChordType)
-                : 'major';
+            const quality = VALID_CHORD_QUALITIES.has(a.payload.quality) ? (a.payload.quality as ChordType) : 'major';
             const root = Math.max(0, Math.min(11, Math.round(a.payload.root)));
             const beat = Math.max(0, a.payload.beat);
             const duration = a.payload.duration ?? 4;

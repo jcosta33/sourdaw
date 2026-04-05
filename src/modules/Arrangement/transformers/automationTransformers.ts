@@ -141,13 +141,18 @@ export function generateShapePoints(
     startBeat: number,
     endBeat: number,
     minValue: number,
-    maxValue: number,
+    maxValue: number
 ): AutomationPoint[] {
     const range = maxValue - minValue;
     const duration = endBeat - startBeat;
     const mid = startBeat + duration / 2;
 
-    const pt = (beat: number, norm: number, curve: AutomationPoint['curve'] = 'linear', tension = 0): AutomationPoint => ({
+    const pt = (
+        beat: number,
+        norm: number,
+        curve: AutomationPoint['curve'] = 'linear',
+        tension = 0
+    ): AutomationPoint => ({
         beat,
         value: minValue + norm * range,
         curve,
@@ -157,33 +162,19 @@ export function generateShapePoints(
     switch (shape) {
         case 'square':
             // 4 points: high → step down at midpoint → step back at end
-            return [
-                pt(startBeat, 1, 'step'),
-                pt(mid, 0, 'step'),
-                pt(endBeat, 1, 'step'),
-            ];
+            return [pt(startBeat, 1, 'step'), pt(mid, 0, 'step'), pt(endBeat, 1, 'step')];
 
         case 'triangle':
             // 3 points: low → peak at midpoint → low
-            return [
-                pt(startBeat, 0),
-                pt(mid, 1),
-                pt(endBeat, 0),
-            ];
+            return [pt(startBeat, 0), pt(mid, 1), pt(endBeat, 0)];
 
         case 'sawtooth-up':
             // 2 points: ramp from low to high
-            return [
-                pt(startBeat, 0),
-                pt(endBeat, 1),
-            ];
+            return [pt(startBeat, 0), pt(endBeat, 1)];
 
         case 'sawtooth-down':
             // 2 points: ramp from high to low
-            return [
-                pt(startBeat, 1),
-                pt(endBeat, 0),
-            ];
+            return [pt(startBeat, 1), pt(endBeat, 0)];
 
         case 'sine':
             // 5 key points with smooth curve interpolation

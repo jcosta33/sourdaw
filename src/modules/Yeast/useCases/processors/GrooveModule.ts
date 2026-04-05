@@ -15,9 +15,15 @@ type GrooveTemplate = {
 const GROOVE_TEMPLATES: GrooveTemplate[] = [
     { name: 'Straight', offsets: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
     { name: 'MPC Swing', offsets: [0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12] },
-    { name: 'Triplet Shuffle', offsets: [0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167] },
+    {
+        name: 'Triplet Shuffle',
+        offsets: [0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167],
+    },
     { name: 'Late Backbeat', offsets: [0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0] },
-    { name: 'Dilla Pocket', offsets: [0, 0.08, -0.03, 0.15, 0, 0.06, -0.02, 0.12, 0, 0.09, -0.04, 0.14, 0, 0.07, -0.03, 0.11] },
+    {
+        name: 'Dilla Pocket',
+        offsets: [0, 0.08, -0.03, 0.15, 0, 0.06, -0.02, 0.12, 0, 0.09, -0.04, 0.14, 0, 0.07, -0.03, 0.11],
+    },
     { name: 'Push', offsets: [-0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0] },
 ];
 
@@ -70,16 +76,30 @@ export class GrooveModule implements MidiProcessor {
         }
     }
 
-    reset(): void { this.noteMap.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.noteMap.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'template': this.templateIndex = Math.max(0, Math.min(GROOVE_TEMPLATES.length - 1, Math.round(value))); break;
-            case 'amount': this.amount = Math.max(0, Math.min(1, value)); break;
-            case 'subdivision': this.subdivision = Math.max(4, Math.min(32, Math.round(value))); break;
+            case 'template':
+                this.templateIndex = Math.max(0, Math.min(GROOVE_TEMPLATES.length - 1, Math.round(value)));
+                break;
+            case 'amount':
+                this.amount = Math.max(0, Math.min(1, value));
+                break;
+            case 'subdivision':
+                this.subdivision = Math.max(4, Math.min(32, Math.round(value)));
+                break;
         }
     }
 

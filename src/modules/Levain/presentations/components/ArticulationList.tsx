@@ -21,12 +21,7 @@ const midiNoteToName = (note: number): string => {
     return `${names[note % 12]}${octave}`;
 };
 
-export const ArticulationList = ({
-    articulations,
-    current,
-    grid,
-    onSelect,
-}: ArticulationListProps): ReactElement => {
+export const ArticulationList = ({ articulations, current, grid, onSelect }: ArticulationListProps): ReactElement => {
     const enabled = articulations.filter((a) => a.enabled);
 
     if (grid) {

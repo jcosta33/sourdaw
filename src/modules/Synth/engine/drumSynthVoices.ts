@@ -24,12 +24,7 @@ function createNoiseBuffer(ctx: BaseAudioContext, durationSec: number): AudioBuf
     return buffer;
 }
 
-function schedule808Kick(
-    ctx: BaseAudioContext,
-    dest: AudioNode,
-    startTime: number,
-    velocity: number
-): void {
+function schedule808Kick(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
     const vel = velocity / 127;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -45,8 +40,8 @@ function schedule808Kick(
     const shaper = ctx.createWaveShaper();
     const curve = new Float32Array(256);
     for (let i = 0; i < 256; i++) {
-        const x = (i / 128) - 1;
-        curve[i] = (Math.PI + 3) * x / (Math.PI + 3 * Math.abs(x));
+        const x = i / 128 - 1;
+        curve[i] = ((Math.PI + 3) * x) / (Math.PI + 3 * Math.abs(x));
     }
     shaper.curve = curve;
     shaper.oversample = '2x';
@@ -59,12 +54,7 @@ function schedule808Kick(
     osc.stop(startTime + 0.9);
 }
 
-function schedule808Snare(
-    ctx: BaseAudioContext,
-    dest: AudioNode,
-    startTime: number,
-    velocity: number
-): void {
+function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
     const vel = velocity / 127;
 
     const bodyOsc = ctx.createOscillator();
@@ -100,12 +90,7 @@ function schedule808Snare(
     noise.stop(startTime + 0.3);
 }
 
-function schedule808Clap(
-    ctx: BaseAudioContext,
-    dest: AudioNode,
-    startTime: number,
-    velocity: number
-): void {
+function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
     const vel = velocity / 127;
     const noiseBuffer = createNoiseBuffer(ctx, 0.4);
 
@@ -209,12 +194,7 @@ function schedule808Tom(
     osc.stop(startTime + 0.35);
 }
 
-function schedule808Cowbell(
-    ctx: BaseAudioContext,
-    dest: AudioNode,
-    startTime: number,
-    velocity: number
-): void {
+function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
     const vel = velocity / 127;
     const freqs = [560, 845];
 
@@ -241,12 +221,7 @@ function schedule808Cowbell(
     envGain.connect(dest);
 }
 
-function schedule808Rimshot(
-    ctx: BaseAudioContext,
-    dest: AudioNode,
-    startTime: number,
-    velocity: number
-): void {
+function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
     const vel = velocity / 127;
 
     const osc = ctx.createOscillator();
@@ -304,12 +279,7 @@ function schedule808Conga(
     osc.stop(startTime + 0.25);
 }
 
-function schedule808Maracas(
-    ctx: BaseAudioContext,
-    dest: AudioNode,
-    startTime: number,
-    velocity: number
-): void {
+function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
     const vel = velocity / 127;
     const noiseBuffer = createNoiseBuffer(ctx, 0.1);
     const noise = ctx.createBufferSource();
@@ -330,12 +300,7 @@ function schedule808Maracas(
     noise.stop(startTime + 0.1);
 }
 
-function schedule808Clave(
-    ctx: BaseAudioContext,
-    dest: AudioNode,
-    startTime: number,
-    velocity: number
-): void {
+function schedule808Clave(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
     const vel = velocity / 127;
     const osc = ctx.createOscillator();
     osc.type = 'triangle';

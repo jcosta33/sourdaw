@@ -115,7 +115,7 @@ export async function fetchAndDecode(url: string): Promise<{
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    
+
     // Strictly sequence decoding to avoid WebKit EncodingError
     return new Promise((resolve, reject) => {
         decodeQueue = decodeQueue.then(async () => {
@@ -160,7 +160,7 @@ export async function loadInstrumentFromManifest(
     basePath: string,
     nodePort: MessagePort,
     lod: SampleLodConfig = DEFAULT_LOD,
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number) => void
 ): Promise<void> {
     const response = await fetch(manifestUrl);
     if (!response.ok) {
@@ -210,7 +210,7 @@ export async function loadInstrumentFromManifest(
         }
 
         const url = `${basePath}/${zone.file}`;
-        
+
         try {
             const { data, frameCount, channels, sampleRate } = await fetchAndDecode(url);
 
@@ -225,7 +225,7 @@ export async function loadInstrumentFromManifest(
                     channels,
                     sampleRate,
                 },
-                [transferable],
+                [transferable]
             );
 
             sampleIdMap.set(zone.file, nextSampleId);
@@ -288,11 +288,7 @@ export async function loadInstrumentFromManifest(
  * Load a single sample for quick preview / audition.
  * Returns the sampleId assigned in the engine.
  */
-export async function loadSingleSample(
-    url: string,
-    nodePort: MessagePort,
-    sampleId: number,
-): Promise<number> {
+export async function loadSingleSample(url: string, nodePort: MessagePort, sampleId: number): Promise<number> {
     const { data, frameCount, channels, sampleRate } = await fetchAndDecode(url);
 
     const transferable = data.buffer;
@@ -305,7 +301,7 @@ export async function loadSingleSample(
             channels,
             sampleRate,
         },
-        [transferable],
+        [transferable]
     );
 
     return sampleId;

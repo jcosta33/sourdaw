@@ -9,7 +9,13 @@ import {
 } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '#/modules/AiRuntime/stores/chatStore';
+import {
+    chatStore,
+    clearChatMessages,
+    toggleReasoning,
+    setChatMode,
+    stopGenerating,
+} from '#/modules/AiRuntime/stores/chatStore';
 import { sendChatMessage } from '#/modules/AiRuntime/useCases/sendChatMessage';
 import { toggleChat } from '#/modules/AiRuntime/useCases/aiPanelActions';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -182,7 +188,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     </span>
                                 </div>
                                 {/* Reasoning (collapsible) */}
-                                {msg.reasoning ? <ReasoningBlock reasoning={msg.reasoning} isStreaming={msg.isStreaming && !msg.content} /> : null}
+                                {msg.reasoning ? (
+                                    <ReasoningBlock
+                                        reasoning={msg.reasoning}
+                                        isStreaming={msg.isStreaming && !msg.content}
+                                    />
+                                ) : null}
                                 <div
                                     className={cn(
                                         'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',

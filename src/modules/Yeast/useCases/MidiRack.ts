@@ -40,7 +40,7 @@ export class MidiRack {
         inputEvents: readonly MidiEvent[],
         blockStartSamples: number,
         blockEndSamples: number,
-        transport: TransportInfo,
+        transport: TransportInfo
     ): MidiEvent[] {
         // 1. Drain scheduled events for this block
         const scheduled = this.scheduled.drainRange(blockStartSamples, blockEndSamples);

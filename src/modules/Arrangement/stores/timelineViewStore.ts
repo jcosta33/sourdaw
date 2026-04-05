@@ -69,9 +69,7 @@ export function setScrollY(scrollY: number): void {
     }
     // Clamp to prevent scrolling past the last track
     const tracks = trackStore.value?.tracks ?? [];
-    const totalHeight = tracks
-        .filter((t) => t.kind !== 'master')
-        .reduce((sum, t) => sum + (t.height ?? 64), 0);
+    const totalHeight = tracks.filter((t) => t.kind !== 'master').reduce((sum, t) => sum + (t.height ?? 64), 0);
     const maxY = Math.max(0, totalHeight - 200); // Keep at least 200px visible
     const clamped = Math.max(0, Math.min(maxY, scrollY));
     if (state.scrollY !== clamped) {

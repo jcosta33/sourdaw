@@ -18,11 +18,7 @@ let nextInstanceId = 5000;
  * Create a pattern instance linked to a source clip.
  * The instance inherits MIDI notes and properties from the parent.
  */
-export function createPatternInstance(
-    sourceClipId: string,
-    targetTrackId: string,
-    startBeat: number
-): string | null {
+export function createPatternInstance(sourceClipId: string, targetTrackId: string, startBeat: number): string | null {
     const state = getTrackState();
     if (!state) {
         return null;
@@ -81,9 +77,7 @@ export function createPatternInstance(
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) =>
-            t.id === targetTrackId ? { ...t, clips: [...t.clips, instance] } : t
-        ),
+        tracks: state.tracks.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, instance] } : t)),
     });
 
     return instanceId;

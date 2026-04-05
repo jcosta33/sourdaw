@@ -258,9 +258,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                     </button>
 
                     {/* ── Recent Projects ── */}
-                    {entries.length > 0 ? (
-                        <div className="mx-2 my-1 h-px bg-border" role="separator" />
-                    ) : null}
+                    {entries.length > 0 ? <div className="mx-2 my-1 h-px bg-border" role="separator" /> : null}
 
                     {entries.length > 0 ? (
                         <div className="px-3 py-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider">

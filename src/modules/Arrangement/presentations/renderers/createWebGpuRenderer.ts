@@ -254,7 +254,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             for (const track of model.tracks) {
                 const th = track.height * dpr;
                 const isSelected = track.id === selectedTrackId;
-                const bg = isSelected ? resolveToken('--color-bg-well', '#0d0d0d') : resolveToken('--color-bg-tray', '#0a0a0a');
+                const bg = isSelected
+                    ? resolveToken('--color-bg-well', '#0d0d0d')
+                    : resolveToken('--color-bg-tray', '#0a0a0a');
                 addRect(0, trackY, w, trackY + th, bg);
                 // Row separator line
                 addRect(0, trackY + th - dpr, w, trackY + th, '#000000', 0.6);
@@ -309,7 +311,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                         let loopOffset = 0;
                         let drawnNotes = 0;
-                        const MAX_NOTES_PER_CLIP = 300; 
+                        const MAX_NOTES_PER_CLIP = 300;
 
                         while (loopOffset < clipDuration) {
                             for (const note of clip.midiNotes) {
@@ -391,7 +393,14 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             const phX = beatToX(playheadPosition);
             if (phX >= 0 && phX <= w) {
                 addRect(phX - dpr, 0, phX + dpr, h, resolveToken('--color-state-record', '#c45040'), 0.9); // red needle
-                addRect(phX - 4 * dpr, 0, phX + 4 * dpr, 12 * dpr, resolveToken('--color-state-record', '#c45040'), 0.9); // head cap
+                addRect(
+                    phX - 4 * dpr,
+                    0,
+                    phX + 4 * dpr,
+                    12 * dpr,
+                    resolveToken('--color-state-record', '#c45040'),
+                    0.9
+                ); // head cap
             }
 
             if (rectCount === 0) {

@@ -12,8 +12,7 @@ import { Logger } from '#/helpers/Logger/Logger';
 
 const logger = Container.getInstance().get(Logger);
 
-const DEMUCS_MODEL_URL =
-    'https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/main/demucsv4.onnx';
+const DEMUCS_MODEL_URL = 'https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/main/demucsv4.onnx';
 const DEMUCS_SAMPLE_RATE = 44100;
 const DEMUCS_SEGMENT_LEN = 343980; // ~7.8s at 44100Hz
 const STEM_NAMES = ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'] as const;
@@ -139,9 +138,7 @@ export async function separateStemsBrowser(
     const resampled = await resampleBuffer(sourceBuffer, DEMUCS_SAMPLE_RATE);
 
     const left = resampled.getChannelData(0);
-    const right = resampled.numberOfChannels > 1
-        ? resampled.getChannelData(1)
-        : left;
+    const right = resampled.numberOfChannels > 1 ? resampled.getChannelData(1) : left;
     const totalSamples = left.length;
 
     // Determine which stems to return
@@ -178,9 +175,13 @@ export async function separateStemsBrowser(
 
         // Output: [1, 6, 2, DEMUCS_SEGMENT_LEN]
         const outputKey = Object.keys(results)[0];
-        if (!outputKey) { throw new Error('No output from Demucs model'); }
+        if (!outputKey) {
+            throw new Error('No output from Demucs model');
+        }
         const output = results[outputKey];
-        if (!output) { throw new Error('Empty output from Demucs model'); }
+        if (!output) {
+            throw new Error('Empty output from Demucs model');
+        }
         const outData = output.data as Float32Array;
         const dims = output.dims as number[];
 
@@ -207,7 +208,9 @@ export async function separateStemsBrowser(
 
     for (const name of wanted) {
         const idx = STEM_NAMES.indexOf(name);
-        if (idx === -1) { continue; }
+        if (idx === -1) {
+            continue;
+        }
 
         // Create stereo AudioBuffer at model sample rate
         const stemCtx = new OfflineAudioContext(2, totalSamples, DEMUCS_SAMPLE_RATE);
@@ -225,4 +228,3 @@ export async function separateStemsBrowser(
     logger.info(`[Browser Stems] Separated into ${String(Object.keys(result).length)} stems`);
     return result;
 }
-

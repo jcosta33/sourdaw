@@ -1,4 +1,4 @@
-use daw_io::{DecodedAudio, AudioStreamMeta};
+use daw_io::{AudioStreamMeta, DecodedAudio};
 
 /// Decode an audio file from disk. Supports WAV, FLAC, MP3, OGG/Vorbis, AAC, ALAC, and more.
 /// Takes a file path rather than bytes to avoid loading the entire file through the IPC boundary.

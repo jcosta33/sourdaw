@@ -49,7 +49,11 @@ export function isComplexPrompt(normalized: string): boolean {
         return true;
     }
     // Genre/style references that need creative interpretation
-    if (/\b(blues|jazz|rock|pop|hip.?hop|trap|edm|classical|folk|country|r&b|rnb|funk|reggae|metal|punk|ambient|lo.?fi)\b/i.test(normalized)) {
+    if (
+        /\b(blues|jazz|rock|pop|hip.?hop|trap|edm|classical|folk|country|r&b|rnb|funk|reggae|metal|punk|ambient|lo.?fi)\b/i.test(
+            normalized
+        )
+    ) {
         return true;
     }
     // "add tracks" without a number — needs LLM to decide how many and what kind

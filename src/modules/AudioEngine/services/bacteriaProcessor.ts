@@ -55,7 +55,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
-    _sabView = null;    // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();

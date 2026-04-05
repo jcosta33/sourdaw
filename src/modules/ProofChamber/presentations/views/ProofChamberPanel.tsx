@@ -113,10 +113,9 @@ const ChamberChip = ({
     <DawPluginChip tone={tone} size={size} shape={shape} caps={caps} {...props} />
 );
 
-const ChamberLed = ({
-    tone = 'cyan',
-    ...props
-}: ComponentProps<typeof DawPluginLed>): ReactElement => <DawPluginLed tone={tone} {...props} />;
+const ChamberLed = ({ tone = 'cyan', ...props }: ComponentProps<typeof DawPluginLed>): ReactElement => (
+    <DawPluginLed tone={tone} {...props} />
+);
 
 function KnobCell({
     label,
@@ -245,7 +244,11 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     active={active}
                                     onClick={() => {
                                         setParams((prev) => ({ ...prev, algorithm: algorithm.id }));
-                                        updateProofChamberParam(deviceId, 'algorithm', ALGORITHM_MAP[algorithm.id] ?? 0);
+                                        updateProofChamberParam(
+                                            deviceId,
+                                            'algorithm',
+                                            ALGORITHM_MAP[algorithm.id] ?? 0
+                                        );
                                     }}
                                 >
                                     {algorithm.label}
@@ -266,7 +269,10 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         <ChamberChip active={params.shimmer} onClick={() => setParam('shimmer', !params.shimmer)}>
                             Shimmer
                         </ChamberChip>
-                        <ChamberChip active={params.saturation} onClick={() => setParam('saturation', !params.saturation)}>
+                        <ChamberChip
+                            active={params.saturation}
+                            onClick={() => setParam('saturation', !params.saturation)}
+                        >
                             Saturation
                         </ChamberChip>
                     </div>
@@ -383,13 +389,19 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         </SectionCard>
                         <SectionCard title="Switches" detail={params.freeze ? 'Frozen' : 'Moving'}>
                             <div className="flex flex-wrap gap-1.5">
-                                <ChamberChip active={params.shimmer} onClick={() => setParam('shimmer', !params.shimmer)}>
+                                <ChamberChip
+                                    active={params.shimmer}
+                                    onClick={() => setParam('shimmer', !params.shimmer)}
+                                >
                                     Shimmer
                                 </ChamberChip>
                                 <ChamberChip active={params.freeze} onClick={() => setParam('freeze', !params.freeze)}>
                                     Freeze
                                 </ChamberChip>
-                                <ChamberChip active={params.saturation} onClick={() => setParam('saturation', !params.saturation)}>
+                                <ChamberChip
+                                    active={params.saturation}
+                                    onClick={() => setParam('saturation', !params.saturation)}
+                                >
                                     Saturation
                                 </ChamberChip>
                             </div>
@@ -656,12 +668,8 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     titleClassName="text-white/46"
                                 >
                                     <div className="flex flex-wrap gap-1.5">
-                                        <ChamberLed>
-                                            {params.freeze ? 'Freeze on' : 'Freeze off'}
-                                        </ChamberLed>
-                                        <ChamberLed>
-                                            {params.shimmer ? 'Shimmer on' : 'Shimmer off'}
-                                        </ChamberLed>
+                                        <ChamberLed>{params.freeze ? 'Freeze on' : 'Freeze off'}</ChamberLed>
+                                        <ChamberLed>{params.shimmer ? 'Shimmer on' : 'Shimmer off'}</ChamberLed>
                                     </div>
                                 </DawPluginInsetCard>
                             </div>

@@ -35,35 +35,46 @@ type Props = {
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
 const SectionLabel = ({ children }: { children: string }): ReactElement => (
-    <div className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1.5">
-        {children}
-    </div>
+    <div className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1.5">{children}</div>
 );
 
 function fmtKnob(v: number, unit?: string): string {
-    if (unit === 'ms') { return v === 0 ? 'Auto' : `${v.toFixed(0)}ms`; }
-    if (unit === 'dB') { return `${v > 0 ? '+' : ''}${v.toFixed(1)}`; }
-    if (unit === 'Hz') { return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v.toFixed(0)}`; }
-    if (unit === '%') { return `${Math.round(v)}%`; }
+    if (unit === 'ms') {
+        return v === 0 ? 'Auto' : `${v.toFixed(0)}ms`;
+    }
+    if (unit === 'dB') {
+        return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
+    }
+    if (unit === 'Hz') {
+        return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v.toFixed(0)}`;
+    }
+    if (unit === '%') {
+        return `${Math.round(v)}%`;
+    }
     return v.toFixed(1);
 }
 
 const Knob = ({
-    value, onChange, label, min, max, step, unit, def,
+    value,
+    onChange,
+    label,
+    min,
+    max,
+    step,
+    unit,
+    def,
 }: {
-    value: number; onChange: (v: number) => void; label: string;
-    min: number; max: number; step: number; unit?: string; def: number;
+    value: number;
+    onChange: (v: number) => void;
+    label: string;
+    min: number;
+    max: number;
+    step: number;
+    unit?: string;
+    def: number;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-0.5">
-        <RotaryKnob
-            value={value}
-            onChange={onChange}
-            min={min}
-            max={max}
-            step={step}
-            defaultValue={def}
-            size="sm"
-        />
+        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={def} size="sm" />
         <span className="text-[7px] text-muted-foreground/60 leading-none">{label}</span>
         {unit !== undefined ? (
             <span className="text-[6px] font-mono text-muted-foreground/40">{fmtKnob(value, unit)}</span>
@@ -104,13 +115,13 @@ const SliderRow = ({
 
 const ALGORITHMS = [
     { id: 'transparent', label: 'Transparent', desc: 'Clean ceiling, no color' },
-    { id: 'punchy',      label: 'Punchy',      desc: 'Snap & edge, rhythm' },
-    { id: 'dynamic',     label: 'Dynamic',     desc: 'Enhances transients' },
-    { id: 'allround',    label: 'Allround',    desc: 'Balanced loudness' },
-    { id: 'aggressive',  label: 'Aggressive',  desc: 'Pushes hard' },
-    { id: 'bus',         label: 'Bus',         desc: 'Glue and pump' },
-    { id: 'safe',        label: 'Safe',        desc: 'Zero distortion' },
-    { id: 'wall',        label: 'Wall',        desc: 'Max ceiling' },
+    { id: 'punchy', label: 'Punchy', desc: 'Snap & edge, rhythm' },
+    { id: 'dynamic', label: 'Dynamic', desc: 'Enhances transients' },
+    { id: 'allround', label: 'Allround', desc: 'Balanced loudness' },
+    { id: 'aggressive', label: 'Aggressive', desc: 'Pushes hard' },
+    { id: 'bus', label: 'Bus', desc: 'Glue and pump' },
+    { id: 'safe', label: 'Safe', desc: 'Zero distortion' },
+    { id: 'wall', label: 'Wall', desc: 'Max ceiling' },
 ] as const;
 
 const SAT_ALGORITHMS = ['soft', 'hard', 'tape', 'tube', 'fold'] as const;
@@ -128,8 +139,8 @@ const DITHER_OPTIONS = [
 
 const STYLE_TILES = [
     { id: 'transparent' as const, label: 'TRANSPARENT', sub: 'Preserves dynamics\nfor any mix' },
-    { id: 'punchy'      as const, label: 'PUNCHY',      sub: 'Snap & punch\nfor rhythmic mixes' },
-    { id: 'loud'        as const, label: 'LOUD',        sub: 'Maximum\nloudness' },
+    { id: 'punchy' as const, label: 'PUNCHY', sub: 'Snap & punch\nfor rhythmic mixes' },
+    { id: 'loud' as const, label: 'LOUD', sub: 'Maximum\nloudness' },
 ];
 
 const LevelTile = ({
@@ -206,17 +217,38 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             <Knob
                 value={patch.lookahead}
                 onChange={(v) => setParam('lookahead', v)}
-                label="Lookahead" min={0} max={10} step={0.1} unit="ms" def={2}
+                label="Lookahead"
+                min={0}
+                max={10}
+                step={0.1}
+                unit="ms"
+                def={2}
             />
             <Knob
                 value={patch.attackAuto ? 0 : patch.attack}
-                onChange={(v) => { setParam('attackAuto', v === 0); setParam('attack', v); }}
-                label="Attack" min={0} max={100} step={0.5} unit="ms" def={0}
+                onChange={(v) => {
+                    setParam('attackAuto', v === 0);
+                    setParam('attack', v);
+                }}
+                label="Attack"
+                min={0}
+                max={100}
+                step={0.5}
+                unit="ms"
+                def={0}
             />
             <Knob
                 value={patch.releaseAuto ? 0 : patch.release}
-                onChange={(v) => { setParam('releaseAuto', v === 0); setParam('release', v); }}
-                label="Release" min={0} max={1000} step={5} unit="ms" def={0}
+                onChange={(v) => {
+                    setParam('releaseAuto', v === 0);
+                    setParam('release', v);
+                }}
+                label="Release"
+                min={0}
+                max={1000}
+                step={5}
+                unit="ms"
+                def={0}
             />
         </div>
 
@@ -278,7 +310,12 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                     <Knob
                         value={patch.satDrive}
                         onChange={(v) => setParam('satDrive', v)}
-                        label="Drive" min={0} max={18} step={0.1} unit="dB" def={0}
+                        label="Drive"
+                        min={0}
+                        max={18}
+                        step={0.1}
+                        unit="dB"
+                        def={0}
                     />
                     {patch.satDrive > 6 ? (
                         <span className="text-[6px] font-bold text-[var(--color-state-danger)]">HOT</span>
@@ -287,7 +324,12 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 <Knob
                     value={patch.satMix}
                     onChange={(v) => setParam('satMix', v)}
-                    label="Mix" min={0} max={100} step={1} unit="%" def={0}
+                    label="Mix"
+                    min={0}
+                    max={100}
+                    step={1}
+                    unit="%"
+                    def={0}
                 />
             </div>
         </div>
@@ -377,7 +419,12 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                         <Knob
                             value={patch.scHpfFreq}
                             onChange={(v) => setParam('scHpfFreq', v)}
-                            label="HPF" min={20} max={200} step={1} unit="Hz" def={60}
+                            label="HPF"
+                            min={20}
+                            max={200}
+                            step={1}
+                            unit="Hz"
+                            def={60}
                         />
                     ) : null}
                 </div>
@@ -396,7 +443,9 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                 aria-label="Dither mode"
             >
                 {DITHER_OPTIONS.map((d) => (
-                    <option key={d.id} value={d.id}>{d.label}</option>
+                    <option key={d.id} value={d.id}>
+                        {d.label}
+                    </option>
                 ))}
             </DawCompactSelect>
             {patch.dither !== 'off' ? (
@@ -419,18 +468,27 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
 );
 
 const Level5Stats = ({
-    lufsIntegrated, lufsShortTerm, lufsMomentary, lra, truepeakMax, grDb,
+    lufsIntegrated,
+    lufsShortTerm,
+    lufsMomentary,
+    lra,
+    truepeakMax,
+    grDb,
 }: {
-    lufsIntegrated: number; lufsShortTerm: number; lufsMomentary: number;
-    lra: number; truepeakMax: number; grDb: number;
+    lufsIntegrated: number;
+    lufsShortTerm: number;
+    lufsMomentary: number;
+    lra: number;
+    truepeakMax: number;
+    grDb: number;
 }): ReactElement => {
     const rows: [string, string][] = [
         ['Integrated', `${lufsIntegrated.toFixed(1)} LUFS`],
-        ['ST Max',     `${lufsShortTerm.toFixed(1)} LUFS`],
-        ['MOM Max',    `${lufsMomentary.toFixed(1)} LUFS`],
-        ['LRA',        `${lra.toFixed(1)} LU`],
-        ['TP Max',     `${truepeakMax.toFixed(1)} dBTP`],
-        ['GR Max',     `${grDb.toFixed(1)} dB`],
+        ['ST Max', `${lufsShortTerm.toFixed(1)} LUFS`],
+        ['MOM Max', `${lufsMomentary.toFixed(1)} LUFS`],
+        ['LRA', `${lra.toFixed(1)} LU`],
+        ['TP Max', `${truepeakMax.toFixed(1)} dBTP`],
+        ['GR Max', `${grDb.toFixed(1)} dB`],
     ];
     return (
         <div
@@ -455,7 +513,14 @@ const Level5Stats = ({
 // ── Main CrustControlZone ─────────────────────────────────────────────────────
 
 export const CrustControlZone = ({
-    patch, setParam, lufsIntegrated, lufsShortTerm, lufsMomentary, lra, truepeakMax, grDb,
+    patch,
+    setParam,
+    lufsIntegrated,
+    lufsShortTerm,
+    lufsMomentary,
+    lra,
+    truepeakMax,
+    grDb,
 }: Props): ReactElement => {
     const level = patch.uiLevel;
 

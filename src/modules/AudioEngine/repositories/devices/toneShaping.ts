@@ -10,7 +10,9 @@ export function createGainDevice(ctx: BaseAudioContext): OfflineDeviceNode {
 
 export function applyGainParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const g = dn.nodes[0] as GainNode;
-    if (params['gain-level'] !== undefined) { g.gain.value = 10 ** (params['gain-level'] / 20); }
+    if (params['gain-level'] !== undefined) {
+        g.gain.value = 10 ** (params['gain-level'] / 20);
+    }
 }
 
 // ── Filter ───────────────────────────────────────────────────────────────
@@ -25,8 +27,12 @@ export function createFilter(ctx: BaseAudioContext): OfflineDeviceNode {
 
 export function applyFilterParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const filterNode = dn.nodes[0] as BiquadFilterNode;
-    if (params['filter-cutoff'] !== undefined) { filterNode.frequency.value = params['filter-cutoff']; }
-    if (params['filter-resonance'] !== undefined) { filterNode.Q.value = params['filter-resonance']; }
+    if (params['filter-cutoff'] !== undefined) {
+        filterNode.frequency.value = params['filter-cutoff'];
+    }
+    if (params['filter-resonance'] !== undefined) {
+        filterNode.Q.value = params['filter-resonance'];
+    }
     if (params['filter-type'] !== undefined) {
         const types: BiquadFilterType[] = ['lowpass', 'highpass', 'bandpass', 'notch'];
         filterNode.type = types[Math.round(params['filter-type'])] ?? 'lowpass';
@@ -77,9 +83,15 @@ export function applyDistortionParams(dn: OfflineDeviceNode, params: Record<stri
     const shaperD = dn.nodes[3] as WaveShaperNode;
     const toneD = dn.nodes[4] as BiquadFilterNode;
     const outputLevel = dn.nodes[6] as GainNode;
-    if (params['dist-drive'] !== undefined) { shaperD.curve = makeDistortionCurve(params['dist-drive']); }
-    if (params['dist-tone'] !== undefined) { toneD.frequency.value = params['dist-tone']; }
-    if (params['dist-output'] !== undefined) { outputLevel.gain.value = 10 ** (params['dist-output'] / 20); }
+    if (params['dist-drive'] !== undefined) {
+        shaperD.curve = makeDistortionCurve(params['dist-drive']);
+    }
+    if (params['dist-tone'] !== undefined) {
+        toneD.frequency.value = params['dist-tone'];
+    }
+    if (params['dist-output'] !== undefined) {
+        outputLevel.gain.value = 10 ** (params['dist-output'] / 20);
+    }
     if (params['dist-mix'] !== undefined) {
         wetDist.gain.value = params['dist-mix'];
         dryDist.gain.value = 1 - params['dist-mix'];
@@ -121,7 +133,9 @@ export function applyBitcrusherParams(dn: OfflineDeviceNode, params: Record<stri
     const dryBC = dn.nodes[1] as GainNode;
     const wetBC = dn.nodes[2] as GainNode;
     const shaperBC = dn.nodes[3] as WaveShaperNode;
-    if (params['crush-bits'] !== undefined) { shaperBC.curve = makeBitcrusherCurve(Math.max(1, Math.round(params['crush-bits']))); }
+    if (params['crush-bits'] !== undefined) {
+        shaperBC.curve = makeBitcrusherCurve(Math.max(1, Math.round(params['crush-bits'])));
+    }
     if (params['crush-mix'] !== undefined) {
         wetBC.gain.value = params['crush-mix'];
         dryBC.gain.value = 1 - params['crush-mix'];
@@ -155,9 +169,15 @@ export function createDeEsser(ctx: BaseAudioContext): OfflineDeviceNode {
 export function applyDeEsserParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const bandpassDE = dn.nodes[3] as BiquadFilterNode;
     const compDE = dn.nodes[4] as DynamicsCompressorNode;
-    if (params['deess-threshold'] !== undefined) { compDE.threshold.value = params['deess-threshold']; }
-    if (params['deess-freq'] !== undefined) { bandpassDE.frequency.value = params['deess-freq']; }
-    if (params['deess-range'] !== undefined) { compDE.ratio.value = Math.max(1, Math.abs(params['deess-range']) / 2); }
+    if (params['deess-threshold'] !== undefined) {
+        compDE.threshold.value = params['deess-threshold'];
+    }
+    if (params['deess-freq'] !== undefined) {
+        bandpassDE.frequency.value = params['deess-freq'];
+    }
+    if (params['deess-range'] !== undefined) {
+        compDE.ratio.value = Math.max(1, Math.abs(params['deess-range']) / 2);
+    }
 }
 
 // ── LUFS Meter ───────────────────────────────────────────────────────────

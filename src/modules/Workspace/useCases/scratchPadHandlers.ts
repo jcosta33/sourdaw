@@ -1,6 +1,9 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { clearScratchPad } from '#/modules/Arrangement/useCases/scratchPad/scratchPadCrud';
-import { captureArrangementToScratchPad, commitScratchPadToArrangement } from '#/modules/Arrangement/useCases/scratchPad/captureCommit';
+import {
+    captureArrangementToScratchPad,
+    commitScratchPadToArrangement,
+} from '#/modules/Arrangement/useCases/scratchPad/captureCommit';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 export const scratchPadHandlers: Record<string, ActionHandler<any>> = {

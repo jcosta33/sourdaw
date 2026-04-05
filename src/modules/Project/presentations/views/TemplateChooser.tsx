@@ -28,24 +28,24 @@ const LOAF = { src: '/logo-parts/loaf.png', x: 66, y: 176, w: 345, h: 164 };
 
 const PARTICLES: ParticleDef[] = [
     { src: '/logo-parts/p01.png', x: 228, y: 102, w: 21, h: 48, dir: 'up', delay: 0.0, duration: 3.0 },
-    { src: '/logo-parts/p05.png', x: 228, y: 56,  w: 21, h: 38, dir: 'up', delay: 0.5, duration: 3.4 },
-    { src: '/logo-parts/p16.png', x: 229, y: 24,  w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.8 },
-    { src: '/logo-parts/p07.png', x: 187, y: 93,  w: 21, h: 32, dir: 'up', delay: 0.2, duration: 2.8 },
+    { src: '/logo-parts/p05.png', x: 228, y: 56, w: 21, h: 38, dir: 'up', delay: 0.5, duration: 3.4 },
+    { src: '/logo-parts/p16.png', x: 229, y: 24, w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.8 },
+    { src: '/logo-parts/p07.png', x: 187, y: 93, w: 21, h: 32, dir: 'up', delay: 0.2, duration: 2.8 },
     { src: '/logo-parts/p12.png', x: 188, y: 134, w: 20, h: 20, dir: 'up', delay: 0.7, duration: 2.6 },
-    { src: '/logo-parts/p30.png', x: 188, y: 75,  w: 20, h: 10, dir: 'up', delay: 1.2, duration: 3.2 },
-    { src: '/logo-parts/p08.png', x: 269, y: 93,  w: 20, h: 32, dir: 'up', delay: 0.3, duration: 2.8 },
+    { src: '/logo-parts/p30.png', x: 188, y: 75, w: 20, h: 10, dir: 'up', delay: 1.2, duration: 3.2 },
+    { src: '/logo-parts/p08.png', x: 269, y: 93, w: 20, h: 32, dir: 'up', delay: 0.3, duration: 2.8 },
     { src: '/logo-parts/p11.png', x: 269, y: 134, w: 20, h: 21, dir: 'up', delay: 0.8, duration: 2.6 },
-    { src: '/logo-parts/p29.png', x: 269, y: 74,  w: 20, h: 12, dir: 'up', delay: 1.3, duration: 3.2 },
+    { src: '/logo-parts/p29.png', x: 269, y: 74, w: 20, h: 12, dir: 'up', delay: 1.3, duration: 3.2 },
     { src: '/logo-parts/p03.png', x: 152, y: 122, w: 20, h: 41, dir: 'up', delay: 0.4, duration: 3.0 },
-    { src: '/logo-parts/p19.png', x: 152, y: 78,  w: 20, h: 19, dir: 'up', delay: 0.9, duration: 3.4 },
+    { src: '/logo-parts/p19.png', x: 152, y: 78, w: 20, h: 19, dir: 'up', delay: 0.9, duration: 3.4 },
     { src: '/logo-parts/p31.png', x: 155, y: 105, w: 17, h: 10, dir: 'up', delay: 1.5, duration: 3.6 },
     { src: '/logo-parts/p04.png', x: 305, y: 123, w: 20, h: 40, dir: 'up', delay: 0.4, duration: 3.0 },
-    { src: '/logo-parts/p18.png', x: 305, y: 78,  w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.4 },
-    { src: '/logo-parts/p32.png', x: 305, y: 105, w: 16, h: 9,  dir: 'up', delay: 1.6, duration: 3.6 },
+    { src: '/logo-parts/p18.png', x: 305, y: 78, w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.4 },
+    { src: '/logo-parts/p32.png', x: 305, y: 105, w: 16, h: 9, dir: 'up', delay: 1.6, duration: 3.6 },
     { src: '/logo-parts/p06.png', x: 112, y: 140, w: 20, h: 38, dir: 'up', delay: 0.6, duration: 3.2 },
     { src: '/logo-parts/p15.png', x: 113, y: 113, w: 20, h: 19, dir: 'up', delay: 1.1, duration: 3.6 },
     { src: '/logo-parts/p02.png', x: 344, y: 126, w: 20, h: 52, dir: 'up', delay: 0.7, duration: 3.2 },
-    { src: '/logo-parts/p22.png', x: 77,  y: 170, w: 20, h: 19, dir: 'up', delay: 1.4, duration: 3.8 },
+    { src: '/logo-parts/p22.png', x: 77, y: 170, w: 20, h: 19, dir: 'up', delay: 1.4, duration: 3.8 },
     { src: '/logo-parts/p21.png', x: 380, y: 170, w: 19, h: 19, dir: 'up', delay: 1.4, duration: 3.8 },
     { src: '/logo-parts/p00.png', x: 228, y: 364, w: 21, h: 87, dir: 'down', delay: 0.1, duration: 3.2 },
     { src: '/logo-parts/p28.png', x: 188, y: 364, w: 21, h: 12, dir: 'down', delay: 0.3, duration: 2.6 },
@@ -221,7 +221,9 @@ const TemplateCard = ({
             onClick={() => onSelect(template.id)}
         >
             <div className="flex w-full items-center gap-3">
-                <div className={`shrink-0 size-9 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors`}>
+                <div
+                    className={`shrink-0 size-9 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors`}
+                >
                     {icon}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -233,14 +235,14 @@ const TemplateCard = ({
                     </div>
                 </div>
                 {isDemo ? (
-                    <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+                    <span
+                        className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${colors.bg} ${colors.text}`}
+                    >
                         Demo
                     </span>
                 ) : null}
             </div>
-            <p className="text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-2">
-                {template.description}
-            </p>
+            <p className="text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-2">{template.description}</p>
         </button>
     );
 };
@@ -269,7 +271,10 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
 
             <div className="text-center space-y-1.5">
                 <p className="text-sm font-semibold text-foreground">
-                    Baking <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">{name}</span>
+                    Baking{' '}
+                    <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">
+                        {name}
+                    </span>
                 </p>
                 <p
                     key={msgIndex}
@@ -284,7 +289,8 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
                 <div
                     className="h-full w-1/3 rounded-full"
                     style={{
-                        background: 'linear-gradient(90deg, transparent, var(--color-accent-orange, #d97706), transparent)',
+                        background:
+                            'linear-gradient(90deg, transparent, var(--color-accent-orange, #d97706), transparent)',
                         animation: 'tc-shimmer 1.5s ease-in-out infinite',
                     }}
                 />

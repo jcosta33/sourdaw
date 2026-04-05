@@ -151,7 +151,9 @@ export const aiMidiHandlers = {
                 )
             );
             setNotesForClip(a.payload.clipId, newNotes);
-            logger.info(`[AI MIDI] Generated variation with ${String(newNotes.length)} notes (replaced ${String(existing.length)} existing)`);
+            logger.info(
+                `[AI MIDI] Generated variation with ${String(newNotes.length)} notes (replaced ${String(existing.length)} existing)`
+            );
         },
         describe: () => ({ label: 'AI: create MIDI variation' }),
         undoable: true,
@@ -270,7 +272,9 @@ export const aiMidiHandlers = {
                     audioBufferId: bufferId,
                 });
 
-                logger.info(`[Audio AI] Created clip "${promptLabel}" (${String(durationBeats)} beats) on track ${trackId}`);
+                logger.info(
+                    `[Audio AI] Created clip "${promptLabel}" (${String(durationBeats)} beats) on track ${trackId}`
+                );
             } catch (error) {
                 logger.warn(`[Audio AI] Generation failed: ${String(error)}`);
             }
@@ -281,8 +285,7 @@ export const aiMidiHandlers = {
 
     stemSeparate: {
         execute: async (a) => {
-            const { separateStems: doSeparateStems } =
-                await import('#/modules/AudioAnalysis/useCases/audioAi');
+            const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
 
             const stems = a.payload.stems ?? ['all'];
             logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);

@@ -5,12 +5,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
-import {
-    ENGINE_NAMES,
-    FILTER_MODEL_NAMES,
-    WARP_MODE_NAMES,
-    type FermenterPatch,
-} from '../../models/FermenterPatch';
+import { ENGINE_NAMES, FILTER_MODEL_NAMES, WARP_MODE_NAMES, type FermenterPatch } from '../../models/FermenterPatch';
 
 type SignalFlowViewProps = {
     patch: FermenterPatch;
@@ -54,7 +49,10 @@ const SECTION_MAP: Record<string, string> = {
 };
 
 export const SignalFlowView = ({
-    patch, numLayers, activeLayer, onSelectSection,
+    patch,
+    numLayers,
+    activeLayer,
+    onSelectSection,
 }: SignalFlowViewProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -70,12 +68,14 @@ export const SignalFlowView = ({
         const isActive = i === activeLayer;
         nodes.push({
             label: `Layer ${i + 1}`,
-            subtitle: isActive ? ENGINE_NAMES[patch.oscEngine] ?? 'WT' : '—',
+            subtitle: isActive ? (ENGINE_NAMES[patch.oscEngine] ?? 'WT') : '—',
             active: isActive,
             color: ['#60C8E8', '#70E8A0', '#E8A060', '#B888E8'][i] ?? '#888',
             section: 'osc',
-            x, y: y0 + i * (NODE_H + GAP_Y),
-            w: NODE_W, h: NODE_H,
+            x,
+            y: y0 + i * (NODE_H + GAP_Y),
+            w: NODE_W,
+            h: NODE_H,
         });
     }
 
@@ -89,7 +89,10 @@ export const SignalFlowView = ({
         active: warpActive,
         color: '#E8A060',
         section: 'warp',
-        x, y: y0, w: NODE_W, h: NODE_H,
+        x,
+        y: y0,
+        w: NODE_W,
+        h: NODE_H,
     });
     for (let i = 0; i < numLayers; i++) connections.push([i, warpIdx]);
 
@@ -102,7 +105,10 @@ export const SignalFlowView = ({
         active: true,
         color: '#60C8E8',
         section: 'filter',
-        x, y: y0, w: NODE_W, h: NODE_H,
+        x,
+        y: y0,
+        w: NODE_W,
+        h: NODE_H,
     });
     connections.push([warpIdx, filterIdx]);
 
@@ -116,7 +122,10 @@ export const SignalFlowView = ({
         active: vdActive,
         color: '#E86060',
         section: 'voicefx',
-        x, y: y0, w: NODE_W, h: NODE_H,
+        x,
+        y: y0,
+        w: NODE_W,
+        h: NODE_H,
     });
     connections.push([filterIdx, vdIdx]);
 
@@ -130,7 +139,10 @@ export const SignalFlowView = ({
         active: distActive,
         color: '#E86060',
         section: 'dist',
-        x, y: y0, w: NODE_W, h: NODE_H,
+        x,
+        y: y0,
+        w: NODE_W,
+        h: NODE_H,
     });
     connections.push([vdIdx, distIdx]);
 
@@ -144,7 +156,10 @@ export const SignalFlowView = ({
         active: compActive,
         color: '#B888E8',
         section: 'comp',
-        x, y: y0, w: NODE_W, h: NODE_H,
+        x,
+        y: y0,
+        w: NODE_W,
+        h: NODE_H,
     });
     connections.push([distIdx, compIdx]);
 
@@ -158,12 +173,16 @@ export const SignalFlowView = ({
         active: revActive,
         color: '#70E8A0',
         section: 'reverb',
-        x, y: y0, w: NODE_W, h: NODE_H,
+        x,
+        y: y0,
+        w: NODE_W,
+        h: NODE_H,
     });
     connections.push([compIdx, revIdx]);
 
     // EQ
-    const eqActive = Math.abs(patch.eqLowGain) > 0.1 || Math.abs(patch.eqMidGain) > 0.1 || Math.abs(patch.eqHighGain) > 0.1;
+    const eqActive =
+        Math.abs(patch.eqLowGain) > 0.1 || Math.abs(patch.eqMidGain) > 0.1 || Math.abs(patch.eqHighGain) > 0.1;
     x += NODE_W + GAP_X;
     const eqIdx = nodes.length;
     nodes.push({
@@ -172,7 +191,10 @@ export const SignalFlowView = ({
         active: eqActive,
         color: '#E8E060',
         section: 'eq',
-        x, y: y0, w: NODE_W, h: NODE_H,
+        x,
+        y: y0,
+        w: NODE_W,
+        h: NODE_H,
     });
     connections.push([revIdx, eqIdx]);
 
@@ -188,7 +210,10 @@ export const SignalFlowView = ({
         active: delActive,
         color: '#60C8E8',
         section: 'delay',
-        x: fx2x, y: row2y, w: 70, h: 22,
+        x: fx2x,
+        y: row2y,
+        w: 70,
+        h: 22,
     });
     connections.push([distIdx, delIdx]);
     connections.push([delIdx, revIdx]);
@@ -202,7 +227,10 @@ export const SignalFlowView = ({
         active: chrActive,
         color: '#60C8E8',
         section: 'chorus',
-        x: fx2x, y: row2y, w: 70, h: 22,
+        x: fx2x,
+        y: row2y,
+        w: 70,
+        h: 22,
     });
     connections.push([delIdx, chrIdx]);
     connections.push([chrIdx, revIdx]);
@@ -216,7 +244,10 @@ export const SignalFlowView = ({
         active: phActive,
         color: '#60C8E8',
         section: 'phaser',
-        x: fx2x, y: row2y, w: 70, h: 22,
+        x: fx2x,
+        y: row2y,
+        w: 70,
+        h: 22,
     });
     connections.push([chrIdx, phIdx]);
 
@@ -229,7 +260,10 @@ export const SignalFlowView = ({
         active: Math.abs(patch.stereoWidth - 1.0) > 0.01,
         color: '#B888E8',
         section: 'width',
-        x, y: y0, w: 60, h: NODE_H,
+        x,
+        y: y0,
+        w: 60,
+        h: NODE_H,
     });
     connections.push([eqIdx, widthIdx]);
 
@@ -241,7 +275,10 @@ export const SignalFlowView = ({
         active: true,
         color: '#FFF',
         section: 'master',
-        x, y: y0, w: 60, h: NODE_H,
+        x,
+        y: y0,
+        w: 60,
+        h: NODE_H,
     });
     connections.push([widthIdx, masterIdx]);
 
@@ -318,22 +355,22 @@ export const SignalFlowView = ({
     return (
         <DawDiagramFrame title="Signal flow" compact className="bg-black/[0.16]" viewportClassName="p-2">
             <div className="overflow-x-auto">
-            <canvas
-                ref={canvasRef}
-                style={{ width: canvasW, height: canvasH }}
-                className="cursor-pointer"
-                onClick={(e) => {
-                    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-                    const mx = e.clientX - rect.left;
-                    const my = e.clientY - rect.top;
-                    for (const node of nodes) {
-                        if (mx >= node.x && mx <= node.x + node.w && my >= node.y && my <= node.y + node.h) {
-                            onSelectSection(SECTION_MAP[node.section] ?? node.section);
-                            break;
+                <canvas
+                    ref={canvasRef}
+                    style={{ width: canvasW, height: canvasH }}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                        const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+                        const mx = e.clientX - rect.left;
+                        const my = e.clientY - rect.top;
+                        for (const node of nodes) {
+                            if (mx >= node.x && mx <= node.x + node.w && my >= node.y && my <= node.y + node.h) {
+                                onSelectSection(SECTION_MAP[node.section] ?? node.section);
+                                break;
+                            }
                         }
-                    }
-                }}
-            />
+                    }}
+                />
             </div>
         </DawDiagramFrame>
     );

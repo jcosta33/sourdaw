@@ -12,9 +12,7 @@ export const TempoEditor = (): ReactElement => {
     const t = useTempoEditorState();
 
     return (
-        <div
-            className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2"
-        >
+        <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
             <Tooltip>
                 <TooltipTrigger asChild>
                     <div>

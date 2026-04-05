@@ -45,7 +45,9 @@ function acquireRenderLock(): () => void {
         throw new Error('An export is already in progress. Cancel the current export before starting a new one.');
     }
     isRenderingActive = true;
-    return () => { isRenderingActive = false; };
+    return () => {
+        isRenderingActive = false;
+    };
 }
 
 /**
@@ -70,14 +72,14 @@ const MICRO_FADE_SECONDS = 0.003;
 const MIN_RENDER_TIMEOUT_MS = 60_000;
 /** Timeout multiplier: allow this many seconds of wall-clock time per second of audio. */
 const RENDER_TIMEOUT_MULTIPLIER = 10;
-const YIELD_EVERY_N_NOTES = 200;    // yield to main thread every N notes
+const YIELD_EVERY_N_NOTES = 200; // yield to main thread every N notes
 /** Shared easing coefficient for simulated render-phase progress (both mixdown and stems). */
 const PROGRESS_EASE_COEFF = 0.025;
 /**
  * Maximum OfflineAudioContext frame length. Chrome enforces 2^30; Firefox is
  * higher but we cap conservatively to avoid OOM on both.
  */
-const MAX_OFFLINE_FRAMES = 2 ** 30;  // ~6.2 hours at 48 kHz
+const MAX_OFFLINE_FRAMES = 2 ** 30; // ~6.2 hours at 48 kHz
 
 /** Yield to the main thread so the UI can update. */
 function yieldToMain(): Promise<void> {
@@ -166,7 +168,11 @@ async function createOfflineTrackStrip(
     };
 }
 
-function createOfflineBusStrip(offlineCtx: OfflineAudioContext, trackGain: number, masterGain: GainNode): OfflineBusStrip {
+function createOfflineBusStrip(
+    offlineCtx: OfflineAudioContext,
+    trackGain: number,
+    masterGain: GainNode
+): OfflineBusStrip {
     const gainNode = offlineCtx.createGain();
     gainNode.gain.value = Math.max(0, Math.min(2, trackGain));
     gainNode.connect(masterGain);
@@ -213,14 +219,14 @@ function schedulePendingSuspends(
             for (const evt of batch) {
                 if (evt.type === 'on') {
                     if (evt.isToaster) {
-                        const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : (evt.pitch % 16);
+                        const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : evt.pitch % 16;
                         evt.instrumentControls.noteOn(pad, evt.velocity, evt.pitch);
                     } else {
                         evt.instrumentControls.noteOn(evt.pitch, evt.velocity);
                     }
                 } else {
                     if (evt.isToaster) {
-                        const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : (evt.pitch % 16);
+                        const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : evt.pitch % 16;
                         evt.instrumentControls.noteOff(pad);
                     } else {
                         evt.instrumentControls.noteOff(evt.pitch);
@@ -266,7 +272,7 @@ async function scheduleTrackClips(
         } else {
             onWarning?.(
                 `Track "${track.name}" is frozen but its frozen buffer is missing and will be silent in the export. ` +
-                `Try unfreezing and re-freezing the track.`
+                    `Try unfreezing and re-freezing the track.`
             );
         }
         return;
@@ -274,7 +280,7 @@ async function scheduleTrackClips(
 
     const automationLanes = getAutomationLanes();
     let deviceEntries: import('./buildDeviceChain').DeviceNodeEntry[];
-    
+
     // Use pre-built device chain if provided (Pass 2 of mixdown), otherwise build it (Stems export)
     if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
         deviceEntries = deviceEntriesByTrack.get(track.id)!;
@@ -295,7 +301,7 @@ async function scheduleTrackClips(
     );
 
     let clipsToProcess: { clip: import('#/modules/Arrangement/models/Track').Clip; padIndex: number }[] = [];
-    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map(c => ({ clip: c, padIndex: -1 })));
+    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map((c) => ({ clip: c, padIndex: -1 })));
 
     let instrumentEntry = deviceEntries.find((e) => e.instrumentControls);
     let instrumentControls = instrumentEntry?.instrumentControls ?? null;
@@ -321,7 +327,9 @@ async function scheduleTrackClips(
         const clipVisualLength = clip.endBeat - clip.startBeat;
         // Skip degenerate clips (endBeat <= startBeat or zero-length)
         if (clipVisualLength <= 0) {
-            onWarning?.(`Clip "${clip.name || clip.id}" on track "${track.name}" has zero or negative duration and was skipped.`);
+            onWarning?.(
+                `Clip "${clip.name || clip.id}" on track "${track.name}" has zero or negative duration and was skipped.`
+            );
             continue;
         }
 
@@ -338,9 +346,7 @@ async function scheduleTrackClips(
 
             const drumKit = resolveDrumKit(track.devices);
             // Only resolve kitDef when the track actually has a drum kit device.
-            const drumKitDevice = track.devices.find(
-                (d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit'
-            );
+            const drumKitDevice = track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
             const kitDef = drumKitDevice
                 ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
                 : null;
@@ -356,9 +362,8 @@ async function scheduleTrackClips(
             }
 
             // For non-worklet, non-drum-kit tracks: use the basic oscillator synth fallback
-            const synthParams = drumKit || kitDef || instrumentControls
-                ? null
-                : getSynthParamsFromDevices(track.devices);
+            const synthParams =
+                drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
 
             let noteCount = 0;
 
@@ -393,12 +398,26 @@ async function scheduleTrackClips(
 
                     if (instrumentControls) {
                         // Collect events for suspend/resume scheduling
-                        workletEvents.push({ time: startTime, type: 'on', pitch: note.pitch, velocity: note.velocity, duration });
+                        workletEvents.push({
+                            time: startTime,
+                            type: 'on',
+                            pitch: note.pitch,
+                            velocity: note.velocity,
+                            duration,
+                        });
                         workletEvents.push({ time: endTime, type: 'off', pitch: note.pitch, velocity: 0, duration: 0 });
                     } else if (kitDef) {
                         scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
                     } else if (drumKit) {
-                        scheduleKitNote(offlineCtx, trackInputNode, drumKit, note.pitch, startTime, duration, note.velocity);
+                        scheduleKitNote(
+                            offlineCtx,
+                            trackInputNode,
+                            drumKit,
+                            note.pitch,
+                            startTime,
+                            duration,
+                            note.velocity
+                        );
                     } else {
                         scheduleNoteOffline(
                             offlineCtx,
@@ -440,7 +459,7 @@ async function scheduleTrackClips(
             if (!buffer) {
                 onWarning?.(
                     `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
-                    `Try re-importing the file or reloading the project.`
+                        `Try re-importing the file or reloading the project.`
                 );
                 continue;
             }
@@ -519,7 +538,10 @@ async function scheduleTrackClips(
                         // Cap to half the iteration duration to mirror the fade-in cap.
                         const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
                         const fadeOutStartSec = beatToSeconds(fadeOutStartBeat, defaultTempo, changes);
-                        const fadeOutOffset = Math.max(startSec, Math.max(fadeOutStartSec, endSec - playDuration * 0.5));
+                        const fadeOutOffset = Math.max(
+                            startSec,
+                            Math.max(fadeOutStartSec, endSec - playDuration * 0.5)
+                        );
                         fadeGain.gain.setValueAtTime(clipGainValue, fadeOutOffset);
                         fadeGain.gain.linearRampToValueAtTime(0, endSec);
                     } else {
@@ -572,13 +594,16 @@ export async function renderOffline(
         cancelFlag = false;
 
         const durationBeats = typeof optsOrBeats === 'number' ? optsOrBeats : optsOrBeats.durationBeats;
-        const sampleRate = typeof optsOrBeats === 'number' ? (maybeSampleRate ?? 44100) : (optsOrBeats.sampleRate ?? 44100);
+        const sampleRate =
+            typeof optsOrBeats === 'number' ? (maybeSampleRate ?? 44100) : (optsOrBeats.sampleRate ?? 44100);
         const onProgress = typeof optsOrBeats === 'object' ? optsOrBeats.onProgress : undefined;
         const onWarning = typeof optsOrBeats === 'object' ? optsOrBeats.onWarning : undefined;
 
         // Validate durationBeats before creating the OfflineAudioContext
         if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
-            throw new Error(`Invalid export duration: ${durationBeats} beats. Project may have no clips or corrupt clip data.`);
+            throw new Error(
+                `Invalid export duration: ${durationBeats} beats. Project may have no clips or corrupt clip data.`
+            );
         }
 
         const transport = getTransportStoreValue();
@@ -601,9 +626,7 @@ export async function renderOffline(
         // We MUST include folder tracks if they contain a Toaster device, because
         // child tracks send MIDI to the parent Toaster device to generate audio.
         const allRenderableTracks =
-            tracks && midi
-                ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track))
-                : [];
+            tracks && midi ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track)) : [];
         const sourceTracks = allRenderableTracks.filter((track) => !track.muted);
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
@@ -740,7 +763,8 @@ export async function exportStems(
         cancelFlag = false;
 
         const durationBeats = typeof optsOrBeats === 'number' ? optsOrBeats : optsOrBeats.durationBeats;
-        const sampleRate = typeof optsOrBeats === 'number' ? (maybeSampleRate ?? 44100) : (optsOrBeats.sampleRate ?? 44100);
+        const sampleRate =
+            typeof optsOrBeats === 'number' ? (maybeSampleRate ?? 44100) : (optsOrBeats.sampleRate ?? 44100);
         const onProgress = typeof optsOrBeats === 'object' ? optsOrBeats.onProgress : undefined;
         const onWarning = typeof optsOrBeats === 'object' ? optsOrBeats.onWarning : undefined;
 
@@ -765,7 +789,10 @@ export async function exportStems(
         // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
         // (users may want silent-in-mixdown stems for later use in a DAW).
         const eligible = tracks.tracks.filter(
-            (t) => !t.disabled && t.kind !== 'master' && (t.kind !== 'folder' || t.devices.some((d) => d.type === 'toaster'))
+            (t) =>
+                !t.disabled &&
+                t.kind !== 'master' &&
+                (t.kind !== 'folder' || t.devices.some((d) => d.type === 'toaster'))
         );
         let done = 0;
 
@@ -777,9 +804,8 @@ export async function exportStems(
 
         const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
         // Dynamically scale CPU threads based on hardware, clamped to 8 max to prevent OOM
-        const MAX_CONCURRENT_RENDERS = typeof navigator !== 'undefined' 
-            ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)) 
-            : 4;
+        const MAX_CONCURRENT_RENDERS =
+            typeof navigator !== 'undefined' ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)) : 4;
 
         const tasks = eligible.map((track) => async () => {
             checkCancel();
@@ -844,7 +870,7 @@ export async function exportStems(
         // Run exports concurrently up to the thread limit
         let activeTasks = 0;
         let taskIndex = 0;
-        
+
         await new Promise<void>((resolve, reject) => {
             const next = () => {
                 if (cancelFlag) {

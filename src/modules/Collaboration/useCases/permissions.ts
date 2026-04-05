@@ -12,8 +12,7 @@ export type RoleGrant = {
     timestamp: number;
 };
 
-type PermissionMessage =
-    | { type: 'role.grant'; grant: RoleGrant };
+type PermissionMessage = { type: 'role.grant'; grant: RoleGrant };
 
 /** Capabilities per role. */
 const ROLE_CAPABILITIES: Record<PeerRole, Set<string>> = {

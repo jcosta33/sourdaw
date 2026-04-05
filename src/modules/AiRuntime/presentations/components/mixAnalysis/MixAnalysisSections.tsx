@@ -126,8 +126,16 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
                         title={tl.trackName}
                         endSlot={
                             <div className="flex items-center gap-2">
-                                {tl.isMuted ? <DawMicroBadge className="px-1" tone="muted">M</DawMicroBadge> : null}
-                                {tl.isSoloed ? <DawMicroBadge className="px-1" tone="peach">S</DawMicroBadge> : null}
+                                {tl.isMuted ? (
+                                    <DawMicroBadge className="px-1" tone="muted">
+                                        M
+                                    </DawMicroBadge>
+                                ) : null}
+                                {tl.isSoloed ? (
+                                    <DawMicroBadge className="px-1" tone="peach">
+                                        S
+                                    </DawMicroBadge>
+                                ) : null}
                                 <span
                                     className={`text-[10px] font-mono ${tl.isClipping ? 'font-bold text-[var(--color-state-danger)]' : 'text-muted-foreground'}`}
                                 >

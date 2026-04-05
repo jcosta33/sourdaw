@@ -9,9 +9,9 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type FilterResponseProps = {
-    cutoff: number;      // Hz (20–20000)
-    resonance: number;   // Q (0.1–20)
-    filterType: number;  // 0=LP, 1=HP, 2=BP, 3=Notch
+    cutoff: number; // Hz (20–20000)
+    resonance: number; // Q (0.1–20)
+    filterType: number; // 0=LP, 1=HP, 2=BP, 3=Notch
     width?: number;
     height?: number;
     /** Called when user drags the cutoff dot */
@@ -56,8 +56,7 @@ const filterMag = (f: number, fc: number, Q: number, type: number): number => {
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
-const xToFreq = (x: number, w: number): number =>
-    MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
+const xToFreq = (x: number, w: number): number => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
 
 export const FilterResponse = ({
     cutoff,
@@ -73,9 +72,13 @@ export const FilterResponse = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) { return; }
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -138,7 +141,9 @@ export const FilterResponse = ({
         // Fill gradient
         ctx.beginPath();
         ctx.moveTo(0, zeroY);
-        for (const [x, y] of points) { ctx.lineTo(x, y); }
+        for (const [x, y] of points) {
+            ctx.lineTo(x, y);
+        }
         ctx.lineTo(width, zeroY);
         ctx.closePath();
         const fillGrad = ctx.createLinearGradient(0, 0, 0, height);
@@ -151,8 +156,11 @@ export const FilterResponse = ({
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
-            if (i === 0) { ctx.moveTo(x, y); }
-            else { ctx.lineTo(x, y); }
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = `${accentCyan}30`;
         ctx.lineWidth = 5;
@@ -162,8 +170,11 @@ export const FilterResponse = ({
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
-            if (i === 0) { ctx.moveTo(x, y); }
-            else { ctx.lineTo(x, y); }
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = accentCyan;
         ctx.lineWidth = 1.5;
@@ -187,7 +198,11 @@ export const FilterResponse = ({
         ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
-        for (const [label, freq] of [['100', 100], ['1k', 1000], ['10k', 10000]] as const) {
+        for (const [label, freq] of [
+            ['100', 100],
+            ['1k', 1000],
+            ['10k', 10000],
+        ] as const) {
             ctx.fillText(label, freqToX(freq, width), height - 2);
         }
 
@@ -208,18 +223,26 @@ export const FilterResponse = ({
     }, [cutoff, resonance, filterType, width, height, isInteractive]);
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) { return; }
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         isDragging.current = true;
         canvas.setPointerCapture(e.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!isDragging.current || !onParamChange) { return; }
+        if (!isDragging.current || !onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;

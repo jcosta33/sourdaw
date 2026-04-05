@@ -146,9 +146,7 @@ export const AutomationAddLaneControl = ({
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                     <div className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-[300px] min-w-[200px] overflow-y-auto rounded-md py-1">
-                        <DawEyebrowLabel className="block px-2 py-1 text-[8px]">
-                            Add parameter
-                        </DawEyebrowLabel>
+                        <DawEyebrowLabel className="block px-2 py-1 text-[8px]">Add parameter</DawEyebrowLabel>
                         <div className="max-h-[200px] overflow-y-auto">
                             {params.map((param) => (
                                 <button

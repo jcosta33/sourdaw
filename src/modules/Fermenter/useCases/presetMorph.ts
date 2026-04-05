@@ -39,7 +39,7 @@ export function bilinearPatch(
     bl: FermenterPatch,
     br: FermenterPatch,
     x: number,
-    y: number,
+    y: number
 ): FermenterPatch {
     const top = lerpPatch(tl, tr, x);
     const bottom = lerpPatch(bl, br, x);

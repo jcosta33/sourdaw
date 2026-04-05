@@ -18,7 +18,7 @@ export class VelocityProcessor implements MidiProcessor {
     private randomMin = 40;
     private randomMax = 120;
     private bypassed = false;
-    private rngState = 0xBEEF;
+    private rngState = 0xbeef;
 
     constructor(id?: string) {
         this.id = id ?? `vel-${Date.now()}`;
@@ -41,8 +41,12 @@ export class VelocityProcessor implements MidiProcessor {
     private processVelocity(v: number): number {
         let out: number;
         switch (this.mode) {
-            case 'passthrough': out = v; break;
-            case 'fixed': out = this.fixedVel; break;
+            case 'passthrough':
+                out = v;
+                break;
+            case 'fixed':
+                out = this.fixedVel;
+                break;
             case 'compress':
             case 'expand': {
                 const center = 64;
@@ -53,16 +57,24 @@ export class VelocityProcessor implements MidiProcessor {
                 const norm = v / 127;
                 let mapped: number;
                 switch (this.curve) {
-                    case 'linear': mapped = norm; break;
-                    case 'soft': mapped = Math.sqrt(norm); break;
-                    case 'hard': mapped = norm * norm; break;
-                    case 'sCurve': mapped = norm < 0.5 ? 2 * norm * norm : 1 - 2 * (1 - norm) * (1 - norm); break;
+                    case 'linear':
+                        mapped = norm;
+                        break;
+                    case 'soft':
+                        mapped = Math.sqrt(norm);
+                        break;
+                    case 'hard':
+                        mapped = norm * norm;
+                        break;
+                    case 'sCurve':
+                        mapped = norm < 0.5 ? 2 * norm * norm : 1 - 2 * (1 - norm) * (1 - norm);
+                        break;
                 }
                 out = mapped * 127;
                 break;
             }
             case 'random': {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
+                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
                 out = this.randomMin + (this.rngState % (this.randomMax - this.randomMin + 1));
                 break;
             }
@@ -71,18 +83,38 @@ export class VelocityProcessor implements MidiProcessor {
     }
 
     reset(): void {}
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'mode': this.mode = (['passthrough', 'fixed', 'compress', 'expand', 'curve', 'random'] as const)[Math.round(value)] ?? 'passthrough'; break;
-            case 'fixed_vel': this.fixedVel = Math.max(1, Math.min(127, Math.round(value))); break;
-            case 'compress_amount': this.compressAmount = Math.max(0, Math.min(3, value)); break;
-            case 'curve': this.curve = (['linear', 'soft', 'hard', 'sCurve'] as const)[Math.round(value)] ?? 'linear'; break;
-            case 'random_min': this.randomMin = Math.max(1, Math.min(127, Math.round(value))); break;
-            case 'random_max': this.randomMax = Math.max(1, Math.min(127, Math.round(value))); break;
+            case 'mode':
+                this.mode =
+                    (['passthrough', 'fixed', 'compress', 'expand', 'curve', 'random'] as const)[Math.round(value)] ??
+                    'passthrough';
+                break;
+            case 'fixed_vel':
+                this.fixedVel = Math.max(1, Math.min(127, Math.round(value)));
+                break;
+            case 'compress_amount':
+                this.compressAmount = Math.max(0, Math.min(3, value));
+                break;
+            case 'curve':
+                this.curve = (['linear', 'soft', 'hard', 'sCurve'] as const)[Math.round(value)] ?? 'linear';
+                break;
+            case 'random_min':
+                this.randomMin = Math.max(1, Math.min(127, Math.round(value)));
+                break;
+            case 'random_max':
+                this.randomMax = Math.max(1, Math.min(127, Math.round(value)));
+                break;
         }
     }
 }

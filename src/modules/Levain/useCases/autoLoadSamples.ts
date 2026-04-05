@@ -14,19 +14,18 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
  * Load levain samples for a specific instrument into the worklet node.
  * Automatically clears previous zones before loading.
  */
-export async function autoLoadLevainSamples(
-    nodePort: MessagePort,
-    instrumentId: string = 'violin-1',
-): Promise<void> {
+export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId: string = 'violin-1'): Promise<void> {
     let manifestBase = `/samples/levain/${instrumentId}`;
-    
-    // In Tauri desktop, we bypass the embedded frontend cache 
+
+    // In Tauri desktop, we bypass the embedded frontend cache
     // and load massive 1.2GB sample banks straight from OS resources.
     if (isTauri) {
         try {
             // Tauri places parent-relative bundle assets under _up_ to protect the root Resources directory
             const localPath = await resolveResource(`_up_/public/samples/levain/${instrumentId}`);
-            const { convertFileSrc } = ((await import('@tauri-apps/api/core')) as unknown) as { convertFileSrc: (p: string) => string };
+            const { convertFileSrc } = (await import('@tauri-apps/api/core')) as unknown as {
+                convertFileSrc: (p: string) => string;
+            };
             manifestBase = convertFileSrc(localPath);
         } catch (e) {
             console.warn('[Levain] Failed to resolve Tauri resource path:', e);
@@ -38,15 +37,9 @@ export async function autoLoadLevainSamples(
     setSampleLoadProgress(0.01); // trigger UI loading state
 
     try {
-        await loadInstrumentFromManifest(
-            manifestUrl,
-            manifestBase,
-            nodePort,
-            WEB_LOD,
-            (progress) => {
-                setSampleLoadProgress(progress);
-            },
-        );
+        await loadInstrumentFromManifest(manifestUrl, manifestBase, nodePort, WEB_LOD, (progress) => {
+            setSampleLoadProgress(progress);
+        });
     } catch (err) {
         console.warn(`[Levain] Failed to load samples for ${instrumentId}:`, err);
         // Fallback sine tone will continue to work

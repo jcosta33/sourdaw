@@ -1,11 +1,7 @@
 import { punchRecordingStore, type PunchRegion } from '#/modules/Transport/stores/punchRecordingStore';
 import { getNextPunchId } from '#/modules/Transport/models/punchRecordingHelpers';
 
-export function definePunchRegion(
-    captureId: string,
-    punchInBeat: number,
-    punchOutBeat: number
-): void {
+export function definePunchRegion(captureId: string, punchInBeat: number, punchOutBeat: number): void {
     const state = punchRecordingStore.value;
     if (!state) {
         return;
@@ -31,9 +27,7 @@ export function definePunchRegion(
     punchRecordingStore.set({
         ...state,
         captures: state.captures.map((c) =>
-            c.id === captureId
-                ? { ...c, punchRegions: [...c.punchRegions, region] }
-                : c
+            c.id === captureId ? { ...c, punchRegions: [...c.punchRegions, region] } : c
         ),
     });
 }

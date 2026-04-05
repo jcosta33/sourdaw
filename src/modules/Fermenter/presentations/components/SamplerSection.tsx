@@ -16,9 +16,7 @@ type SamplerSectionProps = {
 
 export const SamplerSection = ({ mode, start, end, onParam }: SamplerSectionProps): ReactElement => (
     <div className="space-y-2">
-        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
-            Sampler
-        </div>
+        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Sampler</div>
         <div className="text-[8px] text-muted-foreground/60 px-1">
             Sample playback with loop modes. Pitch-tracks to MIDI notes.
         </div>
@@ -39,12 +37,28 @@ export const SamplerSection = ({ mode, start, end, onParam }: SamplerSectionProp
         {/* Start / End */}
         <div className="flex items-end gap-3 px-1">
             <div className="flex flex-col items-center gap-0.5">
-                <RotaryKnob value={start} onChange={(v) => onParam('samplerStart', v)} min={0} max={1} step={0.01} defaultValue={0} size="lg" />
+                <RotaryKnob
+                    value={start}
+                    onChange={(v) => onParam('samplerStart', v)}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    defaultValue={0}
+                    size="lg"
+                />
                 <span className="text-[8px] text-muted-foreground">Start</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(start * 100)}%</span>
             </div>
             <div className="flex flex-col items-center gap-0.5">
-                <RotaryKnob value={end} onChange={(v) => onParam('samplerEnd', v)} min={0} max={1} step={0.01} defaultValue={1} size="lg" />
+                <RotaryKnob
+                    value={end}
+                    onChange={(v) => onParam('samplerEnd', v)}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    defaultValue={1}
+                    size="lg"
+                />
                 <span className="text-[8px] text-muted-foreground">End</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(end * 100)}%</span>
             </div>

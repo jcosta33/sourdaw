@@ -40,19 +40,21 @@ export const LayerStack = ({
 }: LayerStackProps): ReactElement => (
     <div className="space-y-1.5">
         <div className="flex items-center justify-between px-1">
-            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Layers
-            </div>
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Layers</div>
             <div className="flex gap-0.5">
                 <Button
-                    variant="ghost" size="icon-xs" className="h-4 w-4"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="h-4 w-4"
                     disabled={numLayers <= 1}
                     onClick={() => onNumLayersChange(numLayers - 1)}
                 >
                     <Minus className="size-2.5" />
                 </Button>
                 <Button
-                    variant="ghost" size="icon-xs" className="h-4 w-4"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="h-4 w-4"
                     disabled={numLayers >= 4}
                     onClick={() => onNumLayersChange(numLayers + 1)}
                 >
@@ -74,18 +76,18 @@ export const LayerStack = ({
                     }`}
                     onClick={() => onActiveLayerChange(i)}
                 >
-                    <div
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: LAYER_COLORS[i] }}
-                    />
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: LAYER_COLORS[i] }} />
                     <div className="flex-1 min-w-0">
                         <div className="text-[9px] font-medium text-foreground">Layer {i + 1}</div>
                         <div className="text-[7px] text-muted-foreground/60">
-                            {activeLayer === i ? ENGINE_NAMES[currentEngine] ?? 'Wavetable' : '—'}
+                            {activeLayer === i ? (ENGINE_NAMES[currentEngine] ?? 'Wavetable') : '—'}
                         </div>
                     </div>
                     {activeLayer === i ? (
-                        <div className="w-1 h-4 rounded-full" style={{ backgroundColor: LAYER_COLORS[i], opacity: 0.5 }} />
+                        <div
+                            className="w-1 h-4 rounded-full"
+                            style={{ backgroundColor: LAYER_COLORS[i], opacity: 0.5 }}
+                        />
                     ) : null}
                 </button>
             ))}
@@ -94,11 +96,27 @@ export const LayerStack = ({
         {/* Active layer level + pan */}
         <div className="flex items-end gap-2 px-1 pt-1 border-t border-border/20">
             <div className="flex flex-col items-center gap-0.5">
-                <RotaryKnob value={layerLevel} onChange={onLevelChange} min={0} max={1} step={0.01} defaultValue={1} size="sm" />
+                <RotaryKnob
+                    value={layerLevel}
+                    onChange={onLevelChange}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    defaultValue={1}
+                    size="sm"
+                />
                 <span className="text-[7px] text-muted-foreground">Level</span>
             </div>
             <div className="flex flex-col items-center gap-0.5">
-                <RotaryKnob value={layerPan} onChange={onPanChange} min={-1} max={1} step={0.01} defaultValue={0} size="sm" />
+                <RotaryKnob
+                    value={layerPan}
+                    onChange={onPanChange}
+                    min={-1}
+                    max={1}
+                    step={0.01}
+                    defaultValue={0}
+                    size="sm"
+                />
                 <span className="text-[7px] text-muted-foreground">Pan</span>
             </div>
         </div>

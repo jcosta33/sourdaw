@@ -25,18 +25,30 @@ function dbToNorm(db: number, min = -60, max = 6): number {
 }
 
 function lufsColor(lufs: number, target: number | null): string {
-    if (target === null) { return '#E8E6E0'; }
+    if (target === null) {
+        return '#E8E6E0';
+    }
     const diff = lufs - target;
-    if (Math.abs(diff) <= 0.5) { return '#7FC8A0'; }
-    if (lufs > target) { return '#C44030'; }
+    if (Math.abs(diff) <= 0.5) {
+        return '#7FC8A0';
+    }
+    if (lufs > target) {
+        return '#C44030';
+    }
     return '#E8E6E0';
 }
 
 function grColor(gr: number): string {
     const abs = Math.abs(gr);
-    if (abs <= 1) { return '#E8E6E0'; }
-    if (abs <= 4) { return '#D4A847'; }
-    if (abs <= 8) { return '#C87C2A'; }
+    if (abs <= 1) {
+        return '#E8E6E0';
+    }
+    if (abs <= 4) {
+        return '#D4A847';
+    }
+    if (abs <= 8) {
+        return '#C87C2A';
+    }
     return '#C44030';
 }
 
@@ -153,9 +165,12 @@ export const CrustMeteringStrip = ({
                     {targetDiff !== null ? (
                         <span
                             className="text-[8px] font-mono ml-1"
-                            style={{ color: Math.abs(targetDiff) <= 0.5 ? '#7FC8A0' : targetDiff > 0 ? '#C44030' : '#D4A847' }}
+                            style={{
+                                color: Math.abs(targetDiff) <= 0.5 ? '#7FC8A0' : targetDiff > 0 ? '#C44030' : '#D4A847',
+                            }}
                         >
-                            ({targetDiff > 0 ? '+' : ''}{targetDiff.toFixed(1)})
+                            ({targetDiff > 0 ? '+' : ''}
+                            {targetDiff.toFixed(1)})
                         </span>
                     ) : null}
                 </div>
@@ -203,7 +218,10 @@ export const CrustMeteringStrip = ({
             >
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
-                        <span className="text-[9px] font-mono" style={{ color: truepeakExceeded ? '#C44030' : '#E8E6E0' }}>
+                        <span
+                            className="text-[9px] font-mono"
+                            style={{ color: truepeakExceeded ? '#C44030' : '#E8E6E0' }}
+                        >
                             {truepeakMax > -99 ? truepeakMax.toFixed(1) : '—'}
                         </span>
                         <DawPluginLed tone={truepeakExceeded ? 'danger' : 'neutral'}>

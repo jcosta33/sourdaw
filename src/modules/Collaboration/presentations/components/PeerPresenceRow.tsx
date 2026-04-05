@@ -9,12 +9,7 @@ type PeerPresenceRowProps = {
     isHost: boolean;
 };
 
-export const PeerPresenceRow = ({
-    name,
-    color,
-    isConnected,
-    isHost,
-}: PeerPresenceRowProps): ReactElement => (
+export const PeerPresenceRow = ({ name, color, isConnected, isHost }: PeerPresenceRowProps): ReactElement => (
     <div className="flex items-center gap-2 rounded-md border border-white/8 bg-black/20 px-2 py-1.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
         <span
             className={cn('size-2 shrink-0 rounded-full', isConnected ? 'opacity-100' : 'opacity-30')}

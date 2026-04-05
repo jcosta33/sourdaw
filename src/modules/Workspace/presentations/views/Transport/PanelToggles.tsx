@@ -21,14 +21,10 @@ import {
     toggleTrackList,
     toggleVirtualKeyboard,
 } from '../../../useCases/togglePanel/panelToggles';
-import {
-    subscribeAiStore,
-    getAiSnapshot,
-} from '#/modules/AiGeneration/stores/aiStore';
+import { subscribeAiStore, getAiSnapshot } from '#/modules/AiGeneration/stores/aiStore';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
 import { subscribeToLinkStatus, getLinkStatusSnapshot } from '#/modules/AudioEngine/stores/linkStatusStore';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
-
 
 type PanelTogglesProps = {
     sidebarOpen: boolean;
@@ -54,7 +50,9 @@ export const PanelToggles = ({
         if (linkEnabled) {
             void disableLink();
         } else {
-            void enableLink().catch(() => {/* graceful no-op if Link not available */});
+            void enableLink().catch(() => {
+                /* graceful no-op if Link not available */
+            });
         }
     };
 

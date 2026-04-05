@@ -1,5 +1,10 @@
 import { type ShortcutAction, shortcutStore } from '../models/Shortcuts';
-import { togglePlayback, stopPlayback, toggleRecording, toggleLoop } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import {
+    togglePlayback,
+    stopPlayback,
+    toggleRecording,
+    toggleLoop,
+} from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
 import { duplicateClipToNextBar } from '#/modules/Command/useCases/keyboardShortcutActions/trackShortcuts';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
 import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';

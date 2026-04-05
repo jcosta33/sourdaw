@@ -224,8 +224,8 @@ function parseEditPlan(responseText: string): EditPlan {
             const preview = clean.slice(0, 120).replace(/\n/g, ' ');
             throw new Error(
                 `LLM returned malformed JSON (${e instanceof Error ? e.message : String(e)}). ` +
-                `Response preview: "${preview}…" — ` +
-                `The model may have run out of tokens mid-response. Try a simpler request or increase max_tokens.`
+                    `Response preview: "${preview}…" — ` +
+                    `The model may have run out of tokens mid-response. Try a simpler request or increase max_tokens.`
             );
         }
     }
@@ -234,7 +234,12 @@ function parseEditPlan(responseText: string): EditPlan {
     throw new Error(`LLM response is not a valid EditPlan. Preview: "${preview}…"`);
 }
 
-async function commitDsos(plan: EditPlan, userRequest: string, assistantMsgId: string, reasoning?: string): Promise<string[]> {
+async function commitDsos(
+    plan: EditPlan,
+    userRequest: string,
+    assistantMsgId: string,
+    reasoning?: string
+): Promise<string[]> {
     // Binary snapshot of ALL Automerge documents before the edit.
     // Much more compact than structuredClone(store.value) and correctly captures
     // every store — including midiStore — that the DSO may modify.
@@ -359,8 +364,8 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
             const activeModel = (await import('../../repositories/webLlm/engineLifecycle')).getActiveModelId();
             throw new Error(
                 `This edit is too complex for the current model. ` +
-                `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +
-                `(Grammar constraint failed on ${activeModel})`
+                    `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +
+                    `(Grammar constraint failed on ${activeModel})`
             );
         }
     }

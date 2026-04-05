@@ -8,8 +8,7 @@ pub fn model_dir() -> Result<PathBuf, String> {
         .ok_or("Could not determine data directory")?
         .join("com.sourdaw.app")
         .join("models");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create model directory: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model directory: {e}"))?;
     Ok(dir)
 }
 
@@ -27,9 +26,7 @@ pub async fn ensure_model(
         if let Some(expected) = expected_sha256 {
             let actual = sha256_file(&path)?;
             if actual != expected {
-                eprintln!(
-                    "[Model] Cached {filename} has wrong hash, re-downloading."
-                );
+                eprintln!("[Model] Cached {filename} has wrong hash, re-downloading.");
                 std::fs::remove_file(&path)
                     .map_err(|e| format!("Failed to remove corrupt model: {e}"))?;
             } else {
@@ -53,8 +50,7 @@ pub async fn ensure_model(
     download_with_progress(url, &tmp, filename).await?;
 
     // Rename to final path
-    std::fs::rename(&tmp, &path)
-        .map_err(|e| format!("Failed to finalize model file: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to finalize model file: {e}"))?;
 
     if let Some(expected) = expected_sha256 {
         let actual = sha256_file(&path)?;
@@ -94,8 +90,8 @@ async fn download_with_progress(url: &str, dest: &PathBuf, name: &str) -> Result
         eprintln!("[Model] {name}: {total_mb:.1} MB");
     }
 
-    let mut file = std::fs::File::create(dest)
-        .map_err(|e| format!("Failed to create file: {e}"))?;
+    let mut file =
+        std::fs::File::create(dest).map_err(|e| format!("Failed to create file: {e}"))?;
 
     let mut downloaded: u64 = 0;
     let mut last_report = 0u64;
@@ -112,7 +108,10 @@ async fn download_with_progress(url: &str, dest: &PathBuf, name: &str) -> Result
         // Log progress every 10MB
         if total > 0 && downloaded - last_report > 10_485_760 {
             let pct = (downloaded as f64 / total as f64 * 100.0) as u32;
-            eprintln!("[Model] {name}: {pct}% ({:.1}/{total_mb:.1} MB)", downloaded as f64 / 1_048_576.0);
+            eprintln!(
+                "[Model] {name}: {pct}% ({:.1}/{total_mb:.1} MB)",
+                downloaded as f64 / 1_048_576.0
+            );
             last_report = downloaded;
         }
     }
@@ -120,7 +119,10 @@ async fn download_with_progress(url: &str, dest: &PathBuf, name: &str) -> Result
     file.flush().map_err(|e| format!("File flush error: {e}"))?;
     drop(file);
 
-    eprintln!("[Model] {name}: download complete ({:.1} MB)", downloaded as f64 / 1_048_576.0);
+    eprintln!(
+        "[Model] {name}: download complete ({:.1} MB)",
+        downloaded as f64 / 1_048_576.0
+    );
     Ok(())
 }
 
@@ -147,8 +149,7 @@ fn check_disk_space(dir: &PathBuf, filename: &str) -> Result<(), String> {
 }
 
 fn sha256_file(path: &PathBuf) -> Result<String, String> {
-    let data = std::fs::read(path)
-        .map_err(|e| format!("Failed to read file for hash: {e}"))?;
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read file for hash: {e}"))?;
     let mut hasher = Sha256::new();
     hasher.update(&data);
     Ok(format!("{:x}", hasher.finalize()))

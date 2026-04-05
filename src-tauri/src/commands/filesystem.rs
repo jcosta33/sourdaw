@@ -32,7 +32,8 @@ pub async fn read_audio_file(path: String) -> Result<Vec<u8>, String> {
 pub async fn write_audio_file(path: String, data: Vec<u8>) -> Result<(), String> {
     let file_path = PathBuf::from(&path);
     if let Some(parent) = file_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
     std::fs::write(&file_path, &data).map_err(|e| format!("Failed to write file: {}", e))
 }
@@ -45,11 +46,14 @@ pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
     }
 
     let mut entries = Vec::new();
-    let read_dir = std::fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let read_dir =
+        std::fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
     for entry in read_dir {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-        let metadata = entry.metadata().map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let metadata = entry
+            .metadata()
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
 
         entries.push(DirectoryEntry {
             name: entry.file_name().to_string_lossy().to_string(),
@@ -60,7 +64,9 @@ pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
     }
 
     entries.sort_by(|a, b| {
-        b.is_directory.cmp(&a.is_directory).then(a.name.cmp(&b.name))
+        b.is_directory
+            .cmp(&a.is_directory)
+            .then(a.name.cmp(&b.name))
     });
 
     Ok(entries)

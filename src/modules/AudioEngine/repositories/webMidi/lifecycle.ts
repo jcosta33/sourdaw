@@ -109,7 +109,9 @@ export async function initWebMidi(): Promise<boolean> {
         let prevSelectedId: string | null = null;
         trackStore.subscribe((trackState) => {
             const id = trackState?.selectedTrackId ?? null;
-            if (id === prevSelectedId) { return; }
+            if (id === prevSelectedId) {
+                return;
+            }
             prevSelectedId = id;
             if (!id) {
                 setTargetTrackId(null);

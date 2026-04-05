@@ -24,7 +24,7 @@ class AnimationScheduler {
         const tick = (time: DOMHighResTimeStamp) => {
             const delta = time - this.lastTime;
             this.lastTime = time;
-            
+
             for (const [id, cb] of this.callbacks.entries()) {
                 try {
                     cb(time, delta);
@@ -32,7 +32,7 @@ class AnimationScheduler {
                     console.error(`[AnimationScheduler] Callback "${id}" threw:`, e);
                 }
             }
-            
+
             if (this.callbacks.size > 0) {
                 this.rafId = requestAnimationFrame(tick);
             } else {

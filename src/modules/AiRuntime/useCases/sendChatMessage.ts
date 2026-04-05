@@ -24,7 +24,7 @@ function extractThinkBlock(raw: string): { reasoning: string | undefined; conten
             content: raw.slice(match[0].length).trim(),
         };
     }
-    
+
     // 2. Partial (streaming) block without closing tag
     const partialMatch = raw.match(/^\s*<think>([\s\S]*)$/);
     if (partialMatch) {
@@ -118,7 +118,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
     if (state.chatMode === 'prompt') {
         const aborter = new AbortController();
         setActiveAborter(aborter);
-        
+
         try {
             const context = getProjectContext();
             const result = await parsePromptToActions(userText, context, aborter.signal);
@@ -153,7 +153,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 const historyGroup: AiActionGroup = {
                     id: group.groupId,
                     prompt: userText,
-                    actions: executedLabels.map(l => ({ kind: 'appAction', action: l.action, label: l.label })),
+                    actions: executedLabels.map((l) => ({ kind: 'appAction', action: l.action, label: l.label })),
                     groupId: group.groupId,
                     timestamp: Date.now(),
                     reverted: false,
@@ -164,10 +164,10 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     `Executed: ${userText}`,
                     result.actions.map((a) => a.type)
                 );
-                
+
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    content: `Executed:\n\n${executedLabels.map(l => `- **${l.action.type.replace(/_/g, ' ')}**: ${l.label}`).join('\n')}`,
+                    content: `Executed:\n\n${executedLabels.map((l) => `- **${l.action.type.replace(/_/g, ' ')}**: ${l.label}`).join('\n')}`,
                 });
             } else if (result._jsonEditApplied) {
                 // executeDsoEdit already injected the user message and the assistant streaming message.
@@ -315,10 +315,10 @@ export async function sendChatMessage(userText: string): Promise<void> {
         if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = extractThinkBlock(fullContent);
-            updateChatMessage(assistantMsgId, { 
-                isStreaming: false, 
-                content: parsed.content, 
-                reasoning: parsed.reasoning 
+            updateChatMessage(assistantMsgId, {
+                isStreaming: false,
+                content: parsed.content,
+                reasoning: parsed.reasoning,
             });
         } else {
             updateChatMessage(assistantMsgId, {

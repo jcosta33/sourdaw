@@ -1,11 +1,10 @@
-import { adjustmentLayerStore, getNextRegionId, type AdjustmentRegion } from '#/modules/Arrangement/stores/adjustmentLayer';
+import {
+    adjustmentLayerStore,
+    getNextRegionId,
+    type AdjustmentRegion,
+} from '#/modules/Arrangement/stores/adjustmentLayer';
 
-export function addAdjustmentRegion(
-    layerIdVal: string,
-    startBeat: number,
-    endBeat: number,
-    blend: number = 1
-): void {
+export function addAdjustmentRegion(layerIdVal: string, startBeat: number, endBeat: number, blend: number = 1): void {
     const state = adjustmentLayerStore.value;
     if (!state) {
         return;

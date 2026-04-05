@@ -23,16 +23,17 @@ export const UnisonSection = ({
 }: UnisonSectionProps): ReactElement => {
     return (
         <div className="space-y-2">
-            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
-                Unison
-            </div>
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Unison</div>
             <div className="flex items-end gap-3">
                 <div className="flex flex-col items-center gap-1">
                     <RotaryKnob
                         paramId="unisonVoices"
                         value={voices}
                         onChange={onVoicesChange}
-                        min={1} max={16} step={1} defaultValue={1}
+                        min={1}
+                        max={16}
+                        step={1}
+                        defaultValue={1}
                         size="lg"
                     />
                     <span className="text-[9px] text-muted-foreground">Voices</span>
@@ -43,7 +44,10 @@ export const UnisonSection = ({
                         paramId="unisonDetune"
                         value={detune}
                         onChange={onDetuneChange}
-                        min={0} max={100} step={1} defaultValue={15}
+                        min={0}
+                        max={100}
+                        step={1}
+                        defaultValue={15}
                         size="lg"
                     />
                     <span className="text-[9px] text-muted-foreground">Detune</span>
@@ -54,7 +58,10 @@ export const UnisonSection = ({
                         paramId="unisonSpread"
                         value={spread}
                         onChange={onSpreadChange}
-                        min={0} max={1} step={0.01} defaultValue={0.7}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0.7}
                         size="lg"
                     />
                     <span className="text-[9px] text-muted-foreground">Spread</span>

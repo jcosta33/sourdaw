@@ -10,13 +10,7 @@ type PresenceMarkerProps = {
     trackDotY?: number | null;
 };
 
-export const PresenceMarker = ({
-    name,
-    color,
-    left,
-    variant,
-    trackDotY = null,
-}: PresenceMarkerProps): ReactElement => {
+export const PresenceMarker = ({ name, color, left, variant, trackDotY = null }: PresenceMarkerProps): ReactElement => {
     const isPlayhead = variant === 'playhead';
 
     return (

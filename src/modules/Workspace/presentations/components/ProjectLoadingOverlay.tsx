@@ -41,7 +41,8 @@ export const ProjectLoadingOverlay = (): ReactElement => {
         <div
             className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
             style={{
-                background: 'radial-gradient(ellipse at 50% 40%, rgba(217,119,6,0.06) 0%, rgba(0,0,0,0) 60%), hsl(220,14%,8%)',
+                background:
+                    'radial-gradient(ellipse at 50% 40%, rgba(217,119,6,0.06) 0%, rgba(0,0,0,0) 60%), hsl(220,14%,8%)',
             }}
         >
             {/* Ambient glow */}

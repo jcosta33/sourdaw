@@ -9,7 +9,14 @@ import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { type PadState } from '../../models/ToasterKit';
-import { selectPad, setStepVelocity, toasterStore, toggleStep, updatePad, type ToasterState } from '../../stores/toasterStore';
+import {
+    selectPad,
+    setStepVelocity,
+    toasterStore,
+    toggleStep,
+    updatePad,
+    type ToasterState,
+} from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
@@ -275,7 +282,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             />
                             <Knob
                                 value={selectedPad.filterCutoff}
-                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'filterCutoff', value)}
+                                onChange={(value) =>
+                                    setToasterPadParam(deviceId, selectedPadIndex, 'filterCutoff', value)
+                                }
                                 label="Bright"
                                 min={20}
                                 max={20000}
@@ -301,10 +310,30 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         </div>
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Pattern" value={activePattern?.name ?? 'A1'} detail="Current lane" />
-                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Step" value={`${currentStep + 1}`} detail="Playback cursor" />
-                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Swing" value={`${Math.round(kit.swing * 100)}%`} detail="Groove push" />
-                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Voices" value={`${activeVoices}`} detail="Live hits" />
+                            <DawPluginMetricTile
+                                className="toaster-window min-w-[94px]"
+                                label="Pattern"
+                                value={activePattern?.name ?? 'A1'}
+                                detail="Current lane"
+                            />
+                            <DawPluginMetricTile
+                                className="toaster-window min-w-[94px]"
+                                label="Step"
+                                value={`${currentStep + 1}`}
+                                detail="Playback cursor"
+                            />
+                            <DawPluginMetricTile
+                                className="toaster-window min-w-[94px]"
+                                label="Swing"
+                                value={`${Math.round(kit.swing * 100)}%`}
+                                detail="Groove push"
+                            />
+                            <DawPluginMetricTile
+                                className="toaster-window min-w-[94px]"
+                                label="Voices"
+                                value={`${activeVoices}`}
+                                detail="Live hits"
+                            />
                         </div>
                     </div>
 
@@ -341,7 +370,12 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 {isPlaying ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
                                 {isPlaying ? 'Stop' : 'Play'}
                             </DawPluginChip>
-                            <DawPluginChip type="button" tone="peach" size="sm" onClick={() => exportPatternToTimeline()}>
+                            <DawPluginChip
+                                type="button"
+                                tone="peach"
+                                size="sm"
+                                onClick={() => exportPatternToTimeline()}
+                            >
                                 <Send className="size-3.5" />
                                 To timeline
                             </DawPluginChip>

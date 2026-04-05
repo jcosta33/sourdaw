@@ -75,7 +75,7 @@ function processLoad(bundle: Map<string, Uint8Array>): {
 
 function processMerge(
     current: Map<string, Uint8Array>,
-    incoming: Map<string, Uint8Array>,
+    incoming: Map<string, Uint8Array>
 ): {
     compacted: [string, Uint8Array][];
     mergedDocIds: string[];
@@ -124,7 +124,13 @@ self.onmessage = ({ data }: MessageEvent): void => {
             const current = new Map<string, Uint8Array>(data.current as [string, Uint8Array][]);
             const incoming = new Map<string, Uint8Array>(data.incoming as [string, Uint8Array][]);
             const result = processMerge(current, incoming);
-            self.postMessage({ id, type: 'merged', compacted: result.compacted, mergedDocIds: result.mergedDocIds, newDocIds: result.newDocIds });
+            self.postMessage({
+                id,
+                type: 'merged',
+                compacted: result.compacted,
+                mergedDocIds: result.mergedDocIds,
+                newDocIds: result.newDocIds,
+            });
         }
     } catch (err) {
         self.postMessage({ id, type: 'error', message: String(err) });

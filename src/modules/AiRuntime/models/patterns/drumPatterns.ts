@@ -1,7 +1,12 @@
 import { type PatternTemplate, type PatternNote, type PatternGenre } from '../midiPatternLibrary';
 
 // GM drum constants
-const KK = 36, SN = 38, CH = 42, OH = 46, CL = 39, RD = 51;
+const KK = 36,
+    SN = 38,
+    CH = 42,
+    OH = 46,
+    CL = 39,
+    RD = 51;
 
 /** Drum pattern templates — varied groove styles (house, trap, breakbeat, jazz, etc.). */
 export const drumPatterns: PatternTemplate[] = [
@@ -315,5 +320,4 @@ export const drumPatterns: PatternTemplate[] = [
             { pitch: CH, velocity: 50, startBeat: 3.67, durationBeats: 0.25 },
         ],
     },
-
 ];

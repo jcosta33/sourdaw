@@ -142,8 +142,24 @@ export const buildCurvePath = (
  */
 export const AUTOMATION_MODE_CONFIG = {
     off: { label: 'OFF', color: 'var(--color-text-disabled)', textColor: 'var(--color-text-tertiary)' },
-    read: { label: 'R', color: 'var(--color-accent-mint)', textColor: 'color-mix(in oklch, var(--color-accent-mint) 70%, white)' },
-    touch: { label: 'TCH', color: 'var(--color-accent-amber)', textColor: 'color-mix(in oklch, var(--color-accent-amber) 70%, white)' },
-    latch: { label: 'LCH', color: 'var(--color-accent-peach)', textColor: 'color-mix(in oklch, var(--color-accent-peach) 70%, white)' },
-    write: { label: 'W', color: 'var(--color-state-record)', textColor: 'color-mix(in oklch, var(--color-state-record) 70%, white)' },
+    read: {
+        label: 'R',
+        color: 'var(--color-accent-mint)',
+        textColor: 'color-mix(in oklch, var(--color-accent-mint) 70%, white)',
+    },
+    touch: {
+        label: 'TCH',
+        color: 'var(--color-accent-amber)',
+        textColor: 'color-mix(in oklch, var(--color-accent-amber) 70%, white)',
+    },
+    latch: {
+        label: 'LCH',
+        color: 'var(--color-accent-peach)',
+        textColor: 'color-mix(in oklch, var(--color-accent-peach) 70%, white)',
+    },
+    write: {
+        label: 'W',
+        color: 'var(--color-state-record)',
+        textColor: 'color-mix(in oklch, var(--color-state-record) 70%, white)',
+    },
 } as const;

@@ -8,7 +8,6 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 
-
 type SpectrogramProps = {
     trackId?: string;
     width?: number;
@@ -76,9 +75,7 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
         ctx.fillRect(0, 0, width, height);
 
         const draw = (): void => {
-            const analyser = trackId
-                ? (getTrackAnalyser(trackId) ?? getMasterAnalyser())
-                : getMasterAnalyser();
+            const analyser = trackId ? (getTrackAnalyser(trackId) ?? getMasterAnalyser()) : getMasterAnalyser();
 
             const fftSize = analyser.frequencyBinCount;
             const freqData = new Float32Array(fftSize);

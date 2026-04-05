@@ -45,7 +45,7 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                         data.events,
                         data.blockStart,
                         data.blockEnd,
-                        data.transport,
+                        data.transport
                     );
                     this.port.postMessage({ type: 'processed', requestId: data.requestId, events: processed });
                     break;

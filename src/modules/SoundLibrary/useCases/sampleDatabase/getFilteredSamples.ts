@@ -26,15 +26,12 @@ export function getFilteredSamples(): SampleEntry[] {
 
     // Tag filters
     if (state.activeFilters.length > 0) {
-        results = results.filter((s) =>
-            state.activeFilters.every((f) => s.tags.some((t) => t.name === f))
-        );
+        results = results.filter((s) => state.activeFilters.every((f) => s.tags.some((t) => t.name === f)));
     }
 
     // Category filter
     if (state.categoryFilter) {
-        const catTags = AUTO_TAG_RULES.filter((r) => r.category === state.categoryFilter)
-            .flatMap((r) => r.tags);
+        const catTags = AUTO_TAG_RULES.filter((r) => r.category === state.categoryFilter).flatMap((r) => r.tags);
         results = results.filter((s) => s.tags.some((t) => catTags.includes(t.name)));
     }
 

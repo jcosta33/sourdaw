@@ -142,16 +142,18 @@ export const NavCard = ({
         description={description}
         badge={badge}
         startSlot={
-            <div className={`flex h-7 w-7 items-center justify-center rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}>
+            <div
+                className={`flex h-7 w-7 items-center justify-center rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}
+            >
                 <Icon className="size-3.5" aria-hidden="true" />
             </div>
         }
         endSlot={
             <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors tabular-nums">
-                {count}
-            </span>
-            <ChevronRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors tabular-nums">
+                    {count}
+                </span>
+                <ChevronRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </div>
         }
         onClick={onClick}
@@ -171,7 +173,10 @@ export const EffectItem = ({
         className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-surface-raised border border-transparent hover:border-border/30 transition-all cursor-grab active:cursor-grabbing group"
         draggable
         onDragStart={(e) => {
-            e.dataTransfer.setData('application/x-sourdaw-plugin', JSON.stringify({ name: plugin.name, id: plugin.id }));
+            e.dataTransfer.setData(
+                'application/x-sourdaw-plugin',
+                JSON.stringify({ name: plugin.name, id: plugin.id })
+            );
             e.dataTransfer.effectAllowed = 'copy';
         }}
         onClick={() => {
@@ -208,7 +213,11 @@ export const EffectItem = ({
 // ── UnimplementedBadge ───────────────────────────────────────────────────────
 
 export const UnimplementedBadge = (): ReactElement => (
-    <DawMicroBadge tone="peach" className="ml-1 text-[var(--color-accent-peach)]/70" title="Not yet implemented — no audio effect">
+    <DawMicroBadge
+        tone="peach"
+        className="ml-1 text-[var(--color-accent-peach)]/70"
+        title="Not yet implemented — no audio effect"
+    >
         <AlertCircle className="size-2.5" aria-hidden="true" />
         Soon
     </DawMicroBadge>
@@ -217,7 +226,10 @@ export const UnimplementedBadge = (): ReactElement => (
 // ── SoonBadge ────────────────────────────────────────────────────────────────
 
 export const SoonBadge = (): ReactElement => (
-    <DawMicroBadge tone="peach" className="border-transparent bg-transparent px-0 text-[var(--color-accent-peach)]/60 shadow-none">
+    <DawMicroBadge
+        tone="peach"
+        className="border-transparent bg-transparent px-0 text-[var(--color-accent-peach)]/60 shadow-none"
+    >
         soon
     </DawMicroBadge>
 );

@@ -94,17 +94,21 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         const max = isLog ? 1 : param.maxValue;
         const mappedStep = isLog ? 0.001 : step;
         const mappedFineStep = isLog ? 0.0001 : fineStep;
-        
+
         const toLinear = (logVal: number) => {
             const clampVal = Math.max(param.minValue || 0.001, Math.min(param.maxValue, logVal));
-            return Math.log(clampVal / (param.minValue || 0.001)) / Math.log(param.maxValue / (param.minValue || 0.001));
+            return (
+                Math.log(clampVal / (param.minValue || 0.001)) / Math.log(param.maxValue / (param.minValue || 0.001))
+            );
         };
         const toLog = (linearVal: number) => {
             return (param.minValue || 0.001) * Math.pow(param.maxValue / (param.minValue || 0.001), linearVal);
         };
 
         const mappedValue = isLog ? toLinear(value) : value;
-        const mappedDefaultValue = isLog ? toLinear(param.defaultValue ?? param.value) : (param.defaultValue ?? param.value);
+        const mappedDefaultValue = isLog
+            ? toLinear(param.defaultValue ?? param.value)
+            : (param.defaultValue ?? param.value);
 
         const onChange = (v: number) => {
             handleKnobChange(isLog ? toLog(v) : v);

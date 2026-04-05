@@ -14,10 +14,7 @@ const invokeCommand = async (command: string, args?: Record<string, unknown>): P
 };
 
 /** Create a new CRDT project via the native backend. */
-export const nativeCreateProject = async (
-    name: string,
-    sampleRate: number,
-): Promise<boolean> => {
+export const nativeCreateProject = async (name: string, sampleRate: number): Promise<boolean> => {
     const result = await invokeCommand('collab_create_project', { name, sampleRate });
     return Boolean(result);
 };
@@ -29,9 +26,7 @@ export const nativeSaveBundle = async (path: string): Promise<boolean> => {
 };
 
 /** Load CRDT documents from a native .sdaw file. */
-export const nativeLoadBundle = async (
-    path: string,
-): Promise<DocumentBundle | null> => {
+export const nativeLoadBundle = async (path: string): Promise<DocumentBundle | null> => {
     const result = await invokeCommand('collab_load_bundle', { path });
     if (!result || typeof result !== 'object') {
         return null;
@@ -45,15 +40,13 @@ export const nativeLoadBundle = async (
 };
 
 /** Get a JSON snapshot of a document from the native backend. */
-export const nativeGetDocumentState = async (
-    docId: string,
-): Promise<unknown> => {
+export const nativeGetDocumentState = async (docId: string): Promise<unknown> => {
     return invokeCommand('collab_get_document_state', { docId });
 };
 
 /** Merge an external .sdaw bundle into the current project. */
 export const nativeMergeBundle = async (
-    path: string,
+    path: string
 ): Promise<{ mergedDocIds: string[]; newDocIds: string[] } | null> => {
     const result = await invokeCommand('collab_merge_bundle', { path });
     if (!result || typeof result !== 'object') {
@@ -63,10 +56,7 @@ export const nativeMergeBundle = async (
 };
 
 /** Apply a serialized Automerge change to a document. */
-export const nativeApplyChange = async (
-    docId: string,
-    changeBytes: number[],
-): Promise<boolean> => {
+export const nativeApplyChange = async (docId: string, changeBytes: number[]): Promise<boolean> => {
     const result = await invokeCommand('collab_apply_change', { docId, changeBytes });
     return Boolean(result);
 };

@@ -137,7 +137,10 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
                     let fermenterDeviceId: string | undefined;
                     for (const track of getAllTracks()) {
                         const d = track.devices.find((dev) => dev.type === 'fermenter');
-                        if (d) { fermenterDeviceId = d.id; break; }
+                        if (d) {
+                            fermenterDeviceId = d.id;
+                            break;
+                        }
                     }
                     if (fermenterDeviceId) {
                         setFermenterParamWithAudio(fermenterDeviceId, mapping.paramId as any, scaled);
@@ -149,10 +152,19 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
                         const trackState = trackStore.value;
                         if (trackState) {
                             for (const track of trackState.tracks) {
-                                if (track.automationMode === 'write' || track.automationMode === 'touch' || track.automationMode === 'latch') {
+                                if (
+                                    track.automationMode === 'write' ||
+                                    track.automationMode === 'touch' ||
+                                    track.automationMode === 'latch'
+                                ) {
                                     const fermenterDevice = track.devices.find((d: any) => d.type === 'fermenter');
                                     if (fermenterDevice) {
-                                        recordAutomationValue(track.id, `${fermenterDevice.id}:${mapping.paramId}`, scaled, transport.playheadPosition);
+                                        recordAutomationValue(
+                                            track.id,
+                                            `${fermenterDevice.id}:${mapping.paramId}`,
+                                            scaled,
+                                            transport.playheadPosition
+                                        );
                                     }
                                 }
                             }

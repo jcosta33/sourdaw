@@ -3,7 +3,13 @@
  * Supports pitch offset per repeat and synced/free rate.
  */
 
-import { type MidiEvent, type TransportInfo, type RateValue, rateToBeats, samplesPerBeat } from '../../models/MidiEvent';
+import {
+    type MidiEvent,
+    type TransportInfo,
+    type RateValue,
+    rateToBeats,
+    samplesPerBeat,
+} from '../../models/MidiEvent';
 import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProcessor';
 
 export class NoteRepeater implements MidiProcessor {
@@ -62,18 +68,36 @@ export class NoteRepeater implements MidiProcessor {
         }
     }
 
-    reset(): void { this.scheduled.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.scheduled.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'repeat_count': this.repeatCount = Math.max(1, Math.min(16, Math.round(value))); break;
-            case 'rate_denom': this.rate = { ...this.rate, denom: Math.max(1, value) }; break;
-            case 'decay': this.decay = Math.max(0, Math.min(1, value)); break;
-            case 'gate': this.gate = Math.max(0.01, Math.min(2, value)); break;
-            case 'pitch_step': this.pitchStep = Math.round(value); break;
+            case 'repeat_count':
+                this.repeatCount = Math.max(1, Math.min(16, Math.round(value)));
+                break;
+            case 'rate_denom':
+                this.rate = { ...this.rate, denom: Math.max(1, value) };
+                break;
+            case 'decay':
+                this.decay = Math.max(0, Math.min(1, value));
+                break;
+            case 'gate':
+                this.gate = Math.max(0.01, Math.min(2, value));
+                break;
+            case 'pitch_step':
+                this.pitchStep = Math.round(value);
+                break;
         }
     }
 }

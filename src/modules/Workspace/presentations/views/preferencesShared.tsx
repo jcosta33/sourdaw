@@ -123,7 +123,9 @@ export const GridSubdivisionSection = ({
                         <span className="text-[9px] text-muted-foreground/60 w-12 shrink-0">{group.label}</span>
                     ) : null}
                     {group.options.map((opt) => {
-                        const entry = GRID_SNAP_OPTIONS.find((o: { value: GridSnapOption; label: string }) => o.value === opt);
+                        const entry = GRID_SNAP_OPTIONS.find(
+                            (o: { value: GridSnapOption; label: string }) => o.value === opt
+                        );
                         return (
                             <Button
                                 key={opt}

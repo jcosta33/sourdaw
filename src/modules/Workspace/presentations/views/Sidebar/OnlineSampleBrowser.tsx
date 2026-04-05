@@ -225,8 +225,15 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
 
             {CATEGORY_ORDER.map((cat) => {
                 const sources = grouped.get(cat);
-                if (!sources) { return null; }
-                const meta = CATEGORY_META[cat] ?? { label: cat, color: 'text-foreground/60', iconColor: 'text-muted-foreground/50', bgColor: '' };
+                if (!sources) {
+                    return null;
+                }
+                const meta = CATEGORY_META[cat] ?? {
+                    label: cat,
+                    color: 'text-foreground/60',
+                    iconColor: 'text-muted-foreground/50',
+                    bgColor: '',
+                };
                 return (
                     <div key={cat} className="space-y-0.5">
                         <div className="flex items-center gap-1.5 pt-1 px-0.5">
@@ -245,8 +252,12 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
                                     rel="noopener noreferrer"
                                     className={`p-1.5 hover:${meta.bgColor}`}
                                     startSlot={
-                                        <div className={`size-5 rounded flex items-center justify-center ${meta.bgColor} shrink-0`}>
-                                            <Icon className={`size-3 ${meta.iconColor} group-hover:${meta.color} transition-colors`} />
+                                        <div
+                                            className={`size-5 rounded flex items-center justify-center ${meta.bgColor} shrink-0`}
+                                        >
+                                            <Icon
+                                                className={`size-3 ${meta.iconColor} group-hover:${meta.color} transition-colors`}
+                                            />
                                         </div>
                                     }
                                     heading={source.name}

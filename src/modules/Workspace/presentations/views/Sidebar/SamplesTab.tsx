@@ -87,53 +87,55 @@ export const SamplesTab = ({
                                 }}
                                 title="Drag to timeline or click to add"
                             >
-                            <DawPickerRow
-                                className="cursor-grab active:cursor-grabbing px-2 py-1"
-                                startSlot={
-                                    <div className="flex items-center gap-1">
-                                        <PreviewButton
-                                            isPlaying={preview.playingId === sample.id}
-                                            onPlay={() => {
-                                                const buffer = sample.audioBufferId
-                                                    ? audioBufferCache.get(sample.audioBufferId)
-                                                    : undefined;
-                                                if (buffer) {
-                                                    preview.play(sample.id, buffer);
-                                                } else {
-                                                    preview.playTone(sample.id, 261.63, 0.5);
-                                                }
-                                            }}
-                                            onStop={preview.stop}
-                                        />
-                                        <File className="size-3 text-muted-foreground" />
-                                    </div>
-                                }
-                                heading={sample.name}
-                                description={sample.duration}
-                                endSlot={
-                                    <button
-                                        type="button"
-                                        className={cn(
-                                            'size-3 opacity-0 transition-opacity group-hover:opacity-100',
-                                            favorites.has(sample.id) && 'opacity-100'
-                                        )}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onToggleFavorite(sample.id);
-                                        }}
-                                        aria-label={favorites.has(sample.id) ? 'Remove from favorites' : 'Add to favorites'}
-                                    >
-                                        <Star
+                                <DawPickerRow
+                                    className="cursor-grab active:cursor-grabbing px-2 py-1"
+                                    startSlot={
+                                        <div className="flex items-center gap-1">
+                                            <PreviewButton
+                                                isPlaying={preview.playingId === sample.id}
+                                                onPlay={() => {
+                                                    const buffer = sample.audioBufferId
+                                                        ? audioBufferCache.get(sample.audioBufferId)
+                                                        : undefined;
+                                                    if (buffer) {
+                                                        preview.play(sample.id, buffer);
+                                                    } else {
+                                                        preview.playTone(sample.id, 261.63, 0.5);
+                                                    }
+                                                }}
+                                                onStop={preview.stop}
+                                            />
+                                            <File className="size-3 text-muted-foreground" />
+                                        </div>
+                                    }
+                                    heading={sample.name}
+                                    description={sample.duration}
+                                    endSlot={
+                                        <button
+                                            type="button"
                                             className={cn(
-                                                'size-3',
-                                                favorites.has(sample.id)
-                                                    ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)]'
-                                                    : 'text-muted-foreground'
+                                                'size-3 opacity-0 transition-opacity group-hover:opacity-100',
+                                                favorites.has(sample.id) && 'opacity-100'
                                             )}
-                                        />
-                                    </button>
-                                }
-                            />
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onToggleFavorite(sample.id);
+                                            }}
+                                            aria-label={
+                                                favorites.has(sample.id) ? 'Remove from favorites' : 'Add to favorites'
+                                            }
+                                        >
+                                            <Star
+                                                className={cn(
+                                                    'size-3',
+                                                    favorites.has(sample.id)
+                                                        ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)]'
+                                                        : 'text-muted-foreground'
+                                                )}
+                                            />
+                                        </button>
+                                    }
+                                />
                             </div>
                         ))}
                 </div>

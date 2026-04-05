@@ -104,7 +104,9 @@ export const ArrangementSelector = (): ReactElement | null => {
                         onClick={() => setOpen((prev) => !prev)}
                     >
                         <ListTree className="size-3 text-muted-foreground/60" />
-                        <span className="max-w-[120px] truncate text-foreground/70">{currentArrangement?.name ?? 'Arrangement'}</span>
+                        <span className="max-w-[120px] truncate text-foreground/70">
+                            {currentArrangement?.name ?? 'Arrangement'}
+                        </span>
                         <ChevronDown className="size-2.5 text-muted-foreground/40" />
                     </button>
                 </TooltipTrigger>
@@ -167,7 +169,11 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                 'flex-1 border-0 bg-transparent px-0 py-0',
                                                 isActive ? 'hover:bg-transparent' : ''
                                             )}
-                                            startSlot={<div className="w-4">{isActive ? <Check className="size-3" /> : null}</div>}
+                                            startSlot={
+                                                <div className="w-4">
+                                                    {isActive ? <Check className="size-3" /> : null}
+                                                </div>
+                                            }
                                             endSlot={
                                                 <button
                                                     type="button"

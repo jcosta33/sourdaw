@@ -23,7 +23,7 @@ export type NativePluginBridgeResult = {
 export async function createNativePluginBridgeNode(
     ctx: AudioContext,
     instanceId: string,
-    enginePluginId: number,
+    enginePluginId: number
 ): Promise<NativePluginBridgeResult> {
     const node = new AudioWorkletNode(ctx, 'native-plugin-bridge-processor', {
         numberOfInputs: 1,
@@ -48,16 +48,13 @@ export async function createNativePluginBridgeNode(
             const audioBuffer = event.data.audio as ArrayBuffer;
 
             try {
-                const resultBytes = await tauriInvoke('process_plugin_audio', {
+                const resultBytes = (await tauriInvoke('process_plugin_audio', {
                     enginePluginId,
                     audioBytes: Array.from(new Uint8Array(audioBuffer)),
-                }) as number[];
+                })) as number[];
 
                 const resultArray = new Uint8Array(resultBytes);
-                node.port.postMessage(
-                    { type: 'processed', audio: resultArray.buffer },
-                    [resultArray.buffer],
-                );
+                node.port.postMessage({ type: 'processed', audio: resultArray.buffer }, [resultArray.buffer]);
             } catch {
                 // If Rust processing fails, the worklet falls back to passthrough
             } finally {
@@ -81,7 +78,9 @@ export async function createNativePluginBridgeNode(
             // TODO: Send bypass command to native engine
         },
         destroy() {
-            try { node.disconnect(); } catch {}
+            try {
+                node.disconnect();
+            } catch {}
             node.port.close();
         },
     };

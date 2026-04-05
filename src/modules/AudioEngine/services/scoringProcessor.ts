@@ -19,14 +19,14 @@ import { initSync, ScoringInstance } from '../wasm/scoring.js';
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 class ScoringProcessor extends AudioWorkletProcessor {
-    _instance = null;   // ScoringInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory
+    _instance = null; // ScoringInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory
     _ready = false;
     _faulted = false;
     _bypassed = false;
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
-    _sabView = null;    // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();

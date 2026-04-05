@@ -38,7 +38,12 @@ const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
 type Mp3BitRate = 96 | 128 | 192 | 320;
 
-const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bitDepth: number; mp3BitRate: Mp3BitRate } => {
+const loadExportSettings = (): {
+    formats: ExportFormat[];
+    sampleRate: number;
+    bitDepth: number;
+    mp3BitRate: Mp3BitRate;
+} => {
     try {
         const stored = localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
@@ -47,7 +52,9 @@ const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bi
                 formats: Array.isArray(parsed.formats) ? parsed.formats : parsed.format ? [parsed.format] : ['wav'],
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
-                mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate) ? (parsed.mp3BitRate as Mp3BitRate) : 128,
+                mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate)
+                    ? (parsed.mp3BitRate as Mp3BitRate)
+                    : 128,
             };
         }
     } catch {
@@ -56,7 +63,12 @@ const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bi
     return { formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128 };
 };
 
-const saveExportSettings = (settings: { formats: ExportFormat[]; sampleRate: number; bitDepth: number; mp3BitRate: Mp3BitRate }): void => {
+const saveExportSettings = (settings: {
+    formats: ExportFormat[];
+    sampleRate: number;
+    bitDepth: number;
+    mp3BitRate: Mp3BitRate;
+}): void => {
     try {
         localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
     } catch {
@@ -142,7 +154,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
         let tauriDirPath: string | null = null;
         let tauriFilePath: string | null = null;
-        
+
         // This Handle uses the new FileSystem Access API
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let webFileHandle: any = null;
@@ -175,10 +187,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const mime = isZip
                         ? 'application/zip'
                         : primaryExt === 'wav'
-                        ? 'audio/wav'
-                        : primaryExt === 'flac'
-                        ? 'audio/flac'
-                        : 'audio/mpeg';
+                          ? 'audio/wav'
+                          : primaryExt === 'flac'
+                            ? 'audio/flac'
+                            : 'audio/mpeg';
 
                     webFileHandle = await (
                         window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
@@ -217,14 +229,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             } else {
                 // Engine not yet initialised (pre-first-gesture) — proceed without
                 // restore; buffers may already be warm from a previous operation.
-                logger.warn('AudioContext not available during export — skipping IDB restore. Buffers may be incomplete.');
+                logger.warn(
+                    'AudioContext not available during export — skipping IDB restore. Buffers may be incomplete.'
+                );
             }
 
             const tracks = trackStore.value?.tracks ?? [];
             const maxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
             const bd = bitDepth as 16 | 24 | 32;
             const formatList = Array.from(formats);
-            
+
             // We use fflate purely to zip multiple web stems / formats
             const zipDirectory: Record<string, Uint8Array> = {};
 
@@ -237,7 +251,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 let currentPass = 0;
                 for (const f of formatList) {
                     if (cancelledRef.current) return;
-                    
+
                     const passProgress = (frac: number) => {
                         const subFraction = (currentPass + frac) / formatList.length;
                         setProgress(fractionOffset + subFraction * fractionRange);
@@ -308,16 +322,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 let doneStems = 0;
                 const totalStems = stems.size;
-                
+
                 for (const [trackId, buffer] of stems) {
                     if (cancelledRef.current) return;
                     const track = tracks.find((t) => t.id === trackId);
                     const safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
-                    
+
                     // We map the remaining 50% of the progress bar to encoding the slices
                     const stemOffset = 50 + (doneStems / totalStems) * 50;
                     const stemRange = 50 / totalStems;
-                    
+
                     await serializeAudio(buffer, safeTName, stemOffset, stemRange);
                     doneStems++;
                 }
@@ -358,7 +372,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             if (!isTauri() && Object.keys(zipDirectory).length > 0) {
                 setStatusText('Serving hot audio...');
                 const isSingleFile = Object.keys(zipDirectory).length === 1 && mode !== 'stems';
-                
+
                 let finalBytes: Uint8Array;
                 let finalExt: string;
                 let finalName: string;
@@ -397,7 +411,6 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setTimeout(() => {
                 if (open) onClose();
             }, 2500);
-
         } catch (error) {
             if (cancelledRef.current) {
                 setStatusText('Oven turned off.');
@@ -514,10 +527,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         aria-checked={active}
                                         disabled={exporting}
                                     >
-                                        <div className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}>
+                                        <div
+                                            className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}
+                                        >
                                             {f.label}
                                         </div>
-                                        <div className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}>
+                                        <div
+                                            className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}
+                                        >
                                             {f.desc}
                                         </div>
                                     </button>
@@ -582,7 +599,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                         {formats.has('mp3') ? (
                             <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
-                                <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
+                                <DawEyebrowLabel
+                                    size="sm"
+                                    className="mb-2 block font-bold tracking-widest text-stone-600"
+                                >
                                     MP3 Quality
                                 </DawEyebrowLabel>
                                 <div className="flex flex-wrap gap-1">
@@ -616,10 +636,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             {exporting || progress === 100 ? (
                                 <div className="space-y-1.5 animate-in fade-in duration-300">
                                     <div className="flex items-end justify-between text-xs">
-                                        <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
+                                        <span
+                                            className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
+                                        >
                                             {statusText}
                                         </span>
-                                        <span className="font-mono text-[10px] text-orange-500/50">{progress.toFixed(0)}%</span>
+                                        <span className="font-mono text-[10px] text-orange-500/50">
+                                            {progress.toFixed(0)}%
+                                        </span>
                                     </div>
                                     <div
                                         className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"

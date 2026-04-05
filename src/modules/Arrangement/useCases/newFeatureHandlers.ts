@@ -1,6 +1,9 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { generateDrumFill, generateAllTransitionFills } from '#/modules/Arrangement/useCases/fillTransitionGeneration/generation';
+import {
+    generateDrumFill,
+    generateAllTransitionFills,
+} from '#/modules/Arrangement/useCases/fillTransitionGeneration/generation';
 import { compareToReference } from '#/modules/AudioAnalysis/useCases/referenceMixComparison/compareMixes';
 import { toggleMono } from '#/modules/AudioEngine/useCases/controlRoom/toggleMono';
 import { toggleDim } from '#/modules/AudioEngine/useCases/controlRoom/toggleDim';

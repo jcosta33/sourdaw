@@ -1,5 +1,11 @@
 import { type RefObject, useEffect } from 'react';
-import { zoomTimeline, scrollTimeline, setAutoScroll, setScrollY, timelineViewStore } from '../../stores/timelineViewStore';
+import {
+    zoomTimeline,
+    scrollTimeline,
+    setAutoScroll,
+    setScrollY,
+    timelineViewStore,
+} from '../../stores/timelineViewStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 

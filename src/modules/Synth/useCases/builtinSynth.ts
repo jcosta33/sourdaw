@@ -6,7 +6,11 @@
 import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
-import { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/useCases/audioEngineQueries';
+import {
+    type SynthParams,
+    defaultSynthParams,
+    type MpeParams,
+} from '#/modules/AudioEngine/useCases/audioEngineQueries';
 
 const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'waveform',
@@ -81,7 +85,7 @@ export function scheduleNote(
 ): OscillatorNode {
     const baseFrequency = 440 * 2 ** ((pitch - 69) / 12);
     // Velocity-sensitive attack: harder hits = faster attack (real instrument behavior)
-    const velAttack = params.attack * (1.5 - (velocity / 127));
+    const velAttack = params.attack * (1.5 - velocity / 127);
     const peakGain = (velocity / 127) * params.gain * clipGain;
     const sustainLevel = peakGain * params.sustain;
 
@@ -182,9 +186,10 @@ export function scheduleNote(
 
     // Velocity → filter brightness: harder hits open the filter more
     const velSens = params.filterVelocitySensitivity ?? 0;
-    const velocityScale = velSens > 0
-        ? (1 - velSens) + velSens * (velocity / 127)  // 0 sens = always full, 1 sens = full range
-        : 0.3 + 0.7 * (velocity / 127);               // legacy default when param not set
+    const velocityScale =
+        velSens > 0
+            ? 1 - velSens + velSens * (velocity / 127) // 0 sens = always full, 1 sens = full range
+            : 0.3 + 0.7 * (velocity / 127); // legacy default when param not set
     // Pitch tracking: higher notes are naturally brighter (scale by sqrt of freq ratio)
     const pitchScale = Math.sqrt(frequency / 440);
     let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
@@ -375,10 +380,7 @@ export function scheduleNoteOffline(
     const filter = ctx.createBiquadFilter();
     filter.type = params.filterType;
     const velocityScale = 0.3 + 0.7 * (velocity / 127);
-    filter.frequency.setValueAtTime(
-        Math.min(params.filterCutoff * velocityScale, 20000),
-        startTime
-    );
+    filter.frequency.setValueAtTime(Math.min(params.filterCutoff * velocityScale, 20000), startTime);
     filter.Q.setValueAtTime(params.filterResonance, startTime);
 
     // Amplitude envelope

@@ -127,11 +127,11 @@ const PARAM_MAP = {
 };
 
 class FermenterProcessor extends AudioWorkletProcessor {
-    _instance = null;   // FermenterInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory (for direct buffer access in process())
+    _instance = null; // FermenterInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
     _faulted = false;
-    _queue = [];        // Sorted by sampleFrame (integer sample count)
+    _queue = []; // Sorted by sampleFrame (integer sample count)
 
     constructor() {
         super();
@@ -162,7 +162,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg) {
-        let lo = 0, hi = this._queue.length;
+        let lo = 0,
+            hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
             if (this._queue[mid].sampleFrame <= msg.sampleFrame) lo = mid + 1;

@@ -6,8 +6,6 @@ export function setLayerMix(id: string, mix: number): void {
         return;
     }
     adjustmentLayerStore.set({
-        layers: state.layers.map((l) =>
-            l.id === id ? { ...l, mix: Math.max(0, Math.min(1, mix)) } : l
-        ),
+        layers: state.layers.map((l) => (l.id === id ? { ...l, mix: Math.max(0, Math.min(1, mix)) } : l)),
     });
 }

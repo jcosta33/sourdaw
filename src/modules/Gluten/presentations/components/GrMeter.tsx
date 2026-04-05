@@ -120,7 +120,6 @@ export const GrMeter = ({
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('GR', width / 2, height - 1);
-
     }, [grDb, inputDb, outputDb, width, height, accentColor]);
 
     return (

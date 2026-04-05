@@ -3,7 +3,13 @@
  * Creates recognizable patterns with controlled randomness, unlike pure random mode.
  */
 
-import { type MidiEvent, type TransportInfo, type RateValue, rateToBeats, samplesPerBeat } from '../../models/MidiEvent';
+import {
+    type MidiEvent,
+    type TransportInfo,
+    type RateValue,
+    rateToBeats,
+    samplesPerBeat,
+} from '../../models/MidiEvent';
 import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProcessor';
 
 const MAX_STATES = 12; // max pitch classes or held notes
@@ -20,7 +26,7 @@ export class MarkovChain implements MidiProcessor {
     private gate = 0.7;
     private velocity = 100;
     private bypassed = false;
-    private rngState = 0xABCD;
+    private rngState = 0xabcd;
     private lastStepTime = -Infinity;
     private scheduled = new ScheduledEventQueue();
 
@@ -54,8 +60,8 @@ export class MarkovChain implements MidiProcessor {
         const row = this.probs[this.currentState % this.stateCount];
         if (!row) return 0;
 
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
-        let r = (this.rngState / 0x7FFFFFFF);
+        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+        let r = this.rngState / 0x7fffffff;
         let cumulative = 0;
 
         for (let i = 0; i < row.length; i++) {
@@ -127,15 +133,27 @@ export class MarkovChain implements MidiProcessor {
         this.stateToNote = [];
         this.scheduled.clear();
     }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'rate_denom': this.rate = { ...this.rate, denom: Math.max(1, value) }; break;
-            case 'gate': this.gate = Math.max(0.01, Math.min(2, value)); break;
-            case 'velocity': this.velocity = Math.max(1, Math.min(127, Math.round(value))); break;
+            case 'rate_denom':
+                this.rate = { ...this.rate, denom: Math.max(1, value) };
+                break;
+            case 'gate':
+                this.gate = Math.max(0.01, Math.min(2, value));
+                break;
+            case 'velocity':
+                this.velocity = Math.max(1, Math.min(127, Math.round(value)));
+                break;
         }
     }
 
@@ -153,7 +171,13 @@ export class MarkovChain implements MidiProcessor {
     }
 
     /** Get the transition matrix for UI display. */
-    getMatrix(): number[][] { return this.probs.map((r) => [...r]); }
-    getCurrentState(): number { return this.currentState; }
-    getStateCount(): number { return this.stateCount; }
+    getMatrix(): number[][] {
+        return this.probs.map((r) => [...r]);
+    }
+    getCurrentState(): number {
+        return this.currentState;
+    }
+    getStateCount(): number {
+        return this.stateCount;
+    }
 }

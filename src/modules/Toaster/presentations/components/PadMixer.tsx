@@ -26,7 +26,10 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                         };
                         setVol(e.clientY);
                         const onMove = (ev: PointerEvent) => setVol(ev.clientY);
-                        const onUp = () => { document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp); };
+                        const onUp = () => {
+                            document.removeEventListener('pointermove', onMove);
+                            document.removeEventListener('pointerup', onUp);
+                        };
                         document.addEventListener('pointermove', onMove);
                         document.addEventListener('pointerup', onUp);
                     }}
@@ -42,10 +45,16 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                     />
                     {/* Send indicators as dots */}
                     {pad.sendReverb > 0.05 ? (
-                        <div className="absolute -right-1.5 bottom-1/4 w-1 h-1 rounded-full bg-[var(--color-accent-mint)]" style={{ opacity: pad.sendReverb }} />
+                        <div
+                            className="absolute -right-1.5 bottom-1/4 w-1 h-1 rounded-full bg-[var(--color-accent-mint)]"
+                            style={{ opacity: pad.sendReverb }}
+                        />
                     ) : null}
                     {pad.sendDelay > 0.05 ? (
-                        <div className="absolute -right-1.5 bottom-1/2 w-1 h-1 rounded-full bg-[var(--color-accent-cyan)]" style={{ opacity: pad.sendDelay }} />
+                        <div
+                            className="absolute -right-1.5 bottom-1/2 w-1 h-1 rounded-full bg-[var(--color-accent-cyan)]"
+                            style={{ opacity: pad.sendDelay }}
+                        />
                     ) : null}
                 </div>
 
@@ -64,18 +73,27 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
 
                 {/* Mute / Solo */}
                 <div className="flex gap-px mb-0.5">
-                    <button type="button"
+                    <button
+                        type="button"
                         className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.muted ? 'bg-red-500/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
                         onClick={() => onPadParam(i, 'muted', pad.muted ? 0 : 1)}
-                    >M</button>
-                    <button type="button"
+                    >
+                        M
+                    </button>
+                    <button
+                        type="button"
                         className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.soloed ? 'bg-[var(--color-accent-mint)]/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
                         onClick={() => onPadParam(i, 'soloed', pad.soloed ? 0 : 1)}
-                    >S</button>
+                    >
+                        S
+                    </button>
                 </div>
 
                 {/* Name */}
-                <span className="text-[5px] leading-tight truncate w-full text-center" style={{ color: `${pad.color}88` }}>
+                <span
+                    className="text-[5px] leading-tight truncate w-full text-center"
+                    style={{ color: `${pad.color}88` }}
+                >
                     {pad.name.slice(0, 5)}
                 </span>
             </div>

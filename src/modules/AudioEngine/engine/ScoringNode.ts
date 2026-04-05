@@ -86,12 +86,22 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-            if (!settled) { settled = true; reject(new Error('ScoringNode init timeout')); }
+            if (!settled) {
+                settled = true;
+                reject(new Error('ScoringNode init timeout'));
+            }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
             if (!settled) {
-                if (e.data.type === 'ready') { settled = true; clearTimeout(timeout); resolve(); }
-                else if (e.data.type === 'error') { settled = true; clearTimeout(timeout); reject(new Error(e.data.message)); }
+                if (e.data.type === 'ready') {
+                    settled = true;
+                    clearTimeout(timeout);
+                    resolve();
+                } else if (e.data.type === 'error') {
+                    settled = true;
+                    clearTimeout(timeout);
+                    reject(new Error(e.data.message));
+                }
             }
         };
     });
@@ -111,7 +121,10 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
             node.port.postMessage({ type: 'bypass', bypassed });
         },
         onTelemetry: (callback) => {
-            if (telemetryRafId !== null) { cancelAnimationFrame(telemetryRafId); telemetryRafId = null; }
+            if (telemetryRafId !== null) {
+                cancelAnimationFrame(telemetryRafId);
+                telemetryRafId = null;
+            }
             if (!slot) return;
             const view = slot.view;
             const poll = () => {
@@ -129,18 +142,43 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
                         noteName: NOTE_NAMES[noteIndex % 12] ?? 'C',
                     });
                 } else {
-                    callback({ active: false, frequency: 0, cents: 0, confidence: 0, noteIndex: 0, octave: 0, midiNote: 0, noteName: '' });
+                    callback({
+                        active: false,
+                        frequency: 0,
+                        cents: 0,
+                        confidence: 0,
+                        noteIndex: 0,
+                        octave: 0,
+                        midiNote: 0,
+                        noteName: '',
+                    });
                 }
                 telemetryRafId = requestAnimationFrame(poll);
             };
             telemetryRafId = requestAnimationFrame(poll);
         },
         connect: (dest) => node.connect(dest),
-        disconnect: () => { try { node.disconnect(); } catch { /* */ } },
+        disconnect: () => {
+            try {
+                node.disconnect();
+            } catch {
+                /* */
+            }
+        },
         destroy: () => {
-            if (telemetryRafId !== null) { cancelAnimationFrame(telemetryRafId); telemetryRafId = null; }
-            if (slot) { telemetryAllocator.releaseSlot(slot.byteOffset); slot = null; }
-            try { node.disconnect(); } catch { /* */ }
+            if (telemetryRafId !== null) {
+                cancelAnimationFrame(telemetryRafId);
+                telemetryRafId = null;
+            }
+            if (slot) {
+                telemetryAllocator.releaseSlot(slot.byteOffset);
+                slot = null;
+            }
+            try {
+                node.disconnect();
+            } catch {
+                /* */
+            }
             node.port.close();
         },
         ready: readyPromise,

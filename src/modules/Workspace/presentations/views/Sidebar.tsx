@@ -45,13 +45,14 @@ type SidebarProps = {
 /** User-imported samples only — no placeholder data */
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
-const TAB_ITEMS: { id: 'instruments' | 'color' | 'stage' | 'library' | 'macros'; label: string; Icon: typeof Music }[] = [
-    { id: 'instruments', label: 'Instruments', Icon: Music },
-    { id: 'color', label: 'Color', Icon: Zap },
-    { id: 'stage', label: 'Stage', Icon: Waves },
-    { id: 'library', label: 'Library', Icon: FileAudio },
-    { id: 'macros', label: 'Macros', Icon: Zap },
-];
+const TAB_ITEMS: { id: 'instruments' | 'color' | 'stage' | 'library' | 'macros'; label: string; Icon: typeof Music }[] =
+    [
+        { id: 'instruments', label: 'Instruments', Icon: Music },
+        { id: 'color', label: 'Color', Icon: Zap },
+        { id: 'stage', label: 'Stage', Icon: Waves },
+        { id: 'library', label: 'Library', Icon: FileAudio },
+        { id: 'macros', label: 'Macros', Icon: Zap },
+    ];
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
     const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'color' | 'stage' | 'macros'>('instruments');
@@ -227,10 +228,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
 
                             {libSubTab === 'folders' ? (
                                 <div className="px-1 flex-1 min-h-0">
-                                    <LibraryBrowser
-                                        preview={preview}
-                                        selectedTrackId={selectedTrackId}
-                                    />
+                                    <LibraryBrowser preview={preview} selectedTrackId={selectedTrackId} />
                                 </div>
                             ) : libSubTab === 'mine' ? (
                                 <div className="px-2">
@@ -315,7 +313,6 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     ) : null}
 
                     {activeTab === 'macros' ? <MacrosPanel /> : null}
-
                 </div>
             </ScrollArea>
         </aside>

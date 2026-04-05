@@ -42,24 +42,24 @@ const PARTICLES: ParticleDef[] = [
     // ── Top particles (float upward) ──
     // Center column
     { src: '/logo-parts/p01.png', x: 228, y: 102, w: 21, h: 48, dir: 'up', delay: 0.0, duration: 3.0 },
-    { src: '/logo-parts/p05.png', x: 228, y: 56,  w: 21, h: 38, dir: 'up', delay: 0.5, duration: 3.4 },
-    { src: '/logo-parts/p16.png', x: 229, y: 24,  w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.8 },
+    { src: '/logo-parts/p05.png', x: 228, y: 56, w: 21, h: 38, dir: 'up', delay: 0.5, duration: 3.4 },
+    { src: '/logo-parts/p16.png', x: 229, y: 24, w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.8 },
 
     // Inner pair
-    { src: '/logo-parts/p07.png', x: 187, y: 93,  w: 21, h: 32, dir: 'up', delay: 0.2, duration: 2.8 },
+    { src: '/logo-parts/p07.png', x: 187, y: 93, w: 21, h: 32, dir: 'up', delay: 0.2, duration: 2.8 },
     { src: '/logo-parts/p12.png', x: 188, y: 134, w: 20, h: 20, dir: 'up', delay: 0.7, duration: 2.6 },
-    { src: '/logo-parts/p30.png', x: 188, y: 75,  w: 20, h: 10, dir: 'up', delay: 1.2, duration: 3.2 },
-    { src: '/logo-parts/p08.png', x: 269, y: 93,  w: 20, h: 32, dir: 'up', delay: 0.3, duration: 2.8 },
+    { src: '/logo-parts/p30.png', x: 188, y: 75, w: 20, h: 10, dir: 'up', delay: 1.2, duration: 3.2 },
+    { src: '/logo-parts/p08.png', x: 269, y: 93, w: 20, h: 32, dir: 'up', delay: 0.3, duration: 2.8 },
     { src: '/logo-parts/p11.png', x: 269, y: 134, w: 20, h: 21, dir: 'up', delay: 0.8, duration: 2.6 },
-    { src: '/logo-parts/p29.png', x: 269, y: 74,  w: 20, h: 12, dir: 'up', delay: 1.3, duration: 3.2 },
+    { src: '/logo-parts/p29.png', x: 269, y: 74, w: 20, h: 12, dir: 'up', delay: 1.3, duration: 3.2 },
 
     // Middle pair
     { src: '/logo-parts/p03.png', x: 152, y: 122, w: 20, h: 41, dir: 'up', delay: 0.4, duration: 3.0 },
-    { src: '/logo-parts/p19.png', x: 152, y: 78,  w: 20, h: 19, dir: 'up', delay: 0.9, duration: 3.4 },
+    { src: '/logo-parts/p19.png', x: 152, y: 78, w: 20, h: 19, dir: 'up', delay: 0.9, duration: 3.4 },
     { src: '/logo-parts/p31.png', x: 155, y: 105, w: 17, h: 10, dir: 'up', delay: 1.5, duration: 3.6 },
     { src: '/logo-parts/p04.png', x: 305, y: 123, w: 20, h: 40, dir: 'up', delay: 0.4, duration: 3.0 },
-    { src: '/logo-parts/p18.png', x: 305, y: 78,  w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.4 },
-    { src: '/logo-parts/p32.png', x: 305, y: 105, w: 16, h: 9,  dir: 'up', delay: 1.6, duration: 3.6 },
+    { src: '/logo-parts/p18.png', x: 305, y: 78, w: 20, h: 20, dir: 'up', delay: 1.0, duration: 3.4 },
+    { src: '/logo-parts/p32.png', x: 305, y: 105, w: 16, h: 9, dir: 'up', delay: 1.6, duration: 3.6 },
 
     // Outer pair
     { src: '/logo-parts/p06.png', x: 112, y: 140, w: 20, h: 38, dir: 'up', delay: 0.6, duration: 3.2 },
@@ -67,7 +67,7 @@ const PARTICLES: ParticleDef[] = [
     { src: '/logo-parts/p02.png', x: 344, y: 126, w: 20, h: 52, dir: 'up', delay: 0.7, duration: 3.2 },
 
     // Extreme dots (flanking the loaf)
-    { src: '/logo-parts/p22.png', x: 77,  y: 170, w: 20, h: 19, dir: 'up', delay: 1.4, duration: 3.8 },
+    { src: '/logo-parts/p22.png', x: 77, y: 170, w: 20, h: 19, dir: 'up', delay: 1.4, duration: 3.8 },
     { src: '/logo-parts/p21.png', x: 380, y: 170, w: 19, h: 19, dir: 'up', delay: 1.4, duration: 3.8 },
 
     // ── Bottom particles (float downward) ──

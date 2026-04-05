@@ -27,9 +27,7 @@ export const SectionNav = ({ active, onChange }: SectionNavProps): ReactElement 
                 key={id}
                 type="button"
                 className={`px-2 py-0.5 rounded text-[9px] font-medium transition-all ${
-                    active === id
-                        ? 'text-white'
-                        : 'text-muted-foreground hover:text-foreground'
+                    active === id ? 'text-white' : 'text-muted-foreground hover:text-foreground'
                 }`}
                 style={active === id ? { backgroundColor: color } : undefined}
                 onClick={() => onChange(id)}

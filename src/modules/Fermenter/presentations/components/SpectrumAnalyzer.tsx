@@ -29,11 +29,7 @@ function computeMagnitudeSpectrum(samples: Float32Array, numBins: number): Float
     return mags;
 }
 
-export const SpectrumAnalyzer = ({
-    buffer,
-    width = 240,
-    height = 80,
-}: SpectrumAnalyzerProps): ReactElement => {
+export const SpectrumAnalyzer = ({ buffer, width = 240, height = 80 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -106,31 +102,15 @@ export const SpectrumAnalyzer = ({
             ctx.shadowColor = barColor;
             ctx.shadowBlur = 6;
             ctx.fillStyle = `rgba(${r},${g},${b},0.8)`;
-            ctx.fillRect(
-                i * barW + 1,
-                height - barH,
-                barW - 2,
-                barH,
-            );
+            ctx.fillRect(i * barW + 1, height - barH, barW - 2, barH);
             ctx.restore();
 
             // Bar highlight (brighter top portion)
             const highlightH = Math.min(barH, 3);
             ctx.fillStyle = `rgba(${Math.min(255, r + 50)},${Math.min(255, g + 40)},${Math.min(255, b + 15)},0.6)`;
-            ctx.fillRect(
-                i * barW + 1,
-                height - barH,
-                barW - 2,
-                highlightH,
-            );
+            ctx.fillRect(i * barW + 1, height - barH, barW - 2, highlightH);
         }
     }, [buffer, width, height]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            style={{ width, height }}
-            className="rounded-md"
-        />
-    );
+    return <canvas ref={canvasRef} style={{ width, height }} className="rounded-md" />;
 };

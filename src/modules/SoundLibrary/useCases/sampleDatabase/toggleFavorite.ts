@@ -7,8 +7,6 @@ export function toggleFavorite(sampleId: string): void {
     }
     sampleDatabaseStore.set({
         ...state,
-        samples: state.samples.map((s) =>
-            s.id === sampleId ? { ...s, favorite: !s.favorite } : s
-        ),
+        samples: state.samples.map((s) => (s.id === sampleId ? { ...s, favorite: !s.favorite } : s)),
     });
 }

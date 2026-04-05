@@ -150,15 +150,25 @@ export function scheduleAudioClips(
                 const now = getCurrentTime();
                 const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
                 const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
-                const playDuration = Math.min(iterDurationSeconds, (buffer.duration - clipAudioOffsetSeconds) / stretchRatio);
+                const playDuration = Math.min(
+                    iterDurationSeconds,
+                    (buffer.duration - clipAudioOffsetSeconds) / stretchRatio
+                );
 
                 if (iterStartTime >= now) {
                     source.start(iterStartTime, clipAudioOffsetSeconds, playDuration * stretchRatio);
                 } else {
                     const elapsed = now - iterStartTime;
                     const bufferOffset = elapsed * stretchRatio + clipAudioOffsetSeconds;
-                    if (bufferOffset < buffer.duration && bufferOffset < playDuration * stretchRatio + clipAudioOffsetSeconds) {
-                        source.start(now, bufferOffset, playDuration * stretchRatio + clipAudioOffsetSeconds - bufferOffset);
+                    if (
+                        bufferOffset < buffer.duration &&
+                        bufferOffset < playDuration * stretchRatio + clipAudioOffsetSeconds
+                    ) {
+                        source.start(
+                            now,
+                            bufferOffset,
+                            playDuration * stretchRatio + clipAudioOffsetSeconds - bufferOffset
+                        );
                     } else {
                         continue;
                     }

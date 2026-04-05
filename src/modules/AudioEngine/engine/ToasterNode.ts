@@ -22,9 +22,13 @@ async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) { return cachedWasmBytes; }
+    if (cachedWasmBytes) {
+        return cachedWasmBytes;
+    }
     const response = await fetch(url);
-    if (!response.ok) { throw new Error(`Failed to fetch Toaster WASM: ${response.status}`); }
+    if (!response.ok) {
+        throw new Error(`Failed to fetch Toaster WASM: ${response.status}`);
+    }
     cachedWasmBytes = await response.arrayBuffer();
     return cachedWasmBytes;
 }
@@ -66,12 +70,24 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-            if (!settled) { settled = true; reject(new Error('ToasterNode init timeout (10s)')); }
+            if (!settled) {
+                settled = true;
+                reject(new Error('ToasterNode init timeout (10s)'));
+            }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
-            if (settled) { return; }
-            if (e.data.type === 'ready') { settled = true; clearTimeout(timeout); resolve(); }
-            else if (e.data.type === 'error') { settled = true; clearTimeout(timeout); reject(new Error(e.data.message)); }
+            if (settled) {
+                return;
+            }
+            if (e.data.type === 'ready') {
+                settled = true;
+                clearTimeout(timeout);
+                resolve();
+            } else if (e.data.type === 'error') {
+                settled = true;
+                clearTimeout(timeout);
+                reject(new Error(e.data.message));
+            }
         };
     });
 
@@ -83,7 +99,13 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         workletNode: node,
         noteOn(pad: number, velocity: number, midiNote: number = 60, sampleFrame?: number) {
             if (!bypassed) {
-                node.port.postMessage({ type: 'noteOn', pad, velocity: Math.min(127, Math.max(0, velocity)), note: midiNote, sampleFrame });
+                node.port.postMessage({
+                    type: 'noteOn',
+                    pad,
+                    velocity: Math.min(127, Math.max(0, velocity)),
+                    note: midiNote,
+                    sampleFrame,
+                });
             }
         },
         noteOff(pad: number, sampleFrame?: number) {
@@ -99,10 +121,23 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
                 node.port.postMessage({ type: 'padParam', pad, name, value });
             }
         },
-        setBypass(state: boolean) { bypassed = state; },
-        connect(dest: AudioNode) { node.connect(dest); },
-        disconnect() { try { node.disconnect(); } catch {} },
-        destroy() { try { node.disconnect(); } catch {} node.port.close(); },
+        setBypass(state: boolean) {
+            bypassed = state;
+        },
+        connect(dest: AudioNode) {
+            node.connect(dest);
+        },
+        disconnect() {
+            try {
+                node.disconnect();
+            } catch {}
+        },
+        destroy() {
+            try {
+                node.disconnect();
+            } catch {}
+            node.port.close();
+        },
         ready: readyPromise,
     };
 }

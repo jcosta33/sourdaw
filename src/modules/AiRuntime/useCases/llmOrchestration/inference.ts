@@ -47,7 +47,9 @@ export async function generateToolCalls(systemPrompt: string, userMessage: strin
                     await initWebLlmEngine();
                 }
                 const relevantTools = selectToolsForPrompt(DAW_TOOL_SCHEMAS, userMessage);
-                logger.info(`[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(DAW_TOOL_SCHEMAS.length)} tools`);
+                logger.info(
+                    `[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(DAW_TOOL_SCHEMAS.length)} tools`
+                );
                 results = await generateWebLlmToolCalls(systemPrompt, userMessage, relevantTools);
             } else {
                 // Native backend: prefer structured tool calling via mistral.rs
@@ -107,8 +109,6 @@ async function generateNativeToolCalls(systemPrompt: string, userMessage: string
 
     // Fallback: text completion + XML/JSON parsing
     const content = await generateNativeCompletion(systemPrompt, userMessage);
-    logger.info(
-        `[AI Engine] (native/text) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
-    );
+    logger.info(`[AI Engine] (native/text) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`);
     return parseToolCallXml(content);
 }

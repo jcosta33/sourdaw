@@ -41,11 +41,7 @@ export const DawPluginChoiceRow = ({
                         </span>
                     ) : null}
                 </div>
-                {subtitle ? (
-                    <div className="text-[9px] leading-4 text-muted-foreground">
-                        {subtitle}
-                    </div>
-                ) : null}
+                {subtitle ? <div className="text-[9px] leading-4 text-muted-foreground">{subtitle}</div> : null}
             </div>
             {endSlot ? <div className="shrink-0">{endSlot}</div> : null}
         </>

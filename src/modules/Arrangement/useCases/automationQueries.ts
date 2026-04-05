@@ -10,7 +10,4 @@ export {
     generateShapePoints,
 } from '../transformers/automationTransformers';
 
-export {
-    applyVelocityCurve,
-    type VelocityCurve,
-} from '../transformers/velocityCurveTransformer';
+export { applyVelocityCurve, type VelocityCurve } from '../transformers/velocityCurveTransformer';

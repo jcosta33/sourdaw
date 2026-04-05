@@ -186,7 +186,9 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         >
                             {groupPresets(STREAMING_PRESETS).map(([group, presets], groupIndex) => (
                                 <div key={group} className="mb-1 last:mb-0">
-                                    {groupIndex > 0 ? <DawMenuSeparator className="mx-1 my-1 border-border/50" /> : null}
+                                    {groupIndex > 0 ? (
+                                        <DawMenuSeparator className="mx-1 my-1 border-border/50" />
+                                    ) : null}
                                     <DawMenuSectionLabel className="px-2 py-1 text-[8px] tracking-[0.24em]">
                                         {group}
                                     </DawMenuSectionLabel>

@@ -236,5 +236,4 @@ export const bassPatterns: PatternTemplate[] = [
             ];
         },
     },
-
 ];

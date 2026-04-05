@@ -6,15 +6,19 @@
 import { type ReactElement, type KeyboardEvent, useRef } from 'react';
 
 type Props = {
-    value: number;   // 0 – 18 dB
+    value: number; // 0 – 18 dB
     onChange: (v: number) => void;
 };
 
 const MIN = 0;
 const MAX = 18;
 
-function norm(v: number): number { return Math.max(0, Math.min(1, v / MAX)); }
-function clamp(v: number): number { return Math.max(MIN, Math.min(MAX, v)); }
+function norm(v: number): number {
+    return Math.max(0, Math.min(1, v / MAX));
+}
+function clamp(v: number): number {
+    return Math.max(MIN, Math.min(MAX, v));
+}
 
 export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
     const trackRef = useRef<HTMLDivElement>(null);
@@ -26,7 +30,9 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
     }
 
     function handlePointerMove(e: React.PointerEvent): void {
-        if (!drag.current.active || !trackRef.current) { return; }
+        if (!drag.current.active || !trackRef.current) {
+            return;
+        }
         const trackH = trackRef.current.getBoundingClientRect().height;
         const dy = drag.current.startY - e.clientY; // upward = more gain
         const scale = e.ctrlKey || e.metaKey ? 0.1 : 1;
@@ -40,8 +46,14 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
 
     function handleKeyDown(e: KeyboardEvent): void {
         const step = e.shiftKey ? 1 : 0.1;
-        if (e.key === 'ArrowUp')   { e.preventDefault(); onChange(clamp(value + step)); }
-        if (e.key === 'ArrowDown') { e.preventDefault(); onChange(clamp(value - step)); }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            onChange(clamp(value + step));
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            onChange(clamp(value - step));
+        }
     }
 
     const n = norm(value);
@@ -56,9 +68,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 borderRight: '1px solid rgba(46,46,54,0.5)',
             }}
         >
-            <span className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest">
-                Gain
-            </span>
+            <span className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest">Gain</span>
 
             {/* Drag track */}
             <div
@@ -140,7 +150,8 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 style={{ color: value > 12 ? '#C44030' : value > 6 ? '#D4A847' : '#E8E6E0' }}
                 aria-hidden="true"
             >
-                {value > 0 ? '+' : ''}{value.toFixed(1)}
+                {value > 0 ? '+' : ''}
+                {value.toFixed(1)}
             </span>
             <span className="text-[6px] text-muted-foreground/30 font-mono">dB</span>
         </div>

@@ -8,7 +8,8 @@ use std::sync::Mutex;
 use super::model_download;
 
 /// Cached ONNX session for Demucs (avoids reloading 235MB model per call).
-static DEMUCS_SESSION: std::sync::OnceLock<Mutex<ort::session::Session>> = std::sync::OnceLock::new();
+static DEMUCS_SESSION: std::sync::OnceLock<Mutex<ort::session::Session>> =
+    std::sync::OnceLock::new();
 
 // ── Denoising (spectral gate — placeholder until deep_filter crate is fixed) ─
 
@@ -109,7 +110,9 @@ pub async fn separate_stems(request: StemSeparationRequest) -> Result<StemResult
 
     eprintln!(
         "[Stems] Input: {}Hz, {} channels, {} samples",
-        source_rate, channels, reader.len()
+        source_rate,
+        channels,
+        reader.len()
     );
 
     // Read all samples as f32
@@ -247,8 +250,7 @@ pub async fn separate_stems(request: StemSeparationRequest) -> Result<StemResult
 
     // Write requested stems as WAV files to temp dir
     let temp_dir = std::env::temp_dir().join("sourdaw_stems");
-    std::fs::create_dir_all(&temp_dir)
-        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
 
     let mut stem_paths = std::collections::HashMap::new();
 

@@ -156,7 +156,9 @@ export const PianoRollContextMenu = ({
 
             {/* Quantize */}
             <DawMenuSeparator className="border-border/50" />
-            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Quantize</DawMenuSectionLabel>
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
+                Quantize
+            </DawMenuSectionLabel>
             <div className="flex gap-1 px-3 py-0.5">
                 {([1, 0.5, 0.25, 0.125] as const).map((g) => (
                     <button
@@ -185,7 +187,9 @@ export const PianoRollContextMenu = ({
 
             {/* Transpose */}
             <DawMenuSeparator className="border-border/50" />
-            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Transpose</DawMenuSectionLabel>
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
+                Transpose
+            </DawMenuSectionLabel>
             <div className="flex gap-1 px-3 py-0.5">
                 {([-12, -1, 1, 12] as const).map((semi) => (
                     <button
@@ -208,10 +212,12 @@ export const PianoRollContextMenu = ({
 
             {/* Humanize */}
             <DawMenuSeparator className="border-border/50" />
-            {([
-                { amount: 0.02, label: 'subtle' },
-                { amount: 0.05, label: 'medium' },
-            ] as const).map(({ amount, label }) => (
+            {(
+                [
+                    { amount: 0.02, label: 'subtle' },
+                    { amount: 0.05, label: 'medium' },
+                ] as const
+            ).map(({ amount, label }) => (
                 <button
                     type="button"
                     key={label}
@@ -233,13 +239,23 @@ export const PianoRollContextMenu = ({
                             `Humanize (${label})`,
                             () => {
                                 for (const n of before) {
-                                    moveMidiNote(clipId, n.id, notes.find((o) => o.id === n.id)?.pitch ?? 60, n.startBeat);
+                                    moveMidiNote(
+                                        clipId,
+                                        n.id,
+                                        notes.find((o) => o.id === n.id)?.pitch ?? 60,
+                                        n.startBeat
+                                    );
                                     setNoteVelocity(clipId, n.id, n.velocity);
                                 }
                             },
                             () => {
                                 for (const n of after) {
-                                    moveMidiNote(clipId, n.id, notes.find((o) => o.id === n.id)?.pitch ?? 60, n.startBeat);
+                                    moveMidiNote(
+                                        clipId,
+                                        n.id,
+                                        notes.find((o) => o.id === n.id)?.pitch ?? 60,
+                                        n.startBeat
+                                    );
                                     setNoteVelocity(clipId, n.id, n.velocity);
                                 }
                             }
@@ -252,7 +268,9 @@ export const PianoRollContextMenu = ({
 
             {/* Strum */}
             <DawMenuSeparator className="border-border/50" />
-            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Strum</DawMenuSectionLabel>
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
+                Strum
+            </DawMenuSectionLabel>
             <div className="flex gap-1 px-3 py-0.5">
                 {(['up', 'down'] as const).map((dir) => (
                     <button
@@ -293,7 +311,9 @@ export const PianoRollContextMenu = ({
 
             {/* Groove */}
             <DawMenuSeparator className="border-border/50" />
-            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Groove</DawMenuSectionLabel>
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
+                Groove
+            </DawMenuSectionLabel>
             <button
                 type="button"
                 className={menuItemClass}
@@ -324,12 +344,7 @@ export const PianoRollContextMenu = ({
                             pushUndoEntry(
                                 'Apply groove',
                                 () => restoreGrooveOriginals(clipId, originals),
-                                () =>
-                                    applyGrooveToClip(
-                                        clipId,
-                                        groove as Parameters<typeof applyGrooveToClip>[1],
-                                        0.5
-                                    )
+                                () => applyGrooveToClip(clipId, groove as Parameters<typeof applyGrooveToClip>[1], 0.5)
                             );
                         }
                     }
@@ -354,7 +369,8 @@ export const PianoRollContextMenu = ({
                         pushUndoEntry(
                             `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
                             () => {
-                                for (const n of deletedNotes) addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
+                                for (const n of deletedNotes)
+                                    addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
                             },
                             () => {
                                 for (const n of deletedNotes) removeMidiNote(clipId, n.id);

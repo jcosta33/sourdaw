@@ -41,7 +41,7 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
     for (let i = 0; i < length; i++) {
         for (let ch = 0; ch < numChannels; ch++) {
             const sample = Math.max(-1, Math.min(1, channels[ch]?.[i] ?? 0));
-            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
             offset += 2;
         }
     }
@@ -61,7 +61,9 @@ export async function handleStemSeparationPreview(clipId: string) {
         if (isTauri()) {
             const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
             const buffer = audioBufferCache.get(clipId);
-            if (!buffer) { throw new Error('Audio buffer not found for clip'); }
+            if (!buffer) {
+                throw new Error('Audio buffer not found for clip');
+            }
 
             const wavData = audioBufferToWav(buffer);
             const stemResults = await separateStems(wavData, ['all']);
@@ -79,7 +81,9 @@ export async function handleStemSeparationPreview(clipId: string) {
         } else {
             const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
             const buffer = audioBufferCache.get(clipId);
-            if (!buffer) { throw new Error('Audio buffer not found for clip'); }
+            if (!buffer) {
+                throw new Error('Audio buffer not found for clip');
+            }
 
             const wavData = audioBufferToWav(buffer);
             const stemResults = await separateStems(wavData, ['all']);

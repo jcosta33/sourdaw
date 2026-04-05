@@ -17,14 +17,11 @@ const CHANNEL_INDICATORS: Record<number, string> = { 0: '', 1: 'M', 2: 'S' };
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
-const xToFreq = (x: number, w: number): number =>
-    MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
+const xToFreq = (x: number, w: number): number => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
 
-const gainToY = (gain: number, h: number): number =>
-    h / 2 - (gain / DB_RANGE) * (h / 2);
+const gainToY = (gain: number, h: number): number => h / 2 - (gain / DB_RANGE) * (h / 2);
 
-const yToGain = (y: number, h: number): number =>
-    -(y - h / 2) / (h / 2) * DB_RANGE;
+const yToGain = (y: number, h: number): number => (-(y - h / 2) / (h / 2)) * DB_RANGE;
 
 /** Peaking EQ magnitude response at frequency f for a band at fc with gain and Q. */
 const peakingMag = (f: number, fc: number, gainDb: number, Q: number): number => {
@@ -77,20 +74,29 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         // Frequency grid
         for (const freq of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
             const x = freqToX(freq, w);
-            ctx.strokeStyle = (freq === 1000) ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            ctx.strokeStyle = freq === 1000 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
         }
         // dB grid
         for (const db of [-12, -6, 0, 6, 12]) {
             const y = gainToY(db, h);
             ctx.strokeStyle = db === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.035)';
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
         }
         // Zero line
         ctx.strokeStyle = 'rgba(255,255,255,0.12)';
         ctx.lineWidth = 1;
         const zeroY = gainToY(0, h);
-        ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, zeroY);
+        ctx.lineTo(w, zeroY);
+        ctx.stroke();
 
         // Frequency labels
         ctx.fillStyle = 'rgba(255,255,255,0.22)';
@@ -103,8 +109,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
         // Compute combined curve
         const NUM_POINTS = 200;
-        const freqs = Array.from({ length: NUM_POINTS }, (_, i) =>
-            MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / (NUM_POINTS - 1))
+        const freqs = Array.from(
+            { length: NUM_POINTS },
+            (_, i) => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / (NUM_POINTS - 1))
         );
 
         // Per-band curves + sum
@@ -239,9 +246,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         const newFreq = Math.round(Math.max(20, Math.min(20000, xToFreq(mx, width))));
         const newGain = Math.round(Math.max(-DB_RANGE, Math.min(DB_RANGE, yToGain(my, height))) * 2) / 2;
 
-        const bands = patch.eqBands.map((b, i) =>
-            i === idx ? { ...b, freq: newFreq, gain: newGain } : b
-        );
+        const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, freq: newFreq, gain: newGain } : b));
         onPatchChange({ eqBands: bands });
         onSendParam(`eq_band${idx}_freq`, newFreq);
         onSendParam(`eq_band${idx}_gain`, newGain);

@@ -41,9 +41,7 @@ pub struct LinkStatus {
 /// Enable Ableton Link sync.
 /// Starts listening on the local network for Link-compatible apps.
 #[tauri::command]
-pub async fn enable_link(
-    state: tauri::State<'_, LinkState>,
-) -> Result<LinkStatus, String> {
+pub async fn enable_link(state: tauri::State<'_, LinkState>) -> Result<LinkStatus, String> {
     let mut session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     session.enabled = true;
 
@@ -62,9 +60,7 @@ pub async fn enable_link(
 
 /// Disable Ableton Link sync.
 #[tauri::command]
-pub async fn disable_link(
-    state: tauri::State<'_, LinkState>,
-) -> Result<(), String> {
+pub async fn disable_link(state: tauri::State<'_, LinkState>) -> Result<(), String> {
     let mut session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     session.enabled = false;
     Ok(())
@@ -72,10 +68,7 @@ pub async fn disable_link(
 
 /// Set the Link tempo. Propagates to all connected peers.
 #[tauri::command]
-pub async fn set_link_tempo(
-    tempo: f64,
-    state: tauri::State<'_, LinkState>,
-) -> Result<(), String> {
+pub async fn set_link_tempo(tempo: f64, state: tauri::State<'_, LinkState>) -> Result<(), String> {
     let mut session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     session.tempo = tempo.clamp(20.0, 999.0);
     // In production: link.capture_app_session_state() -> set_tempo -> commit
@@ -84,9 +77,7 @@ pub async fn set_link_tempo(
 
 /// Get current Link status for UI display.
 #[tauri::command]
-pub async fn get_link_status(
-    state: tauri::State<'_, LinkState>,
-) -> Result<LinkStatus, String> {
+pub async fn get_link_status(state: tauri::State<'_, LinkState>) -> Result<LinkStatus, String> {
     let session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     Ok(LinkStatus {
         enabled: session.enabled,
@@ -100,9 +91,7 @@ pub async fn get_link_status(
 
 /// Force-start playback across all Link peers.
 #[tauri::command]
-pub async fn link_start_playing(
-    state: tauri::State<'_, LinkState>,
-) -> Result<(), String> {
+pub async fn link_start_playing(state: tauri::State<'_, LinkState>) -> Result<(), String> {
     let session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     if !session.enabled {
         return Err("Link is not enabled".into());
@@ -113,9 +102,7 @@ pub async fn link_start_playing(
 
 /// Force-stop playback across all Link peers.
 #[tauri::command]
-pub async fn link_stop_playing(
-    state: tauri::State<'_, LinkState>,
-) -> Result<(), String> {
+pub async fn link_stop_playing(state: tauri::State<'_, LinkState>) -> Result<(), String> {
     let session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     if !session.enabled {
         return Err("Link is not enabled".into());

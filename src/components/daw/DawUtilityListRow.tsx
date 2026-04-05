@@ -31,13 +31,17 @@ export const DawUtilityListRow = ({
         <>
             {startSlot ? <div className="shrink-0">{startSlot}</div> : null}
             <div className="min-w-0 flex-1">
-                <div className={cn('truncate text-[11px] text-foreground/85', active ? 'font-medium text-foreground' : '', titleClassName)}>
+                <div
+                    className={cn(
+                        'truncate text-[11px] text-foreground/85',
+                        active ? 'font-medium text-foreground' : '',
+                        titleClassName
+                    )}
+                >
                     {title}
                 </div>
                 {subtitle ? (
-                    <div className={cn('text-[9px] text-muted-foreground', subtitleClassName)}>
-                        {subtitle}
-                    </div>
+                    <div className={cn('text-[9px] text-muted-foreground', subtitleClassName)}>{subtitle}</div>
                 ) : null}
             </div>
             {endSlot ? <div className="shrink-0">{endSlot}</div> : null}
@@ -60,9 +64,5 @@ export const DawUtilityListRow = ({
         );
     }
 
-    return (
-        <div className={sharedClassName}>
-            {content}
-        </div>
-    );
+    return <div className={sharedClassName}>{content}</div>;
 };

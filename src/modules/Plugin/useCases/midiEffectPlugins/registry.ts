@@ -1,6 +1,12 @@
 import { createChordGenerator } from './createChordGenerator';
 import { createScaleFilter } from './createScaleFilter';
-import { createVelocityCurve, createMidiDelay, createNoteQuantizer, createTranspose, createCCMap } from './effectFactories';
+import {
+    createVelocityCurve,
+    createMidiDelay,
+    createNoteQuantizer,
+    createTranspose,
+    createCCMap,
+} from './effectFactories';
 
 export const MIDI_EFFECT_FACTORIES = [
     { id: 'chord-gen', name: 'Chord Generator', create: () => createChordGenerator() },

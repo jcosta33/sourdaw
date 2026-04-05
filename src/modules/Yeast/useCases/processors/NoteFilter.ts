@@ -57,18 +57,36 @@ export class NoteFilter implements MidiProcessor {
         return true;
     }
 
-    reset(): void { this.filteredNotes.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.filteredNotes.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'note_min': this.noteMin = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'note_max': this.noteMax = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'vel_min': this.velMin = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'vel_max': this.velMax = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'invert': this.invert = value > 0.5; break;
+            case 'note_min':
+                this.noteMin = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'note_max':
+                this.noteMax = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'vel_min':
+                this.velMin = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'vel_max':
+                this.velMax = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'invert':
+                this.invert = value > 0.5;
+                break;
         }
     }
 

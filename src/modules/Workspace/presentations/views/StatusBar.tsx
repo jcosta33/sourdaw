@@ -62,7 +62,10 @@ export const StatusBar = (): ReactElement => {
                         label="CPU"
                         meter={<DawMeterBar className="w-10" fillRef={cpuBarRef} />}
                         value={
-                            <span ref={cpuTextRef} className="w-7 text-right font-mono text-[10px] text-muted-foreground">
+                            <span
+                                ref={cpuTextRef}
+                                className="w-7 text-right font-mono text-[10px] text-muted-foreground"
+                            >
                                 0%
                             </span>
                         }
@@ -91,7 +94,9 @@ export const StatusBar = (): ReactElement => {
                                     {Math.round(llmStatus.progress * 100)}%
                                 </span>
                             ) : llmStatus?.state === 'ready' ? (
-                                <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>
+                                <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">
+                                    ready
+                                </span>
                             ) : (
                                 <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
                             )
@@ -101,7 +106,10 @@ export const StatusBar = (): ReactElement => {
                     <DawReadoutRow
                         label="Rate"
                         value={
-                            <span ref={sampleRateRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
+                            <span
+                                ref={sampleRateRef}
+                                className="font-mono tabular-nums text-[10px] text-muted-foreground"
+                            >
                                 0kHz
                             </span>
                         }

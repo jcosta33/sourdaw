@@ -20,9 +20,26 @@ type DeviceParam = DeviceLayoutProps['parameters'][number];
 
 /** Parameters that are almost always the "main" controls. */
 const PRIMARY_NAMES = new Set([
-    'gain', 'volume', 'level', 'mix', 'dryWet', 'dry/wet', 'drywet',
-    'threshold', 'ratio', 'drive', 'amount', 'depth', 'rate', 'time',
-    'cutoff', 'frequency', 'size', 'decay', 'feedback', 'width',
+    'gain',
+    'volume',
+    'level',
+    'mix',
+    'dryWet',
+    'dry/wet',
+    'drywet',
+    'threshold',
+    'ratio',
+    'drive',
+    'amount',
+    'depth',
+    'rate',
+    'time',
+    'cutoff',
+    'frequency',
+    'size',
+    'decay',
+    'feedback',
+    'width',
 ]);
 
 /** Group name rules based on parameter ID prefixes/patterns. */
@@ -101,7 +118,11 @@ function groupParameters(params: DeviceParam[]): ParamSection[] {
     return sections;
 }
 
-const ParamRow = ({ params, device, trackId }: {
+const ParamRow = ({
+    params,
+    device,
+    trackId,
+}: {
     params: DeviceParam[];
     device: DeviceLayoutProps['device'];
     trackId: string;
@@ -110,7 +131,10 @@ const ParamRow = ({ params, device, trackId }: {
     return (
         <div className={`grid grid-cols-1 @md:grid-cols-${String(cols)} gap-2`}>
             {params.map((param) => (
-                <Card key={param.id} className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4">
+                <Card
+                    key={param.id}
+                    className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4"
+                >
                     <DeviceParameterControl param={param} device={device} trackId={trackId} />
                 </Card>
             ))}
@@ -168,11 +192,7 @@ export const GenericDeviceLayout = ({ device, trackId, parameters }: DeviceLayou
     return (
         <div className="space-y-3">
             {sections.map((section) => (
-                <CollapsibleSection
-                    key={section.title}
-                    title={section.title}
-                    defaultOpen={!section.isAdvanced}
-                >
+                <CollapsibleSection key={section.title} title={section.title} defaultOpen={!section.isAdvanced}>
                     <ParamRow params={section.params} device={device} trackId={trackId} />
                 </CollapsibleSection>
             ))}

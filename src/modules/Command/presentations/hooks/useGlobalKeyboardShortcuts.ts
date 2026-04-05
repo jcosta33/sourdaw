@@ -1,6 +1,13 @@
 import { useEffect } from 'react';
 import { stopPlayback, toggleMetronome, seekPlayhead } from '../../useCases/keyboardShortcutActions/transportShortcuts';
-import { clearSolos, addTrack, duplicateTrack, duplicateClip, duplicateClipToNextBar, zoomTracksVertical } from '../../useCases/keyboardShortcutActions/trackShortcuts';
+import {
+    clearSolos,
+    addTrack,
+    duplicateTrack,
+    duplicateClip,
+    duplicateClipToNextBar,
+    zoomTracksVertical,
+} from '../../useCases/keyboardShortcutActions/trackShortcuts';
 import { setEditingTool, zoomToFit, zoomToSelection } from '../../useCases/keyboardShortcutActions/workspaceShortcuts';
 
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
@@ -8,7 +15,12 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../useCases/selectionHelpers';
 import { cycleAutomationVisibility } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
-import { toggleCommandPalette, selectAllClips, clearClipSelection, toggleWorkspaceMode } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import {
+    toggleCommandPalette,
+    selectAllClips,
+    clearClipSelection,
+    toggleWorkspaceMode,
+} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { type EditingTool, TOOL_SHORTCUTS } from '#/modules/Workspace/useCases/workspaceQueries';
 
 const ZOOM_STEP = 4;

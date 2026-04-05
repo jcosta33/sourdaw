@@ -63,10 +63,7 @@ export const RailTabBar = <TId extends string>({
 
     return (
         <div className={cn('relative shrink-0', className)}>
-            <div
-                ref={scrollRef}
-                className={cn('flex gap-0.5 overflow-x-auto scrollbar-none', scrollerClassName)}
-            >
+            <div ref={scrollRef} className={cn('flex gap-0.5 overflow-x-auto scrollbar-none', scrollerClassName)}>
                 {items.map((item) => {
                     const Icon = item.icon;
                     return (
@@ -74,11 +71,7 @@ export const RailTabBar = <TId extends string>({
                             key={item.id}
                             variant={activeId === item.id ? 'secondary' : 'ghost'}
                             size="xs"
-                            className={cn(
-                                'shrink-0',
-                                SIZE_CLASS_NAMES[size],
-                                buttonClassName
-                            )}
+                            className={cn('shrink-0', SIZE_CLASS_NAMES[size], buttonClassName)}
                             onClick={() => onChange(item.id)}
                         >
                             {Icon ? <Icon className="size-3" /> : null}

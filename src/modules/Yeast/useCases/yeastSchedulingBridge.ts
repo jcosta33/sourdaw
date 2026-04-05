@@ -19,7 +19,7 @@ export function processYeastMidi(
     _trackId: string,
     events: MidiEvent[],
     blockStartSamples: number,
-    blockEndSamples: number,
+    blockEndSamples: number
 ): MidiEvent[] {
     const rack = getYeastRack();
     const processorIds = rack.getProcessorIds();
@@ -56,13 +56,11 @@ export function processRealtimeMidiInput(
     velocity: number,
     channel: number,
     isNoteOn: boolean,
-    sampleTime: number,
+    sampleTime: number
 ): MidiEvent[] {
     const event: MidiEvent = {
         timeSamples: sampleTime,
-        kind: isNoteOn
-            ? { type: 'noteOn', channel, note, velocity }
-            : { type: 'noteOff', channel, note },
+        kind: isNoteOn ? { type: 'noteOn', channel, note, velocity } : { type: 'noteOff', channel, note },
     };
 
     return processYeastMidi('', [event], sampleTime, sampleTime + 128);

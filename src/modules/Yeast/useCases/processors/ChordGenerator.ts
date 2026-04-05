@@ -66,7 +66,8 @@ export class ChordGenerator implements MidiProcessor {
                     if (note < 0 || note > 127) continue;
                     notes.push(note);
 
-                    const offset = this.strumDirection === 'up' ? i * strumSamples : (intervals.length - 1 - i) * strumSamples;
+                    const offset =
+                        this.strumDirection === 'up' ? i * strumSamples : (intervals.length - 1 - i) * strumSamples;
                     output.push({
                         timeSamples: event.timeSamples + offset,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
@@ -94,10 +95,18 @@ export class ChordGenerator implements MidiProcessor {
         }
     }
 
-    reset(): void { this.generatedMap.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.generatedMap.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
@@ -106,9 +115,15 @@ export class ChordGenerator implements MidiProcessor {
                 this.chordType = types[Math.round(value)] ?? 'major';
                 break;
             }
-            case 'voicing': this.voicing = (['close', 'drop2', 'drop3', 'spread'] as const)[Math.round(value)] ?? 'close'; break;
-            case 'strum_ms': this.strumMs = Math.max(0, Math.min(100, value)); break;
-            case 'strum_direction': this.strumDirection = value > 0.5 ? 'down' : 'up'; break;
+            case 'voicing':
+                this.voicing = (['close', 'drop2', 'drop3', 'spread'] as const)[Math.round(value)] ?? 'close';
+                break;
+            case 'strum_ms':
+                this.strumMs = Math.max(0, Math.min(100, value));
+                break;
+            case 'strum_direction':
+                this.strumDirection = value > 0.5 ? 'down' : 'up';
+                break;
         }
     }
 }

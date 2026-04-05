@@ -30,11 +30,7 @@ export const CollaborationBlock = ({
         {title || description ? (
             <div className="mb-2 space-y-1">
                 {title ? <DawEyebrowLabel size="sm">{title}</DawEyebrowLabel> : null}
-                {description ? (
-                    <p className="text-[10px] leading-4 text-muted-foreground/70">
-                        {description}
-                    </p>
-                ) : null}
+                {description ? <p className="text-[10px] leading-4 text-muted-foreground/70">{description}</p> : null}
             </div>
         ) : null}
         {children}

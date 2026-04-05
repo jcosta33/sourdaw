@@ -4,25 +4,39 @@
  */
 
 export function euclidean(hits: number, steps: number, rotation: number = 0): boolean[] {
-    if (steps <= 0) { return []; }
-    if (hits <= 0) { return Array(steps).fill(false); }
-    if (hits >= steps) { return Array(steps).fill(true); }
+    if (steps <= 0) {
+        return [];
+    }
+    if (hits <= 0) {
+        return Array(steps).fill(false);
+    }
+    if (hits >= steps) {
+        return Array(steps).fill(true);
+    }
 
     // Bjorklund iterative algorithm
     type Group = boolean[];
     let groups: Group[] = [];
-    for (let i = 0; i < hits; i++) { groups.push([true]); }
-    for (let i = 0; i < steps - hits; i++) { groups.push([false]); }
+    for (let i = 0; i < hits; i++) {
+        groups.push([true]);
+    }
+    for (let i = 0; i < steps - hits; i++) {
+        groups.push([false]);
+    }
 
     while (true) {
         const firstGroup = groups[0];
-        if (!firstGroup) { break; }
+        if (!firstGroup) {
+            break;
+        }
 
-        const splitPos = groups.findIndex((g) =>
-            g.length !== firstGroup.length || g.some((v, j) => v !== firstGroup[j]!)
+        const splitPos = groups.findIndex(
+            (g) => g.length !== firstGroup.length || g.some((v, j) => v !== firstGroup[j]!)
         );
 
-        if (splitPos <= 0 || splitPos >= groups.length) { break; }
+        if (splitPos <= 0 || splitPos >= groups.length) {
+            break;
+        }
 
         const remainder = groups.length - splitPos;
         const take = Math.min(remainder, splitPos);
@@ -40,7 +54,9 @@ export function euclidean(hits: number, steps: number, rotation: number = 0): bo
         }
 
         groups = newGroups;
-        if (groups.length <= 1) { break; }
+        if (groups.length <= 1) {
+            break;
+        }
     }
 
     // Flatten
@@ -48,7 +64,9 @@ export function euclidean(hits: number, steps: number, rotation: number = 0): bo
     for (const group of groups) {
         pattern.push(...group);
     }
-    while (pattern.length < steps) { pattern.push(false); }
+    while (pattern.length < steps) {
+        pattern.push(false);
+    }
 
     // Rotate
     if (rotation > 0 && steps > 0) {

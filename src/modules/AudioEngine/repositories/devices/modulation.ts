@@ -48,8 +48,12 @@ export function applyChorusParams(dn: OfflineDeviceNode, params: Record<string, 
     const wet = dn.nodes[2] as GainNode;
     const lfo1 = dn.nodes[5] as OscillatorNode;
     const lfoGain = dn.nodes[7] as GainNode;
-    if (params['chorus-rate'] !== undefined) { lfo1.frequency.value = params['chorus-rate']; }
-    if (params['chorus-depth'] !== undefined) { lfoGain.gain.value = params['chorus-depth'] / 1000; }
+    if (params['chorus-rate'] !== undefined) {
+        lfo1.frequency.value = params['chorus-rate'];
+    }
+    if (params['chorus-depth'] !== undefined) {
+        lfoGain.gain.value = params['chorus-depth'] / 1000;
+    }
     if (params['chorus-mix'] !== undefined) {
         wet.gain.value = params['chorus-mix'];
         dry.gain.value = 1 - params['chorus-mix'];
@@ -112,16 +116,22 @@ export function applyPhaserParams(dn: OfflineDeviceNode, params: Record<string, 
     const feedbackP = dn.nodes[9] as GainNode;
     const dryP = dn.nodes[1] as GainNode;
     const wetP = dn.nodes[2] as GainNode;
-    if (params['phaser-rate'] !== undefined) { lfoP.frequency.value = params['phaser-rate']; }
+    if (params['phaser-rate'] !== undefined) {
+        lfoP.frequency.value = params['phaser-rate'];
+    }
     if (params['phaser-depth'] !== undefined) {
         lfoGainP.gain.value = params['phaser-depth'] * 1000;
         const wetVal = params['phaser-depth'] * 0.5 + 0.25;
         wetP.gain.value = Math.min(1, wetVal);
         dryP.gain.value = 1 - Math.min(1, wetVal);
     }
-    if (params['phaser-feedback'] !== undefined) { feedbackP.gain.value = params['phaser-feedback']; }
+    if (params['phaser-feedback'] !== undefined) {
+        feedbackP.gain.value = params['phaser-feedback'];
+    }
     if (params['phaser-stages'] !== undefined) {
-        for (const f of filtersP) { f.Q.value = params['phaser-stages']! > 6 ? 1 : 0.5; }
+        for (const f of filtersP) {
+            f.Q.value = params['phaser-stages']! > 6 ? 1 : 0.5;
+        }
     }
 }
 
@@ -167,12 +177,16 @@ export function applyFlangerParams(dn: OfflineDeviceNode, params: Record<string,
     const lfoF = dn.nodes[4] as OscillatorNode;
     const lfoGainF = dn.nodes[5] as GainNode;
     const feedbackF = dn.nodes[6] as GainNode;
-    if (params['flanger-rate'] !== undefined) { lfoF.frequency.value = params['flanger-rate']; }
+    if (params['flanger-rate'] !== undefined) {
+        lfoF.frequency.value = params['flanger-rate'];
+    }
     if (params['flanger-depth'] !== undefined) {
         lfoGainF.gain.value = params['flanger-depth'] / 1000;
         delayF.delayTime.value = Math.max(0.001, params['flanger-depth'] / 1000);
     }
-    if (params['flanger-feedback'] !== undefined) { feedbackF.gain.value = params['flanger-feedback']; }
+    if (params['flanger-feedback'] !== undefined) {
+        feedbackF.gain.value = params['flanger-feedback'];
+    }
     if (params['flanger-mix'] !== undefined) {
         wetF.gain.value = params['flanger-mix'];
         dryF.gain.value = 1 - params['flanger-mix'];
@@ -200,9 +214,15 @@ export function createTremolo(ctx: BaseAudioContext): OfflineDeviceNode {
 export function applyTremoloParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const lfoT = dn.nodes[2] as OscillatorNode;
     const lfoDepthT = dn.nodes[3] as GainNode;
-    if (params['trem-rate'] !== undefined) { lfoT.frequency.value = params['trem-rate']; }
-    if (params['trem-depth'] !== undefined) { lfoDepthT.gain.value = params['trem-depth']; }
-    if (params['trem-shape'] !== undefined) { lfoT.type = params['trem-shape'] === 1 ? 'square' : 'sine'; }
+    if (params['trem-rate'] !== undefined) {
+        lfoT.frequency.value = params['trem-rate'];
+    }
+    if (params['trem-depth'] !== undefined) {
+        lfoDepthT.gain.value = params['trem-depth'];
+    }
+    if (params['trem-shape'] !== undefined) {
+        lfoT.type = params['trem-shape'] === 1 ? 'square' : 'sine';
+    }
 }
 
 // ── AutoPan ──────────────────────────────────────────────────────────────
@@ -246,12 +266,16 @@ export function applyAutoPanParams(dn: OfflineDeviceNode, params: Record<string,
     const lfoAP = dn.nodes[5] as OscillatorNode;
     const lfoGainLAP = dn.nodes[6] as GainNode;
     const lfoGainRAP = dn.nodes[7] as GainNode;
-    if (params['autopan-rate'] !== undefined) { lfoAP.frequency.value = params['autopan-rate']; }
+    if (params['autopan-rate'] !== undefined) {
+        lfoAP.frequency.value = params['autopan-rate'];
+    }
     if (params['autopan-depth'] !== undefined) {
         lfoGainLAP.gain.value = params['autopan-depth'] * 0.5;
         lfoGainRAP.gain.value = -(params['autopan-depth'] * 0.5);
     }
-    if (params['autopan-shape'] !== undefined) { lfoAP.type = params['autopan-shape'] === 1 ? 'triangle' : 'sine'; }
+    if (params['autopan-shape'] !== undefined) {
+        lfoAP.type = params['autopan-shape'] === 1 ? 'triangle' : 'sine';
+    }
 }
 
 // ── Stereo Widener ───────────────────────────────────────────────────────
@@ -261,69 +285,78 @@ export function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
     const output = ctx.createGain();
     const splitter = ctx.createChannelSplitter(2);
     const merger = ctx.createChannelMerger(2);
-    
+
     // Mid = (L + R) * 0.5
     // Side = (L - R) * 0.5
-    
+
     const midSum = ctx.createGain();
     midSum.gain.value = 0.5; // (L+R) * 0.5
-    
+
     const sideSum = ctx.createGain();
     sideSum.gain.value = 0.5; // Will be L - R * 0.5
-    
+
     const rightInvert = ctx.createGain();
     rightInvert.gain.value = -1; // -R
-    
+
     const midGain = ctx.createGain();
     midGain.gain.value = 1;
-    
+
     const sideGain = ctx.createGain();
     sideGain.gain.value = 1;
-    
+
     const monoBassFilter = ctx.createBiquadFilter();
     monoBassFilter.type = 'highpass'; // Highpass the Side signal to remove bass from stereo field
     monoBassFilter.frequency.value = 200;
-    
+
     const sideInvert = ctx.createGain();
     sideInvert.gain.value = -1; // -S for Right channel reconstruction
-    
+
     input.connect(splitter);
-    
+
     // Create Mid: L + R
     splitter.connect(midSum, 0);
     splitter.connect(midSum, 1);
-    
+
     // Create Side: L - R
     splitter.connect(sideSum, 0); // L
     splitter.connect(rightInvert, 1); // R
     rightInvert.connect(sideSum); // -R
-    
+
     // Apply width control
     midSum.connect(midGain);
-    
+
     // Side goes through highpass to keep bass mono, then to side gain
     sideSum.connect(monoBassFilter);
     monoBassFilter.connect(sideGain);
-    
+
     // Decode Matrix: L = M + S, R = M - S
     sideGain.connect(sideInvert);
-    
+
     // Left Out: M + S
     midGain.connect(merger, 0, 0);
     sideGain.connect(merger, 0, 0);
-    
+
     // Right Out: M - S
     midGain.connect(merger, 0, 1);
     sideInvert.connect(merger, 0, 1);
-    
+
     merger.connect(output);
-    
+
     return {
         inputNode: input,
         outputNode: output,
         nodes: [
-            input, output, splitter, merger, midSum, sideSum, rightInvert, 
-            midGain, sideGain, monoBassFilter, sideInvert
+            input,
+            output,
+            splitter,
+            merger,
+            midSum,
+            sideSum,
+            rightInvert,
+            midGain,
+            sideGain,
+            monoBassFilter,
+            sideInvert,
         ],
     };
 }
@@ -332,15 +365,15 @@ export function applyStereoWidenerParams(dn: OfflineDeviceNode, params: Record<s
     const midGain = dn.nodes[7] as GainNode;
     const sideGain = dn.nodes[8] as GainNode;
     const monoBass = dn.nodes[9] as BiquadFilterNode;
-    
-    if (params['width-amount'] !== undefined) { 
-        sideGain.gain.value = params['width-amount']; 
+
+    if (params['width-amount'] !== undefined) {
+        sideGain.gain.value = params['width-amount'];
     }
-    if (params['width-mid'] !== undefined) { 
+    if (params['width-mid'] !== undefined) {
         // We'll apply it to the midGain node instead
-        midGain.gain.value = 10 ** (params['width-mid'] / 20); 
+        midGain.gain.value = 10 ** (params['width-mid'] / 20);
     }
-    if (params['width-mono-bass'] !== undefined) { 
-        monoBass.frequency.value = params['width-mono-bass']; 
+    if (params['width-mono-bass'] !== undefined) {
+        monoBass.frequency.value = params['width-mono-bass'];
     }
 }

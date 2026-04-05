@@ -62,20 +62,35 @@ export const PROCESSOR_TYPES: Array<{ type: ProcessorType; name: string; descrip
 
 export function createProcessor(type: ProcessorType, id?: string): MidiProcessor {
     switch (type) {
-        case 'arpeggiator': return new Arpeggiator(id);
-        case 'chord': return new ChordGenerator(id);
-        case 'chordMemory': return new ChordMemory(id);
-        case 'scale': return new ScaleQuantizer(id);
-        case 'harmonizer': return new Harmonizer(id);
-        case 'repeater': return new NoteRepeater(id);
-        case 'velocity': return new VelocityProcessor(id);
-        case 'humanizer': return new Humanizer(id);
-        case 'filter': return new NoteFilter(id);
-        case 'transposer': return new Transposer(id);
-        case 'groove': return new GrooveModule(id);
-        case 'ccGenerator': return new CCGenerator(id);
-        case 'euclidean': return new EuclideanGenerator(id);
-        case 'markov': return new MarkovChain(id);
-        case 'mutation': return new MutationEngine(id);
+        case 'arpeggiator':
+            return new Arpeggiator(id);
+        case 'chord':
+            return new ChordGenerator(id);
+        case 'chordMemory':
+            return new ChordMemory(id);
+        case 'scale':
+            return new ScaleQuantizer(id);
+        case 'harmonizer':
+            return new Harmonizer(id);
+        case 'repeater':
+            return new NoteRepeater(id);
+        case 'velocity':
+            return new VelocityProcessor(id);
+        case 'humanizer':
+            return new Humanizer(id);
+        case 'filter':
+            return new NoteFilter(id);
+        case 'transposer':
+            return new Transposer(id);
+        case 'groove':
+            return new GrooveModule(id);
+        case 'ccGenerator':
+            return new CCGenerator(id);
+        case 'euclidean':
+            return new EuclideanGenerator(id);
+        case 'markov':
+            return new MarkovChain(id);
+        case 'mutation':
+            return new MutationEngine(id);
     }
 }

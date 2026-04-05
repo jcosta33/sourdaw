@@ -29,7 +29,7 @@ export type YeastWorkletNodeResult = {
         events: readonly MidiEvent[],
         blockStart: number,
         blockEnd: number,
-        transport: TransportInfo,
+        transport: TransportInfo
     ) => Promise<MidiEvent[]>;
     addProcessor: (processorType: ProcessorType, processorId: string) => void;
     removeProcessor: (processorId: string) => void;
@@ -39,9 +39,7 @@ export type YeastWorkletNodeResult = {
     destroy: () => void;
 };
 
-export async function createYeastWorkletNode(
-    ctx: BaseAudioContext,
-): Promise<YeastWorkletNodeResult> {
+export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<YeastWorkletNodeResult> {
     await ensureWorkletRegistered(ctx);
 
     const node = new AudioWorkletNode(ctx, 'yeast-worklet-processor', {
@@ -50,10 +48,7 @@ export async function createYeastWorkletNode(
     });
 
     let nextRequestId = 0;
-    const pending = new Map<
-        number,
-        { resolve: (events: MidiEvent[]) => void; reject: (err: Error) => void }
-    >();
+    const pending = new Map<number, { resolve: (events: MidiEvent[]) => void; reject: (err: Error) => void }>();
 
     node.port.onmessage = (e: MessageEvent): void => {
         const msg = e.data as { type: string; requestId?: number; events?: MidiEvent[] };
@@ -70,7 +65,7 @@ export async function createYeastWorkletNode(
         events: readonly MidiEvent[],
         blockStart: number,
         blockEnd: number,
-        transport: TransportInfo,
+        transport: TransportInfo
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
             const requestId = nextRequestId++;
@@ -82,17 +77,17 @@ export async function createYeastWorkletNode(
         processBlock,
         addProcessor: (processorType, processorId) =>
             node.port.postMessage({ type: 'addProcessor', processorType, processorId }),
-        removeProcessor: (processorId) =>
-            node.port.postMessage({ type: 'removeProcessor', processorId }),
-        setParam: (processorId, name, value) =>
-            node.port.postMessage({ type: 'setParam', processorId, name, value }),
-        setBypass: (processorId, bypassed) =>
-            node.port.postMessage({ type: 'setBypass', processorId, bypassed }),
-        allNotesOff: (nowSamples) =>
-            node.port.postMessage({ type: 'allNotesOff', nowSamples }),
+        removeProcessor: (processorId) => node.port.postMessage({ type: 'removeProcessor', processorId }),
+        setParam: (processorId, name, value) => node.port.postMessage({ type: 'setParam', processorId, name, value }),
+        setBypass: (processorId, bypassed) => node.port.postMessage({ type: 'setBypass', processorId, bypassed }),
+        allNotesOff: (nowSamples) => node.port.postMessage({ type: 'allNotesOff', nowSamples }),
         destroy: () => {
             node.port.close();
-            try { node.disconnect(); } catch { /* already disconnected */ }
+            try {
+                node.disconnect();
+            } catch {
+                /* already disconnected */
+            }
         },
     };
 }

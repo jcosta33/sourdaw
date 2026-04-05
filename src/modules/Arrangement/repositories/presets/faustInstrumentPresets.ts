@@ -17,23 +17,27 @@ function faust(moduleId: string, name: string, params: Record<string, number>): 
 }
 
 function eq(name: string, params: Record<string, number>): DevicePreset {
-    return { 
-        type: 'faust-pro-parametric-eq', 
-        name, 
-        parameterValues: { 
-            'lf_gain': 0, 'lf_freq': 100, 
-            'mf_gain': 0, 'mf_freq': 1000, 'mf_q': 1, 
-            'hf_gain': 0, 'hf_freq': 8000, 
-            ...params 
-        } 
+    return {
+        type: 'faust-pro-parametric-eq',
+        name,
+        parameterValues: {
+            lf_gain: 0,
+            lf_freq: 100,
+            mf_gain: 0,
+            mf_freq: 1000,
+            mf_q: 1,
+            hf_gain: 0,
+            hf_freq: 8000,
+            ...params,
+        },
     };
 }
 
 function distortion(name: string, params: Record<string, number>): DevicePreset {
-    return { 
+    return {
         type: 'builtin-distortion', // Keeping builtin until Faust distortion is added
-        name, 
-        parameterValues: { 'dist-drive': 20, 'dist-tone': 4000, 'dist-output': 0, 'dist-mix': 0.5, ...params } 
+        name,
+        parameterValues: { 'dist-drive': 20, 'dist-tone': 4000, 'dist-output': 0, 'dist-mix': 0.5, ...params },
     };
 }
 
@@ -44,7 +48,7 @@ function reverb(name: string, params: Record<string, number>): DevicePreset {
         type: 'faust-zita-rev1-reverb',
         name,
         // Mapping old generic params approximately to Zita-Rev1
-        parameterValues: { 'decay_time': 3, 'damping': 6000, 'dry_wet': 0.3, ...params },
+        parameterValues: { decay_time: 3, damping: 6000, dry_wet: 0.3, ...params },
     };
 }
 
@@ -53,7 +57,7 @@ function delay(name: string, params: Record<string, number>): DevicePreset {
         type: 'faust-tape-delay',
         name,
         // Mapping old generic params approximately to Tape Delay
-        parameterValues: { 'delay': 0.25, 'feedback': 0.4, 'dry_wet': 0.3, ...params },
+        parameterValues: { delay: 0.25, feedback: 0.4, dry_wet: 0.3, ...params },
     };
 }
 
@@ -76,10 +80,10 @@ function comp(name: string, params: Record<string, number>): DevicePreset {
         type: 'faust-1176-compressor',
         name,
         parameterValues: {
-            'threshold': -20,
-            'ratio': 4,
-            'attack': 0.01, // Faust 1176 uses seconds
-            'release': 0.1, // Faust 1176 uses seconds
+            threshold: -20,
+            ratio: 4,
+            attack: 0.01, // Faust 1176 uses seconds
+            release: 0.1, // Faust 1176 uses seconds
             ...params,
         },
     };
@@ -290,7 +294,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
                 bell_decay: 0.25,
                 gain: 0.5,
             }),
-            eq('Presence', { 'eq-mid-gain': 3, 'eq-mid-freq': 3000, 'eq-mid-q': 1.5, 'eq-high-gain': 2, 'eq-high-freq': 8000 }),
+            eq('Presence', {
+                'eq-mid-gain': 3,
+                'eq-mid-freq': 3000,
+                'eq-mid-q': 1.5,
+                'eq-high-gain': 2,
+                'eq-high-freq': 8000,
+            }),
             comp('Punch', { 'comp-threshold': -18, 'comp-ratio': 3, 'comp-attack': 5, 'comp-release': 60 }),
         ],
         tags: ['rhodes', 'keys', 'bright', 'bell', 'funk'],
@@ -1130,7 +1140,7 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
                 lfo_depth: 0.4,
             }),
             distortion('Scream', { 'dist-drive': 30, 'dist-tone': 3000 }),
-            delay('Slap', { 'delay': 0.1, 'feedback': 0.2 }),
+            delay('Slap', { delay: 0.1, feedback: 0.2 }),
         ],
         tags: ['acid', 'bass', 'wobble', 'lfo', 'analog'],
         author: AUTHOR,

@@ -7,7 +7,21 @@ import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededR
 
 export type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
 
-export type ScaleType = 'major' | 'minor' | 'pentatonic' | 'minor-pentatonic' | 'blues' | 'dorian' | 'mixolydian' | 'lydian' | 'phrygian' | 'locrian' | 'harmonic-minor' | 'melodic-minor' | 'whole-tone' | 'chromatic';
+export type ScaleType =
+    | 'major'
+    | 'minor'
+    | 'pentatonic'
+    | 'minor-pentatonic'
+    | 'blues'
+    | 'dorian'
+    | 'mixolydian'
+    | 'lydian'
+    | 'phrygian'
+    | 'locrian'
+    | 'harmonic-minor'
+    | 'melodic-minor'
+    | 'whole-tone'
+    | 'chromatic';
 
 export type GenerateMelodyOptions = {
     style: MelodyStyle;
@@ -217,7 +231,10 @@ function velocityForStyle(style: MelodyStyle, beatPosition: number, rng: () => n
     }
 }
 
-export function generateMelody(options: GenerateMelodyOptions & { seed?: number }): { notes: GeneratedNote[]; seed: number } {
+export function generateMelody(options: GenerateMelodyOptions & { seed?: number }): {
+    notes: GeneratedNote[];
+    seed: number;
+} {
     const { style, key, scale, octave = 4, bars = 4, density = 0.5, range = 12, seed } = options;
     const usedSeed = seed ?? generateSeed();
     const rng = createSeededRandom(usedSeed);

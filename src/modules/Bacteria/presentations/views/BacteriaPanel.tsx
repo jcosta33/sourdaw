@@ -167,7 +167,10 @@ const K = ({
         <RotaryKnob
             value={v}
             onChange={(val: number) =>
-                (onChangeFn ?? ((key, value) => setGlobalParam(deviceId, key as keyof BacteriaPatch, value as never)))(k, val)
+                (onChangeFn ?? ((key, value) => setGlobalParam(deviceId, key as keyof BacteriaPatch, value as never)))(
+                    k,
+                    val
+                )
             }
             min={min}
             max={max}
@@ -312,11 +315,7 @@ const PresetRail = ({
                     const isActive = category === entry;
 
                     return (
-                        <BChip
-                            key={entry}
-                            active={isActive}
-                            onClick={() => onCategoryChange(entry)}
-                        >
+                        <BChip key={entry} active={isActive} onClick={() => onCategoryChange(entry)}>
                             {entry}
                         </BChip>
                     );
@@ -471,7 +470,16 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                             def={0}
                             unit="dB"
                         />
-                        <K deviceId={deviceId} v={state.patch.mix} k="mix" label="Mix" min={0} max={1} step={0.01} def={1} />
+                        <K
+                            deviceId={deviceId}
+                            v={state.patch.mix}
+                            k="mix"
+                            label="Mix"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            def={1}
+                        />
                     </div>
                 </div>
                 <BandMeters state={state} />
@@ -513,8 +521,26 @@ const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 description="Fine-tune the resting position without dragging the pad."
             />
             <div className="flex flex-wrap gap-4">
-                <K deviceId={deviceId} v={state.patch.morphX} k="morphX" label="X" min={0} max={1} step={0.01} def={0.5} />
-                <K deviceId={deviceId} v={state.patch.morphY} k="morphY" label="Y" min={0} max={1} step={0.01} def={0.5} />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.morphX}
+                    k="morphX"
+                    label="X"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    def={0.5}
+                />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.morphY}
+                    k="morphY"
+                    label="Y"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    def={0.5}
+                />
             </div>
         </div>
     </div>
@@ -656,7 +682,12 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         isActive={state.activeBand === index}
                         onSelect={() => setBacteriaActiveBand(deviceId, index)}
                         onParamChange={(key, value) =>
-                            setBacteriaBandParamWithAudio(deviceId, index, key as keyof BacteriaPatch['bands'][0], value as never)
+                            setBacteriaBandParamWithAudio(
+                                deviceId,
+                                index,
+                                key as keyof BacteriaPatch['bands'][0],
+                                value as never
+                            )
                         }
                     />
                 ))}
@@ -1351,7 +1382,16 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         def={2}
                         unit="Hz"
                     />
-                    <K deviceId={deviceId} v={patch.lfo1Amount} k="lfo1Amount" label="LFO Amt" min={0} max={1} step={0.01} def={0.5} />
+                    <K
+                        deviceId={deviceId}
+                        v={patch.lfo1Amount}
+                        k="lfo1Amount"
+                        label="LFO Amt"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        def={0.5}
+                    />
                     <K
                         deviceId={deviceId}
                         v={patch.envFollowerAttack}
@@ -1513,7 +1553,16 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                     def={2}
                     unit="Hz"
                 />
-                <K deviceId={deviceId} v={state.patch.lfo1Amount} k="lfo1Amount" label="Amt 1" min={0} max={1} step={0.01} def={0.5} />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.lfo1Amount}
+                    k="lfo1Amount"
+                    label="Amt 1"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    def={0.5}
+                />
                 <K
                     deviceId={deviceId}
                     v={state.patch.lfo2Rate}
@@ -1525,7 +1574,16 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                     def={0.5}
                     unit="Hz"
                 />
-                <K deviceId={deviceId} v={state.patch.lfo2Amount} k="lfo2Amount" label="Amt 2" min={0} max={1} step={0.01} def={0.5} />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.lfo2Amount}
+                    k="lfo2Amount"
+                    label="Amt 2"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    def={0.5}
+                />
             </div>
             <div className="flex flex-wrap gap-2">
                 {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
@@ -1580,7 +1638,16 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                     def={200}
                     unit="ms"
                 />
-                <K deviceId={deviceId} v={state.patch.stepSeqSteps} k="stepSeqSteps" label="Steps" min={1} max={32} step={1} def={16} />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.stepSeqSteps}
+                    k="stepSeqSteps"
+                    label="Steps"
+                    min={1}
+                    max={32}
+                    step={1}
+                    def={16}
+                />
                 <K
                     deviceId={deviceId}
                     v={state.patch.stepSeqRate}
@@ -1592,10 +1659,46 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                     def={4}
                     unit="Hz"
                 />
-                <K deviceId={deviceId} v={state.patch.lorenzSigma} k="lorenzSigma" label="Sigma" min={1} max={30} step={0.1} def={10} />
-                <K deviceId={deviceId} v={state.patch.lorenzRho} k="lorenzRho" label="Rho" min={1} max={50} step={0.1} def={28} />
-                <K deviceId={deviceId} v={state.patch.lorenzBeta} k="lorenzBeta" label="Beta" min={0.1} max={10} step={0.01} def={2.667} />
-                <K deviceId={deviceId} v={state.patch.lorenzSpeed} k="lorenzSpeed" label="Speed" min={0.01} max={10} step={0.01} def={1} />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.lorenzSigma}
+                    k="lorenzSigma"
+                    label="Sigma"
+                    min={1}
+                    max={30}
+                    step={0.1}
+                    def={10}
+                />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.lorenzRho}
+                    k="lorenzRho"
+                    label="Rho"
+                    min={1}
+                    max={50}
+                    step={0.1}
+                    def={28}
+                />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.lorenzBeta}
+                    k="lorenzBeta"
+                    label="Beta"
+                    min={0.1}
+                    max={10}
+                    step={0.01}
+                    def={2.667}
+                />
+                <K
+                    deviceId={deviceId}
+                    v={state.patch.lorenzSpeed}
+                    k="lorenzSpeed"
+                    label="Speed"
+                    min={0.01}
+                    max={10}
+                    step={0.01}
+                    def={1}
+                />
             </div>
         </div>
     </div>

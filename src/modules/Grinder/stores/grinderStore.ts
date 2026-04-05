@@ -75,7 +75,7 @@ export function updateGrinderMeters(
     sagVoltage?: number,
     latency?: number,
     neuralCpuPercent?: number,
-    neuralWarmupProgress?: number,
+    neuralWarmupProgress?: number
 ): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_GRINDER_STATE, patch: { ...DEFAULT_PATCH } };

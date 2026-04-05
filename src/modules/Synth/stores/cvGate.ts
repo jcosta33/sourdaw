@@ -54,7 +54,7 @@ export const VOLTAGE_RANGES: Record<CvOutputChannel['type'], [number, number]> =
     'cv-pitch': [-2, 8],
     'cv-velocity': [0, 5],
     'cv-modulation': [0, 5],
-    'gate': [0, 5],
-    'trigger': [0, 5],
-    'clock': [0, 5],
+    gate: [0, 5],
+    trigger: [0, 5],
+    clock: [0, 5],
 };

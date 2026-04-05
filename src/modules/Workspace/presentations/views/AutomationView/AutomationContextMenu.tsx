@@ -29,46 +29,47 @@ export const AutomationContextMenu = ({
     onCurveSelect,
     onShapeInsert,
     onClose,
-}: AutomationContextMenuProps): ReactElement => createPortal(
-    <>
-        <div className="fixed inset-0 z-50" onClick={onClose} />
-        <div
-            className="daw-floating-surface fixed z-50 min-w-[160px] rounded-md py-1"
-            style={{
-                left: Math.min(x, window.innerWidth - 200),
-                ...(y > window.innerHeight - 300 ? { bottom: window.innerHeight - y } : { top: y }),
-            }}
-        >
-            {section !== 'shape' ? (
-                <>
-                    <DawMenuSectionLabel className="px-2">Curve Type</DawMenuSectionLabel>
-                    {CURVE_OPTIONS.map((opt) => (
-                        <DawMenuButton
-                            key={opt.value}
-                            className={cn(
-                                'justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground',
-                                points.find((p) => Math.abs(p.beat - beat) < 0.05)?.curve === opt.value &&
-                                    'text-primary font-medium'
-                            )}
-                            onClick={() => onCurveSelect(opt.value)}
-                        >
-                            {opt.label}
-                        </DawMenuButton>
-                    ))}
-                    <DawMenuSeparator />
-                </>
-            ) : null}
-            <DawMenuSectionLabel className="px-2">Insert Shape</DawMenuSectionLabel>
-            {SHAPE_OPTIONS.map((opt) => (
-                <DawMenuButton
-                    key={opt.value}
-                    className="justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground"
-                    onClick={() => onShapeInsert(opt.value)}
-                >
-                    {opt.label}
-                </DawMenuButton>
-            ))}
-        </div>
-    </>,
-    document.body
-);
+}: AutomationContextMenuProps): ReactElement =>
+    createPortal(
+        <>
+            <div className="fixed inset-0 z-50" onClick={onClose} />
+            <div
+                className="daw-floating-surface fixed z-50 min-w-[160px] rounded-md py-1"
+                style={{
+                    left: Math.min(x, window.innerWidth - 200),
+                    ...(y > window.innerHeight - 300 ? { bottom: window.innerHeight - y } : { top: y }),
+                }}
+            >
+                {section !== 'shape' ? (
+                    <>
+                        <DawMenuSectionLabel className="px-2">Curve Type</DawMenuSectionLabel>
+                        {CURVE_OPTIONS.map((opt) => (
+                            <DawMenuButton
+                                key={opt.value}
+                                className={cn(
+                                    'justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground',
+                                    points.find((p) => Math.abs(p.beat - beat) < 0.05)?.curve === opt.value &&
+                                        'text-primary font-medium'
+                                )}
+                                onClick={() => onCurveSelect(opt.value)}
+                            >
+                                {opt.label}
+                            </DawMenuButton>
+                        ))}
+                        <DawMenuSeparator />
+                    </>
+                ) : null}
+                <DawMenuSectionLabel className="px-2">Insert Shape</DawMenuSectionLabel>
+                {SHAPE_OPTIONS.map((opt) => (
+                    <DawMenuButton
+                        key={opt.value}
+                        className="justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground"
+                        onClick={() => onShapeInsert(opt.value)}
+                    >
+                        {opt.label}
+                    </DawMenuButton>
+                ))}
+            </div>
+        </>,
+        document.body
+    );

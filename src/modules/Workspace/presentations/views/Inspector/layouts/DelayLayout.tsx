@@ -9,7 +9,15 @@ import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 
 type P = DeviceLayoutProps['parameters'][number];
-const Param = ({ p, device, trackId }: { p: P; device: DeviceLayoutProps['device']; trackId: string }): ReactElement => (
+const Param = ({
+    p,
+    device,
+    trackId,
+}: {
+    p: P;
+    device: DeviceLayoutProps['device'];
+    trackId: string;
+}): ReactElement => (
     <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
         <DeviceParameterControl param={p} device={device} trackId={trackId} />
     </Card>
@@ -17,26 +25,38 @@ const Param = ({ p, device, trackId }: { p: P; device: DeviceLayoutProps['device
 
 const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
-    const change = (id: string, v: number): void => { setDeviceParameter(device.id, id, v); };
+    const change = (id: string, v: number): void => {
+        setDeviceParameter(device.id, id, v);
+    };
 
     return (
         <div className="space-y-3">
             <SectionHeader title="Echo Pattern" />
             <div className="flex justify-center">
                 <DelayTaps
-                    time={pv['delay-time'] ?? 250} feedback={pv['delay-feedback'] ?? 0.4}
-                    mix={pv['delay-mix'] ?? 0.3} width={240} height={60} onParamChange={change}
+                    time={pv['delay-time'] ?? 250}
+                    feedback={pv['delay-feedback'] ?? 0.4}
+                    mix={pv['delay-mix'] ?? 0.3}
+                    width={240}
+                    height={60}
+                    onParamChange={change}
                 />
             </div>
 
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['delay-time', 'delay-feedback']).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
+                {filterParams(parameters, ['delay-time', 'delay-feedback']).map((p) => (
+                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['delay-lowcut', 'delay-highcut']).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
+                {filterParams(parameters, ['delay-lowcut', 'delay-highcut']).map((p) => (
+                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                ))}
             </div>
-            {filterParams(parameters, ['delay-mix']).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
+            {filterParams(parameters, ['delay-mix']).map((p) => (
+                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            ))}
         </div>
     );
 };

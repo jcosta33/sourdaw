@@ -29,7 +29,14 @@ export function applyPreset(track: any, presetId: string) {
     }
 }
 
-export function createAudioClip(trackId: string, name: string, startBeat: number, endBeat: number, bufferId: string, color = '') {
+export function createAudioClip(
+    trackId: string,
+    name: string,
+    startBeat: number,
+    endBeat: number,
+    bufferId: string,
+    color = ''
+) {
     return {
         id: `clip-${crypto.randomUUID()}`,
         trackId,
@@ -79,7 +86,7 @@ export async function generateDemoDrumBuffer(
         for (let step = 0; step < beats * 4; step++) {
             const beat = step * 0.25;
             const time = beat / bps;
-            const pos = beat % 4; 
+            const pos = beat % 4;
 
             if (style === 'shaker') {
                 if (step % 2 === 0) {
@@ -103,8 +110,11 @@ export async function generateDemoDrumBuffer(
 
             const isHat =
                 (style === 'hat' || style === '4onFloor') &&
-                step % 4 === 2 && 
-                pos !== 0 && pos !== 1 && pos !== 2 && pos !== 3;
+                step % 4 === 2 &&
+                pos !== 0 &&
+                pos !== 1 &&
+                pos !== 2 &&
+                pos !== 3;
 
             if (isKick) {
                 const osc = ctx.createOscillator();
@@ -135,7 +145,7 @@ export async function generateDemoDrumBuffer(
                 if (style === 'hat') {
                     const osc = ctx.createOscillator();
                     const env = ctx.createGain();
-                    const isHigh = step % 8 === 2; 
+                    const isHigh = step % 8 === 2;
                     osc.frequency.setValueAtTime(isHigh ? 650 : 450, time);
                     osc.frequency.exponentialRampToValueAtTime(isHigh ? 550 : 380, time + 0.05);
                     env.gain.setValueAtTime(0.7, time);
@@ -152,8 +162,7 @@ export async function generateDemoDrumBuffer(
 
         const rendered = await ctx.startRendering();
         audioBufferCache.set(bufferId, rendered);
-    } catch {
-    }
+    } catch {}
 }
 
 export function createNoiseBurst(

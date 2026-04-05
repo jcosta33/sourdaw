@@ -39,9 +39,7 @@ export const DawPickerRow = ({
     const sharedClassName = cn(
         'group flex w-full items-start gap-2 rounded-md border text-left transition-all',
         compact ? 'px-2 py-1.5' : 'px-3 py-2',
-        active
-            ? 'border-white/16 bg-white/[0.04]'
-            : 'border-transparent hover:border-white/10 hover:bg-white/[0.03]',
+        active ? 'border-white/16 bg-white/[0.04]' : 'border-transparent hover:border-white/10 hover:bg-white/[0.03]',
         className
     );
 
@@ -49,11 +47,21 @@ export const DawPickerRow = ({
         <>
             {startSlot ? <div className="mt-0.5 shrink-0">{startSlot}</div> : null}
             <div className="min-w-0 flex-1">
-                <div className={cn(compact ? 'text-[10px] font-medium' : 'text-[11px] font-medium', 'truncate text-foreground/90')}>
+                <div
+                    className={cn(
+                        compact ? 'text-[10px] font-medium' : 'text-[11px] font-medium',
+                        'truncate text-foreground/90'
+                    )}
+                >
                     {heading}
                 </div>
                 {description ? (
-                    <div className={cn(compact ? 'text-[9px]' : 'text-[10px]', 'mt-0.5 leading-tight text-muted-foreground/65')}>
+                    <div
+                        className={cn(
+                            compact ? 'text-[9px]' : 'text-[10px]',
+                            'mt-0.5 leading-tight text-muted-foreground/65'
+                        )}
+                    >
                         {description}
                     </div>
                 ) : null}
@@ -81,7 +89,14 @@ export const DawPickerRow = ({
 
     if (onClick) {
         return (
-            <button type="button" className={sharedClassName} onClick={onClick} title={title} role={role} tabIndex={tabIndex}>
+            <button
+                type="button"
+                className={sharedClassName}
+                onClick={onClick}
+                title={title}
+                role={role}
+                tabIndex={tabIndex}
+            >
                 {content}
             </button>
         );

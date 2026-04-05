@@ -143,8 +143,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             // Capture original positions for all selected clips so mousemove can
             // write preview positions without touching any store.
             const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
-            const allIds =
-                selectedIds.length > 1 && selectedIds.includes(drag.clipId) ? selectedIds : [drag.clipId];
+            const allIds = selectedIds.length > 1 && selectedIds.includes(drag.clipId) ? selectedIds : [drag.clipId];
             const state = trackStore.value;
             if (state) {
                 const originals = new Map<string, ClipPreviewPosition>();

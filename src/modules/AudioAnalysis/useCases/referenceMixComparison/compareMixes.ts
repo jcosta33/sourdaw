@@ -1,4 +1,10 @@
-import { type FrequencyBand, type MixAnalysis, type MixComparisonResult, type MixSuggestion, FREQUENCY_RANGES } from '#/modules/AudioAnalysis/models/MixComparisonTypes';
+import {
+    type FrequencyBand,
+    type MixAnalysis,
+    type MixComparisonResult,
+    type MixSuggestion,
+    FREQUENCY_RANGES,
+} from '#/modules/AudioAnalysis/models/MixComparisonTypes';
 import { analyzeMix, createReferenceAnalysis } from './analyzeMix';
 
 /**
@@ -15,12 +21,14 @@ export function compareMixes(reference: MixAnalysis, current: MixAnalysis): MixC
         suggestions.push({
             category: 'loudness',
             severity: Math.abs(lufsDiff) > 4 ? 'critical' : 'warning',
-            message: lufsDiff > 0
-                ? `Mix is ${lufsDiff.toFixed(1)} LUFS louder than reference`
-                : `Mix is ${Math.abs(lufsDiff).toFixed(1)} LUFS quieter than reference`,
-            action: lufsDiff > 0
-                ? 'Reduce master bus gain or add a limiter with lower ceiling'
-                : 'Increase master bus gain or raise limiter threshold',
+            message:
+                lufsDiff > 0
+                    ? `Mix is ${lufsDiff.toFixed(1)} LUFS louder than reference`
+                    : `Mix is ${Math.abs(lufsDiff).toFixed(1)} LUFS quieter than reference`,
+            action:
+                lufsDiff > 0
+                    ? 'Reduce master bus gain or add a limiter with lower ceiling'
+                    : 'Increase master bus gain or raise limiter threshold',
             adjustment: -lufsDiff,
         });
     }
@@ -36,12 +44,14 @@ export function compareMixes(reference: MixAnalysis, current: MixAnalysis): MixC
             suggestions.push({
                 category: 'frequency',
                 severity: Math.abs(diff) > 0.25 ? 'warning' : 'info',
-                message: diff > 0
-                    ? `${band} band (${range[0]}–${range[1]} Hz) is ${(diff * 100).toFixed(0)}% higher than reference`
-                    : `${band} band (${range[0]}–${range[1]} Hz) is ${(Math.abs(diff) * 100).toFixed(0)}% lower than reference`,
-                action: diff > 0
-                    ? `Cut ${band} band by ~${(Math.abs(diff) * 6).toFixed(1)} dB on master EQ`
-                    : `Boost ${band} band by ~${(Math.abs(diff) * 6).toFixed(1)} dB on master EQ`,
+                message:
+                    diff > 0
+                        ? `${band} band (${range[0]}–${range[1]} Hz) is ${(diff * 100).toFixed(0)}% higher than reference`
+                        : `${band} band (${range[0]}–${range[1]} Hz) is ${(Math.abs(diff) * 100).toFixed(0)}% lower than reference`,
+                action:
+                    diff > 0
+                        ? `Cut ${band} band by ~${(Math.abs(diff) * 6).toFixed(1)} dB on master EQ`
+                        : `Boost ${band} band by ~${(Math.abs(diff) * 6).toFixed(1)} dB on master EQ`,
                 target: band,
                 adjustment: -diff * 6,
             });
@@ -56,12 +66,11 @@ export function compareMixes(reference: MixAnalysis, current: MixAnalysis): MixC
         suggestions.push({
             category: 'dynamics',
             severity: Math.abs(drDiff) > 5 ? 'critical' : 'warning',
-            message: drDiff > 0
-                ? `Dynamic range is ${drDiff.toFixed(1)} dB wider than reference`
-                : `Dynamic range is ${Math.abs(drDiff).toFixed(1)} dB narrower than reference`,
-            action: drDiff > 0
-                ? 'Add bus compression to tighten dynamics'
-                : 'Reduce compression to restore dynamics',
+            message:
+                drDiff > 0
+                    ? `Dynamic range is ${drDiff.toFixed(1)} dB wider than reference`
+                    : `Dynamic range is ${Math.abs(drDiff).toFixed(1)} dB narrower than reference`,
+            action: drDiff > 0 ? 'Add bus compression to tighten dynamics' : 'Reduce compression to restore dynamics',
         });
     }
 
@@ -72,18 +81,15 @@ export function compareMixes(reference: MixAnalysis, current: MixAnalysis): MixC
         suggestions.push({
             category: 'stereo',
             severity: Math.abs(swDiff) > 0.25 ? 'warning' : 'info',
-            message: swDiff > 0
-                ? 'Stereo image is wider than reference'
-                : 'Stereo image is narrower than reference',
-            action: swDiff > 0
-                ? 'Narrow some tracks by reducing pan extremes or adding mono-maker to sub frequencies'
-                : 'Widen the mix by panning instruments further apart or adding stereo widener',
+            message: swDiff > 0 ? 'Stereo image is wider than reference' : 'Stereo image is narrower than reference',
+            action:
+                swDiff > 0
+                    ? 'Narrow some tracks by reducing pan extremes or adding mono-maker to sub frequencies'
+                    : 'Widen the mix by panning instruments further apart or adding stereo widener',
         });
     }
 
-    const overallScore = Math.round(
-        (loudnessScore * 0.3 + freqScore * 0.35 + dynamicsScore * 0.2 + stereoScore * 0.15)
-    );
+    const overallScore = Math.round(loudnessScore * 0.3 + freqScore * 0.35 + dynamicsScore * 0.2 + stereoScore * 0.15);
 
     return {
         overallScore,

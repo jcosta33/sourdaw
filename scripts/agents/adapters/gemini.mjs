@@ -11,7 +11,7 @@ export const command = 'gemini';
  * @returns {string[]}
  */
 export function buildArgs(slug, extraArgs = [], options = {}) {
-  // Gemini CLI does not support session naming yet.
-  // Session context is provided via .agents/tasks/ which CLAUDE.md instructs the agent to read.
-  return [...extraArgs];
+    // Gemini CLI does not support session naming yet.
+    // Session context is provided via .agents/tasks/ which CLAUDE.md instructs the agent to read.
+    return [...extraArgs];
 }

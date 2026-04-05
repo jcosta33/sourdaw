@@ -22,12 +22,18 @@ type NoteRepeatRate = '1/4' | '1/8' | '1/16' | '1/32' | '1/8t' | '1/16t';
 function rateToDurationMs(rate: NoteRepeatRate, bpm: number): number {
     const beatMs = 60_000 / bpm;
     switch (rate) {
-        case '1/4': return beatMs;
-        case '1/8': return beatMs / 2;
-        case '1/16': return beatMs / 4;
-        case '1/32': return beatMs / 8;
-        case '1/8t': return beatMs / 3;
-        case '1/16t': return beatMs / 6;
+        case '1/4':
+            return beatMs;
+        case '1/8':
+            return beatMs / 2;
+        case '1/16':
+            return beatMs / 4;
+        case '1/32':
+            return beatMs / 8;
+        case '1/8t':
+            return beatMs / 3;
+        case '1/16t':
+            return beatMs / 6;
     }
 }
 

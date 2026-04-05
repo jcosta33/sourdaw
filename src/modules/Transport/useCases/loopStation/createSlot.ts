@@ -9,7 +9,9 @@ export function createSlot(trackId: string, row: number, column: number): void {
 
     const slot: LoopSlot = {
         id: getNextSlotId(),
-        trackId, row, column,
+        trackId,
+        row,
+        column,
         state: 'empty',
         lengthBeats: 0,
         layers: [],

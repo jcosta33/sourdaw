@@ -37,7 +37,6 @@ import { MiniMasterSpectrum } from './MiniMasterSpectrum';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 
-
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
     compact: 'Compact',
@@ -62,8 +61,6 @@ export const TrackListView = ({
         () => preferencesStore.value ?? defaultPreferences
     );
     const currentHeight = prefs.trackHeight;
-
-
 
     const scrollY = useSyncExternalStore(
         (cb) => timelineViewStore.subscribe(() => cb()),
@@ -260,12 +257,11 @@ export const TrackListView = ({
                                 }}
                                 onDragEnd={handleDragEnd}
                                 onClick={() => selectTrack(track.id)}
-                                className={dragOverIndex === index ? 'border-t-2 border-ring outline-none' : 'outline-none'}
+                                className={
+                                    dragOverIndex === index ? 'border-t-2 border-ring outline-none' : 'outline-none'
+                                }
                             >
-                                <TrackHeader
-                                    track={track}
-                                    isSelected={track.id === selectedTrackId}
-                                />
+                                <TrackHeader track={track} isSelected={track.id === selectedTrackId} />
                             </div>
                         );
                     })}
@@ -285,7 +281,6 @@ export const TrackListView = ({
     );
 };
 
-
 const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
     const createTrackOfKind = (kind: 'audio' | 'midi' | 'bus') => {
         const labels = { audio: 'Audio', midi: 'MIDI', bus: 'Bus' };
@@ -299,11 +294,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
             <Tooltip>
                 <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label="Add track"
-                        >
+                        <Button variant="ghost" size="icon-xs" aria-label="Add track">
                             <Plus className="size-3" aria-hidden="true" />
                         </Button>
                     </DropdownMenuTrigger>
@@ -311,20 +302,25 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                 <TooltipContent>Add Track</TooltipContent>
             </Tooltip>
 
-            <DropdownMenuContent
-                align="end"
-                sideOffset={4}
-                className="w-44"
-            >
-                <DropdownMenuItem onClick={() => createTrackOfKind('audio')} className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer">
+            <DropdownMenuContent align="end" sideOffset={4} className="w-44">
+                <DropdownMenuItem
+                    onClick={() => createTrackOfKind('audio')}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                >
                     <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
                     Audio Track
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => createTrackOfKind('midi')} className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer">
+                <DropdownMenuItem
+                    onClick={() => createTrackOfKind('midi')}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                >
                     <Music className="size-3 text-[var(--color-accent-mint)]" />
                     MIDI Track
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => createTrackOfKind('bus')} className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer">
+                <DropdownMenuItem
+                    onClick={() => createTrackOfKind('bus')}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                >
                     <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
                     Bus Track
                 </DropdownMenuItem>

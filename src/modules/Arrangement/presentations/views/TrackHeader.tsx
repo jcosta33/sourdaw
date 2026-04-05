@@ -13,7 +13,6 @@ import { armTrack } from '../../useCases/recording';
 import { toggleFolderCollapse } from '../../useCases/folder';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan';
 
-
 import { TrackContextMenu } from './TrackContextMenu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { InlineTrackName } from './TrackHeader/InlineTrackName';
@@ -61,7 +60,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     className={cn(
                         'relative shrink-0 border-b border-border-soft px-1 py-0',
                         isSelected ? 'bg-surface-overlay' : '',
-                        isDrumMachine ? 'bg-surface-panel hover:bg-surface-base' : 'bg-surface-tray hover:bg-surface-base'
+                        isDrumMachine
+                            ? 'bg-surface-panel hover:bg-surface-base'
+                            : 'bg-surface-tray hover:bg-surface-base'
                     )}
                     title={track.name}
                     titleClassName="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground select-none"
@@ -130,10 +131,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 onClick={() => selectTrack(track.id)}
             >
                 <div
-                    className={cn(
-                        'flex items-center gap-1 px-2',
-                        track.parentId ? 'pl-7' : ''
-                    )}
+                    className={cn('flex items-center gap-1 px-2', track.parentId ? 'pl-7' : '')}
                     style={{ height: trackHeight }}
                 >
                     <div
@@ -155,7 +153,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
                     <InlineTrackName track={track} />
 
-                    {track.frozen ? <span className="text-[10px] text-[var(--color-accent-cyan)] font-medium">FRZ</span> : null}
+                    {track.frozen ? (
+                        <span className="text-[10px] text-[var(--color-accent-cyan)] font-medium">FRZ</span>
+                    ) : null}
 
                     {track.kind === 'audio' && isSelected ? (
                         <InputSelector trackId={track.id} inputId={track.inputId} />
@@ -203,7 +203,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     />
                                 </LatchButton>
                             </TooltipTrigger>
-                            <TooltipContent side="bottom">{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
+                            <TooltipContent side="bottom">
+                                {track.armed ? 'Disarm' : 'Arm for recording'}
+                            </TooltipContent>
                         </Tooltip>
 
                         <Tooltip>
@@ -251,8 +253,6 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                         </Tooltip>
                     </div>
                 </div>
-
-
 
                 <ResizeHandle trackId={track.id} />
             </div>

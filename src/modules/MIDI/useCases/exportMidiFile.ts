@@ -118,4 +118,3 @@ export function exportMidiClip(clipId: string): void {
     const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
     downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
 }
-

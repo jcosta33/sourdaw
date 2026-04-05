@@ -17,10 +17,7 @@ export const DawTransportCluster = ({
     children,
     ...props
 }: DawTransportClusterProps): ReactElement => (
-    <div
-        className={cn('flex min-w-0 shrink-0 items-center', TONE_CLASS_NAMES[tone], className)}
-        {...props}
-    >
+    <div className={cn('flex min-w-0 shrink-0 items-center', TONE_CLASS_NAMES[tone], className)} {...props}>
         {children}
     </div>
 );

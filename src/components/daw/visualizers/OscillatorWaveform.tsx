@@ -101,7 +101,9 @@ export const OscillatorWaveform = ({
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             }
-            ctx.strokeStyle = `${accent2}${Math.round(osc2Mix * 180).toString(16).padStart(2, '0')}`;
+            ctx.strokeStyle = `${accent2}${Math.round(osc2Mix * 180)
+                .toString(16)
+                .padStart(2, '0')}`;
             ctx.lineWidth = 1.5;
             ctx.stroke();
         }

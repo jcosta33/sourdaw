@@ -142,7 +142,11 @@ const SectionHeader = ({
             <div className="text-[13px] font-semibold text-foreground">{title}</div>
             <span className="sr-only">{description}</span>
         </div>
-        {detail ? <DawPluginLed tone="cyan" className="shrink-0">{detail}</DawPluginLed> : null}
+        {detail ? (
+            <DawPluginLed tone="cyan" className="shrink-0">
+                {detail}
+            </DawPluginLed>
+        ) : null}
     </div>
 );
 

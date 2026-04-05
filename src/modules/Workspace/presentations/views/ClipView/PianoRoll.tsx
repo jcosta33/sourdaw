@@ -28,13 +28,7 @@ import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollToolbar } from './PianoRollToolbar';
 import { PianoRollContextMenu } from './PianoRollContextMenu';
-import {
-    NOTE_NAMES,
-    GRID_BEATS,
-    ROW_HEIGHT,
-    RULER_HEIGHT,
-    getVisiblePitches,
-} from '../../helpers/pianoRollConstants';
+import { NOTE_NAMES, GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 
@@ -97,7 +91,9 @@ export const PianoRoll = ({
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
         const parent = canvas?.parentElement;
-        if (!parent) { return; }
+        if (!parent) {
+            return;
+        }
         const report = (): void => {
             const parentWidth = parent.clientWidth;
             const totalWidth = Math.max(parentWidth, GRID_BEATS * beatWidth);
@@ -187,17 +183,28 @@ export const PianoRoll = ({
     return (
         <div className="flex flex-1 flex-col overflow-hidden">
             <PianoRollToolbar
-                gridSnap={gridSnap} onGridSnapChange={setGridSnap}
-                scaleRoot={scaleRoot} onScaleRootChange={setScaleRoot}
-                scaleType={scaleType} onScaleTypeChange={setScaleType}
-                isFolded={isFolded} onToggleFolded={() => setIsFolded((p) => !p)}
-                stepInput={stepInput} onToggleStepInput={() => setStepInput((p) => !p)}
-                showGhostNotes={showGhostNotes} onToggleGhostNotes={() => setShowGhostNotes((p) => !p)}
-                chordMode={chordMode} onToggleChordMode={() => setChordMode((p) => !p)}
-                chordType={chordType} onChordTypeChange={setChordType}
-                paintMode={paintMode} onTogglePaintMode={() => setPaintMode((p) => !p)}
-                lassoMode={lassoMode} onToggleLassoMode={() => setLassoMode((p) => !p)}
-                zoom={zoom} onZoomChange={setZoom}
+                gridSnap={gridSnap}
+                onGridSnapChange={setGridSnap}
+                scaleRoot={scaleRoot}
+                onScaleRootChange={setScaleRoot}
+                scaleType={scaleType}
+                onScaleTypeChange={setScaleType}
+                isFolded={isFolded}
+                onToggleFolded={() => setIsFolded((p) => !p)}
+                stepInput={stepInput}
+                onToggleStepInput={() => setStepInput((p) => !p)}
+                showGhostNotes={showGhostNotes}
+                onToggleGhostNotes={() => setShowGhostNotes((p) => !p)}
+                chordMode={chordMode}
+                onToggleChordMode={() => setChordMode((p) => !p)}
+                chordType={chordType}
+                onChordTypeChange={setChordType}
+                paintMode={paintMode}
+                onTogglePaintMode={() => setPaintMode((p) => !p)}
+                lassoMode={lassoMode}
+                onToggleLassoMode={() => setLassoMode((p) => !p)}
+                zoom={zoom}
+                onZoomChange={setZoom}
             />
 
             <div
@@ -223,7 +230,8 @@ export const PianoRoll = ({
                                 )}
                                 style={{ height: ROW_HEIGHT }}
                             >
-                                {NOTE_NAMES[noteIndex]}{Math.floor(pitch / 12) - 1}
+                                {NOTE_NAMES[noteIndex]}
+                                {Math.floor(pitch / 12) - 1}
                             </div>
                         );
                     })}

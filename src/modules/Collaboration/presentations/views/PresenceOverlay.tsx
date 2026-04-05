@@ -20,25 +20,15 @@ type PresenceOverlayProps = {
  * - Solid cursor lines at each peer's mouse cursor position
  * - Name labels and track focus dots alongside cursor lines
  */
-export const PresenceOverlay = ({
-    beatToX,
-    trackIdToY,
-    trackHeight,
-}: PresenceOverlayProps): ReactElement => {
+export const PresenceOverlay = ({ beatToX, trackIdToY, trackHeight }: PresenceOverlayProps): ReactElement => {
     const presenceMap = usePresence();
 
     return (
         <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
             {Array.from(presenceMap.values()).map((presence) => {
-                const playheadX = presence.playheadBeat !== null
-                    ? beatToX(presence.playheadBeat)
-                    : null;
-                const cursorX = presence.cursorBeat !== null
-                    ? beatToX(presence.cursorBeat)
-                    : null;
-                const trackY = presence.cursorTrackId
-                    ? trackIdToY(presence.cursorTrackId)
-                    : null;
+                const playheadX = presence.playheadBeat !== null ? beatToX(presence.playheadBeat) : null;
+                const cursorX = presence.cursorBeat !== null ? beatToX(presence.cursorBeat) : null;
+                const trackY = presence.cursorTrackId ? trackIdToY(presence.cursorTrackId) : null;
 
                 return (
                     <div key={presence.peerId}>

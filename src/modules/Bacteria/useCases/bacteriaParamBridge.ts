@@ -235,7 +235,11 @@ export function loadBacteriaPatchWithAudio(deviceId: string, patch: BacteriaPatc
  * Set a Bacteria global parameter — updates UI store immediately,
  * throttles audio engine updates to rAF.
  */
-export function setBacteriaParamWithAudio<K extends keyof BacteriaPatch>(deviceId: string, key: K, value: BacteriaPatch[K]): void {
+export function setBacteriaParamWithAudio<K extends keyof BacteriaPatch>(
+    deviceId: string,
+    key: K,
+    value: BacteriaPatch[K]
+): void {
     setBacteriaParam(deviceId, key, value);
 
     const encodedValue = encodePatchValue(key, value);

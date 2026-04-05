@@ -4,11 +4,7 @@
  * to manage global listener teardown.
  */
 import { type MouseEvent as ReactMouseEvent } from 'react';
-import {
-    type AutomationLane,
-    type AutomationPoint,
-    type AutomationCurveType,
-} from '../../models/AutomationViewTypes';
+import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '../../models/AutomationViewTypes';
 import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
 import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
 import { updateAutomationPoint } from '#/modules/Automation/useCases/automation/updateAutomationPoint';
@@ -45,10 +41,7 @@ export const onDrawMouseDown = (
     paintDrawPoint(Math.max(0, coords.xToBeat(x)), coords.yToValue(y));
     startMouseDrag(
         (me) => {
-            paintDrawPoint(
-                Math.max(0, coords.xToBeat(me.clientX - rect.left)),
-                coords.yToValue(me.clientY - rect.top)
-            );
+            paintDrawPoint(Math.max(0, coords.xToBeat(me.clientX - rect.left)), coords.yToValue(me.clientY - rect.top));
         },
         () => {
             endDrawSession();
@@ -219,7 +212,8 @@ export const onPointMouseDown = (
             setDragPointBeat(null);
             const finalLane = automationStore.value?.lanes.find((l) => l.id === lane.id);
             const finalPoint = finalLane?.points.find((p) => Math.abs(p.beat - currentBeat) < 0.05);
-            const hasMoved = finalPoint !== undefined && (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
+            const hasMoved =
+                finalPoint !== undefined && (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
             if (hasMoved) {
                 const finalBeat = finalPoint!.beat;
                 const finalValue = finalPoint!.value;

@@ -31,40 +31,35 @@ export type PadState = {
     name: string;
     color: string;
     engineType: DrumEngineType;
-    chokeGroup: number;         // 0 = none, 1-16
-    midiNote: number;           // default: 36 + pad index (GM drum map)
-    volume: number;             // 0-1
-    pan: number;                // -1 to 1
+    chokeGroup: number; // 0 = none, 1-16
+    midiNote: number; // default: 36 + pad index (GM drum map)
+    volume: number; // 0-1
+    pan: number; // -1 to 1
     muted: boolean;
     soloed: boolean;
 
     // Engine params (subset exposed to UI — full set sent via set_pad_param)
-    tune: number;               // -24 to +24 semitones
-    decay: number;              // 0-1 (mapped to engine-specific range)
-    tone: number;               // 0-1 (brightness / color)
-    drive: number;              // 0-10
-    filterCutoff: number;       // 20-20000 Hz
-    filterResonance: number;    // 0.5-20
-    sendReverb: number;         // 0-1
-    sendDelay: number;          // 0-1
+    tune: number; // -24 to +24 semitones
+    decay: number; // 0-1 (mapped to engine-specific range)
+    tone: number; // 0-1 (brightness / color)
+    drive: number; // 0-10
+    filterCutoff: number; // 20-20000 Hz
+    filterResonance: number; // 0.5-20
+    sendReverb: number; // 0-1
+    sendDelay: number; // 0-1
 
     // Engine-specific params (vary by engine type)
     engineParams: Record<string, number>;
 };
 
-export type StepCondition =
-    | 'always'
-    | 'fill'
-    | 'not-fill'
-    | 'first'
-    | 'not-first';
+export type StepCondition = 'always' | 'fill' | 'not-fill' | 'first' | 'not-first';
 
 export type Step = {
     active: boolean;
-    velocity: number;           // 0-1
-    probability: number;        // 0-1
-    microTiming: number;        // -0.5 to +0.5 steps
-    retriggerCount: number;     // 0 = none, 1-16
+    velocity: number; // 0-1
+    probability: number; // 0-1
+    microTiming: number; // -0.5 to +0.5 steps
+    retriggerCount: number; // 0 = none, 1-16
     condition: StepCondition;
     paramLocks: Record<string, number>;
     soundLock?: DrumEngineType; // Elektron-style per-step engine override
@@ -73,8 +68,8 @@ export type Step = {
 export type Pattern = {
     id: string;
     name: string;
-    stepsPerBar: number;        // 16, 32
-    bars: number;               // 1-4
+    stepsPerBar: number; // 16, 32
+    bars: number; // 1-4
     tracks: Array<{
         padIndex: number;
         steps: Step[];
@@ -88,40 +83,76 @@ export type ToasterKit = {
     pads: PadState[];
     patterns: Pattern[];
     activePatternId: string;
-    swing: number;              // 0-1
-    masterGain: number;         // 0-2
-    reverbMix: number;          // 0-1
-    reverbDecay: number;        // 0-0.99
-    delayTime: number;          // 10-2000 ms
-    delayFeedback: number;      // 0-0.95
-    delayMix: number;           // 0-1
+    swing: number; // 0-1
+    masterGain: number; // 0-2
+    reverbMix: number; // 0-1
+    reverbDecay: number; // 0-0.99
+    delayTime: number; // 10-2000 ms
+    delayFeedback: number; // 0-0.95
+    delayMix: number; // 0-1
     // Lo-fi vintage processing
-    lofiBits: number;           // 4-16 (16 = off)
-    lofiRate: number;           // 4000-44100 Hz (44100 = off)
-    lofiMix: number;            // 0-1
+    lofiBits: number; // 4-16 (16 = off)
+    lofiRate: number; // 4000-44100 Hz (44100 = off)
+    lofiMix: number; // 0-1
 
     macros: [number, number, number, number, number, number, number, number];
 };
 
 export const PAD_COLORS = [
-    '#E06060', '#E08860', '#E0B060', '#B0E060',
-    '#60E080', '#60C8E0', '#6088E0', '#8860E0',
-    '#E060B0', '#E06080', '#C0C060', '#60E0C0',
-    '#A080E0', '#E0A080', '#80C0E0', '#C080E0',
+    '#E06060',
+    '#E08860',
+    '#E0B060',
+    '#B0E060',
+    '#60E080',
+    '#60C8E0',
+    '#6088E0',
+    '#8860E0',
+    '#E060B0',
+    '#E06080',
+    '#C0C060',
+    '#60E0C0',
+    '#A080E0',
+    '#E0A080',
+    '#80C0E0',
+    '#C080E0',
 ];
 
 export const DEFAULT_PAD_NAMES = [
-    'Kick', 'Snare', 'Closed HH', 'Open HH',
-    'Clap', 'Rim', 'Low Tom', 'Mid Tom',
-    'Hi Tom', 'Crash', 'Ride', 'Cowbell',
-    'Clave', 'Shaker', 'Perc 1', 'Perc 2',
+    'Kick',
+    'Snare',
+    'Closed HH',
+    'Open HH',
+    'Clap',
+    'Rim',
+    'Low Tom',
+    'Mid Tom',
+    'Hi Tom',
+    'Crash',
+    'Ride',
+    'Cowbell',
+    'Clave',
+    'Shaker',
+    'Perc 1',
+    'Perc 2',
 ];
 
 export const DEFAULT_ENGINE_TYPES: DrumEngineType[] = [
-    'kick-808', 'snare-808', 'hihat-closed', 'hihat-open',
-    'clap', 'rimshot', 'tom', 'tom',
-    'tom', 'cymbal', 'cymbal', 'cowbell',
-    'clave', 'shaker', 'perc-generic', 'perc-generic',
+    'kick-808',
+    'snare-808',
+    'hihat-closed',
+    'hihat-open',
+    'clap',
+    'rimshot',
+    'tom',
+    'tom',
+    'tom',
+    'cymbal',
+    'cymbal',
+    'cowbell',
+    'clave',
+    'shaker',
+    'perc-generic',
+    'perc-generic',
 ];
 
 export function createDefaultPad(index: number): PadState {
@@ -194,4 +225,3 @@ export function createDefaultKit(): ToasterKit {
         macros: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
     };
 }
-

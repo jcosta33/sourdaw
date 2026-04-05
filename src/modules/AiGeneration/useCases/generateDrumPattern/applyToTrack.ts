@@ -3,7 +3,11 @@ import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
 
-export function applyDrumPatternToTrack(trackId: string, options: GenerateDrumPatternOptions, startBeat: number = 0): void {
+export function applyDrumPatternToTrack(
+    trackId: string,
+    options: GenerateDrumPatternOptions,
+    startBeat: number = 0
+): void {
     const bars = options.bars ?? 4;
     const [numerator] = options.timeSignature ?? [4, 4];
     const totalBeats = bars * numerator;

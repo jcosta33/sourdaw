@@ -31,7 +31,10 @@ export function registerLevainDevice(device: LevainDevice, port?: MessagePort): 
     activeDeviceId = null;
     for (const track of getAllTracks()) {
         const d = track.devices.find((dev) => dev.type === 'levain');
-        if (d) { activeDeviceId = d.id; break; }
+        if (d) {
+            activeDeviceId = d.id;
+            break;
+        }
     }
     if (port) {
         activePort = port;
@@ -44,7 +47,7 @@ export function registerLevainDevice(device: LevainDevice, port?: MessagePort): 
             queueParam('legato_enabled', state.patch.legato.enabled ? 1 : 0);
             queueParam('humanize_amount', state.patch.humanize.amount);
             queueParam('vibrato_depth', state.patch.expression.vibratoDepthMax);
-            
+
             // Mic positions
             state.patch.micPositions.forEach((m, i) => {
                 queueParam(`mic_${i}_volume`, m.volume);
@@ -95,7 +98,7 @@ function queueParam(rustKey: string, value: number): void {
     if (!pendingUpdates.has(rustKey)) {
         pendingUpdates.set(
             rustKey,
-            requestAnimationFrame(() => flushParam(rustKey)),
+            requestAnimationFrame(() => flushParam(rustKey))
         );
     }
 }
@@ -121,10 +124,7 @@ function flushParam(key: string): void {
  * Set an levain parameter on both UI store and audio engine.
  * Audio updates are throttled to one per rAF per parameter.
  */
-export function setLevainParamWithAudio<K extends keyof LevainPatch>(
-    key: K,
-    value: LevainPatch[K],
-): void {
+export function setLevainParamWithAudio<K extends keyof LevainPatch>(key: K, value: LevainPatch[K]): void {
     // Update UI store immediately.
     setLevainParam(key, value);
 
@@ -132,7 +132,7 @@ export function setLevainParamWithAudio<K extends keyof LevainPatch>(
     if (key === 'currentArticulation' && typeof value === 'string') {
         const patch = levainStore.value?.patch;
         if (patch) {
-            const artIndex = patch.articulations.findIndex(a => a.type === value);
+            const artIndex = patch.articulations.findIndex((a) => a.type === value);
             if (artIndex !== -1) {
                 queueParam('current_articulation', artIndex);
             }

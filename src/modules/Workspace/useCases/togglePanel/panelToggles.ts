@@ -3,37 +3,49 @@ import { type SoloMode, type ChannelStripWidth } from '../../models/WorkspaceSta
 
 export function setSoloMode(soloMode: SoloMode): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ soloMode });
 }
 
 export function toggleSidebar(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ sidebarOpen: !current.sidebarOpen });
 }
 
 export function toggleInspector(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ inspectorOpen: !current.inspectorOpen });
 }
 
 export function toggleChatPanel(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ chatPanelOpen: !current.chatPanelOpen });
 }
 
 export function toggleMixer(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ mixerOpen: !current.mixerOpen });
 }
 
 export function toggleVirtualKeyboard(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ virtualKeyboardOpen: !current.virtualKeyboardOpen });
 }
 
@@ -51,19 +63,25 @@ export function setVirtualKeyboardVelocity(velocity: number): void {
 
 export function toggleAutomationPanel(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ automationPanelOpen: !current.automationPanelOpen });
 }
 
 export function toggleTrackList(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ trackListOpen: !current.trackListOpen });
 }
 
 export function setSnapValue(value: number): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ snapValue: value });
 }
 
@@ -115,19 +133,25 @@ const STRIP_WIDTH_CYCLE: Record<ChannelStripWidth, ChannelStripWidth> = {
 
 export function cycleChannelStripWidth(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ channelStripWidth: STRIP_WIDTH_CYCLE[current.channelStripWidth] });
 }
 
 export function toggleCollaborationPanel(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ collaborationPanelOpen: !current.collaborationPanelOpen });
 }
 
 export function toggleBranchManager(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ branchManagerOpen: !current.branchManagerOpen });
 }
 
@@ -137,13 +161,17 @@ export function closeBranchManager(): void {
 
 export function toggleUndoHistory(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ undoHistoryOpen: !current.undoHistoryOpen });
 }
 
 export function toggleTimeDisplayMode(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({
         timeDisplayMode: current.timeDisplayMode === 'musical' ? 'time' : 'musical',
     });
@@ -151,7 +179,9 @@ export function toggleTimeDisplayMode(): void {
 
 export function toggleClipInSelection(clipId: string): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     const ids = new Set(current.selectedClipIds);
     if (ids.has(clipId)) {
         ids.delete(clipId);
@@ -171,12 +201,16 @@ export function selectAllClips(getAllClipIds: () => string[]): void {
 
 export function toggleCommandPalette(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ commandPaletteOpen: !current.commandPaletteOpen });
 }
 
 export function toggleWorkspaceMode(): void {
     const current = getWorkspaceState();
-    if (!current) { return; }
+    if (!current) {
+        return;
+    }
     updateWorkspaceState({ mode: current.mode === 'arrange' ? 'clip' : 'arrange' });
 }

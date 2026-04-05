@@ -15,7 +15,7 @@ export class Transposer implements MidiProcessor {
     private clampMin = 0;
     private clampMax = 127;
     private bypassed = false;
-    private rngState = 0xFACE;
+    private rngState = 0xface;
     private noteMap = new Map<string, number>(); // "ch:inNote" → outNote
 
     constructor(id?: string) {
@@ -27,7 +27,7 @@ export class Transposer implements MidiProcessor {
             if (event.kind.type === 'noteOn') {
                 let offset = this.semitones + this.octaves * 12;
                 if (this.randomRange > 0) {
-                    this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
+                    this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
                     offset += (this.rngState % (this.randomRange * 2 + 1)) - this.randomRange;
                 }
 
@@ -53,18 +53,36 @@ export class Transposer implements MidiProcessor {
         }
     }
 
-    reset(): void { this.noteMap.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.noteMap.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'semitones': this.semitones = Math.round(value); break;
-            case 'octaves': this.octaves = Math.round(value); break;
-            case 'random_range': this.randomRange = Math.max(0, Math.round(value)); break;
-            case 'clamp_min': this.clampMin = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'clamp_max': this.clampMax = Math.max(0, Math.min(127, Math.round(value))); break;
+            case 'semitones':
+                this.semitones = Math.round(value);
+                break;
+            case 'octaves':
+                this.octaves = Math.round(value);
+                break;
+            case 'random_range':
+                this.randomRange = Math.max(0, Math.round(value));
+                break;
+            case 'clamp_min':
+                this.clampMin = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'clamp_max':
+                this.clampMax = Math.max(0, Math.min(127, Math.round(value)));
+                break;
         }
     }
 }

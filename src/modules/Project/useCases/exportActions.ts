@@ -15,11 +15,9 @@ import {
 
 export type { OfflineRenderOptions };
 
-export const renderOffline = (opts: OfflineRenderOptions): Promise<AudioBuffer> =>
-    _renderOffline(opts);
+export const renderOffline = (opts: OfflineRenderOptions): Promise<AudioBuffer> => _renderOffline(opts);
 
-export const exportStems = (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>> =>
-    _exportStems(opts);
+export const exportStems = (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>> => _exportStems(opts);
 
 export const cancelExport = (): void => _cancelExport();
 
@@ -38,7 +36,5 @@ export const encodeMp3 = (
     onProgress?: (frac: number) => void
 ): Promise<Uint8Array> => audioBufferToMp3(buffer, bitRate, onProgress);
 
-export const encodeFlac = (
-    buffer: AudioBuffer,
-    onProgress?: (frac: number) => void
-): Promise<Uint8Array> => audioBufferToFlac(buffer, onProgress);
+export const encodeFlac = (buffer: AudioBuffer, onProgress?: (frac: number) => void): Promise<Uint8Array> =>
+    audioBufferToFlac(buffer, onProgress);

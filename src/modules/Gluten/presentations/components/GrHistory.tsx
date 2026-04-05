@@ -17,12 +17,7 @@ type GrHistoryProps = {
 const HISTORY_LENGTH = 256;
 const DB_RANGE = 30; // 0 to -30 dB
 
-export const GrHistory = ({
-    grDb,
-    width = 400,
-    height = 60,
-    accentColor,
-}: GrHistoryProps): ReactElement => {
+export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHistoryProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const historyRef = useRef<Float32Array>(new Float32Array(HISTORY_LENGTH));
     const posRef = useRef(0);
@@ -124,7 +119,6 @@ export const GrHistory = ({
             ctx.textAlign = 'right';
             ctx.fillText(`${grDb.toFixed(1)} dB`, width - 4, 12);
         }
-
     }, [grDb, width, height, accentColor]);
 
     return (

@@ -68,10 +68,9 @@ const YeastChip = ({
     <DawPluginChip tone={tone} size={size} shape={shape} caps={caps} {...props} />
 );
 
-const YeastLed = ({
-    tone = 'peach',
-    ...props
-}: ComponentProps<typeof DawPluginLed>): ReactElement => <DawPluginLed tone={tone} {...props} />;
+const YeastLed = ({ tone = 'peach', ...props }: ComponentProps<typeof DawPluginLed>): ReactElement => (
+    <DawPluginLed tone={tone} {...props} />
+);
 
 function getLevelMeta(level: YeastState['uiLevel']): { title: string; description: string } {
     if (level === 1) {
@@ -485,7 +484,11 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                         {/* Expanded parameter panel */}
                         {expandedId === proc.id ? (
                             <div className="border-t border-border/10 bg-surface-app/30">
-                                <ProcessorParams processorId={proc.id} processorType={proc.type} onSetParam={setYeastProcessorParam} />
+                                <ProcessorParams
+                                    processorId={proc.id}
+                                    processorType={proc.type}
+                                    onSetParam={setYeastProcessorParam}
+                                />
                             </div>
                         ) : null}
                     </div>
@@ -578,7 +581,11 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                         </div>
                         {expandedId === proc.id ? (
                             <div className="border-t border-border/10 bg-surface-app/30">
-                                <ProcessorParams processorId={proc.id} processorType={proc.type} onSetParam={setYeastProcessorParam} />
+                                <ProcessorParams
+                                    processorId={proc.id}
+                                    processorType={proc.type}
+                                    onSetParam={setYeastProcessorParam}
+                                />
                             </div>
                         ) : null}
                     </div>
@@ -654,7 +661,11 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                             </div>
                             {expandedId === proc.id ? (
                                 <div className="border-t border-border/10 bg-surface-app/30">
-                                    <ProcessorParams processorId={proc.id} processorType={proc.type} onSetParam={setYeastProcessorParam} />
+                                    <ProcessorParams
+                                        processorId={proc.id}
+                                        processorType={proc.type}
+                                        onSetParam={setYeastProcessorParam}
+                                    />
                                 </div>
                             ) : null}
                         </div>

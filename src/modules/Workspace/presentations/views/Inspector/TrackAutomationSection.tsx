@@ -136,10 +136,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
             {trackLanes.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackLanes.map((lane) => (
-                        <SurfaceCard
-                            key={lane.id}
-                            className="flex items-center justify-between"
-                        >
+                        <SurfaceCard key={lane.id} className="flex items-center justify-between">
                             <span
                                 className="text-[10px] text-foreground font-medium truncate pr-2"
                                 title={lane.parameterName}

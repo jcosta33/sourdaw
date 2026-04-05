@@ -21,17 +21,17 @@ export type ProofPatch = {
     chainOrder: [number, number, number, number, number];
 
     // Input/Output
-    inputGain: number;    // dB
-    outputGain: number;   // dB
+    inputGain: number; // dB
+    outputGain: number; // dB
 
     // EQ
     eqBypassed: boolean;
     eqBands: Array<{
         enabled: boolean;
-        type: number;     // 0=peak, 1=lowShelf, 2=highShelf, 3=highPass, 4=lowPass
-        channel: number;  // 0=stereo, 1=mid, 2=side
+        type: number; // 0=peak, 1=lowShelf, 2=highShelf, 3=highPass, 4=lowPass
+        channel: number; // 0=stereo, 1=mid, 2=side
         freq: number;
-        gain: number;     // dB
+        gain: number; // dB
         q: number;
     }>;
 
@@ -41,10 +41,10 @@ export type ProofPatch = {
     dynBands: Array<{
         threshold: number;
         ratio: number;
-        attack: number;   // ms
-        release: number;  // ms
-        knee: number;     // dB
-        makeup: number;   // dB
+        attack: number; // ms
+        release: number; // ms
+        knee: number; // dB
+        makeup: number; // dB
         autoMakeup: boolean;
         bypassed: boolean;
     }>;
@@ -58,16 +58,16 @@ export type ProofPatch = {
     // Exciter
     excBypassed: boolean;
     excBands: Array<{
-        type: number;     // 0=tape, 1=tube, 2=transistor, 3=warm
-        drive: number;    // 0-1
-        blend: number;    // 0-1
+        type: number; // 0=tape, 1=tube, 2=transistor, 3=warm
+        drive: number; // 0-1
+        blend: number; // 0-1
         enabled: boolean;
     }>;
 
     // Limiter
     limBypassed: boolean;
-    limCeiling: number;   // dB (-12 to 0)
-    limRelease: number;   // ms
+    limCeiling: number; // dB (-12 to 0)
+    limRelease: number; // ms
     limLookahead: number; // ms
 
     // Dither

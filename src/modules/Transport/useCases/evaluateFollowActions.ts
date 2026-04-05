@@ -20,19 +20,14 @@ export type FollowActionResult = {
 export function evaluateFollowActions(
     tracks: readonly Track[],
     prevPosition: number,
-    nextPosition: number,
+    nextPosition: number
 ): FollowActionResult {
     let jumpToPosition: number | null = null;
     let shouldStop = false;
 
     for (const track of tracks) {
         for (const clip of track.clips as Clip[]) {
-            if (
-                clip.followAction &&
-                !clip.loopEnabled &&
-                prevPosition < clip.endBeat &&
-                nextPosition >= clip.endBeat
-            ) {
+            if (clip.followAction && !clip.loopEnabled && prevPosition < clip.endBeat && nextPosition >= clip.endBeat) {
                 if (clip.followAction === 'stop') {
                     shouldStop = true;
                 } else if (clip.followAction === 'play_next') {

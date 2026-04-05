@@ -13,14 +13,25 @@ export type ToasterKitPreset = {
 };
 
 function kit(id: string, name: string, desc: string, tags: string[], overrides: Partial<ToasterKit>): ToasterKitPreset {
-    return { id, name, description: desc, tags: ['toaster', ...tags], kit: { ...createDefaultKit(), name, ...overrides } };
+    return {
+        id,
+        name,
+        description: desc,
+        tags: ['toaster', ...tags],
+        kit: { ...createDefaultKit(), name, ...overrides },
+    };
 }
 
 export const TOASTER_PRESETS: ToasterKitPreset[] = [
     kit('init', 'Blank Flour', 'Empty 16-pad kit — start from scratch', ['init'], {}),
     kit('808-classic', 'Sourdough 808', 'Classic TR-808 electronic kit', ['808', 'classic', 'electronic', 'hip-hop'], {
         pads: [
-            { ...createDefaultPad(0), name: 'Kick', engineType: 'kick-808', engineParams: { base_freq: 50, pitch_amount: 0.7, amp_decay: 0.4 } },
+            {
+                ...createDefaultPad(0),
+                name: 'Kick',
+                engineType: 'kick-808',
+                engineParams: { base_freq: 50, pitch_amount: 0.7, amp_decay: 0.4 },
+            },
             { ...createDefaultPad(1), name: 'Snare', engineType: 'snare-808' },
             { ...createDefaultPad(2), name: 'CH', engineType: 'hihat-closed', chokeGroup: 1, decay: 0.2 },
             { ...createDefaultPad(3), name: 'OH', engineType: 'hihat-open', chokeGroup: 1, decay: 0.7 },
@@ -68,7 +79,14 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
         pads: [
             { ...createDefaultPad(0), name: 'Dusty Kick', engineType: 'kick-analog', drive: 3, tone: 0.3 },
             { ...createDefaultPad(1), name: 'Vinyl Snare', engineType: 'snare-analog', tone: 0.4 },
-            { ...createDefaultPad(2), name: 'Soft CH', engineType: 'hihat-closed', chokeGroup: 1, volume: 0.6, tone: 0.3 },
+            {
+                ...createDefaultPad(2),
+                name: 'Soft CH',
+                engineType: 'hihat-closed',
+                chokeGroup: 1,
+                volume: 0.6,
+                tone: 0.3,
+            },
             { ...createDefaultPad(3), name: 'Loose OH', engineType: 'hihat-open', chokeGroup: 1, volume: 0.5 },
             { ...createDefaultPad(4), name: 'Rim', engineType: 'rimshot', volume: 0.5 },
             { ...createDefaultPad(5), name: 'Shaker', engineType: 'shaker', volume: 0.4 },
@@ -100,56 +118,121 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
         ],
         swing: 0.1,
     }),
-    kit('house-classic', 'House Bread', 'Classic house kit — four-on-the-floor foundation', ['house', 'dance', 'classic'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'House Kick', engineType: 'kick-909', decay: 0.35 },
-            { ...createDefaultPad(1), name: 'Clap', engineType: 'clap', sendReverb: 0.3 },
-            { ...createDefaultPad(2), name: 'CH', engineType: 'hihat-closed', chokeGroup: 1, decay: 0.15, volume: 0.7 },
-            { ...createDefaultPad(3), name: 'OH', engineType: 'hihat-open', chokeGroup: 1, decay: 0.4, volume: 0.6 },
-            { ...createDefaultPad(4), name: 'Shaker', engineType: 'shaker', volume: 0.5 },
-            { ...createDefaultPad(5), name: 'Perc', engineType: 'perc-generic', sendDelay: 0.15 },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-        swing: 0.15,
-    }),
-    kit('industrial', 'Iron Loaf', 'Industrial kit — harsh, metallic, aggressive', ['industrial', 'noise', 'aggressive'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'Metal Kick', engineType: 'kick-analog', drive: 6, tone: 0.7 },
-            { ...createDefaultPad(1), name: 'Noise Snare', engineType: 'snare-analog', tone: 0.9, drive: 4 },
-            { ...createDefaultPad(2), name: 'Metal CH', engineType: 'hihat-closed', chokeGroup: 1, tone: 0.9 },
-            { ...createDefaultPad(3), name: 'Crash', engineType: 'cymbal', decay: 0.7 },
-            { ...createDefaultPad(4), name: 'Clang', engineType: 'cowbell', drive: 3 },
-            { ...createDefaultPad(5), name: 'Rim', engineType: 'rimshot', drive: 2 },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-    }),
-    kit('ambient-perc', 'Ambient Crumb', 'Ambient percussion — soft, spacious, textural', ['ambient', 'downtempo', 'atmospheric'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'Soft Kick', engineType: 'kick-analog', decay: 0.2, tone: 0.3, volume: 0.6 },
-            { ...createDefaultPad(1), name: 'Brush', engineType: 'shaker', volume: 0.4 },
-            { ...createDefaultPad(2), name: 'Soft CH', engineType: 'hihat-closed', chokeGroup: 1, volume: 0.4, tone: 0.3 },
-            { ...createDefaultPad(3), name: 'Shimmer', engineType: 'cymbal', decay: 0.9, volume: 0.3, sendReverb: 0.5 },
-            { ...createDefaultPad(4), name: 'Click', engineType: 'rimshot', volume: 0.4, sendDelay: 0.3 },
-            { ...createDefaultPad(5), name: 'Texture', engineType: 'perc-generic', sendReverb: 0.4, sendDelay: 0.2 },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-        reverbMix: 0.4,
-        reverbDecay: 0.8,
-        delayMix: 0.2,
-        delayTime: 500,
-        delayFeedback: 0.4,
-    }),
-    kit('reggaeton', 'Dembow Dough', 'Reggaeton/dembow kit — punchy with characteristic rhythm', ['reggaeton', 'latin', 'urban'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'Dembow Kick', engineType: 'kick-808', decay: 0.3, drive: 1.5 },
-            { ...createDefaultPad(1), name: 'Snare', engineType: 'snare-808', tone: 0.6 },
-            { ...createDefaultPad(2), name: 'CH', engineType: 'hihat-closed', chokeGroup: 1, decay: 0.12 },
-            { ...createDefaultPad(3), name: 'OH', engineType: 'hihat-open', chokeGroup: 1, decay: 0.35 },
-            { ...createDefaultPad(4), name: 'Clap', engineType: 'clap', sendReverb: 0.2 },
-            { ...createDefaultPad(5), name: 'Perc', engineType: 'perc-generic' },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-    }),
+    kit(
+        'house-classic',
+        'House Bread',
+        'Classic house kit — four-on-the-floor foundation',
+        ['house', 'dance', 'classic'],
+        {
+            pads: [
+                { ...createDefaultPad(0), name: 'House Kick', engineType: 'kick-909', decay: 0.35 },
+                { ...createDefaultPad(1), name: 'Clap', engineType: 'clap', sendReverb: 0.3 },
+                {
+                    ...createDefaultPad(2),
+                    name: 'CH',
+                    engineType: 'hihat-closed',
+                    chokeGroup: 1,
+                    decay: 0.15,
+                    volume: 0.7,
+                },
+                {
+                    ...createDefaultPad(3),
+                    name: 'OH',
+                    engineType: 'hihat-open',
+                    chokeGroup: 1,
+                    decay: 0.4,
+                    volume: 0.6,
+                },
+                { ...createDefaultPad(4), name: 'Shaker', engineType: 'shaker', volume: 0.5 },
+                { ...createDefaultPad(5), name: 'Perc', engineType: 'perc-generic', sendDelay: 0.15 },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+            swing: 0.15,
+        }
+    ),
+    kit(
+        'industrial',
+        'Iron Loaf',
+        'Industrial kit — harsh, metallic, aggressive',
+        ['industrial', 'noise', 'aggressive'],
+        {
+            pads: [
+                { ...createDefaultPad(0), name: 'Metal Kick', engineType: 'kick-analog', drive: 6, tone: 0.7 },
+                { ...createDefaultPad(1), name: 'Noise Snare', engineType: 'snare-analog', tone: 0.9, drive: 4 },
+                { ...createDefaultPad(2), name: 'Metal CH', engineType: 'hihat-closed', chokeGroup: 1, tone: 0.9 },
+                { ...createDefaultPad(3), name: 'Crash', engineType: 'cymbal', decay: 0.7 },
+                { ...createDefaultPad(4), name: 'Clang', engineType: 'cowbell', drive: 3 },
+                { ...createDefaultPad(5), name: 'Rim', engineType: 'rimshot', drive: 2 },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+        }
+    ),
+    kit(
+        'ambient-perc',
+        'Ambient Crumb',
+        'Ambient percussion — soft, spacious, textural',
+        ['ambient', 'downtempo', 'atmospheric'],
+        {
+            pads: [
+                {
+                    ...createDefaultPad(0),
+                    name: 'Soft Kick',
+                    engineType: 'kick-analog',
+                    decay: 0.2,
+                    tone: 0.3,
+                    volume: 0.6,
+                },
+                { ...createDefaultPad(1), name: 'Brush', engineType: 'shaker', volume: 0.4 },
+                {
+                    ...createDefaultPad(2),
+                    name: 'Soft CH',
+                    engineType: 'hihat-closed',
+                    chokeGroup: 1,
+                    volume: 0.4,
+                    tone: 0.3,
+                },
+                {
+                    ...createDefaultPad(3),
+                    name: 'Shimmer',
+                    engineType: 'cymbal',
+                    decay: 0.9,
+                    volume: 0.3,
+                    sendReverb: 0.5,
+                },
+                { ...createDefaultPad(4), name: 'Click', engineType: 'rimshot', volume: 0.4, sendDelay: 0.3 },
+                {
+                    ...createDefaultPad(5),
+                    name: 'Texture',
+                    engineType: 'perc-generic',
+                    sendReverb: 0.4,
+                    sendDelay: 0.2,
+                },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+            reverbMix: 0.4,
+            reverbDecay: 0.8,
+            delayMix: 0.2,
+            delayTime: 500,
+            delayFeedback: 0.4,
+        }
+    ),
+    kit(
+        'reggaeton',
+        'Dembow Dough',
+        'Reggaeton/dembow kit — punchy with characteristic rhythm',
+        ['reggaeton', 'latin', 'urban'],
+        {
+            pads: [
+                { ...createDefaultPad(0), name: 'Dembow Kick', engineType: 'kick-808', decay: 0.3, drive: 1.5 },
+                { ...createDefaultPad(1), name: 'Snare', engineType: 'snare-808', tone: 0.6 },
+                { ...createDefaultPad(2), name: 'CH', engineType: 'hihat-closed', chokeGroup: 1, decay: 0.12 },
+                { ...createDefaultPad(3), name: 'OH', engineType: 'hihat-open', chokeGroup: 1, decay: 0.35 },
+                { ...createDefaultPad(4), name: 'Clap', engineType: 'clap', sendReverb: 0.2 },
+                { ...createDefaultPad(5), name: 'Perc', engineType: 'perc-generic' },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+        }
+    ),
     kit('acoustic-bread', 'Sourdough Acoustic', 'Acoustic drum kit emulation', ['acoustic', 'natural', 'live'], {
         pads: [
             { ...createDefaultPad(0), name: 'Kick', engineType: 'kick-analog', decay: 0.3, tone: 0.4 },
@@ -166,22 +249,28 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
         reverbMix: 0.3,
         reverbDecay: 0.6,
     }),
-    kit('world-perc', 'World Grain', 'World percussion — modal synthesis tabla, bongo, woodblock', ['world', 'ethnic', 'percussion'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'Tabla', engineType: 'modal-tabla' },
-            { ...createDefaultPad(1), name: 'Bongo Hi', engineType: 'modal-bongo', tune: 3 },
-            { ...createDefaultPad(2), name: 'Bongo Lo', engineType: 'modal-bongo', tune: -3 },
-            { ...createDefaultPad(3), name: 'Woodblock', engineType: 'modal-woodblock' },
-            { ...createDefaultPad(4), name: 'Metal', engineType: 'modal-metal' },
-            { ...createDefaultPad(5), name: 'Shaker', engineType: 'shaker' },
-            { ...createDefaultPad(6), name: 'Clave', engineType: 'clave' },
-            { ...createDefaultPad(7), name: 'Cowbell', engineType: 'cowbell' },
-            { ...createDefaultPad(8), name: 'Tom Lo', engineType: 'tom', tune: -5 },
-            { ...createDefaultPad(9), name: 'Tom Hi', engineType: 'tom', tune: 5 },
-            ...Array.from({ length: 6 }, (_, i) => createDefaultPad(10 + i)),
-        ],
-        reverbMix: 0.25,
-    }),
+    kit(
+        'world-perc',
+        'World Grain',
+        'World percussion — modal synthesis tabla, bongo, woodblock',
+        ['world', 'ethnic', 'percussion'],
+        {
+            pads: [
+                { ...createDefaultPad(0), name: 'Tabla', engineType: 'modal-tabla' },
+                { ...createDefaultPad(1), name: 'Bongo Hi', engineType: 'modal-bongo', tune: 3 },
+                { ...createDefaultPad(2), name: 'Bongo Lo', engineType: 'modal-bongo', tune: -3 },
+                { ...createDefaultPad(3), name: 'Woodblock', engineType: 'modal-woodblock' },
+                { ...createDefaultPad(4), name: 'Metal', engineType: 'modal-metal' },
+                { ...createDefaultPad(5), name: 'Shaker', engineType: 'shaker' },
+                { ...createDefaultPad(6), name: 'Clave', engineType: 'clave' },
+                { ...createDefaultPad(7), name: 'Cowbell', engineType: 'cowbell' },
+                { ...createDefaultPad(8), name: 'Tom Lo', engineType: 'tom', tune: -5 },
+                { ...createDefaultPad(9), name: 'Tom Hi', engineType: 'tom', tune: 5 },
+                ...Array.from({ length: 6 }, (_, i) => createDefaultPad(10 + i)),
+            ],
+            reverbMix: 0.25,
+        }
+    ),
     kit('edm-festival', 'Festival Loaf', 'EDM/festival kit — big room drops', ['edm', 'festival', 'bigroom'], {
         pads: [
             { ...createDefaultPad(0), name: 'Big Kick', engineType: 'kick-909', drive: 2, decay: 0.4 },
@@ -209,34 +298,53 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
         reverbDecay: 0.6,
         swing: 0.25,
     }),
-    kit('sp1200-crunch', 'SP-Twelve Crust', '12-bit SP-1200 crunch — golden era hip-hop', ['sp1200', 'lofi', 'hip-hop', 'vintage'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'Dusty Kick', engineType: 'kick-808', tune: -2, drive: 1.5 },
-            { ...createDefaultPad(1), name: 'Crunch Snare', engineType: 'snare-808', drive: 2 },
-            { ...createDefaultPad(2), name: 'Lo-Fi CH', engineType: 'hihat-closed', chokeGroup: 1, tone: 0.3 },
-            { ...createDefaultPad(3), name: 'Lo-Fi OH', engineType: 'hihat-open', chokeGroup: 1, tone: 0.3 },
-            { ...createDefaultPad(4), name: 'Clap', engineType: 'clap' },
-            { ...createDefaultPad(5), name: 'Rim', engineType: 'rimshot' },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-        lofiBits: 12,
-        lofiRate: 26040,
-        lofiMix: 0.7,
-        swing: 0.2,
-    }),
-    kit('cinematic-perc', 'Cinematic Crumb', 'Cinematic percussion — big, spatial, epic', ['cinematic', 'film', 'epic'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'Epic Hit', engineType: 'kick-analog', decay: 0.6, drive: 3, sendReverb: 0.5 },
-            { ...createDefaultPad(1), name: 'Taiko', engineType: 'modal-tabla', tune: -5, sendReverb: 0.4 },
-            { ...createDefaultPad(2), name: 'Metal', engineType: 'modal-metal', sendReverb: 0.5, sendDelay: 0.2 },
-            { ...createDefaultPad(3), name: 'Impact', engineType: 'cymbal', decay: 0.9, sendReverb: 0.6 },
-            { ...createDefaultPad(4), name: 'Snap', engineType: 'rimshot', sendReverb: 0.3 },
-            { ...createDefaultPad(5), name: 'Texture', engineType: 'shaker', volume: 0.4, sendReverb: 0.4 },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-        reverbMix: 0.4,
-        reverbDecay: 0.8,
-    }),
+    kit(
+        'sp1200-crunch',
+        'SP-Twelve Crust',
+        '12-bit SP-1200 crunch — golden era hip-hop',
+        ['sp1200', 'lofi', 'hip-hop', 'vintage'],
+        {
+            pads: [
+                { ...createDefaultPad(0), name: 'Dusty Kick', engineType: 'kick-808', tune: -2, drive: 1.5 },
+                { ...createDefaultPad(1), name: 'Crunch Snare', engineType: 'snare-808', drive: 2 },
+                { ...createDefaultPad(2), name: 'Lo-Fi CH', engineType: 'hihat-closed', chokeGroup: 1, tone: 0.3 },
+                { ...createDefaultPad(3), name: 'Lo-Fi OH', engineType: 'hihat-open', chokeGroup: 1, tone: 0.3 },
+                { ...createDefaultPad(4), name: 'Clap', engineType: 'clap' },
+                { ...createDefaultPad(5), name: 'Rim', engineType: 'rimshot' },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+            lofiBits: 12,
+            lofiRate: 26040,
+            lofiMix: 0.7,
+            swing: 0.2,
+        }
+    ),
+    kit(
+        'cinematic-perc',
+        'Cinematic Crumb',
+        'Cinematic percussion — big, spatial, epic',
+        ['cinematic', 'film', 'epic'],
+        {
+            pads: [
+                {
+                    ...createDefaultPad(0),
+                    name: 'Epic Hit',
+                    engineType: 'kick-analog',
+                    decay: 0.6,
+                    drive: 3,
+                    sendReverb: 0.5,
+                },
+                { ...createDefaultPad(1), name: 'Taiko', engineType: 'modal-tabla', tune: -5, sendReverb: 0.4 },
+                { ...createDefaultPad(2), name: 'Metal', engineType: 'modal-metal', sendReverb: 0.5, sendDelay: 0.2 },
+                { ...createDefaultPad(3), name: 'Impact', engineType: 'cymbal', decay: 0.9, sendReverb: 0.6 },
+                { ...createDefaultPad(4), name: 'Snap', engineType: 'rimshot', sendReverb: 0.3 },
+                { ...createDefaultPad(5), name: 'Texture', engineType: 'shaker', volume: 0.4, sendReverb: 0.4 },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+            reverbMix: 0.4,
+            reverbDecay: 0.8,
+        }
+    ),
     kit('garage-2step', 'Garage Crouton', 'UK garage / 2-step kit — skippy, shuffled', ['garage', '2step', 'uk'], {
         pads: [
             { ...createDefaultPad(0), name: 'Kick', engineType: 'kick-909', decay: 0.25 },
@@ -266,34 +374,92 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
         ],
         reverbMix: 0.2,
     }),
-    kit('fm-metallic', 'Metallic Grain', 'FM percussion — bells, clangs, metallic textures', ['fm', 'metallic', 'experimental'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'FM Kick', engineType: 'kick-808', drive: 2 },
-            { ...createDefaultPad(1), name: 'FM Snare', engineType: 'fm-perc', tune: 5, engineParams: { mod_ratio: 2.3, mod_amount: 3, feedback: 0.2 } },
-            { ...createDefaultPad(2), name: 'FM Hat', engineType: 'fm-perc', tune: 12, decay: 0.15, engineParams: { mod_ratio: 7.1, mod_amount: 5, feedback: 0.5 } },
-            { ...createDefaultPad(3), name: 'FM Bell', engineType: 'fm-perc', tune: 8, decay: 0.7, engineParams: { mod_ratio: 3.5, mod_amount: 2, feedback: 0.1 } },
-            { ...createDefaultPad(4), name: 'FM Clang', engineType: 'fm-perc', tune: -3, engineParams: { mod_ratio: 5.7, mod_amount: 4, feedback: 0.4 } },
-            { ...createDefaultPad(5), name: 'FM Zap', engineType: 'fm-perc', tune: 0, decay: 0.1, engineParams: { mod_ratio: 1, mod_amount: 6, feedback: 0.7 } },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-        reverbMix: 0.3,
-        delayMix: 0.15,
-        delayTime: 300,
-    }),
-    kit('glitch-bread', 'Glitch Crumb', 'Glitch/IDM kit — broken, stuttered, experimental', ['glitch', 'idm', 'experimental'], {
-        pads: [
-            { ...createDefaultPad(0), name: 'Broken Kick', engineType: 'kick-analog', drive: 5, tune: -8 },
-            { ...createDefaultPad(1), name: 'Noise Hit', engineType: 'snare-analog', tone: 0.9, drive: 4 },
-            { ...createDefaultPad(2), name: 'Glitch CH', engineType: 'fm-perc', tune: 15, decay: 0.05, engineParams: { mod_ratio: 11, mod_amount: 7, feedback: 0.6 } },
-            { ...createDefaultPad(3), name: 'Zap', engineType: 'fm-perc', decay: 0.08, engineParams: { mod_ratio: 1, mod_amount: 8, feedback: 0.8 } },
-            { ...createDefaultPad(4), name: 'Click', engineType: 'rimshot', drive: 3 },
-            { ...createDefaultPad(5), name: 'Texture', engineType: 'shaker', tone: 0.9 },
-            ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
-        ],
-        lofiBits: 10,
-        lofiRate: 22050,
-        lofiMix: 0.3,
-    }),
+    kit(
+        'fm-metallic',
+        'Metallic Grain',
+        'FM percussion — bells, clangs, metallic textures',
+        ['fm', 'metallic', 'experimental'],
+        {
+            pads: [
+                { ...createDefaultPad(0), name: 'FM Kick', engineType: 'kick-808', drive: 2 },
+                {
+                    ...createDefaultPad(1),
+                    name: 'FM Snare',
+                    engineType: 'fm-perc',
+                    tune: 5,
+                    engineParams: { mod_ratio: 2.3, mod_amount: 3, feedback: 0.2 },
+                },
+                {
+                    ...createDefaultPad(2),
+                    name: 'FM Hat',
+                    engineType: 'fm-perc',
+                    tune: 12,
+                    decay: 0.15,
+                    engineParams: { mod_ratio: 7.1, mod_amount: 5, feedback: 0.5 },
+                },
+                {
+                    ...createDefaultPad(3),
+                    name: 'FM Bell',
+                    engineType: 'fm-perc',
+                    tune: 8,
+                    decay: 0.7,
+                    engineParams: { mod_ratio: 3.5, mod_amount: 2, feedback: 0.1 },
+                },
+                {
+                    ...createDefaultPad(4),
+                    name: 'FM Clang',
+                    engineType: 'fm-perc',
+                    tune: -3,
+                    engineParams: { mod_ratio: 5.7, mod_amount: 4, feedback: 0.4 },
+                },
+                {
+                    ...createDefaultPad(5),
+                    name: 'FM Zap',
+                    engineType: 'fm-perc',
+                    tune: 0,
+                    decay: 0.1,
+                    engineParams: { mod_ratio: 1, mod_amount: 6, feedback: 0.7 },
+                },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+            reverbMix: 0.3,
+            delayMix: 0.15,
+            delayTime: 300,
+        }
+    ),
+    kit(
+        'glitch-bread',
+        'Glitch Crumb',
+        'Glitch/IDM kit — broken, stuttered, experimental',
+        ['glitch', 'idm', 'experimental'],
+        {
+            pads: [
+                { ...createDefaultPad(0), name: 'Broken Kick', engineType: 'kick-analog', drive: 5, tune: -8 },
+                { ...createDefaultPad(1), name: 'Noise Hit', engineType: 'snare-analog', tone: 0.9, drive: 4 },
+                {
+                    ...createDefaultPad(2),
+                    name: 'Glitch CH',
+                    engineType: 'fm-perc',
+                    tune: 15,
+                    decay: 0.05,
+                    engineParams: { mod_ratio: 11, mod_amount: 7, feedback: 0.6 },
+                },
+                {
+                    ...createDefaultPad(3),
+                    name: 'Zap',
+                    engineType: 'fm-perc',
+                    decay: 0.08,
+                    engineParams: { mod_ratio: 1, mod_amount: 8, feedback: 0.8 },
+                },
+                { ...createDefaultPad(4), name: 'Click', engineType: 'rimshot', drive: 3 },
+                { ...createDefaultPad(5), name: 'Texture', engineType: 'shaker', tone: 0.9 },
+                ...Array.from({ length: 10 }, (_, i) => createDefaultPad(6 + i)),
+            ],
+            lofiBits: 10,
+            lofiRate: 22050,
+            lofiMix: 0.3,
+        }
+    ),
     kit('latin-bread', 'Latin Loaf', 'Latin percussion — salsa, bossa, samba rhythms', ['latin', 'salsa', 'bossa'], {
         pads: [
             { ...createDefaultPad(0), name: 'Kick', engineType: 'kick-analog', decay: 0.2, tone: 0.4 },
@@ -306,7 +472,14 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
             { ...createDefaultPad(7), name: 'Guiro', engineType: 'shaker' },
             { ...createDefaultPad(8), name: 'Clave', engineType: 'clave' },
             { ...createDefaultPad(9), name: 'Cowbell', engineType: 'cowbell' },
-            { ...createDefaultPad(10), name: 'Agogo', engineType: 'fm-perc', tune: 10, decay: 0.3, engineParams: { mod_ratio: 2.8, mod_amount: 1.5 } },
+            {
+                ...createDefaultPad(10),
+                name: 'Agogo',
+                engineType: 'fm-perc',
+                tune: 10,
+                decay: 0.3,
+                engineParams: { mod_ratio: 2.8, mod_amount: 1.5 },
+            },
             { ...createDefaultPad(11), name: 'Cabasa', engineType: 'shaker', tone: 0.7 },
             ...Array.from({ length: 4 }, (_, i) => createDefaultPad(12 + i)),
         ],

@@ -31,10 +31,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                         const level = send?.level ?? 0;
                         const isPreFader = send?.preFader ?? false;
                         return (
-                            <SurfaceCard
-                                key={bus.id}
-                                className="w-full p-3"
-                            >
+                            <SurfaceCard key={bus.id} className="w-full p-3">
                                 <div className="flex flex-col w-full gap-2">
                                     <ControlHeader
                                         className="w-full"

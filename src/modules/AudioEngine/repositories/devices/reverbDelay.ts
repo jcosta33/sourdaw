@@ -48,8 +48,12 @@ export function applyReverbParams(dn: OfflineDeviceNode, params: Record<string, 
         wet.gain.value = params['rev-mix'];
         dry.gain.value = 1 - params['rev-mix'];
     }
-    if (params['rev-predelay'] !== undefined) { predelay.delayTime.value = params['rev-predelay'] / 1000; }
-    if (params['rev-lowcut'] !== undefined) { lowcut.frequency.value = params['rev-lowcut']; }
+    if (params['rev-predelay'] !== undefined) {
+        predelay.delayTime.value = params['rev-predelay'] / 1000;
+    }
+    if (params['rev-lowcut'] !== undefined) {
+        lowcut.frequency.value = params['rev-lowcut'];
+    }
 }
 
 // ── Delay ────────────────────────────────────────────────────────────────
@@ -96,10 +100,18 @@ export function applyDelayParams(dn: OfflineDeviceNode, params: Record<string, n
     const wetD = dn.nodes[2] as GainNode;
     const fbLowcut = dn.nodes[6] as BiquadFilterNode;
     const fbHighcut = dn.nodes[7] as BiquadFilterNode;
-    if (params['delay-time'] !== undefined) { delay.delayTime.value = params['delay-time'] / 1000; }
-    if (params['delay-feedback'] !== undefined) { fb.gain.value = params['delay-feedback']; }
-    if (params['delay-lowcut'] !== undefined) { fbLowcut.frequency.value = params['delay-lowcut']; }
-    if (params['delay-highcut'] !== undefined) { fbHighcut.frequency.value = params['delay-highcut']; }
+    if (params['delay-time'] !== undefined) {
+        delay.delayTime.value = params['delay-time'] / 1000;
+    }
+    if (params['delay-feedback'] !== undefined) {
+        fb.gain.value = params['delay-feedback'];
+    }
+    if (params['delay-lowcut'] !== undefined) {
+        fbLowcut.frequency.value = params['delay-lowcut'];
+    }
+    if (params['delay-highcut'] !== undefined) {
+        fbHighcut.frequency.value = params['delay-highcut'];
+    }
     if (params['delay-mix'] !== undefined) {
         wetD.gain.value = params['delay-mix'];
         dryD.gain.value = 1 - params['delay-mix'];
@@ -219,9 +231,15 @@ export function applyConvolutionReverbParams(dn: OfflineDeviceNode, params: Reco
         wetConv.gain.value = params['conv-mix'];
         dryConv.gain.value = 1 - params['conv-mix'];
     }
-    if (params['conv-predelay'] !== undefined) { predelayConv.delayTime.value = params['conv-predelay'] / 1000; }
-    if (params['conv-lowcut'] !== undefined) { lowcutConv.frequency.value = params['conv-lowcut']; }
-    if (params['conv-highcut'] !== undefined) { highcutConv.frequency.value = params['conv-highcut']; }
+    if (params['conv-predelay'] !== undefined) {
+        predelayConv.delayTime.value = params['conv-predelay'] / 1000;
+    }
+    if (params['conv-lowcut'] !== undefined) {
+        lowcutConv.frequency.value = params['conv-lowcut'];
+    }
+    if (params['conv-highcut'] !== undefined) {
+        highcutConv.frequency.value = params['conv-highcut'];
+    }
     if (params['conv-ir'] !== undefined) {
         const irIndex = Math.round(params['conv-ir']);
         const irName = IR_NAMES[irIndex] ?? 'studio-a';

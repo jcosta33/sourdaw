@@ -52,7 +52,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     borderTop: '1px solid rgba(255,255,255,0.04)',
                 }}
             >
-                <Button variant="ghost" size="icon-xs" className="hover:bg-surface-raised" onClick={onBack} aria-label="Back to track">
+                <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="hover:bg-surface-raised"
+                    onClick={onBack}
+                    aria-label="Back to track"
+                >
                     <ChevronRight className="size-3 rotate-180" />
                 </Button>
                 {editingName ? (
@@ -91,8 +97,16 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Position" />
                 <InsetPanel className="space-y-1.5">
-                    <DawReadoutRow label="Start" value={`Bar ${startBar} (beat ${clip.startBeat})`} valueClassName="text-foreground" />
-                    <DawReadoutRow label="End" value={`Bar ${endBar} (beat ${clip.endBeat})`} valueClassName="text-foreground" />
+                    <DawReadoutRow
+                        label="Start"
+                        value={`Bar ${startBar} (beat ${clip.startBeat})`}
+                        valueClassName="text-foreground"
+                    />
+                    <DawReadoutRow
+                        label="End"
+                        value={`Bar ${endBar} (beat ${clip.endBeat})`}
+                        valueClassName="text-foreground"
+                    />
                     <DawReadoutRow
                         label="Length"
                         value={`${duration} beats (${(duration / 4).toFixed(1)} bars)`}

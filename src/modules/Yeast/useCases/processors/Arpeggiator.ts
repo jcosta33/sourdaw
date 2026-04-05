@@ -6,7 +6,13 @@
  * octave expansion, velocity modes, latch, and multiple trigger modes.
  */
 
-import { type MidiEvent, type TransportInfo, type RateValue, rateToBeats, samplesPerBeat } from '../../models/MidiEvent';
+import {
+    type MidiEvent,
+    type TransportInfo,
+    type RateValue,
+    rateToBeats,
+    samplesPerBeat,
+} from '../../models/MidiEvent';
 import { type MidiProcessor, type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
 import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
 
@@ -55,7 +61,7 @@ export class Arpeggiator implements MidiProcessor {
     private lastStepTimeSamples = -Infinity;
     private activeGenerated: ActiveNote[] = [];
     private scheduled = new ScheduledEventQueue();
-    private rngState = 0xDEAD;
+    private rngState = 0xdead;
 
     constructor(id?: string) {
         this.id = id ?? `arp-${Date.now()}`;
@@ -91,13 +97,14 @@ export class Arpeggiator implements MidiProcessor {
         if (!transport.isPlaying) return;
 
         const stepLenSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
-        const blockEnd = input.length > 0
-            ? Math.max(...input.map((e) => e.timeSamples)) + 128
-            : (transport.ppqPosition * samplesPerBeat(transport)) + 128;
+        const blockEnd =
+            input.length > 0
+                ? Math.max(...input.map((e) => e.timeSamples)) + 128
+                : transport.ppqPosition * samplesPerBeat(transport) + 128;
 
         // Initialize lastStepTime if needed
         if (this.lastStepTimeSamples === -Infinity) {
-            this.lastStepTimeSamples = input[0]?.timeSamples ?? (transport.ppqPosition * samplesPerBeat(transport));
+            this.lastStepTimeSamples = input[0]?.timeSamples ?? transport.ppqPosition * samplesPerBeat(transport);
         }
 
         let safety = 0;
@@ -106,16 +113,14 @@ export class Arpeggiator implements MidiProcessor {
             const stepTime = this.lastStepTimeSamples + stepLenSamples;
 
             // Apply swing to odd steps
-            const swingOffset = (this.stepIndex % 2 === 1) ? this.swing * stepLenSamples * 0.5 : 0;
+            const swingOffset = this.stepIndex % 2 === 1 ? this.swing * stepLenSamples * 0.5 : 0;
             const actualTime = stepTime + swingOffset;
 
             // Kill previous step's notes that should end
             this.expireNotes(output, actualTime);
 
             // Get pattern step (if in pattern mode)
-            const patternStep = this.mode === 'pattern'
-                ? this.pattern[this.stepIndex % this.pattern.length]
-                : null;
+            const patternStep = this.mode === 'pattern' ? this.pattern[this.stepIndex % this.pattern.length] : null;
 
             // Skip inactive or rested steps
             if (patternStep && (!patternStep.active || patternStep.stepType === 'rest')) {
@@ -145,8 +150,8 @@ export class Arpeggiator implements MidiProcessor {
 
             // Probability check (pattern or global)
             if (patternStep && patternStep.probability < 1.0) {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
-                if ((this.rngState / 0x7FFFFFFF) > patternStep.probability) {
+                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+                if (this.rngState / 0x7fffffff > patternStep.probability) {
                     this.advanceStep(pool.length);
                     this.lastStepTimeSamples = stepTime;
                     continue;
@@ -155,9 +160,7 @@ export class Arpeggiator implements MidiProcessor {
 
             // Get the note(s) for this step
             const expandedPool = this.expandOctaves(pool);
-            let stepNotes = patternStep?.stepType === 'chord'
-                ? expandedPool
-                : this.selectStepNotes(expandedPool);
+            let stepNotes = patternStep?.stepType === 'chord' ? expandedPool : this.selectStepNotes(expandedPool);
 
             // Apply per-step octave and semitone offsets
             if (patternStep && (patternStep.octaveOffset !== 0 || patternStep.semitoneOffset !== 0)) {
@@ -196,10 +199,10 @@ export class Arpeggiator implements MidiProcessor {
 
                     this.activeGenerated.push({
                         sourceId: this.pressCounter,
-                    channel: sn.channel,
-                    note: sn.note,
-                    offTimeSamples: offTime,
-                });
+                        channel: sn.channel,
+                        note: sn.note,
+                        offTimeSamples: offTime,
+                    });
                 }
             }
 
@@ -224,9 +227,15 @@ export class Arpeggiator implements MidiProcessor {
         this.scheduled.clear();
     }
 
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     /** Set the custom arp pattern (for pattern mode). */
     setPattern(steps: ArpStep[]): void {
@@ -234,22 +243,50 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     /** Get current pattern for UI. */
-    getPattern(): ArpStep[] { return [...this.pattern]; }
-    getCurrentStep(): number { return this.stepIndex; }
+    getPattern(): ArpStep[] {
+        return [...this.pattern];
+    }
+    getCurrentStep(): number {
+        return this.stepIndex;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'mode': this.mode = (['up', 'down', 'upDown', 'downUp', 'random', 'order', 'chord', 'pattern'] as const)[value] ?? 'up'; break;
-            case 'rate_denom': this.rate = { ...this.rate, denom: Math.max(1, value) }; break;
-            case 'rate_type': this.rate = { ...this.rate, type: (['straight', 'dotted', 'triplet'] as const)[value] ?? 'straight' }; break;
-            case 'gate': this.gate = Math.max(0.01, Math.min(2.0, value)); break;
-            case 'swing': this.swing = Math.max(0, Math.min(1, value)); break;
-            case 'octave_range': this.octaveRange = Math.max(1, Math.min(4, Math.round(value))); break;
-            case 'octave_direction': this.octaveDirection = (['up', 'down', 'upDown'] as const)[value] ?? 'up'; break;
-            case 'velocity_mode': this.velocityMode = (['input', 'fixed', 'random'] as const)[value] ?? 'input'; break;
-            case 'fixed_velocity': this.fixedVelocity = Math.max(1, Math.min(127, Math.round(value))); break;
-            case 'latch': this.latchEnabled = value > 0.5; break;
-            case 'restart_mode': this.restartMode = (['freeRunning', 'restartOnNote', 'restartOnBar'] as const)[value] ?? 'restartOnNote'; break;
+            case 'mode':
+                this.mode =
+                    (['up', 'down', 'upDown', 'downUp', 'random', 'order', 'chord', 'pattern'] as const)[value] ?? 'up';
+                break;
+            case 'rate_denom':
+                this.rate = { ...this.rate, denom: Math.max(1, value) };
+                break;
+            case 'rate_type':
+                this.rate = { ...this.rate, type: (['straight', 'dotted', 'triplet'] as const)[value] ?? 'straight' };
+                break;
+            case 'gate':
+                this.gate = Math.max(0.01, Math.min(2.0, value));
+                break;
+            case 'swing':
+                this.swing = Math.max(0, Math.min(1, value));
+                break;
+            case 'octave_range':
+                this.octaveRange = Math.max(1, Math.min(4, Math.round(value)));
+                break;
+            case 'octave_direction':
+                this.octaveDirection = (['up', 'down', 'upDown'] as const)[value] ?? 'up';
+                break;
+            case 'velocity_mode':
+                this.velocityMode = (['input', 'fixed', 'random'] as const)[value] ?? 'input';
+                break;
+            case 'fixed_velocity':
+                this.fixedVelocity = Math.max(1, Math.min(127, Math.round(value)));
+                break;
+            case 'latch':
+                this.latchEnabled = value > 0.5;
+                break;
+            case 'restart_mode':
+                this.restartMode =
+                    (['freeRunning', 'restartOnNote', 'restartOnBar'] as const)[value] ?? 'restartOnNote';
+                break;
         }
     }
 
@@ -314,8 +351,10 @@ export class Arpeggiator implements MidiProcessor {
         const byOrder = [...pool].sort((a, b) => a.pressedOrder - b.pressedOrder);
 
         switch (this.mode) {
-            case 'up': return [byPitch[this.stepIndex % byPitch.length]!];
-            case 'down': return [byPitch[byPitch.length - 1 - (this.stepIndex % byPitch.length)]!];
+            case 'up':
+                return [byPitch[this.stepIndex % byPitch.length]!];
+            case 'down':
+                return [byPitch[byPitch.length - 1 - (this.stepIndex % byPitch.length)]!];
             case 'upDown': {
                 const idx = this.reflectedIndex(this.stepIndex, byPitch.length);
                 return [byPitch[idx]!];
@@ -325,12 +364,14 @@ export class Arpeggiator implements MidiProcessor {
                 return [byPitch[Math.max(0, idx)]!];
             }
             case 'random': {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
+                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
                 const idx = this.rngState % byPitch.length;
                 return [byPitch[idx]!];
             }
-            case 'order': return [byOrder[this.stepIndex % byOrder.length]!];
-            case 'chord': return byPitch;
+            case 'order':
+                return [byOrder[this.stepIndex % byOrder.length]!];
+            case 'chord':
+                return byPitch;
             case 'pattern': {
                 // In pattern mode, use "next" note selection by default
                 return [byPitch[this.stepIndex % byPitch.length]!];
@@ -352,10 +393,12 @@ export class Arpeggiator implements MidiProcessor {
 
     private computeVelocity(inputVel: number): number {
         switch (this.velocityMode) {
-            case 'input': return inputVel;
-            case 'fixed': return this.fixedVelocity;
+            case 'input':
+                return inputVel;
+            case 'fixed':
+                return this.fixedVelocity;
             case 'random': {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
+                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
                 return 40 + (this.rngState % 88); // 40-127
             }
         }

@@ -2,7 +2,12 @@ import { type CommandEntry } from '../CommandRegistry';
 import { getSelectedClipId } from '../../useCases/selectionHelpers';
 import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import { zoomToFit, zoomToSelection } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
-import { toggleSidebar, toggleInspector, toggleMixer, toggleAutomationPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import {
+    toggleSidebar,
+    toggleInspector,
+    toggleMixer,
+    toggleAutomationPanel,
+} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { addMarker } from '#/modules/Arrangement/useCases/marker/markerOperations';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';

@@ -8,12 +8,7 @@ import { GitBranch, Plus, Merge, Trash2, Check, X } from 'lucide-react';
 
 import { type BranchRecord, type BranchStoreState, MAIN_BRANCH_ID } from '../../models/BranchTypes';
 import { branchStore } from '../../stores/branchStore';
-import {
-    forkProjectBranch,
-    switchBranch,
-    mergeBranch,
-    deleteBranch,
-} from '../../useCases/crdtBranching';
+import { forkProjectBranch, switchBranch, mergeBranch, deleteBranch } from '../../useCases/crdtBranching';
 
 const defaultState: BranchStoreState = {
     branches: [],
@@ -140,7 +135,9 @@ type BranchRowProps = {
 };
 
 const BranchRow = ({ branch, isActive, onSwitch, onMerge, onDelete }: BranchRowProps): ReactElement => (
-    <div className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${isActive ? 'bg-muted/30' : 'hover:bg-muted/10'}`}>
+    <div
+        className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${isActive ? 'bg-muted/30' : 'hover:bg-muted/10'}`}
+    >
         <GitBranch className="size-3 shrink-0 text-muted-foreground" />
         <button onClick={onSwitch} className="flex-1 text-left min-w-0">
             <span className="truncate text-foreground">{branch.name}</span>

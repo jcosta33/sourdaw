@@ -3,7 +3,13 @@
  * Supports synced and free-running rates, multiple waveforms, note retrigger.
  */
 
-import { type MidiEvent, type TransportInfo, type RateValue, rateToBeats, samplesPerBeat } from '../../models/MidiEvent';
+import {
+    type MidiEvent,
+    type TransportInfo,
+    type RateValue,
+    rateToBeats,
+    samplesPerBeat,
+} from '../../models/MidiEvent';
 import { type MidiProcessor } from '../../models/MidiProcessor';
 
 type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHold';
@@ -11,15 +17,20 @@ type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHo
 function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): number {
     const p = phase % 1.0;
     switch (shape) {
-        case 'sine': return 0.5 + 0.5 * Math.sin(p * 2 * Math.PI);
-        case 'triangle': return p < 0.5 ? p * 2 : 2 - p * 2;
-        case 'square': return p < 0.5 ? 1 : 0;
-        case 'sawUp': return p;
-        case 'sawDown': return 1 - p;
+        case 'sine':
+            return 0.5 + 0.5 * Math.sin(p * 2 * Math.PI);
+        case 'triangle':
+            return p < 0.5 ? p * 2 : 2 - p * 2;
+        case 'square':
+            return p < 0.5 ? 1 : 0;
+        case 'sawUp':
+            return p;
+        case 'sawDown':
+            return 1 - p;
         case 'sampleHold': {
             // Only change on phase wrap
             if (p < 0.01) {
-                rngState.v = ((rngState.v * 1103515245 + 12345) & 0x7FFFFFFF) / 0x7FFFFFFF;
+                rngState.v = ((rngState.v * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
             }
             return rngState.v;
         }
@@ -92,21 +103,47 @@ export class CCGenerator implements MidiProcessor {
         this.accumPhase = 0;
         this.lastEmittedValue = -1;
     }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'cc_number': this.ccNumber = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'shape': this.shape = (['sine', 'triangle', 'square', 'sawUp', 'sawDown', 'sampleHold'] as const)[Math.round(value)] ?? 'sine'; break;
-            case 'rate_denom': this.rate = { ...this.rate, denom: Math.max(1, value) }; break;
-            case 'free_rate_hz': this.freeRateHz = Math.max(0.01, Math.min(20, value)); break;
-            case 'sync': this.syncMode = value > 0.5; break;
-            case 'min': this.min = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'max': this.max = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'phase': this.phase = Math.max(0, Math.min(1, value)); break;
-            case 'retrigger': this.retriggerOnNote = value > 0.5; break;
+            case 'cc_number':
+                this.ccNumber = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'shape':
+                this.shape =
+                    (['sine', 'triangle', 'square', 'sawUp', 'sawDown', 'sampleHold'] as const)[Math.round(value)] ??
+                    'sine';
+                break;
+            case 'rate_denom':
+                this.rate = { ...this.rate, denom: Math.max(1, value) };
+                break;
+            case 'free_rate_hz':
+                this.freeRateHz = Math.max(0.01, Math.min(20, value));
+                break;
+            case 'sync':
+                this.syncMode = value > 0.5;
+                break;
+            case 'min':
+                this.min = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'max':
+                this.max = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'phase':
+                this.phase = Math.max(0, Math.min(1, value));
+                break;
+            case 'retrigger':
+                this.retriggerOnNote = value > 0.5;
+                break;
         }
     }
 }

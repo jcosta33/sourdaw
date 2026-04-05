@@ -24,8 +24,6 @@ import { useChannelStripActions } from '../../hooks/useChannelStripActions';
 
 type MixerMenu = { x: number; y: number } | null;
 
-
-
 type ExpandedChannelStripProps = {
     track: Track;
     isSelected: boolean;
@@ -201,10 +199,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             </div>
 
             {/* Fader */}
-            <div
-                className="shrink-0"
-                onPointerUp={actions.releaseGainAutomation}
-            >
+            <div className="shrink-0" onPointerUp={actions.releaseGainAutomation}>
                 <Fader
                     value={track.gain}
                     onChange={actions.setGain}
@@ -218,15 +213,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 />
             </div>
 
-            <MixerStripValue>
-                {track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB
-            </MixerStripValue>
+            <MixerStripValue>{track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB</MixerStripValue>
 
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
-                <div
-                    onPointerUp={actions.releasePanAutomation}
-                >
+                <div onPointerUp={actions.releasePanAutomation}>
                     <RotaryKnob
                         value={track.pan}
                         onChange={actions.setPan}
@@ -263,12 +254,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     style={{ left: ctxMenu.x, top: ctxMenu.y }}
                     role="menu"
                 >
-                    <button
-                        type="button"
-                        className={menuBtnClass}
-                        role="menuitem"
-                        onClick={act(actions.toggleMute)}
-                    >
+                    <button type="button" className={menuBtnClass} role="menuitem" onClick={act(actions.toggleMute)}>
                         {track.muted ? 'Unmute' : 'Mute'}
                     </button>
                     <button
@@ -287,12 +273,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     >
                         {track.soloSafe ? 'Disable Solo Safe' : 'Solo Safe'}
                     </button>
-                    <button
-                        type="button"
-                        className={menuBtnClass}
-                        role="menuitem"
-                        onClick={act(actions.toggleArm)}
-                    >
+                    <button type="button" className={menuBtnClass} role="menuitem" onClick={act(actions.toggleArm)}>
                         {track.armed ? 'Disarm' : 'Arm for Recording'}
                     </button>
                     <div className={menuSepClass} />

@@ -92,7 +92,9 @@ const PLAYHEAD_BROADCAST_HZ = 4;
  */
 const startBranchSync = (isHost: boolean): void => {
     // Snapshot current state so we can restore it on session end.
-    branchStoreSnapshot = branchStore.value ? { ...branchStore.value, branches: [...branchStore.value.branches] } : null;
+    branchStoreSnapshot = branchStore.value
+        ? { ...branchStore.value, branches: [...branchStore.value.branches] }
+        : null;
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
@@ -347,15 +349,17 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
         localName: name,
         localColor: color,
         isHost: false,
-        peers: [{
-            id: invite.peerId,
-            name: invite.name,
-            color: PEER_COLORS[0]!,
-            isHost: true,
-            isConnected: false,
-            lastSeen: Date.now(),
-            latencyMs: null,
-        }],
+        peers: [
+            {
+                id: invite.peerId,
+                name: invite.name,
+                color: PEER_COLORS[0]!,
+                isHost: true,
+                isConnected: false,
+                lastSeen: Date.now(),
+                latencyMs: null,
+            },
+        ],
         connectionStatus: 'connecting',
         error: null,
     });
@@ -669,7 +673,10 @@ const addOrUpdatePeer = (peer: PeerInfo): void => {
         peers[existing] = { ...peer, isConnected: true, lastSeen: Date.now() };
         collaborationStore.set({ ...state, peers });
     } else {
-        collaborationStore.set({ ...state, peers: [...state.peers, { ...peer, isConnected: true, lastSeen: Date.now() }] });
+        collaborationStore.set({
+            ...state,
+            peers: [...state.peers, { ...peer, isConnected: true, lastSeen: Date.now() }],
+        });
     }
 };
 
@@ -692,9 +699,7 @@ const updatePeerLastSeen = (peerId: PeerId): void => {
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.map((p) =>
-            p.id === peerId ? { ...p, lastSeen: Date.now() } : p
-        ),
+        peers: state.peers.map((p) => (p.id === peerId ? { ...p, lastSeen: Date.now() } : p)),
     });
 };
 
@@ -705,9 +710,7 @@ const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void =
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.map((p) =>
-            p.id === peerId ? { ...p, isConnected, lastSeen: Date.now() } : p
-        ),
+        peers: state.peers.map((p) => (p.id === peerId ? { ...p, isConnected, lastSeen: Date.now() } : p)),
     });
 };
 
@@ -769,4 +772,3 @@ async function decompressInvite(raw: string): Promise<string> {
     }
     return new TextDecoder().decode(result);
 }
-

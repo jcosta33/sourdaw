@@ -23,6 +23,10 @@ export function waitForDevices(): Promise<void> {
     return audioEngine.waitForDevices();
 }
 
+export function resetAudioGraph(): void {
+    audioEngine.resetGraph();
+}
+
 export function getMasterAnalyser(): AnalyserNode {
     return audioEngine.masterAnalyser;
 }

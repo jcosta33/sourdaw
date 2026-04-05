@@ -32,17 +32,43 @@ const CATEGORIES = [
     { id: 'fx', label: 'FX', color: 'var(--color-accent-lavender)' },
 ];
 
-const TAGS = ['fermenter', 'analog', 'fm', 'physical', 'granular', 'additive', 'acid', 'warm', 'aggressive', 'ambient', 'unison', 'warp', 'moog', 'diode'];
+const TAGS = [
+    'fermenter',
+    'analog',
+    'fm',
+    'physical',
+    'granular',
+    'additive',
+    'acid',
+    'warm',
+    'aggressive',
+    'ambient',
+    'unison',
+    'warp',
+    'moog',
+    'diode',
+];
 
-export const PresetBrowser = ({ currentName, userPatches, presets, onLoadPreset }: PresetBrowserProps): ReactElement => {
+export const PresetBrowser = ({
+    currentName,
+    userPatches,
+    presets,
+    onLoadPreset,
+}: PresetBrowserProps): ReactElement => {
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
     // React Compiler handles memoization automatically — no useMemo needed
-    let filtered = category === 'user'
-        ? userPatches.map((p) => ({ id: p.id, name: p.name, category: 'user', tags: [] as string[] }))
-        : presets.map((p) => ({ id: p.id, name: p.name.replace('Fermenter — ', ''), category: p.category, tags: p.tags || [] }));
+    let filtered =
+        category === 'user'
+            ? userPatches.map((p) => ({ id: p.id, name: p.name, category: 'user', tags: [] as string[] }))
+            : presets.map((p) => ({
+                  id: p.id,
+                  name: p.name.replace('Fermenter — ', ''),
+                  category: p.category,
+                  tags: p.tags || [],
+              }));
 
     if (category !== 'all' && category !== 'user') {
         filtered = filtered.filter((p) => p.category === category);
@@ -50,9 +76,8 @@ export const PresetBrowser = ({ currentName, userPatches, presets, onLoadPreset 
 
     if (search) {
         const q = search.toLowerCase();
-        filtered = filtered.filter((p) =>
-            p.name.toLowerCase().includes(q) ||
-            p.tags.some((t) => t.toLowerCase().includes(q))
+        filtered = filtered.filter(
+            (p) => p.name.toLowerCase().includes(q) || p.tags.some((t) => t.toLowerCase().includes(q))
         );
     }
 
@@ -81,12 +106,19 @@ export const PresetBrowser = ({ currentName, userPatches, presets, onLoadPreset 
                         key={cat.id}
                         type="button"
                         className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                            category === cat.id
-                                ? 'text-white'
-                                : 'text-muted-foreground/60 hover:text-foreground'
+                            category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
                         }`}
-                        style={category === cat.id && cat.color ? { backgroundColor: cat.color } : category === cat.id ? { backgroundColor: 'var(--color-accent-lavender)' } : undefined}
-                        onClick={() => { setCategory(cat.id); setSelectedTag(null); }}
+                        style={
+                            category === cat.id && cat.color
+                                ? { backgroundColor: cat.color }
+                                : category === cat.id
+                                  ? { backgroundColor: 'var(--color-accent-lavender)' }
+                                  : undefined
+                        }
+                        onClick={() => {
+                            setCategory(cat.id);
+                            setSelectedTag(null);
+                        }}
                     >
                         {cat.id === 'user' ? <Star className="size-2.5 inline mr-0.5" /> : null}
                         {cat.label}
@@ -100,20 +132,22 @@ export const PresetBrowser = ({ currentName, userPatches, presets, onLoadPreset 
                     {TAGS.filter((tag) => {
                         // Only show tags that have matching presets in current category
                         return filtered.some((p) => p.tags.includes(tag));
-                    }).slice(0, 10).map((tag) => (
-                        <button
-                            key={tag}
-                            type="button"
-                            className={`px-1 py-0 rounded text-[6px] transition-colors ${
-                                selectedTag === tag
-                                    ? 'bg-muted text-foreground'
-                                    : 'text-muted-foreground/40 hover:text-muted-foreground'
-                            }`}
-                            onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-                        >
-                            #{tag}
-                        </button>
-                    ))}
+                    })
+                        .slice(0, 10)
+                        .map((tag) => (
+                            <button
+                                key={tag}
+                                type="button"
+                                className={`px-1 py-0 rounded text-[6px] transition-colors ${
+                                    selectedTag === tag
+                                        ? 'bg-muted text-foreground'
+                                        : 'text-muted-foreground/40 hover:text-muted-foreground'
+                                }`}
+                                onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                            >
+                                #{tag}
+                            </button>
+                        ))}
                 </div>
             ) : null}
 

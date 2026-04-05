@@ -3,8 +3,7 @@
  * 2D top-down view with a draggable dot representing the audio source position.
  * Listener is at the center. Shows azimuth circle, distance rings, and L/R labels.
  */
-import { type ReactElement,
-    type MouseEvent, useRef, useState, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, useRef, useState, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type SpatialPannerProps = {

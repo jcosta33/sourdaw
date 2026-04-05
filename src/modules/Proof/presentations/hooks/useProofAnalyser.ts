@@ -54,8 +54,16 @@ export function useProofAnalyser(): {
 
         return () => {
             cancelAnimationFrame(rafId);
-            try { analyser.disconnect(); } catch { /* */ }
-            try { masterAnalyser.disconnect(analyser); } catch { /* */ }
+            try {
+                analyser.disconnect();
+            } catch {
+                /* */
+            }
+            try {
+                masterAnalyser.disconnect(analyser);
+            } catch {
+                /* */
+            }
             analyserRef.current = null;
         };
     }, []);

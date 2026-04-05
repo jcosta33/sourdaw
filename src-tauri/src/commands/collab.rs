@@ -44,10 +44,7 @@ pub fn collab_create_project(
 }
 
 #[tauri::command]
-pub fn collab_save_bundle(
-    state: State<'_, CollabState>,
-    path: String,
-) -> Result<bool, String> {
+pub fn collab_save_bundle(state: State<'_, CollabState>, path: String) -> Result<bool, String> {
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     let store = guard.as_mut().ok_or("No CRDT project loaded")?;
     let bundle = store.save_all();
@@ -119,7 +116,13 @@ pub fn collab_start_advertising(
 ) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
     let discovery = guard.get_or_insert_with(|| LanDiscovery::new().expect("Failed to init mDNS"));
-    discovery.advertise(&session_id, &host_name, &project_name, port, approval_required)?;
+    discovery.advertise(
+        &session_id,
+        &host_name,
+        &project_name,
+        port,
+        approval_required,
+    )?;
     Ok(true)
 }
 
@@ -141,7 +144,9 @@ pub fn collab_start_browsing(state: State<'_, CollabState>) -> Result<bool, Stri
 }
 
 #[tauri::command]
-pub fn collab_get_nearby_sessions(state: State<'_, CollabState>) -> Result<Vec<NearbySession>, String> {
+pub fn collab_get_nearby_sessions(
+    state: State<'_, CollabState>,
+) -> Result<Vec<NearbySession>, String> {
     let guard = state.discovery.lock().map_err(|e| e.to_string())?;
     match guard.as_ref() {
         Some(discovery) => Ok(discovery.get_nearby_sessions()),

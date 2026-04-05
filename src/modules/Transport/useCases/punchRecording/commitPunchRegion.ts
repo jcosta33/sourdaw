@@ -11,9 +11,7 @@ export function commitPunchRegion(captureId: string, regionId: string): void {
             c.id === captureId
                 ? {
                       ...c,
-                      punchRegions: c.punchRegions.map((r) =>
-                          r.id === regionId ? { ...r, committed: true } : r
-                      ),
+                      punchRegions: c.punchRegions.map((r) => (r.id === regionId ? { ...r, committed: true } : r)),
                   }
                 : c
         ),

@@ -8,86 +8,86 @@ export type FermenterPatch = {
     name: string;
 
     // Oscillator
-    oscEngine: number;       // 0=wavetable, 1=VA, 2=FM, 3=Karplus-Strong, 4=Granular, 5=Additive, 6=Sampler
-    oscWaveform: number;     // 0=sine, 1=saw, 2=square, 3=triangle
-    oscLevel: number;        // 0–1
-    oscCoarse: number;       // -24 to +24 semitones
-    oscFine: number;         // -100 to +100 cents
-    pulseWidth: number;      // 0.05–0.95 (VA square only)
+    oscEngine: number; // 0=wavetable, 1=VA, 2=FM, 3=Karplus-Strong, 4=Granular, 5=Additive, 6=Sampler
+    oscWaveform: number; // 0=sine, 1=saw, 2=square, 3=triangle
+    oscLevel: number; // 0–1
+    oscCoarse: number; // -24 to +24 semitones
+    oscFine: number; // -100 to +100 cents
+    pulseWidth: number; // 0.05–0.95 (VA square only)
 
     // Unison
-    unisonVoices: number;    // 1–16
-    unisonDetune: number;    // 0–100 cents
-    unisonSpread: number;    // 0–1 stereo width
+    unisonVoices: number; // 1–16
+    unisonDetune: number; // 0–100 cents
+    unisonSpread: number; // 0–1 stereo width
 
     // Noise
-    noiseLevel: number;      // 0–1
-    noiseColor: number;      // 0=white, 1=pink, 2=brown
+    noiseLevel: number; // 0–1
+    noiseColor: number; // 0=white, 1=pink, 2=brown
 
     // Filter
     // Analog drift
-    oscDrift: number;        // 0–1 (analog pitch instability amount)
+    oscDrift: number; // 0–1 (analog pitch instability amount)
 
     // Spectral warp
-    warpMode: number;        // 0=none, 1=sync, 2=quantize, 3=squeeze, 4=bend, 5=formant, 6=fold
-    warpAmount: number;      // 0–1
+    warpMode: number; // 0=none, 1=sync, 2=quantize, 3=squeeze, 4=bend, 5=formant, 6=fold
+    warpAmount: number; // 0–1
 
     // Audio-rate modulation
-    audioModRate: number;    // 0–5000 Hz
-    audioModDepth: number;   // 0–1
-    audioModTarget: number;  // 0=off, 1=pitch(FM), 2=amplitude(AM), 3=filter
+    audioModRate: number; // 0–5000 Hz
+    audioModDepth: number; // 0–1
+    audioModTarget: number; // 0=off, 1=pitch(FM), 2=amplitude(AM), 3=filter
 
     // Additive params (active when oscEngine=5)
-    additivePartials: number;  // 1–64
-    additiveTilt: number;      // -6 to 6 (spectral tilt dB/oct)
-    additiveOdd: number;       // 0–1 (odd harmonic emphasis)
-    additiveInharm: number;    // 0–0.1 (inharmonicity)
+    additivePartials: number; // 1–64
+    additiveTilt: number; // -6 to 6 (spectral tilt dB/oct)
+    additiveOdd: number; // 0–1 (odd harmonic emphasis)
+    additiveInharm: number; // 0–0.1 (inharmonicity)
 
     // Sampler params (active when oscEngine=6)
-    samplerMode: number;     // 0=oneshot, 1=loop, 2=pingpong
-    samplerStart: number;    // 0–1
-    samplerEnd: number;      // 0–1
+    samplerMode: number; // 0=oneshot, 1=loop, 2=pingpong
+    samplerStart: number; // 0–1
+    samplerEnd: number; // 0–1
 
     // Per-voice FX
-    voiceDrive: number;      // 0–10 (per-voice distortion)
+    voiceDrive: number; // 0–10 (per-voice distortion)
 
-    filterModel: number;     // 0=SVF, 1=Moog, 2=Diode, 3=Formant, 4=MS-20, 5=SEM
+    filterModel: number; // 0=SVF, 1=Moog, 2=Diode, 3=Formant, 4=MS-20, 5=SEM
 
     // Karplus-Strong params (active when oscEngine=3)
-    ksDamping: number;      // 0–0.99 (string decay rate)
-    ksBrightness: number;   // 0.1–1 (excitation brightness)
+    ksDamping: number; // 0–0.99 (string decay rate)
+    ksBrightness: number; // 0.1–1 (excitation brightness)
 
     // Granular params (active when oscEngine=4)
-    grainDensity: number;   // 1–100 (grains per second)
-    grainSize: number;      // 5–500 (grain duration ms)
-    grainPosition: number;  // 0–1 (scan position in wavetable)
-    grainSpray: number;     // 0–1 (position randomization)
-    grainPitchVar: number;  // 0–12 (pitch variation semitones)
+    grainDensity: number; // 1–100 (grains per second)
+    grainSize: number; // 5–500 (grain duration ms)
+    grainPosition: number; // 0–1 (scan position in wavetable)
+    grainSpray: number; // 0–1 (position randomization)
+    grainPitchVar: number; // 0–12 (pitch variation semitones)
     grainPanSpread: number; // 0–1 (stereo spread)
-    filterMode: number;      // 0=LP, 1=HP, 2=BP, 3=Notch (SVF only — Moog/Diode are always LP)
-    filterCutoff: number;    // 20–20000 Hz
+    filterMode: number; // 0=LP, 1=HP, 2=BP, 3=Notch (SVF only — Moog/Diode are always LP)
+    filterCutoff: number; // 20–20000 Hz
     filterResonance: number; // 0.5–20
-    filterDrive: number;     // 0–10 (saturation amount)
-    filterKeytrack: number;  // 0–1 (how much note pitch affects cutoff)
+    filterDrive: number; // 0–10 (saturation amount)
+    filterKeytrack: number; // 0–1 (how much note pitch affects cutoff)
 
     // FM Engine (active when oscEngine=2)
-    fmAlgorithm: number;    // 0–7 preset routing
-    fmRatio1: number;       // Op 1 freq ratio (0.5–16)
-    fmRatio2: number;       // Op 2 freq ratio
-    fmRatio3: number;       // Op 3 freq ratio
-    fmRatio4: number;       // Op 4 freq ratio
-    fmLevel1: number;       // Op 1 level (0–1)
-    fmLevel2: number;       // Op 2 level
-    fmLevel3: number;       // Op 3 level
-    fmLevel4: number;       // Op 4 level
-    fmFeedback: number;     // Global feedback (0–1)
-    fmModAmount: number;    // Global mod depth multiplier (0–4)
+    fmAlgorithm: number; // 0–7 preset routing
+    fmRatio1: number; // Op 1 freq ratio (0.5–16)
+    fmRatio2: number; // Op 2 freq ratio
+    fmRatio3: number; // Op 3 freq ratio
+    fmRatio4: number; // Op 4 freq ratio
+    fmLevel1: number; // Op 1 level (0–1)
+    fmLevel2: number; // Op 2 level
+    fmLevel3: number; // Op 3 level
+    fmLevel4: number; // Op 4 level
+    fmFeedback: number; // Global feedback (0–1)
+    fmModAmount: number; // Global mod depth multiplier (0–4)
 
     // Amp envelope
-    ampAttack: number;       // 0.001–5 s
-    ampDecay: number;        // 0.001–5 s
-    ampSustain: number;      // 0–1
-    ampRelease: number;      // 0.001–10 s
+    ampAttack: number; // 0.001–5 s
+    ampDecay: number; // 0.001–5 s
+    ampSustain: number; // 0–1
+    ampRelease: number; // 0.001–10 s
 
     // Filter envelope
     filterAttack: number;
@@ -97,80 +97,80 @@ export type FermenterPatch = {
     filterEnvAmount: number; // -1 to 1
 
     // LFO
-    lfoRate: number;         // 0–5000 Hz
-    lfoShape: number;        // 0=sine, 1=tri, 2=saw, 3=square
-    lfoPitchAmount: number;  // -1 to 1
+    lfoRate: number; // 0–5000 Hz
+    lfoShape: number; // 0=sine, 1=tri, 2=saw, 3=square
+    lfoPitchAmount: number; // -1 to 1
     lfoFilterAmount: number; // -1 to 1
 
     // MSEG modulation
-    msegToFilter: number;    // -1 to 1 (MSEG → filter cutoff amount)
+    msegToFilter: number; // -1 to 1 (MSEG → filter cutoff amount)
 
     // Step Sequencer
-    seqRate: number;         // 0.5–20 Hz
-    seqToPitch: number;      // -1 to 1 (step seq → pitch amount)
+    seqRate: number; // 0.5–20 Hz
+    seqToPitch: number; // -1 to 1 (step seq → pitch amount)
 
     // Portamento
-    portamentoTime: number;  // 0–2 s (0 = off)
-    portamentoMode: number;  // 0=always, 1=legato only
+    portamentoTime: number; // 0–2 s (0 = off)
+    portamentoMode: number; // 0=always, 1=legato only
 
     // Effects — Reverb
-    reverbType: number;      // 0=Plate, 1=FDN
-    reverbMix: number;       // 0–1
-    reverbDecay: number;     // 0–0.99
+    reverbType: number; // 0=Plate, 1=FDN
+    reverbMix: number; // 0–1
+    reverbDecay: number; // 0–0.99
 
     // EQ (3-band parametric)
-    eqLowFreq: number;      // 20–500
-    eqLowGain: number;      // -24 to 24 dB
-    eqLowQ: number;         // 0.1–10
-    eqMidFreq: number;      // 200–8000
+    eqLowFreq: number; // 20–500
+    eqLowGain: number; // -24 to 24 dB
+    eqLowQ: number; // 0.1–10
+    eqMidFreq: number; // 200–8000
     eqMidGain: number;
     eqMidQ: number;
-    eqHighFreq: number;     // 2000–20000
+    eqHighFreq: number; // 2000–20000
     eqHighGain: number;
     eqHighQ: number;
 
     // Effects — Delay
-    delayTime: number;       // 10–2000 ms
-    delayFeedback: number;   // 0–0.95
-    delayMix: number;        // 0–1
+    delayTime: number; // 10–2000 ms
+    delayFeedback: number; // 0–0.95
+    delayMix: number; // 0–1
 
     // Effects — Chorus
-    chorusRate: number;      // 0.1–5 Hz
-    chorusDepth: number;     // 0–1
-    chorusMix: number;       // 0–1
+    chorusRate: number; // 0.1–5 Hz
+    chorusDepth: number; // 0–1
+    chorusMix: number; // 0–1
 
     // Effects — Phaser
-    phaserRate: number;      // 0.1–5 Hz
-    phaserDepth: number;     // 0–1
-    phaserMix: number;       // 0–1
+    phaserRate: number; // 0.1–5 Hz
+    phaserDepth: number; // 0–1
+    phaserMix: number; // 0–1
 
     // Effects — Distortion
-    distDrive: number;       // 0–10
-    distTone: number;        // 0–1
-    distMix: number;         // 0–1
+    distDrive: number; // 0–10
+    distTone: number; // 0–1
+    distMix: number; // 0–1
 
     // Effects — Compressor
-    compThreshold: number;   // -60 to 0 dB
-    compRatio: number;       // 1–20
-    compAttack: number;      // 0.1–100 ms
-    compRelease: number;     // 10–1000 ms
-    compMix: number;         // 0–1
+    compThreshold: number; // -60 to 0 dB
+    compRatio: number; // 1–20
+    compAttack: number; // 0.1–100 ms
+    compRelease: number; // 10–1000 ms
+    compMix: number; // 0–1
 
     // Stereo Width
-    stereoWidth: number;     // 0–2 (0=mono, 1=natural, 2=extra wide)
+    stereoWidth: number; // 0–2 (0=mono, 1=natural, 2=extra wide)
 
     // Chaos modulators (Tier 4)
-    chaosAmount: number;     // 0–1 (Lorenz/Perlin modulation intensity)
-    chaosSpeed: number;      // 0.01–10 (chaos evolution speed)
+    chaosAmount: number; // 0–1 (Lorenz/Perlin modulation intensity)
+    chaosSpeed: number; // 0.01–10 (chaos evolution speed)
 
     // Layer management
-    activeLayer: number;     // 0–3 (which layer receives edits)
-    numLayers: number;       // 1–4 (how many layers are active)
-    layerLevel: number;      // 0–1 (current layer's volume)
-    layerPan: number;        // -1 to 1 (current layer's pan)
+    activeLayer: number; // 0–3 (which layer receives edits)
+    numLayers: number; // 1–4 (how many layers are active)
+    layerLevel: number; // 0–1 (current layer's volume)
+    layerPan: number; // -1 to 1 (current layer's pan)
 
     // Master
-    masterGain: number;      // 0–2
+    masterGain: number; // 0–2
 
     // Macros (musical labels)
     macros: [number, number, number, number, number, number, number, number];
@@ -389,7 +389,16 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
 
     // Filter
     { id: 'filterModel', label: 'Filter Model', min: 0, max: 5, default: 0, unit: '', step: 1, group: 'filter' },
-    { id: 'filterCutoff', label: 'Cutoff', min: 20, max: 20000, default: 5000, unit: 'Hz', group: 'filter', scaling: 'log' },
+    {
+        id: 'filterCutoff',
+        label: 'Cutoff',
+        min: 20,
+        max: 20000,
+        default: 5000,
+        unit: 'Hz',
+        group: 'filter',
+        scaling: 'log',
+    },
     { id: 'filterResonance', label: 'Resonance', min: 0.5, max: 20, default: 1, unit: '', group: 'filter' },
     { id: 'filterMode', label: 'Filter Type', min: 0, max: 3, default: 0, unit: '', step: 1, group: 'filter' },
     { id: 'filterDrive', label: 'Drive', min: 0, max: 10, default: 0, unit: '', group: 'filter' },
@@ -413,13 +422,49 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     { id: 'ampAttack', label: 'Attack', min: 0.001, max: 5, default: 0.01, unit: 's', group: 'ampEnv', scaling: 'log' },
     { id: 'ampDecay', label: 'Decay', min: 0.001, max: 5, default: 0.2, unit: 's', group: 'ampEnv', scaling: 'log' },
     { id: 'ampSustain', label: 'Sustain', min: 0, max: 1, default: 0.7, unit: '', group: 'ampEnv' },
-    { id: 'ampRelease', label: 'Release', min: 0.001, max: 10, default: 0.3, unit: 's', group: 'ampEnv', scaling: 'log' },
+    {
+        id: 'ampRelease',
+        label: 'Release',
+        min: 0.001,
+        max: 10,
+        default: 0.3,
+        unit: 's',
+        group: 'ampEnv',
+        scaling: 'log',
+    },
 
     // Filter ADSR
-    { id: 'filterAttack', label: 'Filter Attack', min: 0.001, max: 5, default: 0.01, unit: 's', group: 'filterEnv', scaling: 'log' },
-    { id: 'filterDecay', label: 'Filter Decay', min: 0.001, max: 5, default: 0.3, unit: 's', group: 'filterEnv', scaling: 'log' },
+    {
+        id: 'filterAttack',
+        label: 'Filter Attack',
+        min: 0.001,
+        max: 5,
+        default: 0.01,
+        unit: 's',
+        group: 'filterEnv',
+        scaling: 'log',
+    },
+    {
+        id: 'filterDecay',
+        label: 'Filter Decay',
+        min: 0.001,
+        max: 5,
+        default: 0.3,
+        unit: 's',
+        group: 'filterEnv',
+        scaling: 'log',
+    },
     { id: 'filterSustain', label: 'Filter Sustain', min: 0, max: 1, default: 0, unit: '', group: 'filterEnv' },
-    { id: 'filterRelease', label: 'Filter Release', min: 0.001, max: 10, default: 0.3, unit: 's', group: 'filterEnv', scaling: 'log' },
+    {
+        id: 'filterRelease',
+        label: 'Filter Release',
+        min: 0.001,
+        max: 10,
+        default: 0.3,
+        unit: 's',
+        group: 'filterEnv',
+        scaling: 'log',
+    },
 
     // LFO
     { id: 'lfoRate', label: 'LFO Rate', min: 0, max: 5000, default: 0, unit: 'Hz', group: 'lfo' },
@@ -450,12 +495,30 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     { id: 'eqMidFreq', label: 'Mid Freq', min: 200, max: 8000, default: 1000, unit: 'Hz', group: 'eq', scaling: 'log' },
     { id: 'eqMidGain', label: 'Mid Gain', min: -24, max: 24, default: 0, unit: 'dB', group: 'eq' },
     { id: 'eqMidQ', label: 'Mid Q', min: 0.1, max: 10, default: 1, unit: '', group: 'eq' },
-    { id: 'eqHighFreq', label: 'High Freq', min: 2000, max: 20000, default: 8000, unit: 'Hz', group: 'eq', scaling: 'log' },
+    {
+        id: 'eqHighFreq',
+        label: 'High Freq',
+        min: 2000,
+        max: 20000,
+        default: 8000,
+        unit: 'Hz',
+        group: 'eq',
+        scaling: 'log',
+    },
     { id: 'eqHighGain', label: 'High Gain', min: -24, max: 24, default: 0, unit: 'dB', group: 'eq' },
     { id: 'eqHighQ', label: 'High Q', min: 0.1, max: 10, default: 1, unit: '', group: 'eq' },
 
     // Delay
-    { id: 'delayTime', label: 'Delay Time', min: 10, max: 2000, default: 375, unit: 'ms', group: 'delay', scaling: 'log' },
+    {
+        id: 'delayTime',
+        label: 'Delay Time',
+        min: 10,
+        max: 2000,
+        default: 375,
+        unit: 'ms',
+        group: 'delay',
+        scaling: 'log',
+    },
     { id: 'delayFeedback', label: 'Delay Feedback', min: 0, max: 0.95, default: 0.35, unit: '', group: 'delay' },
     { id: 'delayMix', label: 'Delay Mix', min: 0, max: 1, default: 0, unit: '', group: 'delay' },
 
@@ -477,8 +540,26 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     // Compressor
     { id: 'compThreshold', label: 'Comp Threshold', min: -60, max: 0, default: -20, unit: 'dB', group: 'compressor' },
     { id: 'compRatio', label: 'Comp Ratio', min: 1, max: 20, default: 4, unit: ':1', group: 'compressor' },
-    { id: 'compAttack', label: 'Comp Attack', min: 0.1, max: 100, default: 10, unit: 'ms', group: 'compressor', scaling: 'log' },
-    { id: 'compRelease', label: 'Comp Release', min: 10, max: 1000, default: 100, unit: 'ms', group: 'compressor', scaling: 'log' },
+    {
+        id: 'compAttack',
+        label: 'Comp Attack',
+        min: 0.1,
+        max: 100,
+        default: 10,
+        unit: 'ms',
+        group: 'compressor',
+        scaling: 'log',
+    },
+    {
+        id: 'compRelease',
+        label: 'Comp Release',
+        min: 10,
+        max: 1000,
+        default: 100,
+        unit: 'ms',
+        group: 'compressor',
+        scaling: 'log',
+    },
     { id: 'compMix', label: 'Comp Mix', min: 0, max: 1, default: 0, unit: '', group: 'compressor' },
 
     // Stereo Width
@@ -514,7 +595,14 @@ export const MACRO_LABELS = [
 export const ENGINE_NAMES = ['Wavetable', 'Analog', 'FM', 'String', 'Granular', 'Additive', 'Sampler'] as const;
 
 /** Filter model names */
-export const FILTER_MODEL_NAMES = ['SVF (Clean)', 'Moog (Warm)', 'Diode (Acid)', 'Formant (Vowel)', 'MS-20 (Grit)', 'SEM (Cream)'] as const;
+export const FILTER_MODEL_NAMES = [
+    'SVF (Clean)',
+    'Moog (Warm)',
+    'Diode (Acid)',
+    'Formant (Vowel)',
+    'MS-20 (Grit)',
+    'SEM (Cream)',
+] as const;
 
 /** FM algorithm names */
 export const FM_ALGORITHM_NAMES = [

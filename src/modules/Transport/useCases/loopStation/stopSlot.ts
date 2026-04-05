@@ -7,8 +7,6 @@ export function stopSlot(slotId: string): void {
     }
     loopStationStore.set({
         ...state,
-        slots: state.slots.map((s) =>
-            s.id === slotId ? { ...s, state: 'stopped' as const } : s
-        ),
+        slots: state.slots.map((s) => (s.id === slotId ? { ...s, state: 'stopped' as const } : s)),
     });
 }

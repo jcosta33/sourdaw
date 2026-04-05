@@ -10,14 +10,20 @@ import { playheadPositionRef } from '#/modules/Transport/stores/playheadPosition
 
 export function exportPatternToTimeline(): void {
     const state = toasterStore.value;
-    if (!state) { return; }
+    if (!state) {
+        return;
+    }
 
     const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
-    if (!pattern) { return; }
+    if (!pattern) {
+        return;
+    }
 
     const tracks = getAllTracks();
     const parentTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
-    if (!parentTrack) { return; }
+    if (!parentTrack) {
+        return;
+    }
 
     const childTracks = tracks.filter((t) => t.parentId === parentTrack.id);
     const stepsPerBar = pattern.stepsPerBar;
@@ -27,12 +33,16 @@ export function exportPatternToTimeline(): void {
 
     for (const track of pattern.tracks) {
         const childTrack = childTracks[track.padIndex];
-        if (!childTrack) { continue; }
+        if (!childTrack) {
+            continue;
+        }
 
         // Check for active steps on this pad
         const numSteps = track.stepsOverride ?? totalSteps;
         const hasActiveSteps = track.steps.slice(0, numSteps).some((s) => s.active);
-        if (!hasActiveSteps) { continue; }
+        if (!hasActiveSteps) {
+            continue;
+        }
 
         // Create a new MIDI clip at the playhead position
         const clipLength = pattern.bars * 4;
@@ -43,13 +53,17 @@ export function exportPatternToTimeline(): void {
             name: childTrack.name,
             type: 'midi',
         });
-        if (!clip) { continue; }
+        if (!clip) {
+            continue;
+        }
         const clipId = clip.id;
 
         // Add MIDI notes for each active step
         for (let s = 0; s < numSteps; s++) {
             const step = track.steps[s];
-            if (!step?.active) { continue; }
+            if (!step?.active) {
+                continue;
+            }
 
             const startBeat = s * stepDurationBeats;
             const midiNote = 36 + track.padIndex;

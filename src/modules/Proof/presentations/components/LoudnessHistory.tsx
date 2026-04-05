@@ -21,7 +21,13 @@ const HISTORY_LENGTH = 300; // ~30 seconds at 10fps
 const MIN_DB = -60;
 const MAX_DB = 0;
 
-export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, width, height }: LoudnessHistoryProps): ReactElement => {
+export const LoudnessHistory = ({
+    momentaryLufs,
+    targetLufs,
+    integratedLufs,
+    width,
+    height,
+}: LoudnessHistoryProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const historyRef = useRef<number[]>([]);
 
@@ -60,7 +66,7 @@ export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, wid
         ctx.lineWidth = 0.5;
         for (const db of [-6, -12, -18, -24, -36, -48]) {
             const y = ((db - MAX_DB) / (MIN_DB - MAX_DB)) * h;
-            ctx.strokeStyle = (db === -14 || db === -24) ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.035)';
+            ctx.strokeStyle = db === -14 || db === -24 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.035)';
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(w, y);
@@ -152,12 +158,5 @@ export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, wid
         }
     }, [momentaryLufs, targetLufs, integratedLufs, width, height]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            style={{ width, height }}
-            className="rounded"
-            aria-label="Loudness history graph"
-        />
-    );
+    return <canvas ref={canvasRef} style={{ width, height }} className="rounded" aria-label="Loudness history graph" />;
 };

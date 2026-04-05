@@ -17,9 +17,7 @@ export function addSidechainRoute(
         return;
     }
 
-    const exists = state.routes.some(
-        (r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId
-    );
+    const exists = state.routes.some((r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId);
     if (exists) {
         return;
     }

@@ -46,9 +46,7 @@ export const AiTaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement
                     Processing...
                 </div>
             ) : null}
-            {task.status === 'error' ? (
-                <div className="text-[10px] text-destructive">{task.error}</div>
-            ) : null}
+            {task.status === 'error' ? <div className="text-[10px] text-destructive">{task.error}</div> : null}
             {task.status === 'success' ? (
                 <div className="mt-1 flex items-center justify-between border-t border-border/30 pt-1">
                     <span className="text-[9px] text-muted-foreground/70">

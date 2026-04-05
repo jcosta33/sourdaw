@@ -40,12 +40,63 @@ export function registerProSynthInstruments(): void {
         process = wave * env * gain <: _, _;
     `,
         [
-            { address: '/wt/morph', label: 'Morph', min: 0, max: 1, defaultValue: 0, step: 0.001, type: 'hslider' as const },
-            { address: '/wt/attack', label: 'Attack', min: 0.001, max: 5, defaultValue: 0.01, step: 0.001, type: 'hslider', scaling: 'log' as const },
-            { address: '/wt/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.3, step: 0.01, type: 'hslider', scaling: 'log' as const },
-            { address: '/wt/sustain', label: 'Sustain', min: 0, max: 1, defaultValue: 0.6, step: 0.01, type: 'hslider' as const },
-            { address: '/wt/release', label: 'Release', min: 0.01, max: 10, defaultValue: 0.5, step: 0.01, type: 'hslider', scaling: 'log' as const },
-            { address: '/wt/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+            {
+                address: '/wt/morph',
+                label: 'Morph',
+                min: 0,
+                max: 1,
+                defaultValue: 0,
+                step: 0.001,
+                type: 'hslider' as const,
+            },
+            {
+                address: '/wt/attack',
+                label: 'Attack',
+                min: 0.001,
+                max: 5,
+                defaultValue: 0.01,
+                step: 0.001,
+                type: 'hslider',
+                scaling: 'log' as const,
+            },
+            {
+                address: '/wt/decay',
+                label: 'Decay',
+                min: 0.01,
+                max: 5,
+                defaultValue: 0.3,
+                step: 0.01,
+                type: 'hslider',
+                scaling: 'log' as const,
+            },
+            {
+                address: '/wt/sustain',
+                label: 'Sustain',
+                min: 0,
+                max: 1,
+                defaultValue: 0.6,
+                step: 0.01,
+                type: 'hslider' as const,
+            },
+            {
+                address: '/wt/release',
+                label: 'Release',
+                min: 0.01,
+                max: 10,
+                defaultValue: 0.5,
+                step: 0.01,
+                type: 'hslider',
+                scaling: 'log' as const,
+            },
+            {
+                address: '/wt/gain',
+                label: 'Gain',
+                min: 0,
+                max: 1,
+                defaultValue: 0.5,
+                step: 0.01,
+                type: 'hslider' as const,
+            },
         ],
         true
     );
@@ -132,7 +183,8 @@ export function registerProSynthInstruments(): void {
                 max: 20000,
                 defaultValue: 6000,
                 step: 1,
-                type: 'hslider', scaling: 'log',
+                type: 'hslider',
+                scaling: 'log',
             },
             {
                 address: '/supersaw/resonance',
@@ -150,7 +202,8 @@ export function registerProSynthInstruments(): void {
                 max: 5,
                 defaultValue: 0.01,
                 step: 0.001,
-                type: 'hslider', scaling: 'log',
+                type: 'hslider',
+                scaling: 'log',
             },
             {
                 address: '/synth/decay',
@@ -159,7 +212,8 @@ export function registerProSynthInstruments(): void {
                 max: 5,
                 defaultValue: 0.3,
                 step: 0.01,
-                type: 'hslider', scaling: 'log',
+                type: 'hslider',
+                scaling: 'log',
             },
             {
                 address: '/synth/sustain',
@@ -177,10 +231,12 @@ export function registerProSynthInstruments(): void {
                 max: 10,
                 defaultValue: 0.5,
                 step: 0.01,
-                type: 'hslider', scaling: 'log',
+                type: 'hslider',
+                scaling: 'log',
             },
-        ]
-    , true);
+        ],
+        true
+    );
 
     // Physical Modeling — Karplus-Strong string with excitation, damping, body controls
     registerFaustDSP(
@@ -203,10 +259,42 @@ export function registerProSynthInstruments(): void {
         process = burst : ks_loop * gain <: _, _;
     `,
         [
-            { address: '/pm/damping', label: 'Damping', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
-            { address: '/pm/excitation', label: 'Excitation', min: 0, max: 1, defaultValue: 0.8, step: 0.01, type: 'hslider' as const },
-            { address: '/pm/body', label: 'Body', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
-            { address: '/pm/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+            {
+                address: '/pm/damping',
+                label: 'Damping',
+                min: 0,
+                max: 1,
+                defaultValue: 0.5,
+                step: 0.01,
+                type: 'hslider' as const,
+            },
+            {
+                address: '/pm/excitation',
+                label: 'Excitation',
+                min: 0,
+                max: 1,
+                defaultValue: 0.8,
+                step: 0.01,
+                type: 'hslider' as const,
+            },
+            {
+                address: '/pm/body',
+                label: 'Body',
+                min: 0,
+                max: 1,
+                defaultValue: 0.5,
+                step: 0.01,
+                type: 'hslider' as const,
+            },
+            {
+                address: '/pm/gain',
+                label: 'Gain',
+                min: 0,
+                max: 1,
+                defaultValue: 0.5,
+                step: 0.01,
+                type: 'hslider' as const,
+            },
         ],
         true
     );
@@ -252,9 +340,19 @@ function makeSynthParams(
             max: 5,
             defaultValue: 0.01,
             step: 0.001,
-            type: 'hslider', scaling: 'log',
+            type: 'hslider',
+            scaling: 'log',
         },
-        { address: '/synth/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.2, step: 0.01, type: 'hslider', scaling: 'log' },
+        {
+            address: '/synth/decay',
+            label: 'Decay',
+            min: 0.01,
+            max: 5,
+            defaultValue: 0.2,
+            step: 0.01,
+            type: 'hslider',
+            scaling: 'log',
+        },
         { address: '/synth/sustain', label: 'Sustain', min: 0, max: 1, defaultValue: 0.7, step: 0.01, type: 'hslider' },
         {
             address: '/synth/release',
@@ -263,7 +361,8 @@ function makeSynthParams(
             max: 10,
             defaultValue: 0.5,
             step: 0.01,
-            type: 'hslider', scaling: 'log',
+            type: 'hslider',
+            scaling: 'log',
         },
     ];
     return [...base, ...extra.map((p) => ({ ...p, type: 'hslider' as const }))];

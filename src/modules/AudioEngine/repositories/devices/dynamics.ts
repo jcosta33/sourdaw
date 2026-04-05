@@ -25,15 +25,33 @@ export function createEq(ctx: BaseAudioContext): OfflineDeviceNode {
 
 export function applyEqParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const [low, mid, high] = dn.nodes as [BiquadFilterNode, BiquadFilterNode, BiquadFilterNode];
-    if (params['eq-low-gain'] !== undefined) { low.gain.value = params['eq-low-gain']; }
-    if (params['eq-low-freq'] !== undefined) { low.frequency.value = params['eq-low-freq']; }
-    if (params['eq-low-q'] !== undefined) { low.Q.value = params['eq-low-q']; }
-    if (params['eq-mid-gain'] !== undefined) { mid.gain.value = params['eq-mid-gain']; }
-    if (params['eq-mid-freq'] !== undefined) { mid.frequency.value = params['eq-mid-freq']; }
-    if (params['eq-mid-q'] !== undefined) { mid.Q.value = params['eq-mid-q']; }
-    if (params['eq-high-gain'] !== undefined) { high.gain.value = params['eq-high-gain']; }
-    if (params['eq-high-freq'] !== undefined) { high.frequency.value = params['eq-high-freq']; }
-    if (params['eq-high-q'] !== undefined) { high.Q.value = params['eq-high-q']; }
+    if (params['eq-low-gain'] !== undefined) {
+        low.gain.value = params['eq-low-gain'];
+    }
+    if (params['eq-low-freq'] !== undefined) {
+        low.frequency.value = params['eq-low-freq'];
+    }
+    if (params['eq-low-q'] !== undefined) {
+        low.Q.value = params['eq-low-q'];
+    }
+    if (params['eq-mid-gain'] !== undefined) {
+        mid.gain.value = params['eq-mid-gain'];
+    }
+    if (params['eq-mid-freq'] !== undefined) {
+        mid.frequency.value = params['eq-mid-freq'];
+    }
+    if (params['eq-mid-q'] !== undefined) {
+        mid.Q.value = params['eq-mid-q'];
+    }
+    if (params['eq-high-gain'] !== undefined) {
+        high.gain.value = params['eq-high-gain'];
+    }
+    if (params['eq-high-freq'] !== undefined) {
+        high.frequency.value = params['eq-high-freq'];
+    }
+    if (params['eq-high-q'] !== undefined) {
+        high.Q.value = params['eq-high-q'];
+    }
 }
 
 // ── Compressor ───────────────────────────────────────────────────────────
@@ -53,12 +71,24 @@ export function createCompressor(ctx: BaseAudioContext): OfflineDeviceNode {
 
 export function applyCompressorParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const [comp, makeup] = dn.nodes as [DynamicsCompressorNode, GainNode];
-    if (params['comp-threshold'] !== undefined) { comp.threshold.value = params['comp-threshold']; }
-    if (params['comp-ratio'] !== undefined) { comp.ratio.value = Math.max(1, params['comp-ratio']); }
-    if (params['comp-attack'] !== undefined) { comp.attack.value = params['comp-attack'] / 1000; }
-    if (params['comp-release'] !== undefined) { comp.release.value = params['comp-release'] / 1000; }
-    if (params['comp-knee'] !== undefined) { comp.knee.value = params['comp-knee']; }
-    if (params['comp-makeup'] !== undefined) { makeup.gain.value = 10 ** (params['comp-makeup'] / 20); }
+    if (params['comp-threshold'] !== undefined) {
+        comp.threshold.value = params['comp-threshold'];
+    }
+    if (params['comp-ratio'] !== undefined) {
+        comp.ratio.value = Math.max(1, params['comp-ratio']);
+    }
+    if (params['comp-attack'] !== undefined) {
+        comp.attack.value = params['comp-attack'] / 1000;
+    }
+    if (params['comp-release'] !== undefined) {
+        comp.release.value = params['comp-release'] / 1000;
+    }
+    if (params['comp-knee'] !== undefined) {
+        comp.knee.value = params['comp-knee'];
+    }
+    if (params['comp-makeup'] !== undefined) {
+        makeup.gain.value = 10 ** (params['comp-makeup'] / 20);
+    }
 }
 
 // ── Sidechain compressor fallback ────────────────────────────────────────
@@ -77,11 +107,21 @@ export function createSidechainCompressorFallback(ctx: BaseAudioContext): Offlin
 
 export function applySidechainCompressorParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const [comp, makeup] = dn.nodes as [DynamicsCompressorNode, GainNode];
-    if (params['sc-comp-threshold'] !== undefined) { comp.threshold.value = params['sc-comp-threshold']; }
-    if (params['sc-comp-ratio'] !== undefined) { comp.ratio.value = Math.max(1, params['sc-comp-ratio']); }
-    if (params['sc-comp-attack'] !== undefined) { comp.attack.value = params['sc-comp-attack'] / 1000; }
-    if (params['sc-comp-release'] !== undefined) { comp.release.value = params['sc-comp-release'] / 1000; }
-    if (params['sc-comp-makeup'] !== undefined) { makeup.gain.value = 10 ** (params['sc-comp-makeup'] / 20); }
+    if (params['sc-comp-threshold'] !== undefined) {
+        comp.threshold.value = params['sc-comp-threshold'];
+    }
+    if (params['sc-comp-ratio'] !== undefined) {
+        comp.ratio.value = Math.max(1, params['sc-comp-ratio']);
+    }
+    if (params['sc-comp-attack'] !== undefined) {
+        comp.attack.value = params['sc-comp-attack'] / 1000;
+    }
+    if (params['sc-comp-release'] !== undefined) {
+        comp.release.value = params['sc-comp-release'] / 1000;
+    }
+    if (params['sc-comp-makeup'] !== undefined) {
+        makeup.gain.value = 10 ** (params['sc-comp-makeup'] / 20);
+    }
 }
 
 // ── Limiter ──────────────────────────────────────────────────────────────
@@ -102,7 +142,13 @@ export function createLimiter(ctx: BaseAudioContext): OfflineDeviceNode {
 export function applyLimiterParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const compL = dn.nodes[0] as DynamicsCompressorNode;
     const ceilingL = dn.nodes[1] as GainNode;
-    if (params['lim-threshold'] !== undefined) { compL.threshold.value = params['lim-threshold']; }
-    if (params['lim-release'] !== undefined) { compL.release.value = params['lim-release'] / 1000; }
-    if (params['lim-ceiling'] !== undefined) { ceilingL.gain.value = 10 ** (params['lim-ceiling'] / 20); }
+    if (params['lim-threshold'] !== undefined) {
+        compL.threshold.value = params['lim-threshold'];
+    }
+    if (params['lim-release'] !== undefined) {
+        compL.release.value = params['lim-release'] / 1000;
+    }
+    if (params['lim-ceiling'] !== undefined) {
+        ceilingL.gain.value = 10 ** (params['lim-ceiling'] / 20);
+    }
 }

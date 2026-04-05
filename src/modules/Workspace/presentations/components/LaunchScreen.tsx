@@ -16,10 +16,7 @@ import {
 } from 'lucide-react';
 import { SourdawLogo } from './SourdawLogo';
 import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
-import {
-    createFromTemplate,
-    getTemplates,
-} from '#/modules/Project/useCases/projectTemplates/templateDefinitions';
+import { createFromTemplate, getTemplates } from '#/modules/Project/useCases/projectTemplates/templateDefinitions';
 import { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';

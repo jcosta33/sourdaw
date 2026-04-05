@@ -33,7 +33,11 @@ export async function initEngine(modelId?: string): Promise<void> {
 
             if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
                 logger.info('[AI Engine] Falling back to WebLLM...');
-                llmStatusStore.set({ state: 'loading', progress: 0, text: 'Native AI unavailable — loading WebLLM...' });
+                llmStatusStore.set({
+                    state: 'loading',
+                    progress: 0,
+                    text: 'Native AI unavailable — loading WebLLM...',
+                });
                 await initWebLlmEngine(modelId);
                 return;
             }

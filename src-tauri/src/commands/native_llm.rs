@@ -1,6 +1,6 @@
 use mistralrs::{
-    Constraint, Function, GgufModelBuilder, PagedAttentionMetaBuilder, RequestBuilder,
-    Response, TextMessageRole, Tool, ToolChoice, ToolType,
+    Constraint, Function, GgufModelBuilder, PagedAttentionMetaBuilder, RequestBuilder, Response,
+    TextMessageRole, Tool, ToolChoice, ToolType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -67,13 +67,16 @@ pub struct ToolCallResult {
 
 const GGUF_REPO: &str = "Qwen/Qwen3-8B-GGUF";
 const GGUF_FILE: &str = "qwen3-8b-q4_k_m.gguf";
-const GGUF_URL: &str = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf";
+const GGUF_URL: &str =
+    "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf";
 
 // ── Helper ───────────────────────────────────────────────────────────────
 
 async fn get_model(state: &NativeLlmState) -> Result<Arc<mistralrs::Model>, String> {
     let guard = state.model.read().await;
-    guard.clone().ok_or_else(|| "No model loaded. Call init_native_llm first.".to_string())
+    guard
+        .clone()
+        .ok_or_else(|| "No model loaded. Call init_native_llm first.".to_string())
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────
@@ -92,19 +95,28 @@ pub async fn init_native_llm(
         let guard = state.model.read().await;
         if guard.is_some() {
             let id = state.model_id.read().await;
-            return Ok(NativeLlmStatus { loaded: true, model_id: id.clone() });
+            return Ok(NativeLlmStatus {
+                loaded: true,
+                model_id: id.clone(),
+            });
         }
     }
 
     let _ = model_id; // reserved for future model selection
 
     // Step 1: Ensure GGUF file is downloaded (with real progress)
-    let _ = app.emit("llm-progress", serde_json::json!({ "progress": 0.0, "text": "Checking model cache…" }));
+    let _ = app.emit(
+        "llm-progress",
+        serde_json::json!({ "progress": 0.0, "text": "Checking model cache…" }),
+    );
 
     let model_path = model_download::ensure_model(GGUF_FILE, GGUF_URL, None).await?;
     let model_path_str = model_path.to_string_lossy().to_string();
 
-    let _ = app.emit("llm-progress", serde_json::json!({ "progress": 0.7, "text": "Loading model into memory…" }));
+    let _ = app.emit(
+        "llm-progress",
+        serde_json::json!({ "progress": 0.7, "text": "Loading model into memory…" }),
+    );
     eprintln!("[Native LLM] GGUF downloaded, loading from: {model_path_str}");
 
     // Step 2: Load from local GGUF file
@@ -116,14 +128,26 @@ pub async fn init_native_llm(
         .await
         .map_err(|e| format!("Failed to load model: {e}"))?;
 
-    let _ = app.emit("llm-progress", serde_json::json!({ "progress": 1.0, "text": "Ready" }));
+    let _ = app.emit(
+        "llm-progress",
+        serde_json::json!({ "progress": 1.0, "text": "Ready" }),
+    );
     eprintln!("[Native LLM] Model loaded successfully");
 
     let model = Arc::new(model);
-    { let mut guard = state.model.write().await; *guard = Some(model); }
-    { let mut guard = state.model_id.write().await; *guard = Some(GGUF_REPO.to_string()); }
+    {
+        let mut guard = state.model.write().await;
+        *guard = Some(model);
+    }
+    {
+        let mut guard = state.model_id.write().await;
+        *guard = Some(GGUF_REPO.to_string());
+    }
 
-    Ok(NativeLlmStatus { loaded: true, model_id: Some(GGUF_REPO.to_string()) })
+    Ok(NativeLlmStatus {
+        loaded: true,
+        model_id: Some(GGUF_REPO.to_string()),
+    })
 }
 
 /// Non-streaming completion.
@@ -148,10 +172,14 @@ pub async fn generate_native_completion(
         request = request.set_sampler_max_len(max);
     }
 
-    let response = model.send_chat_request(request).await
+    let response = model
+        .send_chat_request(request)
+        .await
         .map_err(|e| format!("Inference error: {e}"))?;
 
-    Ok(response.choices.first()
+    Ok(response
+        .choices
+        .first()
         .and_then(|c| c.message.content.as_ref())
         .cloned()
         .unwrap_or_default())
@@ -169,8 +197,7 @@ pub async fn stream_native_completion(
 ) -> Result<(), String> {
     let model = get_model(&state).await?;
 
-    let mut request = RequestBuilder::new()
-        .add_message(TextMessageRole::System, &system_prompt);
+    let mut request = RequestBuilder::new().add_message(TextMessageRole::System, &system_prompt);
 
     for msg in &messages {
         let role = match msg.role.as_str() {
@@ -181,12 +208,18 @@ pub async fn stream_native_completion(
         request = request.add_message(role, &msg.content);
     }
 
-    if let Some(temp) = temperature { request = request.set_sampler_temperature(temp as f64); }
-    if let Some(max) = max_tokens { request = request.set_sampler_max_len(max); }
+    if let Some(temp) = temperature {
+        request = request.set_sampler_temperature(temp as f64);
+    }
+    if let Some(max) = max_tokens {
+        request = request.set_sampler_max_len(max);
+    }
 
     let mut stream = model.stream_chat_request(request).await.map_err(|e| {
         let msg = format!("Stream init error: {e}");
-        let _ = on_event.send(LlmStreamEvent::Error { message: msg.clone() });
+        let _ = on_event.send(LlmStreamEvent::Error {
+            message: msg.clone(),
+        });
         msg
     })?;
 
@@ -199,14 +232,18 @@ pub async fn stream_native_completion(
                     if let Some(ref content) = choice.delta.content {
                         if !content.is_empty() {
                             total_tokens += 1;
-                            let _ = on_event.send(LlmStreamEvent::Token { text: content.clone() });
+                            let _ = on_event.send(LlmStreamEvent::Token {
+                                text: content.clone(),
+                            });
                         }
                     }
                 }
             }
             Response::Done(_) => break,
             Response::ModelError(msg, _) => {
-                let _ = on_event.send(LlmStreamEvent::Error { message: msg.to_string() });
+                let _ = on_event.send(LlmStreamEvent::Error {
+                    message: msg.to_string(),
+                });
                 return Err(msg.to_string());
             }
             _ => {}
@@ -228,18 +265,21 @@ pub async fn native_tool_calling(
 ) -> Result<Vec<ToolCallResult>, String> {
     let model = get_model(&state).await?;
 
-    let mr_tools: Vec<Tool> = tools.iter().map(|t| {
-        let parameters: HashMap<String, serde_json::Value> =
-            serde_json::from_value(t.parameters.clone()).unwrap_or_default();
-        Tool {
-            tp: ToolType::Function,
-            function: Function {
-                description: Some(t.description.clone()),
-                name: t.name.clone(),
-                parameters: Some(parameters),
-            },
-        }
-    }).collect();
+    let mr_tools: Vec<Tool> = tools
+        .iter()
+        .map(|t| {
+            let parameters: HashMap<String, serde_json::Value> =
+                serde_json::from_value(t.parameters.clone()).unwrap_or_default();
+            Tool {
+                tp: ToolType::Function,
+                function: Function {
+                    description: Some(t.description.clone()),
+                    name: t.name.clone(),
+                    parameters: Some(parameters),
+                },
+            }
+        })
+        .collect();
 
     let mut request = RequestBuilder::new()
         .add_message(TextMessageRole::System, &system_prompt)
@@ -247,20 +287,30 @@ pub async fn native_tool_calling(
         .set_tools(mr_tools)
         .set_tool_choice(ToolChoice::Auto);
 
-    if let Some(temp) = temperature { request = request.set_sampler_temperature(temp as f64); }
+    if let Some(temp) = temperature {
+        request = request.set_sampler_temperature(temp as f64);
+    }
 
-    let response = model.send_chat_request(request).await
+    let response = model
+        .send_chat_request(request)
+        .await
         .map_err(|e| format!("Tool calling error: {e}"))?;
 
-    let message = response.choices.first().map(|c| &c.message).ok_or("No response")?;
+    let message = response
+        .choices
+        .first()
+        .map(|c| &c.message)
+        .ok_or("No response")?;
     let mut results = Vec::new();
 
     if let Some(ref tool_calls) = message.tool_calls {
         for call in tool_calls {
-            let arguments: serde_json::Value =
-                serde_json::from_str(&call.function.arguments)
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
-            results.push(ToolCallResult { name: call.function.name.clone(), arguments });
+            let arguments: serde_json::Value = serde_json::from_str(&call.function.arguments)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+            results.push(ToolCallResult {
+                name: call.function.name.clone(),
+                arguments,
+            });
         }
     }
 
@@ -285,14 +335,18 @@ pub async fn schema_constrained_generation(
     let mut request = RequestBuilder::new()
         .add_message(TextMessageRole::System, &system_prompt)
         .add_message(TextMessageRole::User, &user_message)
-        .set_constraint(Constraint::JsonSchema(serde_json::Value::String(json_schema)))
+        .set_constraint(Constraint::JsonSchema(serde_json::Value::String(
+            json_schema,
+        )))
         .set_sampler_temperature(temperature.unwrap_or(0.1) as f64)
         .set_sampler_topp(0.9)
         .set_sampler_max_len(max_tokens.unwrap_or(2048));
 
     let mut stream = model.stream_chat_request(request).await.map_err(|e| {
         let msg = format!("Schema-constrained stream init error: {e}");
-        let _ = on_event.send(LlmStreamEvent::Error { message: msg.clone() });
+        let _ = on_event.send(LlmStreamEvent::Error {
+            message: msg.clone(),
+        });
         msg
     })?;
 
@@ -305,14 +359,18 @@ pub async fn schema_constrained_generation(
                     if let Some(ref content) = choice.delta.content {
                         if !content.is_empty() {
                             total_tokens += 1;
-                            let _ = on_event.send(LlmStreamEvent::Token { text: content.clone() });
+                            let _ = on_event.send(LlmStreamEvent::Token {
+                                text: content.clone(),
+                            });
                         }
                     }
                 }
             }
             Response::Done(_) => break,
             Response::ModelError(msg, _) => {
-                let _ = on_event.send(LlmStreamEvent::Error { message: msg.to_string() });
+                let _ = on_event.send(LlmStreamEvent::Error {
+                    message: msg.to_string(),
+                });
                 return Err(msg.to_string());
             }
             _ => {}
@@ -326,15 +384,23 @@ pub async fn schema_constrained_generation(
 /// Unload model.
 #[tauri::command]
 pub async fn unload_native_llm(state: tauri::State<'_, NativeLlmState>) -> Result<(), String> {
-    { let mut guard = state.model.write().await; *guard = None; }
-    { let mut guard = state.model_id.write().await; *guard = None; }
+    {
+        let mut guard = state.model.write().await;
+        *guard = None;
+    }
+    {
+        let mut guard = state.model_id.write().await;
+        *guard = None;
+    }
     eprintln!("[Native LLM] Model unloaded");
     Ok(())
 }
 
 /// Status check.
 #[tauri::command]
-pub async fn get_native_llm_status(state: tauri::State<'_, NativeLlmState>) -> Result<NativeLlmStatus, String> {
+pub async fn get_native_llm_status(
+    state: tauri::State<'_, NativeLlmState>,
+) -> Result<NativeLlmStatus, String> {
     let loaded = state.model.read().await.is_some();
     let model_id = state.model_id.read().await.clone();
     Ok(NativeLlmStatus { loaded, model_id })
@@ -347,7 +413,6 @@ pub fn get_model_dir() -> Result<String, String> {
         .ok_or("Could not determine data directory")?
         .join("com.sourdaw.app")
         .join("models");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create model directory: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model directory: {e}"))?;
     Ok(dir.to_string_lossy().into_owned())
 }

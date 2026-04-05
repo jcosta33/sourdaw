@@ -37,10 +37,7 @@ export const DawDialogSection = ({
     children,
     ...props
 }: DawDialogSectionProps): ReactElement => (
-    <section
-        className={cn('overflow-hidden rounded-lg border', TONE_CLASS_NAMES[tone], className)}
-        {...props}
-    >
+    <section className={cn('overflow-hidden rounded-lg border', TONE_CLASS_NAMES[tone], className)} {...props}>
         {title || detail || actions ? (
             <div
                 className={cn(

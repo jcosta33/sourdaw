@@ -23,7 +23,6 @@ import { CollaborationBlock } from '../components/CollaborationBlock';
 import { CollaborationStatusRow } from '../components/CollaborationStatusRow';
 import { QrInvite } from './QrInvite';
 
-
 export const CollaborationPanel = (): ReactElement | null => {
     const panelOpen = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(cb),
@@ -198,11 +197,27 @@ export const CollaborationPanel = (): ReactElement | null => {
                                 className="flex flex-col gap-1.5"
                             >
                                 <div className="flex gap-1">
-                                    <Button variant="outline" size="xs" onClick={handleGenerateInvite} disabled={isGeneratingInvite} className="flex-1 gap-1">
-                                        {isGeneratingInvite ? <Loader2 className="size-3 animate-spin" /> : <Copy className="size-3" />}
+                                    <Button
+                                        variant="outline"
+                                        size="xs"
+                                        onClick={handleGenerateInvite}
+                                        disabled={isGeneratingInvite}
+                                        className="flex-1 gap-1"
+                                    >
+                                        {isGeneratingInvite ? (
+                                            <Loader2 className="size-3 animate-spin" />
+                                        ) : (
+                                            <Copy className="size-3" />
+                                        )}
                                         {isGeneratingInvite ? 'Gathering...' : 'Copy Invite'}
                                     </Button>
-                                    <Button variant="outline" size="xs" onClick={handleShowQr} disabled={isGeneratingInvite} className="gap-1">
+                                    <Button
+                                        variant="outline"
+                                        size="xs"
+                                        onClick={handleShowQr}
+                                        disabled={isGeneratingInvite}
+                                        className="gap-1"
+                                    >
                                         <QrCode className="size-3" />
                                         QR
                                     </Button>
@@ -212,9 +227,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                 </DawUtilityNotice>
 
                                 {/* QR code display */}
-                                {showQr && inviteString ? (
-                                    <QrInvite inviteString={inviteString} />
-                                ) : null}
+                                {showQr && inviteString ? <QrInvite inviteString={inviteString} /> : null}
 
                                 {/* Invite text (if generated but QR not shown) */}
                                 {inviteString && !showQr ? (
@@ -232,7 +245,13 @@ export const CollaborationPanel = (): ReactElement | null => {
                                     placeholder="Paste answer here"
                                     monospace
                                 />
-                                <Button variant="outline" size="xs" onClick={handleAcceptAnswer} disabled={!answerString.trim()} className="w-full">
+                                <Button
+                                    variant="outline"
+                                    size="xs"
+                                    onClick={handleAcceptAnswer}
+                                    disabled={!answerString.trim()}
+                                    className="w-full"
+                                >
                                     Accept Answer
                                 </Button>
                             </CollaborationBlock>
@@ -288,7 +307,13 @@ export const CollaborationPanel = (): ReactElement | null => {
                                 placeholder="Paste invite"
                                 monospace
                             />
-                            <Button variant="outline" size="xs" onClick={handleJoin} disabled={!joinInvite.trim() || isJoining} className="w-full gap-1">
+                            <Button
+                                variant="outline"
+                                size="xs"
+                                onClick={handleJoin}
+                                disabled={!joinInvite.trim() || isJoining}
+                                className="w-full gap-1"
+                            >
                                 {isJoining ? <Loader2 className="size-3 animate-spin" /> : null}
                                 {isJoining ? 'Gathering...' : 'Join Session'}
                             </Button>

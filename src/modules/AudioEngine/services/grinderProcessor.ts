@@ -56,12 +56,12 @@ const PARAM_MAP = {
 const MAX_GRINDER_BLOCK_SIZE = 2048;
 
 class GrinderProcessor extends AudioWorkletProcessor {
-    _instance = null;   // GrinderInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory (for direct buffer access in process())
+    _instance = null; // GrinderInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
-    _sabView = null;    // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();

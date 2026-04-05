@@ -221,32 +221,37 @@ export class TrackNode {
 
             const pendingParams: Array<[string, number]> = [];
             dn.nativeDspControls = {
-                setParam: (name: string, value: number) => { pendingParams.push([name, value]); },
+                setParam: (name: string, value: number) => {
+                    pendingParams.push([name, value]);
+                },
                 setBypass: () => {},
             };
 
             const loadPromise = createNativePluginBridgeNode(
                 context as AudioContext,
                 externalInstanceId ?? deviceId,
-                0, // engine plugin ID — will be assigned by Rust
-            ).then((result) => {
-                const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
-                if (idx !== -1) {
-                    const bridgeDn: BuiltinDeviceNode = {
-                        deviceId,
-                        type: deviceType,
-                        nodes: [result.workletNode],
-                        inputNode: result.workletNode,
-                        outputNode: result.workletNode,
-                        nativeDspControls: {
-                            setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
-                            setBypass: result.setBypass,
-                        },
-                    };
-                    this.strip.deviceNodes[idx] = bridgeDn;
-                    this.rebuildChain();
-                }
-            }).catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
+                0 // engine plugin ID — will be assigned by Rust
+            )
+                .then((result) => {
+                    const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                    if (idx !== -1) {
+                        const bridgeDn: BuiltinDeviceNode = {
+                            deviceId,
+                            type: deviceType,
+                            nodes: [result.workletNode],
+                            inputNode: result.workletNode,
+                            outputNode: result.workletNode,
+                            nativeDspControls: {
+                                setParam: (name: string, value: number) =>
+                                    result.setParam(parseInt(name, 10) || 0, value),
+                                setBypass: result.setBypass,
+                            },
+                        };
+                        this.strip.deviceNodes[idx] = bridgeDn;
+                        this.rebuildChain();
+                    }
+                })
+                .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
             pendingDevicePromises.add(loadPromise);
             loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
         } else if (deviceType.startsWith('faust-')) {

@@ -11,22 +11,41 @@ type KarplusSectionProps = {
     onBrightnessChange: (v: number) => void;
 };
 
-export const KarplusSection = ({ damping, brightness, onDampingChange, onBrightnessChange }: KarplusSectionProps): ReactElement => (
+export const KarplusSection = ({
+    damping,
+    brightness,
+    onDampingChange,
+    onBrightnessChange,
+}: KarplusSectionProps): ReactElement => (
     <div className="space-y-2">
-        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
-            String Model
-        </div>
+        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">String Model</div>
         <div className="text-[8px] text-muted-foreground/60 px-1">
             Physical string — excitation filtered by damping. Low damping = bright sustained ring, high = dark pluck.
         </div>
         <div className="flex items-end gap-3">
             <div className="flex flex-col items-center gap-0.5">
-                <RotaryKnob value={damping} onChange={onDampingChange} min={0} max={0.99} step={0.01} defaultValue={0.5} size="xl" />
+                <RotaryKnob
+                    value={damping}
+                    onChange={onDampingChange}
+                    min={0}
+                    max={0.99}
+                    step={0.01}
+                    defaultValue={0.5}
+                    size="xl"
+                />
                 <span className="text-[8px] text-muted-foreground">Damping</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{(damping * 100).toFixed(0)}%</span>
             </div>
             <div className="flex flex-col items-center gap-0.5">
-                <RotaryKnob value={brightness} onChange={onBrightnessChange} min={0.1} max={1} step={0.01} defaultValue={0.7} size="xl" />
+                <RotaryKnob
+                    value={brightness}
+                    onChange={onBrightnessChange}
+                    min={0.1}
+                    max={1}
+                    step={0.01}
+                    defaultValue={0.7}
+                    size="xl"
+                />
                 <span className="text-[8px] text-muted-foreground">Brightness</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{(brightness * 100).toFixed(0)}%</span>
             </div>

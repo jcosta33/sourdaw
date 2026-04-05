@@ -114,7 +114,6 @@ export const miscCommands: CommandEntry[] = [
         action: { type: 'toggleUndoTree' },
     },
 
-
     // ── Control Room ──────────────────────────────────────────
     {
         id: 'toggle-mono-monitor',
@@ -281,7 +280,6 @@ export const miscCommands: CommandEntry[] = [
         category: 'Project',
         action: { type: 'exportDawProject' },
     },
-
 
     // ── Audio Warping ─────────────────────────────────────────
     {

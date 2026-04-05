@@ -23,7 +23,10 @@ export const SignalFlowSection = (): ReactElement => {
                     ) : (
                         <ChevronRight className="size-3 text-muted-foreground" />
                     )}
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
+                    <span
+                        className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider"
+                        style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
+                    >
                         Signal Flow
                     </span>
                 </button>

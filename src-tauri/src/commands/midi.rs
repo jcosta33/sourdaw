@@ -69,13 +69,16 @@ pub fn open_midi_input(
         }
     }
 
-    let midi_in = MidiInput::new("sourdaw-input")
-        .map_err(|e| format!("Failed to create MIDI input: {e}"))?;
+    let midi_in =
+        MidiInput::new("sourdaw-input").map_err(|e| format!("Failed to create MIDI input: {e}"))?;
 
     let ports = midi_in.ports();
-    let port = ports
-        .get(port_index)
-        .ok_or_else(|| format!("Port index {port_index} out of range (found {} ports)", ports.len()))?;
+    let port = ports.get(port_index).ok_or_else(|| {
+        format!(
+            "Port index {port_index} out of range (found {} ports)",
+            ports.len()
+        )
+    })?;
 
     let port_name = midi_in
         .port_name(port)
@@ -110,9 +113,7 @@ pub fn open_midi_input(
 
 /// Close the currently open MIDI input port.
 #[tauri::command]
-pub fn close_midi_input(
-    midi_state: tauri::State<'_, MidiState>,
-) -> Result<(), String> {
+pub fn close_midi_input(midi_state: tauri::State<'_, MidiState>) -> Result<(), String> {
     let mut conn_guard = midi_state
         .connection
         .lock()

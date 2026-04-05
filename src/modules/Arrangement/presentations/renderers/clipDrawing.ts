@@ -138,7 +138,9 @@ export const drawClip = (
 
     const typeLabel = clip.isLinkedInstance
         ? `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`
-        : clip.type === 'midi' ? 'MIDI' : 'AUDIO';
+        : clip.type === 'midi'
+          ? 'MIDI'
+          : 'AUDIO';
     ctx.fillStyle = clip.isLinkedInstance ? 'rgba(120, 180, 255, 0.5)' : 'rgba(255, 255, 255, 0.25)';
     ctx.font = '7px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     if (w > 50) {
@@ -354,7 +356,7 @@ const drawMidiNotePreview = (
             const nw = Math.max(1, (note.duration / clipDuration) * clipW);
             const pitchNorm = (note.pitch - minPitch) / pitchRange;
             const ny = contentTop + contentHeight - pitchNorm * contentHeight - 2;
-            
+
             // Only draw if within clip visual bounds
             if (relStart + note.duration > 0 && nx < clipX + clipW) {
                 const drawW = Math.min(nw, clipX + clipW - nx);

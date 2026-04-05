@@ -13,7 +13,9 @@ import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
  * Redo: re-runs the split from the now-restored original.
  */
 export function splitClipWithUndo(clipId: string, splitBeat: number): void {
-    const origClip = getTrackState()?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
+    const origClip = getTrackState()
+        ?.tracks.flatMap((t) => t.clips)
+        .find((c) => c.id === clipId);
     if (!origClip) {
         return;
     }

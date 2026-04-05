@@ -35,7 +35,9 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 async function initDB(): Promise<void> {
-    if (dbReady) { return; }
+    if (dbReady) {
+        return;
+    }
     try {
         db = await openDB();
         dbReady = true;
@@ -52,7 +54,10 @@ async function initDB(): Promise<void> {
 
 function idbGet(key: string): Promise<string | null> {
     return new Promise((resolve) => {
-        if (!db) { resolve(null); return; }
+        if (!db) {
+            resolve(null);
+            return;
+        }
         try {
             const tx = db.transaction(STORE_NAME, 'readonly');
             const store = tx.objectStore(STORE_NAME);
@@ -66,7 +71,9 @@ function idbGet(key: string): Promise<string | null> {
 }
 
 function idbPut(key: string, value: string): void {
-    if (!db) { return; }
+    if (!db) {
+        return;
+    }
     try {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
@@ -77,7 +84,9 @@ function idbPut(key: string, value: string): void {
 }
 
 function idbDelete(key: string): void {
-    if (!db) { return; }
+    if (!db) {
+        return;
+    }
     try {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
@@ -94,7 +103,9 @@ void initDB();
 
 export function readProjectJson(): string | null {
     // Sync read from cache (populated from IndexedDB on init, or from writes)
-    if (cachedJson) { return cachedJson; }
+    if (cachedJson) {
+        return cachedJson;
+    }
 
     // Fallback: try localStorage for migration from old storage
     try {

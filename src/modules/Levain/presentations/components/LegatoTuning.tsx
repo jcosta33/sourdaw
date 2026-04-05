@@ -143,12 +143,8 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         defaultValue={300}
                         size="lg"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Slow
-                    </span>
-                    <span className="text-[6px] text-muted-foreground/40 tabular-nums">
-                        {config.slowThresholdMs}ms
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Slow</span>
+                    <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.slowThresholdMs}ms</span>
                 </div>
 
                 <div className="flex flex-col items-center gap-0">
@@ -161,12 +157,8 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         defaultValue={100}
                         size="lg"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Fast
-                    </span>
-                    <span className="text-[6px] text-muted-foreground/40 tabular-nums">
-                        {config.fastThresholdMs}ms
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Fast</span>
+                    <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.fastThresholdMs}ms</span>
                 </div>
 
                 <div className="border-l border-border/15 pl-3 flex flex-col items-center gap-0">
@@ -179,9 +171,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         defaultValue={64}
                         size="md"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Porto Vel
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Porto Vel</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         {config.portamentoVelocityThreshold}
                     </span>

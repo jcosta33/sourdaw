@@ -17,28 +17,33 @@ function preset(id: string, name: string, category: string, overrides: Partial<P
 export const PROOF_PRESETS: readonly ProofPreset[] = [
     // ── Target-based ──
     preset('streaming', 'Streaming Master', 'target', {
-        target: 'streaming', targetLufs: -14,
+        target: 'streaming',
+        targetLufs: -14,
         limCeiling: -1.0,
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
             i === 1 ? { ...b, gain: 1.5 } : i === 6 ? { ...b, gain: 1.0 } : b
         ),
     }),
     preset('cd-master', 'CD Master', 'target', {
-        target: 'cd', targetLufs: -9,
+        target: 'cd',
+        targetLufs: -9,
         limCeiling: -0.1,
         dynBands: DEFAULT_PATCH.dynBands.map((b) => ({ ...b, threshold: -15, ratio: 3 })),
     }),
     preset('club', 'Club / DJ', 'target', {
-        target: 'club', targetLufs: -6,
+        target: 'club',
+        targetLufs: -6,
         limCeiling: -0.5,
         dynBands: DEFAULT_PATCH.dynBands.map((b) => ({ ...b, threshold: -12, ratio: 4, attack: 5 })),
     }),
     preset('broadcast', 'Broadcast (EBU R128)', 'target', {
-        target: 'broadcast', targetLufs: -23,
+        target: 'broadcast',
+        targetLufs: -23,
         limCeiling: -1.0,
     }),
     preset('podcast', 'Podcast', 'target', {
-        target: 'podcast', targetLufs: -16,
+        target: 'podcast',
+        targetLufs: -16,
         limCeiling: -1.0,
         imgBandWidth: [0.0, 0.5, 0.7, 0.7], // narrower stereo
     }),
@@ -50,10 +55,10 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         ),
         excBypassed: false,
         excBands: [
-            { type: 0, drive: 0.3, blend: 0.4, enabled: true },  // tape on low
-            { type: 0, drive: 0.2, blend: 0.3, enabled: true },  // tape on low-mid
+            { type: 0, drive: 0.3, blend: 0.4, enabled: true }, // tape on low
+            { type: 0, drive: 0.2, blend: 0.3, enabled: true }, // tape on low-mid
             { type: 0, drive: 0.15, blend: 0.2, enabled: false }, // off on high-mid
-            { type: 3, drive: 0.1, blend: 0.2, enabled: true },  // warm on high
+            { type: 3, drive: 0.1, blend: 0.2, enabled: true }, // warm on high
         ],
     }),
     preset('clean', 'Clean & Transparent', 'style', {
@@ -62,11 +67,12 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         dynBands: DEFAULT_PATCH.dynBands.map((b) => ({ ...b, ratio: 1.5, knee: 10 })),
     }),
     preset('loud', 'Loud & Present', 'style', {
-        target: 'cd', targetLufs: -9,
+        target: 'cd',
+        targetLufs: -9,
         limCeiling: -0.3,
         dynBands: DEFAULT_PATCH.dynBands.map((b) => ({ ...b, threshold: -16, ratio: 3, attack: 5 })),
-        eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
-            i === 4 ? { ...b, gain: 2.0 } : b // presence boost at 2.5kHz
+        eqBands: DEFAULT_PATCH.eqBands.map(
+            (b, i) => (i === 4 ? { ...b, gain: 2.0 } : b) // presence boost at 2.5kHz
         ),
     }),
     preset('vintage', 'Vintage Tape', 'style', {
@@ -82,7 +88,8 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
 
     // ── Genre-based ──
     preset('edm', 'EDM / Club', 'genre', {
-        target: 'club', targetLufs: -6,
+        target: 'club',
+        targetLufs: -6,
         limCeiling: -0.5,
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
             i === 1 ? { ...b, gain: 3.0 } : i === 4 ? { ...b, gain: 2.0 } : b
@@ -93,9 +100,7 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
             i === 1 ? { ...b, gain: 3.5 } : i === 4 ? { ...b, gain: 1.5 } : b
         ),
-        dynBands: DEFAULT_PATCH.dynBands.map((b, i) =>
-            i === 0 ? { ...b, threshold: -18, ratio: 3, attack: 5 } : b
-        ),
+        dynBands: DEFAULT_PATCH.dynBands.map((b, i) => (i === 0 ? { ...b, threshold: -18, ratio: 3, attack: 5 } : b)),
     }),
     preset('classical', 'Classical / Acoustic', 'genre', {
         eqBypassed: true,

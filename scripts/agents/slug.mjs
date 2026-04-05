@@ -11,20 +11,20 @@ const DEFAULT_MAX_LEN = 60;
  * @returns {string}
  */
 export function toSlug(title, maxLen = DEFAULT_MAX_LEN) {
-  if (!title || typeof title !== 'string') throw new Error('Title is required');
+    if (!title || typeof title !== 'string') throw new Error('Title is required');
 
-  let slug = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')   // strip punctuation except hyphens
-    .replace(/[\s]+/g, '-')          // spaces → hyphens
-    .replace(/-{2,}/g, '-')          // collapse repeated hyphens
-    .replace(/^-+|-+$/g, '')         // strip leading/trailing hyphens
-    .slice(0, maxLen)
-    .replace(/-+$/g, '');            // strip trailing hyphens after slice
+    let slug = title
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '') // strip punctuation except hyphens
+        .replace(/[\s]+/g, '-') // spaces → hyphens
+        .replace(/-{2,}/g, '-') // collapse repeated hyphens
+        .replace(/^-+|-+$/g, '') // strip leading/trailing hyphens
+        .slice(0, maxLen)
+        .replace(/-+$/g, ''); // strip trailing hyphens after slice
 
-  if (!slug) throw new Error(`Title "${title}" produced an empty slug after normalization`);
-  return slug;
+    if (!slug) throw new Error(`Title "${title}" produced an empty slug after normalization`);
+    return slug;
 }
 
 /**
@@ -35,15 +35,15 @@ export function toSlug(title, maxLen = DEFAULT_MAX_LEN) {
  * @returns {object}
  */
 export function deriveNames(slug, repoName, config) {
-  const branch = `agent/${slug}`;
-  const worktreePath = (config.worktreeDirPattern || '../{repoName}--{slug}')
-    .replace('{repoName}', repoName)
-    .replace('{slug}', slug);
-  return {
-    branch,
-    worktreePath,
-    taskFile: `.agents/tasks/${slug}.md`,
-  };
+    const branch = `agent/${slug}`;
+    const worktreePath = (config.worktreeDirPattern || '../{repoName}--{slug}')
+        .replace('{repoName}', repoName)
+        .replace('{slug}', slug);
+    return {
+        branch,
+        worktreePath,
+        taskFile: `.agents/tasks/${slug}.md`,
+    };
 }
 
 /**
@@ -53,7 +53,7 @@ export function deriveNames(slug, repoName, config) {
  * @returns {string}
  */
 export function nextDuplicateSlug(baseSlug, existingSlugs) {
-  let n = 2;
-  while (existingSlugs.has(`${baseSlug}-${n}`)) n++;
-  return `${baseSlug}-${n}`;
+    let n = 2;
+    while (existingSlugs.has(`${baseSlug}-${n}`)) n++;
+    return `${baseSlug}-${n}`;
 }

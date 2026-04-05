@@ -2,10 +2,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getPlatformPlugins } from '../getPlatformPlugins';
 import { type Device } from '../../models/Track';
-import {
-    addDeviceToStrip,
-    updateDeviceParam,
-} from '#/modules/AudioEngine/useCases/deviceControls';
+import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;

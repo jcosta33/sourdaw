@@ -45,7 +45,9 @@ export const crustStore = new Store<CrustState>(logger, {
 
 export function setCrustParam<K extends keyof CrustPatch>(key: K, value: CrustPatch[K]): void {
     const state = crustStore.value;
-    if (!state) { return; }
+    if (!state) {
+        return;
+    }
     crustStore.set({ ...state, patch: { ...state.patch, [key]: value } });
 }
 

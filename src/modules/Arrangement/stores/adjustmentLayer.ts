@@ -118,15 +118,15 @@ export const EFFECT_PRESETS: Record<AdjustmentEffectType, AdjustmentParameter[]>
         { name: 'Width', value: 100, min: 0, max: 200, unit: '%' },
         { name: 'Center', value: 0, min: -100, max: 100, unit: '%' },
     ],
-    volume: [
-        { name: 'Gain', value: 0, min: -60, max: 12, unit: 'dB' },
-    ],
-    pan: [
-        { name: 'Pan', value: 0, min: -100, max: 100, unit: '%' },
-    ],
+    volume: [{ name: 'Gain', value: 0, min: -60, max: 12, unit: 'dB' }],
+    pan: [{ name: 'Pan', value: 0, min: -100, max: 100, unit: '%' }],
 };
 
 export const LAYER_COLORS = [
-    'oklch(0.40 0.10 180)', 'oklch(0.40 0.10 240)', 'oklch(0.40 0.10 300)',
-    'oklch(0.40 0.10 60)', 'oklch(0.40 0.10 120)', 'oklch(0.40 0.10 30)',
+    'oklch(0.40 0.10 180)',
+    'oklch(0.40 0.10 240)',
+    'oklch(0.40 0.10 300)',
+    'oklch(0.40 0.10 60)',
+    'oklch(0.40 0.10 120)',
+    'oklch(0.40 0.10 30)',
 ];

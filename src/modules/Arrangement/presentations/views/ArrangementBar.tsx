@@ -1,11 +1,4 @@
-import {
-    type ReactElement,
-    type MouseEvent,
-    useState,
-    useRef,
-    useEffect,
-    useSyncExternalStore,
-} from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
@@ -90,10 +83,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
 
     useContextMenuDismiss(menuRef, () => setContextMenu({ kind: 'none' }));
 
-    const detectEdge = (
-        e: MouseEvent,
-        section: ArrangementSection
-    ): 'left' | 'right' | null => {
+    const detectEdge = (e: MouseEvent, section: ArrangementSection): 'left' | 'right' | null => {
         const parentRect = (e.currentTarget.parentElement ?? e.currentTarget).getBoundingClientRect();
         const localX = e.clientX - parentRect.left;
         const sectionLeftPx = section.startBeat * pixelsPerBeat - scrollX;
@@ -169,7 +159,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         const handleMouseUp = () => {
             if (mode === 'move' && lastStart !== origStart) {
                 moveSection(section.id, lastStart);
-            } else if ((mode === 'resize-left' || mode === 'resize-right') && (lastStart !== origStart || lastEnd !== origEnd)) {
+            } else if (
+                (mode === 'resize-left' || mode === 'resize-right') &&
+                (lastStart !== origStart || lastEnd !== origEnd)
+            ) {
                 resizeSection(section.id, lastStart, lastEnd);
             }
             dragRef.current = null;
@@ -378,15 +371,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                     }}
                 >
                     {contextMenu.kind === 'empty' && (
-                        <DawMenuButton onClick={handleAddSection}>
-                            Add Section
-                        </DawMenuButton>
+                        <DawMenuButton onClick={handleAddSection}>Add Section</DawMenuButton>
                     )}
                     {contextMenu.kind === 'section' && (
                         <>
-                            <DawMenuButton onClick={handleStartRename}>
-                                Rename
-                            </DawMenuButton>
+                            <DawMenuButton onClick={handleStartRename}>Rename</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <div className="flex gap-1 px-2 pb-1">
                                 {SECTION_COLORS.map((c) => (

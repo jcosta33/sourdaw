@@ -99,7 +99,14 @@ export const AutomationLane = ({
             );
         }
         if (mode.kind === 'cc') {
-            return <CCLane clipId={clipId} controller={mode.controller} beatWidth={beatWidth} contentWidth={contentWidth} />;
+            return (
+                <CCLane
+                    clipId={clipId}
+                    controller={mode.controller}
+                    beatWidth={beatWidth}
+                    contentWidth={contentWidth}
+                />
+            );
         }
         return <PitchBendLane clipId={clipId} beatWidth={beatWidth} contentWidth={contentWidth} />;
     };

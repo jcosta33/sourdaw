@@ -44,7 +44,9 @@ export const MidiDevicePicker = (): ReactElement => {
     return (
         <div className="space-y-2">
             <div className="space-y-1.5">
-                <DawEyebrowLabel size="sm" className="block">MIDI Input</DawEyebrowLabel>
+                <DawEyebrowLabel size="sm" className="block">
+                    MIDI Input
+                </DawEyebrowLabel>
                 <div className="flex items-center gap-2">
                     <DawCompactSelect
                         value={state.selectedInputId ?? ''}

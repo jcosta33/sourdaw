@@ -27,12 +27,7 @@ export const DawCompactInput = ({
     ...props
 }: DawCompactInputProps): ReactElement => (
     <Input
-        className={cn(
-            SIZE_CLASS_NAMES[size],
-            ALIGN_CLASS_NAMES[align],
-            monospace ? 'font-mono' : '',
-            className
-        )}
+        className={cn(SIZE_CLASS_NAMES[size], ALIGN_CLASS_NAMES[align], monospace ? 'font-mono' : '', className)}
         {...props}
     />
 );

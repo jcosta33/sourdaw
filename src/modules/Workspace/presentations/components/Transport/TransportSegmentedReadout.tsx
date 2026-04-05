@@ -7,7 +7,11 @@ type TransportSegmentedReadoutProps = {
     label: ReactNode;
     segments: [ReactNode, ReactNode, ReactNode];
     separators: [ReactNode, ReactNode];
-    segmentRefs?: [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>];
+    segmentRefs?: [
+        RefObject<HTMLSpanElement | null>,
+        RefObject<HTMLSpanElement | null>,
+        RefObject<HTMLSpanElement | null>,
+    ];
     active?: boolean;
     onClick: () => void;
     ariaLabel: string;

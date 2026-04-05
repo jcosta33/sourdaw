@@ -7,8 +7,6 @@ export function rateSample(sampleId: string, rating: number): void {
     }
     sampleDatabaseStore.set({
         ...state,
-        samples: state.samples.map((s) =>
-            s.id === sampleId ? { ...s, rating: Math.max(0, Math.min(5, rating)) } : s
-        ),
+        samples: state.samples.map((s) => (s.id === sampleId ? { ...s, rating: Math.max(0, Math.min(5, rating)) } : s)),
     });
 }

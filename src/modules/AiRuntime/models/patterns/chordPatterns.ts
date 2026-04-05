@@ -1,4 +1,10 @@
-import { type PatternTemplate, type PatternNote, getScalePitches, snapToScale, chordFromDegrees } from '../midiPatternLibrary';
+import {
+    type PatternTemplate,
+    type PatternNote,
+    getScalePitches,
+    snapToScale,
+    chordFromDegrees,
+} from '../midiPatternLibrary';
 
 /** Chord pattern templates — triad and extended chord progressions across multiple genres. */
 export const chordPatterns: PatternTemplate[] = [
@@ -293,5 +299,4 @@ export const chordPatterns: PatternTemplate[] = [
             ]);
         },
     },
-
 ];

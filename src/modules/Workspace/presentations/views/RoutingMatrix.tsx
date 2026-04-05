@@ -101,7 +101,9 @@ export const RoutingMatrix = (): ReactElement => {
                                                     title={`${src.name} → ${dest.name}`}
                                                 >
                                                     {isConnected ? (
-                                                        <span className="text-[6px] text-[var(--color-state-success)]">●</span>
+                                                        <span className="text-[6px] text-[var(--color-state-success)]">
+                                                            ●
+                                                        </span>
                                                     ) : null}
                                                 </button>
                                             )}

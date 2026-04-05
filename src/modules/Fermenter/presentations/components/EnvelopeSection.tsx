@@ -9,15 +9,29 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 
 type EnvelopeSectionProps = {
-    ampA: number; ampD: number; ampS: number; ampR: number;
-    filterA: number; filterD: number; filterS: number; filterR: number;
+    ampA: number;
+    ampD: number;
+    ampS: number;
+    ampR: number;
+    filterA: number;
+    filterD: number;
+    filterS: number;
+    filterR: number;
     onAmpChange: (key: 'ampAttack' | 'ampDecay' | 'ampSustain' | 'ampRelease', v: number) => void;
     onFilterChange: (key: 'filterAttack' | 'filterDecay' | 'filterSustain' | 'filterRelease', v: number) => void;
 };
 
 export const EnvelopeSection = ({
-    ampA, ampD, ampS, ampR, filterA, filterD, filterS, filterR,
-    onAmpChange, onFilterChange,
+    ampA,
+    ampD,
+    ampS,
+    ampR,
+    filterA,
+    filterD,
+    filterS,
+    filterR,
+    onAmpChange,
+    onFilterChange,
 }: EnvelopeSectionProps): ReactElement => {
     const [activeEnv, setActiveEnv] = useState<'amp' | 'filter'>('amp');
     const isAmp = activeEnv === 'amp';
@@ -28,7 +42,12 @@ export const EnvelopeSection = ({
 
     const handle = (paramId: string, value: number): void => {
         const prefix = isAmp ? 'amp' : 'filter';
-        const map: Record<string, string> = { attack: `${prefix}Attack`, decay: `${prefix}Decay`, sustain: `${prefix}Sustain`, release: `${prefix}Release` };
+        const map: Record<string, string> = {
+            attack: `${prefix}Attack`,
+            decay: `${prefix}Decay`,
+            sustain: `${prefix}Sustain`,
+            release: `${prefix}Release`,
+        };
         const key = map[paramId];
         if (!key) return;
         if (isAmp) onAmpChange(key as 'ampAttack' | 'ampDecay' | 'ampSustain' | 'ampRelease', value);
@@ -55,9 +74,15 @@ export const EnvelopeSection = ({
 
             {/* HERO: Large interactive ADSR — drag the breakpoints */}
             <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">
-                <ADSREnvelope attack={a} decay={d} sustain={s} release={r}
+                <ADSREnvelope
+                    attack={a}
+                    decay={d}
+                    sustain={s}
+                    release={r}
                     color={isAmp ? 'var(--color-accent-mint)' : 'var(--color-accent-cyan)'}
-                    width={310} height={100} onParamChange={handle}
+                    width={310}
+                    height={100}
+                    onParamChange={handle}
                 />
             </div>
 
@@ -72,7 +97,16 @@ export const EnvelopeSection = ({
                     const mappedKey = `${isAmp ? 'amp' : 'filter'}${key}` as const;
                     return (
                         <div key={key} className="flex flex-col items-center gap-0">
-                            <RotaryKnob paramId={mappedKey} value={value} onChange={(v) => handle(key.toLowerCase(), v)} min={min} max={max} step={key === 'Sustain' ? 0.01 : 0.005} defaultValue={key === 'Sustain' ? 0.7 : 0.2} size="lg" />
+                            <RotaryKnob
+                                paramId={mappedKey}
+                                value={value}
+                                onChange={(v) => handle(key.toLowerCase(), v)}
+                                min={min}
+                                max={max}
+                                step={key === 'Sustain' ? 0.01 : 0.005}
+                                defaultValue={key === 'Sustain' ? 0.7 : 0.2}
+                                size="lg"
+                            />
                             <span className="text-[7px] text-muted-foreground">{label}</span>
                             <span className="text-[6px] text-muted-foreground/50 font-mono">{fmt}</span>
                         </div>

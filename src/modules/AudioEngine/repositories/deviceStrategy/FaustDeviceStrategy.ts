@@ -28,14 +28,14 @@ export async function createFaustStrategy(ctx: BaseAudioContext, device: Device)
     if (!node) {
         throw new Error(`Failed to create Faust device: ${device.type}`);
     }
-    
+
     const faustNode = node.nodes[0] as any;
     const strategy = new FaustDeviceStrategy(node, faustNode);
-    
+
     // Apply initial params
     for (const [key, val] of Object.entries(device.parameterValues)) {
         strategy.setParam(key, val);
     }
-    
+
     return strategy;
 }

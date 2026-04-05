@@ -55,7 +55,7 @@ function parseVscoFilename(filename) {
         velIndex = parseInt(velPart.replace(/^v/i, ''), 10) - 1; // 0-indexed
         dynamic = `v${velIndex + 1}`;
         parts.pop();
-    } else if (velPart && ['ppp','pp','p','mp','mf','f','ff','fff'].includes(velPart)) {
+    } else if (velPart && ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'].includes(velPart)) {
         dynamic = velPart;
         parts.pop();
     } else {
@@ -74,14 +74,11 @@ function parseVscoFilename(filename) {
 
 // ─── Dynamic → velocity range ─────────────────────────────────────────────
 
-const DYNAMIC_ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff',
-    'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8'];
+const DYNAMIC_ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8'];
 
 function dynamicsToVelLayers(dynamics) {
     // Sort by dynamic order
-    const sorted = [...dynamics].sort(
-        (a, b) => DYNAMIC_ORDER.indexOf(a) - DYNAMIC_ORDER.indexOf(b)
-    );
+    const sorted = [...dynamics].sort((a, b) => DYNAMIC_ORDER.indexOf(a) - DYNAMIC_ORDER.indexOf(b));
     const count = sorted.length;
     return sorted.map((d, i) => ({
         dynamic: d,
@@ -97,19 +94,15 @@ function buildKeyRanges(sortedMidis, instrumentRange) {
     return sortedMidis.map((midi, i) => {
         const prev = sortedMidis[i - 1];
         const next = sortedMidis[i + 1];
-        const loKey = prev !== undefined
-            ? Math.round((prev + midi) / 2) + 1
-            : rangeMin;
-        const hiKey = next !== undefined
-            ? Math.round((midi + next) / 2)
-            : rangeMax;
+        const loKey = prev !== undefined ? Math.round((prev + midi) / 2) + 1 : rangeMin;
+        const hiKey = next !== undefined ? Math.round((midi + next) / 2) : rangeMax;
         return { midi, loKey, hiKey };
     });
 }
 
 // ─── Fetch file list from GitHub API ──────────────────────────────────────
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function listGitHubDir(path) {
     await sleep(200); // avoid GitHub API rate limiting (60 req/hr unauthenticated)
@@ -277,23 +270,17 @@ const INSTRUMENTS = [
     {
         id: 'glockenspiel',
         keyRange: [72, 108],
-        articulations: [
-            { type: 'sustain', id: 0, vscoPath: 'Percussion/Glock', loopMode: 'none' },
-        ],
+        articulations: [{ type: 'sustain', id: 0, vscoPath: 'Percussion/Glock', loopMode: 'none' }],
     },
     {
         id: 'marimba',
         keyRange: [45, 96],
-        articulations: [
-            { type: 'sustain', id: 0, vscoPath: 'Percussion/Marimba', loopMode: 'none' },
-        ],
+        articulations: [{ type: 'sustain', id: 0, vscoPath: 'Percussion/Marimba', loopMode: 'none' }],
     },
     {
         id: 'timpani',
         keyRange: [36, 57], // C2–A3
-        articulations: [
-            { type: 'sustain', id: 0, vscoPath: 'Percussion/Timpani', loopMode: 'none' },
-        ],
+        articulations: [{ type: 'sustain', id: 0, vscoPath: 'Percussion/Timpani', loopMode: 'none' }],
     },
 ];
 
@@ -309,7 +296,7 @@ async function processArticulation(vscoPath, artType, artId, loopMode, instrumen
         return null;
     }
 
-    const wavFiles = entries.filter(e => e.name.toLowerCase().endsWith('.wav'));
+    const wavFiles = entries.filter((e) => e.name.toLowerCase().endsWith('.wav'));
     if (wavFiles.length === 0) {
         console.warn(`  ⚠️  No WAV files in ${vscoPath}`);
         return null;
@@ -337,7 +324,7 @@ async function processArticulation(vscoPath, artType, artId, loopMode, instrumen
     }
 
     // Get unique dynamics in this articulation
-    const allDynamics = [...new Set(parsed.map(p => p.dynamic))];
+    const allDynamics = [...new Set(parsed.map((p) => p.dynamic))];
     const velLayers = dynamicsToVelLayers(allDynamics);
 
     // Build sorted note list and key ranges
@@ -355,7 +342,7 @@ async function processArticulation(vscoPath, artType, artId, loopMode, instrumen
         for (const velLayer of velLayers) {
             // Get all RR positions for this note+dynamic
             const rrSamples = noteSamples
-                .filter(s => s.dynamic === velLayer.dynamic)
+                .filter((s) => s.dynamic === velLayer.dynamic)
                 .sort((a, b) => a.rrPos - b.rrPos);
 
             if (rrSamples.length === 0) continue;
@@ -365,10 +352,7 @@ async function processArticulation(vscoPath, artType, artId, loopMode, instrumen
             for (const sample of rrSamples) {
                 const localFilename = sample.filename;
                 const localPath = join(outDir, localFilename);
-                const downloaded = await downloadFile(
-                    `${vscoPath}/${sample.filename}`,
-                    localPath
-                );
+                const downloaded = await downloadFile(`${vscoPath}/${sample.filename}`, localPath);
                 if (downloaded) downloadCount++;
                 else skipCount++;
 
@@ -443,7 +427,7 @@ async function main() {
     console.log('\n✅ All done!');
 }
 
-main().catch(err => {
+main().catch((err) => {
     console.error('❌ Error:', err);
     process.exit(1);
 });

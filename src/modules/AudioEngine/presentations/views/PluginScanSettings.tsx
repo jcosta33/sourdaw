@@ -138,11 +138,7 @@ export const PluginScanSettings = (): ReactElement | null => {
                 </div>
 
                 <div className="space-y-1">
-                    <DawReadoutRow
-                        label="Plugins Found"
-                        value={state.scannedPlugins.length}
-                        className="gap-2"
-                    />
+                    <DawReadoutRow label="Plugins Found" value={state.scannedPlugins.length} className="gap-2" />
                     <DawReadoutRow
                         label="Last Scan"
                         value={lastScanLabel}

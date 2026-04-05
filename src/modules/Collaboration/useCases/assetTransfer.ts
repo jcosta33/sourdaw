@@ -36,11 +36,14 @@ export class AssetTransfer {
     private localAssets = new Map<string, { blob: Blob; name: string }>();
 
     /** In-flight incoming transfers: hash → { chunks, received bitmap } */
-    private incomingTransfers = new Map<string, {
-        manifest: AssetManifest;
-        chunks: Map<number, Uint8Array>;
-        receivedBitmap: Set<number>;
-    }>();
+    private incomingTransfers = new Map<
+        string,
+        {
+            manifest: AssetManifest;
+            chunks: Map<number, Uint8Array>;
+            receivedBitmap: Set<number>;
+        }
+    >();
 
     constructor(peerManager: PeerConnectionManager, callbacks: AssetTransferCallbacks) {
         this.peerManager = peerManager;
@@ -127,9 +130,7 @@ export class AssetTransfer {
         });
 
         // Send requested chunks (or all if none specified)
-        const chunksToSend = missingChunks.length > 0
-            ? missingChunks
-            : Array.from({ length: chunkCount }, (_, i) => i);
+        const chunksToSend = missingChunks.length > 0 ? missingChunks : Array.from({ length: chunkCount }, (_, i) => i);
 
         for (const index of chunksToSend) {
             const start = index * CHUNK_SIZE;
@@ -184,10 +185,13 @@ export class AssetTransfer {
         }
     }
 
-    private async assembleAsset(hash: string, transfer: {
-        manifest: AssetManifest;
-        chunks: Map<number, Uint8Array>;
-    }): Promise<void> {
+    private async assembleAsset(
+        hash: string,
+        transfer: {
+            manifest: AssetManifest;
+            chunks: Map<number, Uint8Array>;
+        }
+    ): Promise<void> {
         const sortedChunks: Uint8Array[] = [];
         for (let i = 0; i < transfer.manifest.chunkCount; i++) {
             const chunk = transfer.chunks.get(i);

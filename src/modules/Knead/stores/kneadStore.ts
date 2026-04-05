@@ -31,7 +31,7 @@ export function setActiveKneadTrack(trackId: string | null): void {
 export function updateTrackKneadState(trackId: string, updater: (state: KneadTrackState) => KneadTrackState): void {
     const state = kneadStore.value;
     if (!state) return;
-    
+
     const trackState = state.tracks[trackId] ?? {
         trackId,
         blobs: [],
@@ -41,7 +41,7 @@ export function updateTrackKneadState(trackId: string, updater: (state: KneadTra
         humanizePercent: 40,
         formantPreserve: true,
     };
-    
+
     kneadStore.set({
         ...state,
         tracks: {

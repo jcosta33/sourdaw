@@ -2,8 +2,15 @@ import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { newProject } from '../projectPersistence/newProject';
-import { demo1_TheCompleteMix, demo_SweetDreams, demo4_NativeShowcase, demo5_NebulaDrift } from '../demoProjects/demoFactories';
+import {
+    demo1_TheCompleteMix,
+    demo_SweetDreams,
+    demo4_NativeShowcase,
+    demo5_NebulaDrift,
+} from '../demoProjects/demoFactories';
 import { type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
+import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
 
 let synthDeviceCounter = 0;
 
@@ -174,5 +181,11 @@ export async function createFromTemplate(templateId: string): Promise<void> {
     if (!template) {
         return;
     }
+    // Stop any in-flight playback and tear down the previous project's audio
+    // graph before the template mutates stores or creates its own strips.
+    // Non-demo templates call newProject() which also stops/resets, but both
+    // operations are idempotent so the double-call is harmless.
+    stopPlayback();
+    resetAudioGraph();
     await template.create();
 }

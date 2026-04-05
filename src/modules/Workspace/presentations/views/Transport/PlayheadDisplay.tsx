@@ -17,11 +17,7 @@ type PlayheadDisplayProps = {
  * `playheadPositionRef` via a rAF loop and writes directly to the DOM.
  * This avoids ~100 React re-renders/sec during playback.
  */
-export const PlayheadDisplay = ({
-    tempo,
-    numerator,
-    timeDisplayMode,
-}: PlayheadDisplayProps): ReactElement => {
+export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadDisplayProps): ReactElement => {
     const isMusical = timeDisplayMode === 'musical';
     const isPlaying = useSyncExternalStore(
         (cb) => transportStore.subscribe(cb),
@@ -128,7 +124,11 @@ export const PlayheadDisplay = ({
             <TooltipTrigger asChild>
                 <TransportSegmentedReadout
                     label="Time"
-                    segments={[String(mins).padStart(2, '0'), String(secs).padStart(2, '0'), String(ms).padStart(3, '0')]}
+                    segments={[
+                        String(mins).padStart(2, '0'),
+                        String(secs).padStart(2, '0'),
+                        String(ms).padStart(3, '0'),
+                    ]}
                     separators={[':', '.']}
                     segmentRefs={[seg1Ref, seg2Ref, seg3Ref]}
                     active={isPlaying}

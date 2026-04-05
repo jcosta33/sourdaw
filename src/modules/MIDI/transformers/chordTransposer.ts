@@ -24,7 +24,7 @@ export function transposeNoteToChord(
     const toIntervals = Array.from(CHORD_TYPES[toQuality]) as number[];
 
     // Determine the note's interval relative to the source root
-    const semitoneFromRoot = ((pitch - fromRoot) % 12 + 12) % 12;
+    const semitoneFromRoot = (((pitch - fromRoot) % 12) + 12) % 12;
 
     // Check if this note is a chord tone in the source chord
     const chordToneIndex = fromIntervals.indexOf(semitoneFromRoot);
@@ -53,5 +53,11 @@ export function transposeForChordTrack(
     if (!referenceChord || !targetChord) {
         return pitch;
     }
-    return transposeNoteToChord(pitch, referenceChord.root, referenceChord.quality, targetChord.root, targetChord.quality);
+    return transposeNoteToChord(
+        pitch,
+        referenceChord.root,
+        referenceChord.quality,
+        targetChord.root,
+        targetChord.quality
+    );
 }

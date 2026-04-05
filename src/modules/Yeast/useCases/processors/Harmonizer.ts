@@ -29,8 +29,8 @@ export class Harmonizer implements MidiProcessor {
     private root = 0;
     private scaleName = 'major';
     private voices: HarmonyVoice[] = [
-        { degrees: 2, velocityOffset: -10, timeOffsetSamples: 0, enabled: true },   // 3rd
-        { degrees: 4, velocityOffset: -15, timeOffsetSamples: 0, enabled: false },  // 5th
+        { degrees: 2, velocityOffset: -10, timeOffsetSamples: 0, enabled: true }, // 3rd
+        { degrees: 4, velocityOffset: -15, timeOffsetSamples: 0, enabled: false }, // 5th
         { degrees: -1, velocityOffset: -20, timeOffsetSamples: 0, enabled: false }, // below
     ];
     private bypassed = false;
@@ -85,7 +85,7 @@ export class Harmonizer implements MidiProcessor {
     }
 
     private diatonicTranspose(note: number, degrees: number, pattern: number[]): number {
-        const pc = ((note - this.root) % 12 + 12) % 12;
+        const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
 
         // Find closest scale degree
@@ -93,7 +93,10 @@ export class Harmonizer implements MidiProcessor {
         let minDist = 12;
         for (let i = 0; i < pattern.length; i++) {
             const dist = Math.abs(pc - pattern[i]!);
-            if (dist < minDist) { minDist = dist; degreeIdx = i; }
+            if (dist < minDist) {
+                minDist = dist;
+                degreeIdx = i;
+            }
         }
 
         const newIdx = degreeIdx + degrees;
@@ -102,28 +105,56 @@ export class Harmonizer implements MidiProcessor {
         return this.root + (octave + newOctOffset) * 12 + pattern[wrappedIdx]!;
     }
 
-    reset(): void { this.generatedMap.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.generatedMap.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'root': this.root = Math.round(value) % 12; break;
+            case 'root':
+                this.root = Math.round(value) % 12;
+                break;
             case 'scale': {
                 const names = Object.keys(SCALE_PATTERNS);
                 this.scaleName = names[Math.round(value)] ?? 'major';
                 break;
             }
-            case 'voice0_degrees': if (this.voices[0]) this.voices[0].degrees = Math.round(value); break;
-            case 'voice1_degrees': if (this.voices[1]) this.voices[1].degrees = Math.round(value); break;
-            case 'voice2_degrees': if (this.voices[2]) this.voices[2].degrees = Math.round(value); break;
-            case 'voice0_enabled': if (this.voices[0]) this.voices[0].enabled = value > 0.5; break;
-            case 'voice1_enabled': if (this.voices[1]) this.voices[1].enabled = value > 0.5; break;
-            case 'voice2_enabled': if (this.voices[2]) this.voices[2].enabled = value > 0.5; break;
-            case 'voice0_vel_offset': if (this.voices[0]) this.voices[0].velocityOffset = Math.round(value); break;
-            case 'voice1_vel_offset': if (this.voices[1]) this.voices[1].velocityOffset = Math.round(value); break;
-            case 'voice2_vel_offset': if (this.voices[2]) this.voices[2].velocityOffset = Math.round(value); break;
+            case 'voice0_degrees':
+                if (this.voices[0]) this.voices[0].degrees = Math.round(value);
+                break;
+            case 'voice1_degrees':
+                if (this.voices[1]) this.voices[1].degrees = Math.round(value);
+                break;
+            case 'voice2_degrees':
+                if (this.voices[2]) this.voices[2].degrees = Math.round(value);
+                break;
+            case 'voice0_enabled':
+                if (this.voices[0]) this.voices[0].enabled = value > 0.5;
+                break;
+            case 'voice1_enabled':
+                if (this.voices[1]) this.voices[1].enabled = value > 0.5;
+                break;
+            case 'voice2_enabled':
+                if (this.voices[2]) this.voices[2].enabled = value > 0.5;
+                break;
+            case 'voice0_vel_offset':
+                if (this.voices[0]) this.voices[0].velocityOffset = Math.round(value);
+                break;
+            case 'voice1_vel_offset':
+                if (this.voices[1]) this.voices[1].velocityOffset = Math.round(value);
+                break;
+            case 'voice2_vel_offset':
+                if (this.voices[2]) this.voices[2].velocityOffset = Math.round(value);
+                break;
         }
     }
 }

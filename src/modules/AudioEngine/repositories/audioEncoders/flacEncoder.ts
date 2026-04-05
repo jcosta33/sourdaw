@@ -9,10 +9,9 @@
 // Based on RFC 1321. Pure TypeScript, no dependencies.
 
 const MD5_S = [
-    7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,
-    5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,
-    4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,
-    6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15,
+    21,
 ];
 
 const MD5_K = new Uint32Array(64);
@@ -29,7 +28,7 @@ function md5(data: Uint8Array): Uint8Array {
     padded[msgLen] = 0x80;
     // Append original length in bits as 64-bit LE (only low 32 bits matter for audio)
     const bitLen = msgLen * 8;
-    padded[msgLen + padLen]     = bitLen & 0xff;
+    padded[msgLen + padLen] = bitLen & 0xff;
     padded[msgLen + padLen + 1] = (bitLen >>> 8) & 0xff;
     padded[msgLen + padLen + 2] = (bitLen >>> 16) & 0xff;
     padded[msgLen + padLen + 3] = (bitLen >>> 24) & 0xff;
@@ -44,7 +43,10 @@ function md5(data: Uint8Array): Uint8Array {
         const M = new Uint32Array(16);
         for (let j = 0; j < 16; j++) M[j] = view.getUint32(off + j * 4, true);
 
-        let A = a0, B = b0, C = c0, D = d0;
+        let A = a0,
+            B = b0,
+            C = c0,
+            D = d0;
 
         for (let i = 0; i < 64; i++) {
             let F: number, g: number;
@@ -66,7 +68,7 @@ function md5(data: Uint8Array): Uint8Array {
             D = C;
             C = B;
             const rot = MD5_S[i]!;
-            B = ((B + ((F << rot) | (F >>> (32 - rot)))) >>> 0);
+            B = (B + ((F << rot) | (F >>> (32 - rot)))) >>> 0;
         }
 
         a0 = (a0 + A) >>> 0;
@@ -77,9 +79,9 @@ function md5(data: Uint8Array): Uint8Array {
 
     const result = new Uint8Array(16);
     const rv = new DataView(result.buffer);
-    rv.setUint32(0,  a0, true);
-    rv.setUint32(4,  b0, true);
-    rv.setUint32(8,  c0, true);
+    rv.setUint32(0, a0, true);
+    rv.setUint32(4, b0, true);
+    rv.setUint32(8, c0, true);
     rv.setUint32(12, d0, true);
     return result;
 }
@@ -196,8 +198,11 @@ class BitWriter {
     }
 
     writeBit(v: 0 | 1): void {
-        if (v) this.buf[this.pos]! |= (0x80 >> this.bit);
-        if (++this.bit === 8) { this.bit = 0; this.buf[++this.pos] = 0; }
+        if (v) this.buf[this.pos]! |= 0x80 >> this.bit;
+        if (++this.bit === 8) {
+            this.bit = 0;
+            this.buf[++this.pos] = 0;
+        }
     }
 
     writeBits(v: number, n: number): void {
@@ -226,7 +231,11 @@ class BitWriter {
 
     /** Pad to next byte boundary with zero bits. */
     flush(): void {
-        if (this.bit > 0) { this.bit = 0; this.pos++; this.buf[this.pos] = 0; }
+        if (this.bit > 0) {
+            this.bit = 0;
+            this.pos++;
+            this.buf[this.pos] = 0;
+        }
     }
 }
 
@@ -257,11 +266,21 @@ function fixedResiduals(int16: Int32Array, blockStart: number, blockSize: number
         const n = blockStart + order + i;
         let pred: number;
         switch (order) {
-            case 0: pred = 0; break;
-            case 1: pred = int16[n - 1]!; break;
-            case 2: pred = 2 * int16[n - 1]! - int16[n - 2]!; break;
-            case 3: pred = 3 * int16[n - 1]! - 3 * int16[n - 2]! + int16[n - 3]!; break;
-            default: pred = 4 * int16[n - 1]! - 6 * int16[n - 2]! + 4 * int16[n - 3]! - int16[n - 4]!; break;
+            case 0:
+                pred = 0;
+                break;
+            case 1:
+                pred = int16[n - 1]!;
+                break;
+            case 2:
+                pred = 2 * int16[n - 1]! - int16[n - 2]!;
+                break;
+            case 3:
+                pred = 3 * int16[n - 1]! - 3 * int16[n - 2]! + int16[n - 3]!;
+                break;
+            default:
+                pred = 4 * int16[n - 1]! - 6 * int16[n - 2]! + 4 * int16[n - 3]! - int16[n - 4]!;
+                break;
         }
         res[i] = int16[n]! - pred;
     }
@@ -313,7 +332,14 @@ function writeSubframeVerbatim(bw: BitWriter, int16: Int32Array, blockStart: num
     }
 }
 
-function writeSubframeFixed(bw: BitWriter, int16: Int32Array, blockStart: number, blockSize: number, order: number, res: Int32Array): void {
+function writeSubframeFixed(
+    bw: BitWriter,
+    int16: Int32Array,
+    blockStart: number,
+    blockSize: number,
+    order: number,
+    res: Int32Array
+): void {
     // Subframe header: 0 | 001kkk0 where kkk = order (FIXED predictor, no wasted bits)
     bw.writeByte((8 + order) << 1);
     // Warmup samples (verbatim at full bitsPerSample)
@@ -384,14 +410,29 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
 
     // ── STREAMINFO ────────────────────────────────────────────────────────────
     let pos = 0;
-    function wb(b: number) { out[pos++] = b & 0xff; }
-    function wbe16(v: number) { out[pos++] = (v >> 8) & 0xff; out[pos++] = v & 0xff; }
-    function wbe24(v: number) { out[pos++] = (v >> 16) & 0xff; out[pos++] = (v >> 8) & 0xff; out[pos++] = v & 0xff; }
+    function wb(b: number) {
+        out[pos++] = b & 0xff;
+    }
+    function wbe16(v: number) {
+        out[pos++] = (v >> 8) & 0xff;
+        out[pos++] = v & 0xff;
+    }
+    function wbe24(v: number) {
+        out[pos++] = (v >> 16) & 0xff;
+        out[pos++] = (v >> 8) & 0xff;
+        out[pos++] = v & 0xff;
+    }
 
-    out[pos++] = 0x66; out[pos++] = 0x4c; out[pos++] = 0x61; out[pos++] = 0x43; // "fLaC"
-    wb(0x80); wbe24(34); // last-metadata-block flag + STREAMINFO length
-    wbe16(FLAC_BLOCK_SIZE); wbe16(FLAC_BLOCK_SIZE); // min/max block size
-    wbe24(0); wbe24(0); // min/max frame size (unknown)
+    out[pos++] = 0x66;
+    out[pos++] = 0x4c;
+    out[pos++] = 0x61;
+    out[pos++] = 0x43; // "fLaC"
+    wb(0x80);
+    wbe24(34); // last-metadata-block flag + STREAMINFO length
+    wbe16(FLAC_BLOCK_SIZE);
+    wbe16(FLAC_BLOCK_SIZE); // min/max block size
+    wbe24(0);
+    wbe24(0); // min/max frame size (unknown)
     wb((sampleRate >> 12) & 0xff);
     wb((sampleRate >> 4) & 0xff);
     wb(((sampleRate & 0xf) << 4) | ((numChannels - 1) << 1) | ((BITS_PER_SAMPLE - 1) >> 4));
@@ -414,10 +455,16 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
         wbe16(0xfff8);
         let blockSizeCode: number;
         let blockSizeExtra = 0;
-        if (blockSize === 4096) { blockSizeCode = 0xc; }
-        else if (blockSize <= 255) { blockSizeCode = 0x6; blockSizeExtra = 8; }
-        else { blockSizeCode = 0x7; blockSizeExtra = 16; }
-        wb((blockSizeCode << 4) | 0x00);              // block size code | sample rate code (0=from STREAMINFO)
+        if (blockSize === 4096) {
+            blockSizeCode = 0xc;
+        } else if (blockSize <= 255) {
+            blockSizeCode = 0x6;
+            blockSizeExtra = 8;
+        } else {
+            blockSizeCode = 0x7;
+            blockSizeExtra = 16;
+        }
+        wb((blockSizeCode << 4) | 0x00); // block size code | sample rate code (0=from STREAMINFO)
         wb(((numChannels - 1) << 4) | (0x4 << 1) | 0); // channel assignment | sample size (0=from STREAMINFO) | reserved
         for (const b of encodeUtf8Number(frameNumber)) wb(b); // frame number (UTF-8 encoded)
         if (blockSizeExtra === 8) wb(blockSize - 1);
@@ -448,9 +495,6 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     return out.subarray(0, pos);
 }
 
-export async function audioBufferToFlac(
-    buffer: AudioBuffer,
-    onProgress?: (frac: number) => void
-): Promise<Uint8Array> {
+export async function audioBufferToFlac(buffer: AudioBuffer, onProgress?: (frac: number) => void): Promise<Uint8Array> {
     return await encodeFlac(buffer, onProgress);
 }

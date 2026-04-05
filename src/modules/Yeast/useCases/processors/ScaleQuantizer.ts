@@ -72,7 +72,7 @@ export class ScaleQuantizer implements MidiProcessor {
     }
 
     private quantizeToScale(note: number, pattern: number[]): number {
-        const pc = ((note - this.root) % 12 + 12) % 12;
+        const pc = (((note - this.root) % 12) + 12) % 12;
         if (pattern.includes(pc)) return note;
 
         switch (this.remapMode) {
@@ -91,13 +91,13 @@ export class ScaleQuantizer implements MidiProcessor {
             }
             case 'up': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes(((pc + offset) % 12 + 12) % 12)) return note + offset;
+                    if (pattern.includes((((pc + offset) % 12) + 12) % 12)) return note + offset;
                 }
                 return note;
             }
             case 'down': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes(((pc - offset) % 12 + 12) % 12)) return note - offset;
+                    if (pattern.includes((((pc - offset) % 12) + 12) % 12)) return note - offset;
                 }
                 return note;
             }
@@ -105,7 +105,7 @@ export class ScaleQuantizer implements MidiProcessor {
     }
 
     private diatonicTranspose(note: number, degrees: number, pattern: number[]): number {
-        const pc = ((note - this.root) % 12 + 12) % 12;
+        const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
         const degreeIdx = pattern.indexOf(pc);
         if (degreeIdx === -1) return note; // not in scale, pass through
@@ -116,21 +116,35 @@ export class ScaleQuantizer implements MidiProcessor {
         return this.root + (octave + newOctaveOffset) * 12 + pattern[wrappedIdx]!;
     }
 
-    reset(): void { this.noteMap.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.noteMap.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'root': this.root = Math.round(value) % 12; break;
+            case 'root':
+                this.root = Math.round(value) % 12;
+                break;
             case 'scale': {
                 const names = Object.keys(SCALE_PATTERNS);
                 this.scaleName = names[Math.round(value)] ?? 'major';
                 break;
             }
-            case 'remap_mode': this.remapMode = (['nearest', 'up', 'down'] as const)[Math.round(value)] ?? 'nearest'; break;
-            case 'transpose': this.transpose = Math.round(value); break;
+            case 'remap_mode':
+                this.remapMode = (['nearest', 'up', 'down'] as const)[Math.round(value)] ?? 'nearest';
+                break;
+            case 'transpose':
+                this.transpose = Math.round(value);
+                break;
         }
     }
 }

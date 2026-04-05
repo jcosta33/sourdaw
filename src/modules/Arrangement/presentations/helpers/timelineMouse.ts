@@ -20,8 +20,7 @@ export type TrackHitResult = {
 /**
  * Convert canvas Y to content-space Y (ruler-stripped + scroll-adjusted).
  */
-export const getContentY = (canvasY: number, scrollY: number): number =>
-    canvasY - RULER_HEIGHT + scrollY;
+export const getContentY = (canvasY: number, scrollY: number): number => canvasY - RULER_HEIGHT + scrollY;
 
 /**
  * Resolve which track a content-space Y falls into, along with its height and

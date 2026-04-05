@@ -2,13 +2,7 @@ import { type ReactElement, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { DawMenuButton, DawMenuMutedRow } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import {
-    addClip,
-    addTrack,
-    decodeAudioFile,
-    importMidiFile,
-    pasteClip,
-} from '../../useCases/timelineViewActions';
+import { addClip, addTrack, decodeAudioFile, importMidiFile, pasteClip } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
@@ -192,10 +186,10 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             </DawMenuButton>
             <NearbyMarkerColorMenu beat={beat} onClose={onClose} />
             <div className={menuSepClass} />
-                <DawMenuMutedRow className="flex items-center gap-1 font-medium text-muted-foreground/70">
-                    <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
-                    AI Generate
-                </DawMenuMutedRow>
+            <DawMenuMutedRow className="flex items-center gap-1 font-medium text-muted-foreground/70">
+                <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
+                AI Generate
+            </DawMenuMutedRow>
             {isTauri() ? (
                 <DawMenuButton
                     role="menuitem"

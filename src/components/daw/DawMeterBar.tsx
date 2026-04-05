@@ -29,7 +29,10 @@ export const DawMeterBar = ({
     >
         <div
             ref={fillRef}
-            className={cn('h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-150', fillClassName)}
+            className={cn(
+                'h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-150',
+                fillClassName
+            )}
             style={{ width: `${String(value)}%` }}
         />
     </div>

@@ -32,9 +32,15 @@ type Props = {
 
 function grColor(gr: number): string {
     const abs = Math.abs(gr);
-    if (abs <= 1) { return '#E8E6E0'; }
-    if (abs <= 4) { return '#D4A847'; }
-    if (abs <= 8) { return '#C87C2A'; }
+    if (abs <= 1) {
+        return '#E8E6E0';
+    }
+    if (abs <= 4) {
+        return '#D4A847';
+    }
+    if (abs <= 8) {
+        return '#C87C2A';
+    }
     return '#C44030';
 }
 
@@ -58,12 +64,12 @@ export const CrustWaveformDisplay = ({
     latestRef.current = { grDb, inputDb, outputDb, lufsShortTerm, lufsTarget, deltaListen, scrollSpeed };
 
     // Ring buffers (pre-allocated, never reallocated)
-    const inputBuf  = useRef(new Float32Array(HISTORY));
+    const inputBuf = useRef(new Float32Array(HISTORY));
     const outputBuf = useRef(new Float32Array(HISTORY));
-    const grBuf     = useRef(new Float32Array(HISTORY));
-    const lufsBuf   = useRef(new Float32Array(HISTORY).fill(-100));
-    const writePos  = useRef(0);
-    const tickRef   = useRef(0);
+    const grBuf = useRef(new Float32Array(HISTORY));
+    const lufsBuf = useRef(new Float32Array(HISTORY).fill(-100));
+    const writePos = useRef(0);
+    const tickRef = useRef(0);
 
     // Peak GR label ring (max 4 visible at a time)
     type PeakLabel = { gr: number; x: number; age: number };
@@ -77,27 +83,37 @@ export const CrustWaveformDisplay = ({
             tickRef.current++;
 
             const {
-                grDb: gr, inputDb: inDb, outputDb: outDb,
-                lufsShortTerm: lufs, lufsTarget: target,
-                deltaListen: delta, scrollSpeed: speed,
+                grDb: gr,
+                inputDb: inDb,
+                outputDb: outDb,
+                lufsShortTerm: lufs,
+                lufsTarget: target,
+                deltaListen: delta,
+                scrollSpeed: speed,
             } = latestRef.current;
 
             // Scroll rate: slow=4 frames/sample, normal=2, fast=1
             const frameSkip = speed === 'slow' ? 4 : speed === 'fast' ? 1 : 2;
-            if (tickRef.current % frameSkip !== 0) { return; }
+            if (tickRef.current % frameSkip !== 0) {
+                return;
+            }
 
             // Push meter values into ring buffers
             const pos = writePos.current % HISTORY;
-            inputBuf.current[pos]  = dbToNorm(inDb);
+            inputBuf.current[pos] = dbToNorm(inDb);
             outputBuf.current[pos] = dbToNorm(outDb);
-            grBuf.current[pos]     = gr;
-            lufsBuf.current[pos]   = Math.max(-40, Math.min(0, lufs));
+            grBuf.current[pos] = gr;
+            lufsBuf.current[pos] = Math.max(-40, Math.min(0, lufs));
             writePos.current++;
 
             const canvas = canvasRef.current;
-            if (!canvas) { return; }
+            if (!canvas) {
+                return;
+            }
             const ctx = canvas.getContext('2d');
-            if (!ctx) { return; }
+            if (!ctx) {
+                return;
+            }
 
             const W = canvas.width;
             const H = canvas.height;
@@ -154,10 +170,10 @@ export const CrustWaveformDisplay = ({
                 // Layer 3: GR fill (red gap between input & output when input > output)
                 ctx.fillStyle = 'rgba(196,64,48,0.18)';
                 for (let i = 0; i < HISTORY - 1; i++) {
-                    const inv  = inputBuf.current[(writePos.current + i) % HISTORY] ?? 0;
+                    const inv = inputBuf.current[(writePos.current + i) % HISTORY] ?? 0;
                     const outv = outputBuf.current[(writePos.current + i) % HISTORY] ?? 0;
                     if (inv > outv) {
-                        const ampIn  = inv  * mid * 0.9;
+                        const ampIn = inv * mid * 0.9;
                         const ampOut = outv * mid * 0.9;
                         ctx.fillRect(i * colW, mid - ampIn, colW + 1, ampIn - ampOut);
                     }
@@ -180,7 +196,11 @@ export const CrustWaveformDisplay = ({
                     const ld = lufsBuf.current[(writePos.current + i) % HISTORY] ?? -40;
                     const norm = (ld + 40) / 40; // -40→0 mapped to 0→1
                     const y = H - norm * (H * 0.4);
-                    if (i === 0) { ctx.moveTo(i * colW, y); } else { ctx.lineTo(i * colW, y); }
+                    if (i === 0) {
+                        ctx.moveTo(i * colW, y);
+                    } else {
+                        ctx.lineTo(i * colW, y);
+                    }
                 }
                 ctx.stroke();
 
@@ -200,9 +220,7 @@ export const CrustWaveformDisplay = ({
 
             // Layer 6: floating peak GR labels
             if (Math.abs(gr) > 3) {
-                const hasNear = peakLabels.current.some(
-                    (l) => l.x > W - 40 && Math.abs(l.gr - gr) < 1
-                );
+                const hasNear = peakLabels.current.some((l) => l.x > W - 40 && Math.abs(l.gr - gr) < 1);
                 if (!hasNear && peakLabels.current.length < 4) {
                     peakLabels.current.push({ gr, x: W - 10, age: 0 });
                 }
@@ -220,7 +238,9 @@ export const CrustWaveformDisplay = ({
         }
 
         rafRef.current = requestAnimationFrame(draw);
-        return () => { cancelAnimationFrame(rafRef.current); };
+        return () => {
+            cancelAnimationFrame(rafRef.current);
+        };
     }, []); // ← intentionally empty: all live data read via latestRef, no dependency restarts needed
 
     return (

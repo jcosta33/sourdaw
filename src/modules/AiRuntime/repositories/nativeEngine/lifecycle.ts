@@ -12,10 +12,7 @@ import { llmStatusStore } from '../../stores/llmStatusStore';
 
 const logger = Container.getInstance().get(Logger);
 
-export const SIDECAR_PORT = parseInt(
-    (import.meta.env.VITE_LLM_SIDECAR_PORT as string | undefined) ?? '8847',
-    10
-);
+export const SIDECAR_PORT = parseInt((import.meta.env.VITE_LLM_SIDECAR_PORT as string | undefined) ?? '8847', 10);
 export const BASE_URL = `http://127.0.0.1:${String(SIDECAR_PORT)}`;
 
 let nativeEngineReady = false;
@@ -58,13 +55,17 @@ export async function initNativeEngine(): Promise<void> {
         try {
             await tauriInvoke('init_native_llm', { modelId: null });
         } catch (error) {
-            if (unlisten) { unlisten(); }
+            if (unlisten) {
+                unlisten();
+            }
             const msg = error instanceof Error ? error.message : String(error);
             llmStatusStore.set({ state: 'error', message: msg });
             throw error;
         }
 
-        if (unlisten) { unlisten(); }
+        if (unlisten) {
+            unlisten();
+        }
         nativeEngineReady = true;
         logger.info('[Native AI] In-process LLM ready');
         return;
@@ -96,4 +97,3 @@ export async function stopNativeEngine(): Promise<void> {
 export function isNativeEngineReady(): boolean {
     return nativeEngineReady;
 }
-

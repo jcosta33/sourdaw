@@ -10,7 +10,7 @@ import { type MidiProcessor } from '../../models/MidiProcessor';
 
 type StoredChord = {
     root: number;
-    notes: number[];  // absolute MIDI notes
+    notes: number[]; // absolute MIDI notes
 };
 
 export class ChordMemory implements MidiProcessor {
@@ -102,19 +102,37 @@ export class ChordMemory implements MidiProcessor {
         this.learning = false;
     }
 
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'learn': this.learning = value > 0.5; this.learnBuffer = []; this.learnRoot = -1; break;
-            case 'transpose_mode': this.transposeMode = value > 0.5; break;
-            case 'clear': if (value > 0.5) this.memory.clear(); break;
+            case 'learn':
+                this.learning = value > 0.5;
+                this.learnBuffer = [];
+                this.learnRoot = -1;
+                break;
+            case 'transpose_mode':
+                this.transposeMode = value > 0.5;
+                break;
+            case 'clear':
+                if (value > 0.5) this.memory.clear();
+                break;
         }
     }
 
     /** Get stored chord count for UI. */
-    getStoredCount(): number { return this.memory.size; }
-    isLearning(): boolean { return this.learning; }
+    getStoredCount(): number {
+        return this.memory.size;
+    }
+    isLearning(): boolean {
+        return this.learning;
+    }
 }

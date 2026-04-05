@@ -29,7 +29,10 @@ import { updateBacteriaMeters } from '#/modules/Bacteria/stores/bacteriaStore';
 import { updateGrinderMeters } from '#/modules/Grinder/stores/grinderStore';
 import { updateProofMeters } from '#/modules/Proof/stores/proofStore';
 import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases/proofParamBridge';
-import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
+import {
+    registerLevainDevice,
+    unregisterLevainDevice as _unregisterLevainDevice,
+} from '#/modules/Levain/useCases/levainParamBridge';
 import { setEngineReady } from '#/modules/Levain/stores/levainStore';
 
 const logger = Container.getInstance().get(Logger);
@@ -71,7 +74,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             ready: false,
             noteOn: () => {},
             noteOff: () => {},
-            setParam: (name, value) => { pendingParams.push([name, value]); },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
             setBypass: () => {},
             destroy: () => {},
         };
@@ -111,7 +116,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             ready: false,
             noteOn: () => {},
             noteOff: () => {},
-            setParam: (name, value) => { pendingParams.push([name, value]); },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
             setPadParam: () => {},
             setBypass: () => {},
             destroy: () => {},
@@ -155,7 +162,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
             noteOn: () => {},
             noteOff: () => {},
             handleCc: () => {},
-            setParam: (name, value) => { pendingParams.push([name, value]); },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
             setBypass: () => {},
             destroy: () => {},
         };
@@ -181,10 +190,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                registerLevainDevice(
-                    { setParam: result.setParam, handleCc: result.handleCc },
-                    result.workletNode.port,
-                );
+                registerLevainDevice({ setParam: result.setParam, handleCc: result.handleCc }, result.workletNode.port);
                 setEngineReady(true);
             })
             .catch((err) => logger.warn(`[WebAudioEngine] Levain failed: ${err}`));
@@ -198,7 +204,9 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
-            setParam: (name, value) => { pendingParams.push([name, value]); },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
             setBypass: () => {},
         };
         const loadPromise = createProofChamberNode(context)
@@ -227,7 +235,9 @@ const glutenDescriptor: WasmDeviceDescriptor = {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
-            setParam: (name, value) => { pendingParams.push([name, value]); },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
             setBypass: () => {},
         };
         const loadPromise = createGlutenNode(context)
@@ -237,7 +247,15 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     result.setParam(name, value);
                 }
                 result.onMeterData((data) => {
-                    updateGlutenMeters(deviceId, data.grDb, data.inputDb, data.outputDb, data.crest, data.phaseCorr, data.latency);
+                    updateGlutenMeters(
+                        deviceId,
+                        data.grDb,
+                        data.inputDb,
+                        data.outputDb,
+                        data.crest,
+                        data.phaseCorr,
+                        data.latency
+                    );
                 });
                 onLoaded({
                     deviceId,
@@ -259,7 +277,9 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
-            setParam: (name, value) => { pendingParams.push([name, value]); },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
             setBypass: () => {},
         };
         const loadPromise = createBacteriaNode(context)
@@ -292,8 +312,12 @@ const grinderDescriptor: WasmDeviceDescriptor = {
         let pendingBypass = false;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
-            setParam: (name, value) => { pendingParams.push([name, value]); },
-            setBypass: (bypassed) => { pendingBypass = bypassed; },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setBypass: (bypassed) => {
+                pendingBypass = bypassed;
+            },
         };
         const loadPromise = createGrinderNode(context)
             .then(async (result: GrinderNodeResult) => {
@@ -304,9 +328,16 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 result.onMeterData((data) => {
                     updateGrinderMeters(
                         deviceId,
-                        data.inputDb, data.preampDb, data.powerAmpDb, data.outputDb,
-                        data.gateOpen, data.gateEnvelopeDb, data.sagVoltage, data.latency,
-                        data.neuralCpuPercent, data.neuralWarmupProgress,
+                        data.inputDb,
+                        data.preampDb,
+                        data.powerAmpDb,
+                        data.outputDb,
+                        data.gateOpen,
+                        data.gateEnvelopeDb,
+                        data.sagVoltage,
+                        data.latency,
+                        data.neuralCpuPercent,
+                        data.neuralWarmupProgress
                     );
                 });
                 if (pendingBypass) {
@@ -332,7 +363,9 @@ const proofDescriptor: WasmDeviceDescriptor = {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
-            setParam: (name, value) => { pendingParams.push([name, value]); },
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
             setBypass: () => {},
         };
         const loadPromise = createProofNode(context)
@@ -341,7 +374,9 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                result.onMeterData((data) => { updateProofMeters(deviceId, data); });
+                result.onMeterData((data) => {
+                    updateProofMeters(deviceId, data);
+                });
                 registerProofDevice(deviceId, {
                     setParam: result.setParam,
                     reorderModules: result.reorderModules,

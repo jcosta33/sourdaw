@@ -4,12 +4,12 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use daw_plugin_host::{ClapWrapper, Vst3Wrapper, AudioPlugin};
-use daw_plugin_host::scanner::{self, ScannedPlugin, ScanResult};
 use crate::host::native_bridge::ClapPluginSlot;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
-use daw_engine::EngineHandle;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
+use daw_engine::EngineHandle;
+use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
+use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
 pub use daw_plugin_host::PluginParameter;
@@ -61,12 +61,15 @@ pub async fn scan_plugins(
                 String::new()
             };
 
-            registry.insert(p.id.clone(), PluginRegistryEntry {
-                path: p.path.clone(),
-                clap_id,
-                format: p.format.clone(),
-                name: p.name.clone(),
-            });
+            registry.insert(
+                p.id.clone(),
+                PluginRegistryEntry {
+                    path: p.path.clone(),
+                    clap_id,
+                    format: p.format.clone(),
+                    name: p.name.clone(),
+                },
+            );
         }
     }
 
@@ -125,10 +128,16 @@ pub async fn load_plugin(
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginInstance, String> {
     let entry = {
-        let registry = state.plugin_registry.lock()
+        let registry = state
+            .plugin_registry
+            .lock()
             .map_err(|e| format!("Failed to lock registry: {}", e))?;
-        registry.get(&plugin_id.0).cloned()
-            .ok_or_else(|| format!("Plugin {} not found in registry. Run a scan first.", plugin_id.0))?
+        registry.get(&plugin_id.0).cloned().ok_or_else(|| {
+            format!(
+                "Plugin {} not found in registry. Run a scan first.",
+                plugin_id.0
+            )
+        })?
     };
 
     match entry.format.as_str() {
@@ -153,7 +162,9 @@ pub async fn load_plugin(
             // Send the plugin to the native audio thread for real-time processing
             // and create an audio bridge for worklet ↔ Rust data transfer
             let engine_plugin_id = {
-                let mut engine_guard = state.engine.lock()
+                let mut engine_guard = state
+                    .engine
+                    .lock()
                     .map_err(|e| format!("Failed to lock engine: {}", e))?;
                 if let Some(ref mut engine) = *engine_guard {
                     let slot = ClapPluginSlot::new(wrapper);
@@ -161,18 +172,27 @@ pub async fn load_plugin(
 
                     // Create ring-buffer audio bridge
                     let bridge_handle = engine.create_audio_bridge(id)?;
-                    let mut bridges = state.audio_bridges.lock()
+                    let mut bridges = state
+                        .audio_bridges
+                        .lock()
                         .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
                     bridges.insert(id, bridge_handle);
 
                     id
                 } else {
-                    eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
-                    let mut plugins = state.plugins.lock()
+                    eprintln!(
+                        "[Plugin] Warning: native engine not running, plugin won't process audio"
+                    );
+                    let mut plugins = state
+                        .plugins
+                        .lock()
                         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-                    plugins.insert(instance_id.0.clone(), PluginInstanceData {
-                        plugin: Box::new(wrapper),
-                    });
+                    plugins.insert(
+                        instance_id.0.clone(),
+                        PluginInstanceData {
+                            plugin: Box::new(wrapper),
+                        },
+                    );
                     0
                 }
             };
@@ -194,11 +214,16 @@ pub async fn load_plugin(
             let params = wrapper.get_parameters();
 
             // Store in plugins map (VST3 runs through the same AudioPlugin trait)
-            let mut plugins = state.plugins.lock()
+            let mut plugins = state
+                .plugins
+                .lock()
                 .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-            plugins.insert(instance_id.0.clone(), PluginInstanceData {
-                plugin: Box::new(wrapper),
-            });
+            plugins.insert(
+                instance_id.0.clone(),
+                PluginInstanceData {
+                    plugin: Box::new(wrapper),
+                },
+            );
 
             Ok(PluginInstance {
                 instance_id: instance_id.clone(),
@@ -209,7 +234,10 @@ pub async fn load_plugin(
                 latency_samples: 0,
             })
         }
-        "au" => Err("Audio Unit plugin loading is not yet implemented. CLAP plugins are supported.".to_string()),
+        "au" => Err(
+            "Audio Unit plugin loading is not yet implemented. CLAP plugins are supported."
+                .to_string(),
+        ),
         _ => Err(format!("Unknown plugin format: {}", entry.format)),
     }
 }
@@ -220,11 +248,16 @@ pub async fn unload_plugin(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state.plugins.lock()
+    let mut plugins = state
+        .plugins
+        .lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
     if plugins.remove(&instance_id.0).is_none() {
-        return Err(format!("No plugin instance found with id: {}", instance_id.0));
+        return Err(format!(
+            "No plugin instance found with id: {}",
+            instance_id.0
+        ));
     }
 
     Ok(())
@@ -240,10 +273,13 @@ pub async fn set_plugin_parameter(
     value: f64,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state.plugins.lock()
+    let mut plugins = state
+        .plugins
+        .lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get_mut(&instance_id.0)
+    let instance = plugins
+        .get_mut(&instance_id.0)
         .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     instance.plugin.set_parameter(param_id, value);
@@ -256,10 +292,13 @@ pub async fn get_plugin_parameters(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<PluginParameter>, String> {
-    let plugins = state.plugins.lock()
+    let plugins = state
+        .plugins
+        .lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get(&instance_id.0)
+    let instance = plugins
+        .get(&instance_id.0)
         .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     Ok(instance.plugin.get_parameters())
@@ -271,10 +310,13 @@ pub async fn get_plugin_state(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
-    let plugins = state.plugins.lock()
+    let plugins = state
+        .plugins
+        .lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get(&instance_id.0)
+    let instance = plugins
+        .get(&instance_id.0)
         .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     Ok(instance.plugin.get_state())
@@ -287,10 +329,13 @@ pub async fn set_plugin_state(
     plugin_state: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state.plugins.lock()
+    let mut plugins = state
+        .plugins
+        .lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get_mut(&instance_id.0)
+    let instance = plugins
+        .get_mut(&instance_id.0)
         .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     instance.plugin.set_state(&plugin_state);
@@ -301,18 +346,18 @@ pub async fn set_plugin_state(
 
 #[tauri::command]
 
-pub async fn start_native_engine(
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
-    let mut engine_guard = state.engine.lock()
+pub async fn start_native_engine(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let mut engine_guard = state
+        .engine
+        .lock()
         .map_err(|e| format!("Failed to lock engine: {}", e))?;
 
     if engine_guard.is_some() {
         return Ok("Native engine already running".to_string());
     }
 
-    let handle = EngineHandle::new()
-        .map_err(|e| format!("Failed to start native audio engine: {}", e))?;
+    let handle =
+        EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
 
     eprintln!("[Engine] Native audio engine started");
     *engine_guard = Some(handle);
@@ -330,14 +375,21 @@ pub async fn send_plugin_midi(
     is_note_on: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut engine_guard = state.engine.lock()
+    let mut engine_guard = state
+        .engine
+        .lock()
         .map_err(|e| format!("Failed to lock engine: {}", e))?;
-    let engine = engine_guard.as_mut()
-        .ok_or("Native engine not running")?;
+    let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
-    engine.send_midi_note(engine_plugin_id, MidiNoteEvent {
-        note, velocity, channel, is_note_on,
-    })
+    engine.send_midi_note(
+        engine_plugin_id,
+        MidiNoteEvent {
+            note,
+            velocity,
+            channel,
+            is_note_on,
+        },
+    )
 }
 
 /// Update the global transport state for all native plugins (lock-free).
@@ -352,14 +404,19 @@ pub async fn update_plugin_transport(
     song_pos_seconds: f64,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut engine_guard = state.engine.lock()
+    let mut engine_guard = state
+        .engine
+        .lock()
         .map_err(|e| format!("Failed to lock engine: {}", e))?;
-    let engine = engine_guard.as_mut()
-        .ok_or("Native engine not running")?;
+    let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
     engine.set_transport(TransportState {
-        tempo, time_sig_num, time_sig_denom, is_playing,
-        song_pos_beats, song_pos_seconds,
+        tempo,
+        time_sig_num,
+        time_sig_denom,
+        is_playing,
+        song_pos_beats,
+        song_pos_seconds,
     })
 }
 
@@ -376,17 +433,21 @@ pub async fn process_plugin_audio(
     audio_bytes: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
-    let mut bridges = state.audio_bridges.lock()
+    let mut bridges = state
+        .audio_bridges
+        .lock()
         .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
 
-    let bridge = bridges.get_mut(&engine_plugin_id)
+    let bridge = bridges
+        .get_mut(&engine_plugin_id)
         .ok_or_else(|| format!("No audio bridge for plugin {}", engine_plugin_id))?;
 
     // Interpret raw bytes as interleaved f32 samples
     let num_floats = audio_bytes.len() / 4;
     let num_samples = num_floats / 2;
 
-    let audio_data: Vec<f32> = audio_bytes.chunks_exact(4)
+    let audio_data: Vec<f32> = audio_bytes
+        .chunks_exact(4)
         .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
         .collect();
 

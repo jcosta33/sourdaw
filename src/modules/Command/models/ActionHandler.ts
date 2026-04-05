@@ -10,4 +10,3 @@ export type ActionHandler<T extends AppAction = AppAction> = {
     describe: (action: T) => ActionResult;
     undoable: boolean;
 };
-

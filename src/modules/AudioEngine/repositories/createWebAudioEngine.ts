@@ -39,7 +39,10 @@ class AudioEngineImpl implements AudioEngine {
             this.masterMeterBuffer = new Float32Array(this.masterAnalyser.frequencyBinCount);
         } catch (error) {
             logger.warn(`Failed to create AudioContext: ${error}`);
-            notifyUser('Audio engine failed to initialize — audio playback is disabled. Try reloading the page.', 'error');
+            notifyUser(
+                'Audio engine failed to initialize — audio playback is disabled. Try reloading the page.',
+                'error'
+            );
             this.fallbackMode = true;
             this.setupNoopContext();
         }
@@ -429,14 +432,21 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    public dispose(): void {
+    public resetGraph(): void {
+        // Tear down all per-project audio graph state (tracks, buses, sends,
+        // sidechain routes) without closing the AudioContext, master nodes,
+        // or already-loaded worklet modules. Used when switching projects.
         this.stopAllScheduled();
         for (const [, scGain] of this.sidechainConnections) {
-            scGain.disconnect();
+            try {
+                scGain.disconnect();
+            } catch {}
         }
         this.sidechainConnections.clear();
         for (const [, send] of this.sendNodes) {
-            send.gainNode.disconnect();
+            try {
+                send.gainNode.disconnect();
+            } catch {}
         }
         this.sendNodes.clear();
         for (const [id] of this.busNodes) {
@@ -445,6 +455,12 @@ class AudioEngineImpl implements AudioEngine {
         for (const [id] of this.trackNodes) {
             this.removeTrackStrip(id);
         }
+        this.pendingFaustParams.clear();
+        this.pendingDevicePromises.clear();
+    }
+
+    public dispose(): void {
+        this.resetGraph();
         this.masterGainNode.disconnect();
         this.masterAnalyser.disconnect();
         void this.context.close();

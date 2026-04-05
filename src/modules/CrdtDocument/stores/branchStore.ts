@@ -10,15 +10,17 @@ const logger = Container.getInstance().get(Logger);
 export const branchStore = new Store<BranchStoreState>(logger, {
     storage: new LocalStorageStorage('sourdaw-branches'),
     initialData: {
-        branches: [{
-            branchId: MAIN_BRANCH_ID,
-            name: 'Main',
-            rootDocId: 'root',
-            sourceBranchId: null,
-            createdAt: Date.now(),
-            createdFromHeads: [],
-            note: '',
-        }],
+        branches: [
+            {
+                branchId: MAIN_BRANCH_ID,
+                name: 'Main',
+                rootDocId: 'root',
+                sourceBranchId: null,
+                createdAt: Date.now(),
+                createdFromHeads: [],
+                note: '',
+            },
+        ],
         activeBranchId: MAIN_BRANCH_ID,
     },
 });

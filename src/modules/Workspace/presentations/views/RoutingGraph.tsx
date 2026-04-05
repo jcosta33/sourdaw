@@ -123,7 +123,12 @@ const ConnectionLine = ({
     label?: string;
     highlighted: boolean;
 }): ReactElement => {
-    const strokeColor = variant === 'sidechain' ? resolveToken('--color-state-record', '#c45040') : highlighted ? resolveToken('--color-text-primary', '#eaeaea') : resolveToken('--color-text-tertiary', '#737373');
+    const strokeColor =
+        variant === 'sidechain'
+            ? resolveToken('--color-state-record', '#c45040')
+            : highlighted
+              ? resolveToken('--color-text-primary', '#eaeaea')
+              : resolveToken('--color-text-tertiary', '#737373');
 
     const dashArray = variant === 'output' ? undefined : variant === 'send' ? '4 3' : '2 3';
 
@@ -241,7 +246,12 @@ export const RoutingGraph = (): ReactElement => {
             }
         >
             <div className="overflow-x-auto">
-                <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[420px]" role="img" aria-label="Signal routing graph">
+                <svg
+                    viewBox={`0 0 ${width} ${height}`}
+                    className="min-w-[420px]"
+                    role="img"
+                    aria-label="Signal routing graph"
+                >
                     {[...sources, ...buses].map((pos) => {
                         const targetId = pos.track.outputId;
                         const targetPos = targetId === 'master' ? master : (positionMap.get(targetId) ?? master);
@@ -252,7 +262,8 @@ export const RoutingGraph = (): ReactElement => {
 
                         const from = getNodeCenter(pos, 'right');
                         const to = getNodeCenter(targetPos, 'left');
-                        const highlighted = isConnectedToSelected(pos.track.id) || isConnectedToSelected(targetPos.track.id);
+                        const highlighted =
+                            isConnectedToSelected(pos.track.id) || isConnectedToSelected(targetPos.track.id);
 
                         return (
                             <ConnectionLine

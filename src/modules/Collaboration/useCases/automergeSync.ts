@@ -73,7 +73,15 @@ export class AutomergeSync {
     }
 
     /** Handle an incoming CRDT sync message from a peer. */
-    receiveSync({ peerId, docId, syncMessageBase64 }: { peerId: PeerId; docId: string; syncMessageBase64: string }): void {
+    receiveSync({
+        peerId,
+        docId,
+        syncMessageBase64,
+    }: {
+        peerId: PeerId;
+        docId: string;
+        syncMessageBase64: string;
+    }): void {
         let doc = getCrdtDoc(docId);
         if (!doc) {
             // Unknown doc — peer is syncing a branch or metadata doc we don't have yet.
@@ -89,11 +97,7 @@ export class AutomergeSync {
         let newSyncState: SyncState;
         try {
             const syncMessage = base64ToBytes(syncMessageBase64);
-            [newDoc, newSyncState] = receiveSyncMessage(
-                doc,
-                syncState,
-                syncMessage as SyncMessage,
-            );
+            [newDoc, newSyncState] = receiveSyncMessage(doc, syncState, syncMessage as SyncMessage);
         } catch (error) {
             console.error('[AutomergeSync] Malformed sync message from peer', peerId, error);
             return;

@@ -43,9 +43,7 @@ export const markEntryReverted = (entryId: string): void => {
         return;
     }
     actionHistoryStore.set({
-        entries: state.entries.map((e) =>
-            e.id === entryId ? { ...e, reverted: true } : e
-        ),
+        entries: state.entries.map((e) => (e.id === entryId ? { ...e, reverted: true } : e)),
     });
 };
 

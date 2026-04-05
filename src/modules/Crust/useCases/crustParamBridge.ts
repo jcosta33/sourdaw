@@ -147,7 +147,11 @@ function encodeCrustValue(key: string, value: unknown): number | null {
  * Set a Crust parameter — updates the UI store immediately,
  * throttles audio engine updates to rAF.
  */
-export function setCrustParamWithAudio<K extends keyof CrustPatch>(deviceId: string, key: K, value: CrustPatch[K]): void {
+export function setCrustParamWithAudio<K extends keyof CrustPatch>(
+    deviceId: string,
+    key: K,
+    value: CrustPatch[K]
+): void {
     setCrustParam(key, value);
 
     const encodedValue = encodeCrustValue(key, value);

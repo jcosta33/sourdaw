@@ -20,7 +20,16 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     { id: 'crossoverFreq2', label: 'XOver 2', min: 20, max: 20000, default: 800, unit: 'Hz', step: 1, scaling: 'log' },
     { id: 'crossoverFreq3', label: 'XOver 3', min: 20, max: 20000, default: 2500, unit: 'Hz', step: 1, scaling: 'log' },
     { id: 'crossoverFreq4', label: 'XOver 4', min: 20, max: 20000, default: 6000, unit: 'Hz', step: 1, scaling: 'log' },
-    { id: 'crossoverFreq5', label: 'XOver 5', min: 20, max: 20000, default: 12000, unit: 'Hz', step: 1, scaling: 'log' },
+    {
+        id: 'crossoverFreq5',
+        label: 'XOver 5',
+        min: 20,
+        max: 20000,
+        default: 12000,
+        unit: 'Hz',
+        step: 1,
+        scaling: 'log',
+    },
     { id: 'crossoverSlope', label: 'Slope', min: 0, max: 3, default: 1, unit: '', step: 1 },
     { id: 'crossoverMode', label: 'XOver Mode', min: 0, max: 1, default: 0, unit: '', step: 1 },
 

@@ -387,8 +387,6 @@ export const TimelineSurface = (): ReactElement => {
                 />
             ) : null}
 
-
-
             {contextMenu?.kind === 'clip' ? (
                 <ClipContextMenu
                     x={contextMenu.x}

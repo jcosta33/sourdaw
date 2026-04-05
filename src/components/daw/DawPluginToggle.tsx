@@ -23,15 +23,7 @@ export const DawPluginToggle = ({
     children,
     ...props
 }: DawPluginToggleProps): ReactElement => (
-    <DawPluginChip
-        active={pressed}
-        aria-pressed={pressed}
-        tone={tone}
-        size={size}
-        shape={shape}
-        caps={caps}
-        {...props}
-    >
+    <DawPluginChip active={pressed} aria-pressed={pressed} tone={tone} size={size} shape={shape} caps={caps} {...props}>
         {children ?? (pressed ? onLabel : offLabel)}
     </DawPluginChip>
 );

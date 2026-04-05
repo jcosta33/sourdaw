@@ -25,9 +25,13 @@ async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) { return cachedWasmBytes; }
+    if (cachedWasmBytes) {
+        return cachedWasmBytes;
+    }
     const response = await fetch(url);
-    if (!response.ok) { throw new Error(`Failed to fetch Proof WASM: ${response.status}`); }
+    if (!response.ok) {
+        throw new Error(`Failed to fetch Proof WASM: ${response.status}`);
+    }
     cachedWasmBytes = await response.arrayBuffer();
     return cachedWasmBytes;
 }
@@ -84,7 +88,10 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-            if (!settled) { settled = true; reject(new Error('ProofNode init timeout (10s)')); }
+            if (!settled) {
+                settled = true;
+                reject(new Error('ProofNode init timeout (10s)'));
+            }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
             if (e.data.type === 'ready' && !settled) {
@@ -156,12 +163,28 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
         onMeterData(cb: (data: ProofMeterData) => void) {
             meterCallback = cb;
         },
-        connect(dest: AudioNode) { node.connect(dest); },
-        disconnect() { try { node.disconnect(); } catch { /* already disconnected */ } },
+        connect(dest: AudioNode) {
+            node.connect(dest);
+        },
+        disconnect() {
+            try {
+                node.disconnect();
+            } catch {
+                /* already disconnected */
+            }
+        },
         destroy() {
-            if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null; }
-            if (sabSlot) { telemetryAllocator.releaseSlot(sabSlot.byteOffset); sabSlot = null; }
-            try { node.disconnect(); } catch {}
+            if (pollInterval !== null) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            if (sabSlot) {
+                telemetryAllocator.releaseSlot(sabSlot.byteOffset);
+                sabSlot = null;
+            }
+            try {
+                node.disconnect();
+            } catch {}
             node.port.close();
         },
         ready: readyPromise,

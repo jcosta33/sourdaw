@@ -13,8 +13,8 @@
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
 class ProofProcessor extends AudioWorkletProcessor {
-    _instance = null;   // ProofInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory
+    _instance = null; // ProofInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory
     _ready = false;
     _faulted = false;
     _meterCounter = 0;

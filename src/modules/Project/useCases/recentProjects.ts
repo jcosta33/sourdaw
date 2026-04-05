@@ -6,8 +6,13 @@ import { type ProjectData, RECENT_PROJECTS_KEY } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
 import { readNamedProjectJson, writeProjectJson } from '../repositories/project/storageOperations';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { hydrateModuleStoresFromProjectData, clearUndoHistory, verifyAudioBufferReferences } from './projectPersistence/helpers';
+import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
+import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import {
+    hydrateModuleStoresFromProjectData,
+    clearUndoHistory,
+    verifyAudioBufferReferences,
+} from './projectPersistence/helpers';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -58,6 +63,11 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             logger.warn(`Unsupported project version for key: ${key}`);
             return false;
         }
+
+        // Validated — stop any in-flight playback and tear down the previous
+        // project's audio graph before we hydrate stores for the new project.
+        stopPlayback();
+        resetAudioGraph();
 
         hydrateModuleStoresFromProjectData(data);
         projectStore.set({

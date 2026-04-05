@@ -36,18 +36,14 @@ export const VoiceButton = (): ReactElement | null => {
                     onClick={handleClick}
                     className={cn(
                         'transition-all',
-                        active && 'text-[var(--color-state-danger)] ring-1 ring-[var(--color-state-danger)]/40 bg-[var(--color-state-danger)]/10'
+                        active &&
+                            'text-[var(--color-state-danger)] ring-1 ring-[var(--color-state-danger)]/40 bg-[var(--color-state-danger)]/10'
                     )}
                 >
-                    <Mic
-                        className={cn('size-3.5', active && 'animate-pulse')}
-                        aria-hidden="true"
-                    />
+                    <Mic className={cn('size-3.5', active && 'animate-pulse')} aria-hidden="true" />
                 </Button>
             </TooltipTrigger>
-            <TooltipContent>
-                {active ? 'Listening… click to stop' : 'Voice command (hold V)'}
-            </TooltipContent>
+            <TooltipContent>{active ? 'Listening… click to stop' : 'Voice command (hold V)'}</TooltipContent>
         </Tooltip>
     );
 };

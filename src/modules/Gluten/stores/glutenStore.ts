@@ -64,7 +64,7 @@ export function updateGlutenMeters(
     outputDb: number,
     crest?: number,
     phaseCorr?: number,
-    latency?: number,
+    latency?: number
 ): void {
     const instances = glutenStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_GLUTEN_STATE, patch: { ...DEFAULT_PATCH } };
@@ -72,7 +72,9 @@ export function updateGlutenMeters(
         ...instances,
         [deviceId]: {
             ...state,
-            grDb, inputDb, outputDb,
+            grDb,
+            inputDb,
+            outputDb,
             crest: crest ?? state.crest,
             phaseCorr: phaseCorr ?? state.phaseCorr,
             latency: latency ?? state.latency,

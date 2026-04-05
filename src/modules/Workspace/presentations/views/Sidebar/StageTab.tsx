@@ -21,13 +21,7 @@ import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
-import {
-    NavCard,
-    EffectItem,
-    EFFECT_GROUPS,
-    type EffectPlugin,
-    Waves,
-} from './effectsTabHelpers';
+import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves } from './effectsTabHelpers';
 
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
 
@@ -53,14 +47,35 @@ export const StageTab = ({
     preview,
 }: StageTabProps): ReactElement => {
     const premiumIds = new Set(['proof', 'native-scoring', 'native-proof-chamber', 'gluten', 'crust']);
-    
+
     // Stage plugins are mix utilities, eq, compression, space.
     const isStagePlugin = (p: EffectPlugin) => {
         if (p.category === 'instrument' || premiumIds.has(p.id)) return false;
         if (p.id.startsWith('faust')) return false; // Faust is mostly color
-        const idKey = p.id.replace(/^builtin-/, '').replace(/^native-/, '').toLowerCase();
-        const stageCats = ['eq', 'compressor', 'sidechain-compressor', 'limiter', 'gate', 'expander', 'de-esser', 'reverb', 'delay', 'echo', 'gain', 'autopan', 'auto-pan', 'meter', 'dc', 'widener', 'analyzer'];
-        return stageCats.some(c => idKey.includes(c));
+        const idKey = p.id
+            .replace(/^builtin-/, '')
+            .replace(/^native-/, '')
+            .toLowerCase();
+        const stageCats = [
+            'eq',
+            'compressor',
+            'sidechain-compressor',
+            'limiter',
+            'gate',
+            'expander',
+            'de-esser',
+            'reverb',
+            'delay',
+            'echo',
+            'gain',
+            'autopan',
+            'auto-pan',
+            'meter',
+            'dc',
+            'widener',
+            'analyzer',
+        ];
+        return stageCats.some((c) => idKey.includes(c));
     };
 
     const effects = plugins.filter(isStagePlugin);
@@ -108,7 +123,11 @@ export const StageTab = ({
                 {total === 0 ? <EmptyState message="No stage effects found." /> : null}
                 {filteredEffects.length > 0 && (
                     <>
-                        <DawSectionDivider label="Mix Utilities" className="mt-1 px-1.5 py-0.5" lineClassName="bg-border/15" />
+                        <DawSectionDivider
+                            label="Mix Utilities"
+                            className="mt-1 px-1.5 py-0.5"
+                            lineClassName="bg-border/15"
+                        />
                         <div className="flex flex-col gap-[2px]">
                             {filteredEffects.map((plugin) => (
                                 <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />
@@ -221,7 +240,7 @@ export const StageTab = ({
                     labelClassName="font-bold text-[var(--color-accent-orange)]"
                     lineClassName="bg-[var(--color-accent-orange)]/15"
                 />
-                
+
                 <InstrumentCard
                     icon={Shield}
                     label="Proof"
@@ -230,12 +249,13 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'Proof');
-                            document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_PROOF_TAB, { detail: { deviceId: device?.id } }));
+                            document.dispatchEvent(
+                                new CustomEvent(APP_EVENTS.SHOW_PROOF_TAB, { detail: { deviceId: device?.id } })
+                            );
                         }
                     }}
                     theme={PROOF_THEME}
                 />
-                
 
                 <InstrumentCard
                     icon={Gauge}
@@ -245,7 +265,9 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'gluten');
-                            document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_GLUTEN_TAB, { detail: { deviceId: device?.id } }));
+                            document.dispatchEvent(
+                                new CustomEvent(APP_EVENTS.SHOW_GLUTEN_TAB, { detail: { deviceId: device?.id } })
+                            );
                         }
                     }}
                     theme={GLUTEN_THEME}
@@ -278,7 +300,7 @@ export const StageTab = ({
                     }}
                     theme={PROOF_CHAMBER_THEME}
                 />
-                
+
                 <InstrumentCard
                     icon={AudioLines}
                     label="Scoring"
@@ -287,7 +309,9 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'native-scoring');
-                            document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_SCORING_TAB, { detail: { deviceId: device?.id } }));
+                            document.dispatchEvent(
+                                new CustomEvent(APP_EVENTS.SHOW_SCORING_TAB, { detail: { deviceId: device?.id } })
+                            );
                         }
                     }}
                     theme={SCORING_THEME}

@@ -45,16 +45,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         return <div />;
     }
 
-    const {
-        roots,
-        samples,
-        activeRootId,
-        currentFolder,
-        searchQuery,
-        favoritesOnly,
-        scanning,
-        scanProgress,
-    } = state;
+    const { roots, samples, activeRootId, currentFolder, searchQuery, favoritesOnly, scanning, scanProgress } = state;
 
     const activeRoot = roots.find((r) => r.id === activeRootId);
 
@@ -322,7 +313,9 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                 key={sample.id}
                                 sample={sample}
                                 isPlaying={preview.playingId === sample.id}
-                                onPlay={() => { void playSample(sample); }}
+                                onPlay={() => {
+                                    void playSample(sample);
+                                }}
                                 onStop={preview.stop}
                                 onToggleFavorite={() => toggleSampleFavorite(sample.id)}
                                 onDragStart={(e) => {

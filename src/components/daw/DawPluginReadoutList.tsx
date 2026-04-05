@@ -12,10 +12,7 @@ export const DawPluginReadoutList = ({
     children,
     ...props
 }: DawPluginReadoutListProps): ReactElement => (
-    <div
-        className={cn(density === 'tight' ? 'space-y-1' : 'space-y-2', className)}
-        {...props}
-    >
+    <div className={cn(density === 'tight' ? 'space-y-1' : 'space-y-2', className)} {...props}>
         {children}
     </div>
 );

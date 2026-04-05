@@ -26,16 +26,12 @@ export const AutomationLaneControls = ({
     onClose,
 }: AutomationLaneControlsProps): ReactElement => (
     <div className="absolute top-1 right-2 z-10 flex items-center gap-0.5">
-        {selectedCount > 0 ? (
-            <span className="text-[8px] text-muted-foreground mr-1">{selectedCount} sel</span>
-        ) : null}
+        {selectedCount > 0 ? <span className="text-[8px] text-muted-foreground mr-1">{selectedCount} sel</span> : null}
         <button
             type="button"
             className={cn(
                 'size-5 flex items-center justify-center rounded hover:bg-surface-raised/80 transition-colors',
-                isVirginTerritory
-                    ? 'text-[var(--color-state-success)]'
-                    : 'text-muted-foreground hover:text-foreground'
+                isVirginTerritory ? 'text-[var(--color-state-success)]' : 'text-muted-foreground hover:text-foreground'
             )}
             onClick={onToggleVirginTerritory}
             aria-label={isVirginTerritory ? 'Disable virgin territory' : 'Enable virgin territory'}

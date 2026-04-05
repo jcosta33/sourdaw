@@ -154,7 +154,7 @@ export const RotaryKnob = ({
             {isLearningThis ? (
                 <div className="absolute inset-[-4px] rounded-full border border-dashed border-[var(--color-accent-lavender)] animate-pulse pointer-events-none z-10" />
             ) : null}
-            {(isMapped && !isLearningThis) ? (
+            {isMapped && !isLearningThis ? (
                 <div className="absolute top-0 right-0 size-2 rounded-full bg-[var(--color-accent-lavender)]/80 pointer-events-none z-10" />
             ) : null}
             {/* Outer bezel (well) */}

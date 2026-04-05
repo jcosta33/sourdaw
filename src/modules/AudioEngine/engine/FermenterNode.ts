@@ -71,12 +71,22 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-            if (!settled) { settled = true; reject(new Error('FermenterNode init timeout (10s)')); }
+            if (!settled) {
+                settled = true;
+                reject(new Error('FermenterNode init timeout (10s)'));
+            }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
             if (settled) return;
-            if (e.data.type === 'ready') { settled = true; clearTimeout(timeout); resolve(); }
-            else if (e.data.type === 'error') { settled = true; clearTimeout(timeout); reject(new Error(e.data.message)); }
+            if (e.data.type === 'ready') {
+                settled = true;
+                clearTimeout(timeout);
+                resolve();
+            } else if (e.data.type === 'error') {
+                settled = true;
+                clearTimeout(timeout);
+                reject(new Error(e.data.message));
+            }
         };
     });
 
@@ -88,7 +98,12 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         workletNode: node,
         noteOn(note: number, velocity: number, sampleFrame?: number) {
             if (!bypassed && note >= 0 && note < 128) {
-                node.port.postMessage({ type: 'noteOn', note, velocity: Math.min(127, Math.max(0, velocity)), sampleFrame });
+                node.port.postMessage({
+                    type: 'noteOn',
+                    note,
+                    velocity: Math.min(127, Math.max(0, velocity)),
+                    sampleFrame,
+                });
             }
         },
         noteOff(note: number, sampleFrame?: number) {
@@ -99,10 +114,25 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
                 node.port.postMessage({ type: 'param', name, value });
             }
         },
-        setBypass(state: boolean) { bypassed = state; },
-        connect(dest: AudioNode) { node.connect(dest); },
-        disconnect() { try { node.disconnect(); } catch { /* already disconnected */ } },
-        destroy() { try { node.disconnect(); } catch {} node.port.close(); },
+        setBypass(state: boolean) {
+            bypassed = state;
+        },
+        connect(dest: AudioNode) {
+            node.connect(dest);
+        },
+        disconnect() {
+            try {
+                node.disconnect();
+            } catch {
+                /* already disconnected */
+            }
+        },
+        destroy() {
+            try {
+                node.disconnect();
+            } catch {}
+            node.port.close();
+        },
         ready: readyPromise,
     };
 }

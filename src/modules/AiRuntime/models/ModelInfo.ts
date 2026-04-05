@@ -49,9 +49,7 @@ export const DEFAULT_WEBLLM_MODEL_ID = 'Qwen3-4B-q4f16_1-MLC';
 /** Legacy export for code that still references this. */
 export const WEBLLM_MODEL_ID = DEFAULT_WEBLLM_MODEL_ID;
 
-export const WEBLLM_MODEL_INFO: ModelInfo = WEBLLM_MODELS.find(
-    (m) => m.id === DEFAULT_WEBLLM_MODEL_ID
-)!;
+export const WEBLLM_MODEL_INFO: ModelInfo = WEBLLM_MODELS.find((m) => m.id === DEFAULT_WEBLLM_MODEL_ID)!;
 
 export const NATIVE_MODEL_INFO: NativeModelInfo = {
     id: 'qwen3-8b-native',

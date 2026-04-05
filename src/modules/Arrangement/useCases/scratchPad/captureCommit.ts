@@ -8,11 +8,11 @@ import { createScratchPadSection } from '../../models/ScratchPadSection';
  */
 export function captureArrangementToScratchPad(): void {
     const markerState = markerStore.value;
-    if (!markerState || markerState.sections.length === 0) { return; }
+    if (!markerState || markerState.sections.length === 0) {
+        return;
+    }
     const sorted = [...markerState.sections].sort((a, b) => a.startBeat - b.startBeat);
-    const scratchSections = sorted.map((s, i) =>
-        createScratchPadSection(s.startBeat, s.endBeat, s.name, s.color, i)
-    );
+    const scratchSections = sorted.map((s, i) => createScratchPadSection(s.startBeat, s.endBeat, s.name, s.color, i));
     scratchPadStore.set({ sections: scratchSections });
 }
 
@@ -22,7 +22,9 @@ export function captureArrangementToScratchPad(): void {
 export function commitScratchPadToArrangement(): void {
     const padState = scratchPadStore.value;
     const markerState = markerStore.value;
-    if (!padState || !markerState || padState.sections.length === 0) { return; }
+    if (!padState || !markerState || padState.sections.length === 0) {
+        return;
+    }
 
     const newSections = [...padState.sections]
         .sort((a, b) => a.order - b.order)

@@ -15,8 +15,8 @@ type MutationTarget = {
     baseValue: number;
     min: number;
     max: number;
-    sigma: number;    // random walk step size
-    damping: number;  // 0-1, how strongly to pull back to base
+    sigma: number; // random walk step size
+    damping: number; // 0-1, how strongly to pull back to base
 };
 
 export class MutationEngine implements MidiProcessor {
@@ -30,8 +30,8 @@ export class MutationEngine implements MidiProcessor {
         { name: 'probability_offset', value: 0, baseValue: 0, min: -0.3, max: 0.3, sigma: 0.02, damping: 0.05 },
     ];
 
-    private depth = 0.5;  // 0-1 master mutation amount
-    private rate = 1.0;   // mutations per beat
+    private depth = 0.5; // 0-1 master mutation amount
+    private rate = 1.0; // mutations per beat
     private bypassed = false;
     private rngState = 0x1234;
     private stepCounter = 0;
@@ -78,10 +78,10 @@ export class MutationEngine implements MidiProcessor {
     }
 
     private gaussian(mean: number, sigma: number): number {
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
-        const u1 = this.rngState / 0x7FFFFFFF;
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
-        const u2 = this.rngState / 0x7FFFFFFF;
+        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+        const u1 = this.rngState / 0x7fffffff;
+        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+        const u2 = this.rngState / 0x7fffffff;
         const z = Math.sqrt(-2 * Math.log(Math.max(1e-10, u1))) * Math.cos(2 * Math.PI * u2);
         return mean + sigma * z;
     }
@@ -93,14 +93,25 @@ export class MutationEngine implements MidiProcessor {
         this.stepCounter = 0;
     }
 
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'depth': this.depth = Math.max(0, Math.min(1, value)); break;
-            case 'rate': this.rate = Math.max(0.1, Math.min(10, value)); this.stepsPerMutation = Math.max(1, Math.round(4 / this.rate)); break;
+            case 'depth':
+                this.depth = Math.max(0, Math.min(1, value));
+                break;
+            case 'rate':
+                this.rate = Math.max(0.1, Math.min(10, value));
+                this.stepsPerMutation = Math.max(1, Math.round(4 / this.rate));
+                break;
         }
     }
 

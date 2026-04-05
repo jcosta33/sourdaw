@@ -19,11 +19,16 @@ export function toggleRecord(slotId: string): void {
                     return { ...s, state: 'recording' as const };
                 case 'recording': {
                     const layer: LoopLayer = {
-                        id: getNextLayerId(), layerIndex: 0,
-                        recordedAt: new Date().toISOString(), muted: false, volume: 1,
+                        id: getNextLayerId(),
+                        layerIndex: 0,
+                        recordedAt: new Date().toISOString(),
+                        muted: false,
+                        volume: 1,
                     };
                     return {
-                        ...s, state: 'playing' as const, layers: [layer],
+                        ...s,
+                        state: 'playing' as const,
+                        layers: [layer],
                         lengthBeats: state.fixedLoopLength || 4,
                     };
                 }
@@ -31,8 +36,11 @@ export function toggleRecord(slotId: string): void {
                     return { ...s, state: 'overdubbing' as const };
                 case 'overdubbing': {
                     const newLayer: LoopLayer = {
-                        id: getNextLayerId(), layerIndex: s.layers.length,
-                        recordedAt: new Date().toISOString(), muted: false, volume: 1,
+                        id: getNextLayerId(),
+                        layerIndex: s.layers.length,
+                        recordedAt: new Date().toISOString(),
+                        muted: false,
+                        volume: 1,
                     };
                     return { ...s, state: 'playing' as const, layers: [...s.layers, newLayer] };
                 }

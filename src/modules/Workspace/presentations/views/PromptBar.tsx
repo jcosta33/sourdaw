@@ -106,7 +106,10 @@ const FuzzyResultItem = ({
             <Icon className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
             <span className="flex-1 text-left truncate">{result.preset.label}</span>
             {result.preset.isDestructive ? (
-                <AlertTriangle className="size-3 text-[var(--color-state-warning)] shrink-0" aria-label="Destructive action" />
+                <AlertTriangle
+                    className="size-3 text-[var(--color-state-warning)] shrink-0"
+                    aria-label="Destructive action"
+                />
             ) : null}
             <DawMicroBadge>{result.preset.category}</DawMicroBadge>
         </button>
@@ -126,10 +129,7 @@ export const PromptBar = (): ReactElement => {
                 <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap gap-1">
                         {prompt.preview.actions.map((a: AppAction, i: number) => (
-                            <DawMicroBadge
-                                key={i}
-                                className="text-[10px] text-foreground"
-                            >
+                            <DawMicroBadge key={i} className="text-[10px] text-foreground">
                                 {describeAction(a)}
                             </DawMicroBadge>
                         ))}
@@ -169,11 +169,7 @@ export const PromptBar = (): ReactElement => {
                     <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 )}
                 {prompt.selectionTags.map((tag) => (
-                    <SelectionTagChip
-                        key={tag.id}
-                        tag={tag}
-                        onRemove={() => prompt.dismissTag(tag.id)}
-                    />
+                    <SelectionTagChip key={tag.id} tag={tag} onRemove={() => prompt.dismissTag(tag.id)} />
                 ))}
                 <Input
                     ref={prompt.inputRef}

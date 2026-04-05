@@ -174,7 +174,9 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
 
                 <p className="px-4 py-3 text-center text-[10px] text-muted-foreground">
                     Press{' '}
-                    <DawKeycap compact className="px-1">?</DawKeycap>{' '}
+                    <DawKeycap compact className="px-1">
+                        ?
+                    </DawKeycap>{' '}
                     to toggle this sheet
                 </p>
             </DawUtilityPanel>

@@ -10,8 +10,8 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type ModulationLFOProps = {
-    rate: number;        // Hz
-    depth: number;       // 0–1 (normalized)
+    rate: number; // Hz
+    depth: number; // 0–1 (normalized)
     shape?: 'sine' | 'triangle' | 'square';
     width?: number;
     height?: number;

@@ -54,7 +54,11 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProp
                                 variant={rippleEditing ? 'secondary' : 'ghost'}
                                 size="xs"
                                 onClick={onToggleRipple}
-                                className={rippleEditing ? 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30 px-1.5' : 'px-1.5'}
+                                className={
+                                    rippleEditing
+                                        ? 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30 px-1.5'
+                                        : 'px-1.5'
+                                }
                                 aria-pressed={rippleEditing}
                                 aria-label="Toggle ripple editing"
                             >

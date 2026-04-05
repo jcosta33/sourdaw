@@ -49,11 +49,11 @@ const KIT_PARAM_MAP = {
 };
 
 class ToasterProcessor extends AudioWorkletProcessor {
-    _instance = null;   // ToasterInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory
+    _instance = null; // ToasterInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory
     _ready = false;
     _faulted = false;
-    _queue = [];        // Sorted by sampleFrame (integer sample count)
+    _queue = []; // Sorted by sampleFrame (integer sample count)
 
     constructor() {
         super();
@@ -85,7 +85,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
 
     _enqueue(msg) {
         // Insert in ascending sampleFrame order.
-        let lo = 0, hi = this._queue.length;
+        let lo = 0,
+            hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
             if (this._queue[mid].sampleFrame <= msg.sampleFrame) lo = mid + 1;

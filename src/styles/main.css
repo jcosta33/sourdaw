@@ -415,9 +415,7 @@
 }
 
 @utility daw-display-surface {
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.006)),
-        var(--color-bg-panel);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.006)), var(--color-bg-panel);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-bottom-color: rgba(0, 0, 0, 0.34);
     box-shadow:

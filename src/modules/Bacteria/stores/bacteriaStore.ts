@@ -45,7 +45,11 @@ export function getBacteriaState(deviceId: string): BacteriaState {
     return bacteriaStore.value?.[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
 }
 
-export function setBacteriaParam<K extends keyof BacteriaPatch>(deviceId: string, key: K, value: BacteriaPatch[K]): void {
+export function setBacteriaParam<K extends keyof BacteriaPatch>(
+    deviceId: string,
+    key: K,
+    value: BacteriaPatch[K]
+): void {
     const instances = bacteriaStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
     bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, [key]: value } } });
@@ -94,7 +98,7 @@ export function updateBacteriaMeters(
     inputDb: number,
     outputDb: number,
     bandLevels?: number[],
-    latency?: number,
+    latency?: number
 ): void {
     const instances = bacteriaStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };

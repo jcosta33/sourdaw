@@ -48,7 +48,9 @@ export const AudioDevicePicker = (): ReactElement => {
     return (
         <div className="space-y-3">
             <div className="space-y-1.5">
-                <DawEyebrowLabel size="sm" className="block">Output</DawEyebrowLabel>
+                <DawEyebrowLabel size="sm" className="block">
+                    Output
+                </DawEyebrowLabel>
                 <div className="flex items-center gap-2">
                     <DawCompactSelect
                         value={state?.selectedOutputId ?? ''}
@@ -79,7 +81,9 @@ export const AudioDevicePicker = (): ReactElement => {
             </div>
 
             <div className="space-y-1.5">
-                <DawEyebrowLabel size="sm" className="block">Input</DawEyebrowLabel>
+                <DawEyebrowLabel size="sm" className="block">
+                    Input
+                </DawEyebrowLabel>
                 <DawCompactSelect
                     value={state?.selectedInputId ?? ''}
                     onChange={(e) => handleInputChange(e.target.value)}

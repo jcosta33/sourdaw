@@ -36,9 +36,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     // Check for Fermenter synth on this track
     const fermenterDevice = track?.devices.find((d) => d.type === 'fermenter');
     if (fermenterDevice) {
-        const dn = strip.deviceNodes.find(
-            (d) => d.deviceId === fermenterDevice.id || d.type === 'fermenter'
-        );
+        const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id || d.type === 'fermenter');
         if (dn?.fermenterControls?.ready) {
             dn.fermenterControls.noteOn(pitch, velocity);
             return () => {
@@ -59,28 +57,29 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         }
     }
 
-    const toasterDevice = track?.devices.find((d) => d.type === 'toaster') || toasterParentTrack?.devices.find((d) => d.type === 'toaster');
-    
+    const toasterDevice =
+        track?.devices.find((d) => d.type === 'toaster') ||
+        toasterParentTrack?.devices.find((d) => d.type === 'toaster');
+
     if (toasterDevice) {
         const effectiveTrackId = toasterParentTrack ? toasterParentTrack.id : trackId;
         const parentStrip = engine.ensureTrackStrip(effectiveTrackId);
-        
-        const dn = parentStrip.deviceNodes.find(
-            (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
-        );
-        
+
+        const dn = parentStrip.deviceNodes.find((d) => d.deviceId === toasterDevice.id || d.type === 'toaster');
+
         if (dn?.toasterControls?.ready) {
             let pad = pitch - 36;
-            
+
             if (isToasterChild && toasterParentTrack) {
                 // Determine pad by index of child in parent folder
-                const children = trackStore.value?.tracks.filter((t: any) => t.parentId === toasterParentTrack!.id) || [];
+                const children =
+                    trackStore.value?.tracks.filter((t: any) => t.parentId === toasterParentTrack!.id) || [];
                 const childPad = children.findIndex((t: any) => t.id === trackId);
                 if (childPad !== -1) {
                     pad = childPad;
                 }
             }
-            
+
             dn.toasterControls.noteOn(pad, velocity ?? 100, pitch);
             return () => {
                 dn.toasterControls?.noteOff(pad);
@@ -93,9 +92,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     // Check for Levain instrument on this track
     const levainDevice = track?.devices.find((d) => d.type === 'levain');
     if (levainDevice) {
-        const dn = strip.deviceNodes.find(
-            (d) => d.deviceId === levainDevice.id || d.type === 'levain'
-        );
+        const dn = strip.deviceNodes.find((d) => d.deviceId === levainDevice.id || d.type === 'levain');
         if (dn?.levainControls?.ready) {
             dn.levainControls.noteOn(pitch, velocity);
             return () => {

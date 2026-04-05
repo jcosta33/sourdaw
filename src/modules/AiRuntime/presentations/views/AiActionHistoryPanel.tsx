@@ -24,9 +24,7 @@ import { revertAction, canRevertAction } from '#/modules/CrdtDocument/useCases/r
 const defaultAiState = { groups: [] as AiActionGroup[], panelOpen: false };
 const defaultHistoryState = { entries: [] as ActionHistoryEntry[] };
 
-type HistoryItem =
-    | { kind: 'ai'; group: AiActionGroup }
-    | { kind: 'action'; entry: ActionHistoryEntry };
+type HistoryItem = { kind: 'ai'; group: AiActionGroup } | { kind: 'action'; entry: ActionHistoryEntry };
 
 /**
  * Unified Action History — shows all user and AI actions in chronological order.
@@ -92,7 +90,12 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                                 <Trash2 className="size-3" />
                             </Button>
                         ) : null}
-                        <Button variant="ghost" size="icon-xs" onClick={toggleAiHistoryPanel} aria-label="Close action history">
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={toggleAiHistoryPanel}
+                            aria-label="Close action history"
+                        >
                             <X className="size-3" />
                         </Button>
                     </div>

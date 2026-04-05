@@ -126,11 +126,7 @@ export const handleAutomationTool = (
 
 // ── Auto-sub-lane paint (called before dispatching to tools when automation is visible) ──
 
-export const tryPaintSubLane = (
-    x: number,
-    y: number,
-    autoDragRef: AutoDragRef
-): boolean => {
+export const tryPaintSubLane = (x: number, y: number, autoDragRef: AutoDragRef): boolean => {
     const subLaneHit = hitTestAutomationSubLane(x, y);
     if (!subLaneHit) {
         return false;
@@ -144,12 +140,7 @@ export const tryPaintSubLane = (
 
 // ── Auto-drag move (called in mousemove when autoDragRef is active) ───────────
 
-export const paintAutoDragPoint = (
-    x: number,
-    y: number,
-    scrollY: number,
-    autoDragRef: AutoDragRef
-): void => {
+export const paintAutoDragPoint = (x: number, y: number, scrollY: number, autoDragRef: AutoDragRef): void => {
     const ref = autoDragRef.current;
     if (!ref) return;
     const view = timelineViewStore.value;

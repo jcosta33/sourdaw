@@ -12,18 +12,41 @@ import { ENGINE_NAMES, WAVEFORM_NAMES, NOISE_COLOR_NAMES } from '../../models/Fe
 const WAVEFORM_KEYS = ['sine', 'sawtooth', 'square', 'triangle'] as const;
 
 type OscillatorSectionProps = {
-    engine: number; waveform: number; level: number; coarse: number; fine: number;
-    pulseWidth: number; noiseLevel: number; noiseColor: number;
-    onEngineChange: (v: number) => void; onWaveformChange: (wf: number) => void;
-    onLevelChange: (v: number) => void; onCoarseChange: (v: number) => void;
-    onFineChange: (v: number) => void; onPulseWidthChange: (v: number) => void;
-    onNoiseLevelChange: (v: number) => void; onNoiseColorChange: (v: number) => void;
+    engine: number;
+    waveform: number;
+    level: number;
+    coarse: number;
+    fine: number;
+    pulseWidth: number;
+    noiseLevel: number;
+    noiseColor: number;
+    onEngineChange: (v: number) => void;
+    onWaveformChange: (wf: number) => void;
+    onLevelChange: (v: number) => void;
+    onCoarseChange: (v: number) => void;
+    onFineChange: (v: number) => void;
+    onPulseWidthChange: (v: number) => void;
+    onNoiseLevelChange: (v: number) => void;
+    onNoiseColorChange: (v: number) => void;
 };
 
 export const OscillatorSection = ({
-    engine, waveform, level, coarse, fine, pulseWidth, noiseLevel, noiseColor,
-    onEngineChange, onWaveformChange, onLevelChange, onCoarseChange, onFineChange,
-    onPulseWidthChange, onNoiseLevelChange, onNoiseColorChange,
+    engine,
+    waveform,
+    level,
+    coarse,
+    fine,
+    pulseWidth,
+    noiseLevel,
+    noiseColor,
+    onEngineChange,
+    onWaveformChange,
+    onLevelChange,
+    onCoarseChange,
+    onFineChange,
+    onPulseWidthChange,
+    onNoiseLevelChange,
+    onNoiseColorChange,
 }: OscillatorSectionProps): ReactElement => {
     const wfKey = WAVEFORM_KEYS[waveform] ?? 'sawtooth';
     const showPW = engine === 1 && waveform === 2;
@@ -37,9 +60,15 @@ export const OscillatorSection = ({
                 actions={
                     <div className="flex gap-0.5">
                         {ENGINE_NAMES.map((name, i) => (
-                            <DawPluginChip key={name} active={engine === i} tone="cyan" size="xs"
+                            <DawPluginChip
+                                key={name}
+                                active={engine === i}
+                                tone="cyan"
+                                size="xs"
                                 onClick={() => onEngineChange(i)}
-                            >{name}</DawPluginChip>
+                            >
+                                {name}
+                            </DawPluginChip>
                         ))}
                     </div>
                 }
@@ -47,36 +76,108 @@ export const OscillatorSection = ({
 
             {/* HERO: Large waveform visualization */}
             <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">
-                <OscillatorWaveform waveform={wfKey} osc2Waveform={wfKey} osc2Mix={0} detune={0} width={290} height={80} />
+                <OscillatorWaveform
+                    waveform={wfKey}
+                    osc2Waveform={wfKey}
+                    osc2Mix={0}
+                    detune={0}
+                    width={290}
+                    height={80}
+                />
             </div>
 
             {/* Waveform selector */}
             <div className="flex gap-0.5">
                 {WAVEFORM_NAMES.map((name, i) => (
-                    <DawPluginChip key={name} active={waveform === i} tone="lavender" size="xs" shape="soft" className="flex-1"
+                    <DawPluginChip
+                        key={name}
+                        active={waveform === i}
+                        tone="lavender"
+                        size="xs"
+                        shape="soft"
+                        className="flex-1"
                         onClick={() => onWaveformChange(i)}
-                    >{name}</DawPluginChip>
+                    >
+                        {name}
+                    </DawPluginChip>
                 ))}
             </div>
 
             {/* Knob row: Level + Coarse + Fine + (PW) */}
             <div className="flex items-end gap-2">
-                <RotaryKnob paramId="oscLevel" value={level} onChange={onLevelChange} min={0} max={1} step={0.01} defaultValue={0.8} size="lg" label="Level" />
-                <RotaryKnob paramId="oscCoarse" value={coarse} onChange={onCoarseChange} min={-24} max={24} step={1} defaultValue={0} size="lg" label="Coarse" />
-                <RotaryKnob paramId="oscFine" value={fine} onChange={onFineChange} min={-100} max={100} step={1} defaultValue={0} size="lg" label="Fine" />
+                <RotaryKnob
+                    paramId="oscLevel"
+                    value={level}
+                    onChange={onLevelChange}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    defaultValue={0.8}
+                    size="lg"
+                    label="Level"
+                />
+                <RotaryKnob
+                    paramId="oscCoarse"
+                    value={coarse}
+                    onChange={onCoarseChange}
+                    min={-24}
+                    max={24}
+                    step={1}
+                    defaultValue={0}
+                    size="lg"
+                    label="Coarse"
+                />
+                <RotaryKnob
+                    paramId="oscFine"
+                    value={fine}
+                    onChange={onFineChange}
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
+                    size="lg"
+                    label="Fine"
+                />
                 {showPW ? (
-                    <RotaryKnob paramId="pulseWidth" value={pulseWidth} onChange={onPulseWidthChange} min={0.05} max={0.95} step={0.01} defaultValue={0.5} size="lg" label="PW" />
+                    <RotaryKnob
+                        paramId="pulseWidth"
+                        value={pulseWidth}
+                        onChange={onPulseWidthChange}
+                        min={0.05}
+                        max={0.95}
+                        step={0.01}
+                        defaultValue={0.5}
+                        size="lg"
+                        label="PW"
+                    />
                 ) : null}
             </div>
 
             {/* Noise sub-row */}
             <div className="flex items-end gap-2 pt-1 border-t border-border/15">
-                <RotaryKnob paramId="noiseLevel" value={noiseLevel} onChange={onNoiseLevelChange} min={0} max={1} step={0.01} defaultValue={0} size="md" label="Noise" />
+                <RotaryKnob
+                    paramId="noiseLevel"
+                    value={noiseLevel}
+                    onChange={onNoiseLevelChange}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    defaultValue={0}
+                    size="md"
+                    label="Noise"
+                />
                 <div className="flex gap-0.5 pb-2">
                     {NOISE_COLOR_NAMES.map((name, i) => (
-                        <DawPluginChip key={name} active={noiseColor === i} tone="neutral" size="xs" caps={false}
+                        <DawPluginChip
+                            key={name}
+                            active={noiseColor === i}
+                            tone="neutral"
+                            size="xs"
+                            caps={false}
                             onClick={() => onNoiseColorChange(i)}
-                        >{name}</DawPluginChip>
+                        >
+                            {name}
+                        </DawPluginChip>
                     ))}
                 </div>
             </div>

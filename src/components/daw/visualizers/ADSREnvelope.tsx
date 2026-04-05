@@ -9,10 +9,10 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type ADSREnvelopeProps = {
-    attack: number;   // seconds (0–2)
-    decay: number;    // seconds (0–2)
-    sustain: number;  // level (0–1)
-    release: number;  // seconds (0–3)
+    attack: number; // seconds (0–2)
+    decay: number; // seconds (0–2)
+    sustain: number; // level (0–1)
+    release: number; // seconds (0–3)
     /** Accent color token or hex */
     color?: string;
     width?: number;
@@ -77,9 +77,7 @@ export const ADSREnvelope = ({
 
         const rawColor = color ?? resolveToken('--color-accent-teal', '#4CB8B8');
         // Resolve CSS variable references (e.g. 'var(--color-accent-mint)') to hex for canvas
-        const accent = rawColor.startsWith('var(')
-            ? resolveToken(rawColor.slice(4, -1), '#4CB8B8')
-            : rawColor;
+        const accent = rawColor.startsWith('var(') ? resolveToken(rawColor.slice(4, -1), '#4CB8B8') : rawColor;
 
         // Store breakpoint positions for hit testing
         breakpointsRef.current = [
@@ -103,10 +101,10 @@ export const ADSREnvelope = ({
         // Envelope fill
         ctx.beginPath();
         ctx.moveTo(pad, bottomY);
-        ctx.lineTo(aX, topY);          // Attack
-        ctx.lineTo(dX, sustainY);      // Decay
-        ctx.lineTo(sX, sustainY);      // Sustain hold
-        ctx.lineTo(rX, bottomY);       // Release
+        ctx.lineTo(aX, topY); // Attack
+        ctx.lineTo(dX, sustainY); // Decay
+        ctx.lineTo(sX, sustainY); // Sustain hold
+        ctx.lineTo(rX, bottomY); // Release
         ctx.lineTo(pad, bottomY);
         ctx.closePath();
 

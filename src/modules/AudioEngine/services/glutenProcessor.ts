@@ -61,12 +61,12 @@ const PARAM_MAP = {
 };
 
 class GlutenProcessor extends AudioWorkletProcessor {
-    _instance = null;   // GlutenInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory
+    _instance = null; // GlutenInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
-    _sabView = null;    // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();

@@ -1,5 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,11 +49,8 @@ pub async fn load_whisper_model(
     model_path: String,
     state: tauri::State<'_, DictationState>,
 ) -> Result<AsrStatus, String> {
-    let ctx = WhisperContext::new_with_params(
-        &model_path,
-        WhisperContextParameters::default(),
-    )
-    .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
+    let ctx = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
+        .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
 
     let name = std::path::Path::new(&model_path)
         .file_name()
@@ -90,15 +89,13 @@ pub async fn ensure_whisper_ready(
     }
 
     // Download model if needed
-    let model_path = model_download::ensure_model(WHISPER_MODEL_FILE, WHISPER_MODEL_URL, None).await?;
+    let model_path =
+        model_download::ensure_model(WHISPER_MODEL_FILE, WHISPER_MODEL_URL, None).await?;
     let model_path_str = model_path.to_string_lossy().to_string();
 
     // Load model
-    let ctx = WhisperContext::new_with_params(
-        &model_path_str,
-        WhisperContextParameters::default(),
-    )
-    .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
+    let ctx = WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
+        .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
 
     let mut guard = state.ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
     *guard = Some(Arc::new(ctx));
@@ -123,7 +120,9 @@ pub async fn start_dictation(
 ) -> Result<(), String> {
     let ctx = {
         let guard = state.ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
-        guard.clone().ok_or("Whisper model not loaded. Call load_whisper_model first.")?
+        guard
+            .clone()
+            .ok_or("Whisper model not loaded. Call load_whisper_model first.")?
     };
 
     // Reset stop flag
@@ -161,10 +160,8 @@ pub async fn start_dictation(
                     Ok(text) => {
                         let duration_ms = start.elapsed().as_millis() as u64;
                         if !text.is_empty() {
-                            let _ = app.emit("dictation-result", DictationResult {
-                                text,
-                                duration_ms,
-                            });
+                            let _ =
+                                app.emit("dictation-result", DictationResult { text, duration_ms });
                         }
                     }
                     Err(e) => eprintln!("[Dictation] Transcription error: {e}"),
@@ -179,18 +176,14 @@ pub async fn start_dictation(
 
 /// Stop the current dictation recording.
 #[tauri::command]
-pub fn stop_dictation(
-    state: tauri::State<'_, DictationState>,
-) -> Result<(), String> {
+pub fn stop_dictation(state: tauri::State<'_, DictationState>) -> Result<(), String> {
     state.stop_flag.store(true, Ordering::SeqCst);
     Ok(())
 }
 
 /// Check the current ASR engine status.
 #[tauri::command]
-pub async fn get_asr_status(
-    state: tauri::State<'_, DictationState>,
-) -> Result<AsrStatus, String> {
+pub async fn get_asr_status(state: tauri::State<'_, DictationState>) -> Result<AsrStatus, String> {
     let guard = state.ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
     Ok(AsrStatus {
         loaded: guard.is_some(),
@@ -208,9 +201,7 @@ pub async fn get_asr_status(
 /// or 15 seconds elapse. Returns (samples, sample_rate, channels).
 fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or("No microphone found")?;
+    let device = host.default_input_device().ok_or("No microphone found")?;
 
     let config = device
         .default_input_config()
@@ -236,7 +227,9 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
         )
         .map_err(|e| format!("Failed to build mic stream: {e}"))?;
 
-    stream.play().map_err(|e| format!("Failed to start mic: {e}"))?;
+    stream
+        .play()
+        .map_err(|e| format!("Failed to start mic: {e}"))?;
 
     // Poll the stop flag every 50ms, up to 15 seconds
     let max_iters = 15_000 / 50;
@@ -283,11 +276,7 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
     let chunk_size = 1024;
 
     let mut resampler = SincFixedIn::<f64>::new(
-        ratio,
-        2.0,
-        params,
-        chunk_size,
-        1, // mono
+        ratio, 2.0, params, chunk_size, 1, // mono
     )
     .map_err(|e| format!("Failed to create resampler: {e}"))?;
 
@@ -322,7 +311,9 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
 
 /// Run Whisper inference on 16 kHz mono f32 audio.
 fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
-    let mut state = ctx.create_state().map_err(|e| format!("Whisper state error: {e}"))?;
+    let mut state = ctx
+        .create_state()
+        .map_err(|e| format!("Whisper state error: {e}"))?;
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some("en"));
@@ -330,7 +321,9 @@ fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
     params.set_print_timestamps(false);
     params.set_suppress_nst(true);
 
-    state.full(params, audio).map_err(|e| format!("Whisper inference error: {e}"))?;
+    state
+        .full(params, audio)
+        .map_err(|e| format!("Whisper inference error: {e}"))?;
 
     // Use the iterator API (whisper-rs v0.15+)
     let text: String = state

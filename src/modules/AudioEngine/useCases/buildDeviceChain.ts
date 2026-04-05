@@ -12,7 +12,7 @@ export type DeviceNodeEntry = {
     deviceType: string;
     node: OfflineDeviceNode;
     strategy: AudioDeviceStrategy;
-    
+
     // Kept for backwards compatibility with consumers until fully migrated
     nativeDsp?: {
         setParam: (name: string, value: number) => void;
@@ -93,12 +93,12 @@ export async function buildDeviceChain(
             // Proxies for legacy support (to be phased out completely soon)
             nativeDsp: {
                 setParam: (name, value) => strategy!.setParam(name, value),
-                setBypass: (bypassed) => strategy!.setBypass?.(bypassed)
+                setBypass: (bypassed) => strategy!.setBypass?.(bypassed),
             },
             instrumentControls: {
                 noteOn: (note, vel, midi) => strategy!.noteOn?.(note, vel, midi),
-                noteOff: (note) => strategy!.noteOff?.(note)
-            }
+                noteOff: (note) => strategy!.noteOff?.(note),
+            },
         });
     }
 

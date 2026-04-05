@@ -15,14 +15,20 @@ type Props = {
     height: number;
 };
 
-const RANGE_LOW = 36;  // C2
+const RANGE_LOW = 36; // C2
 const RANGE_HIGH = 96; // C7
 function isBlack(note: number): boolean {
     const pc = note % 12;
     return [1, 3, 6, 8, 10].includes(pc);
 }
 
-export const KeyboardSplit = ({ heldNotes = [], soundingNotes = [], splitPoint, width, height }: Props): ReactElement => {
+export const KeyboardSplit = ({
+    heldNotes = [],
+    soundingNotes = [],
+    splitPoint,
+    width,
+    height,
+}: Props): ReactElement => {
     const whiteKeys: number[] = [];
     const blackKeys: number[] = [];
     for (let n = RANGE_LOW; n < RANGE_HIGH; n++) {
@@ -78,8 +84,8 @@ export const KeyboardSplit = ({ heldNotes = [], soundingNotes = [], splitPoint, 
                             background: sounding
                                 ? 'var(--color-accent-peach)'
                                 : held
-                                    ? 'var(--color-accent-lavender)'
-                                    : '#1a1a1a',
+                                  ? 'var(--color-accent-lavender)'
+                                  : '#1a1a1a',
                             opacity: sounding ? 0.9 : held ? 0.7 : 1,
                             borderRadius: '0 0 2px 2px',
                         }}
@@ -103,8 +109,8 @@ export const KeyboardSplit = ({ heldNotes = [], soundingNotes = [], splitPoint, 
                             background: sounding
                                 ? 'var(--color-accent-peach)'
                                 : held
-                                    ? 'var(--color-accent-lavender)'
-                                    : '#0e0e0e',
+                                  ? 'var(--color-accent-lavender)'
+                                  : '#0e0e0e',
                             borderRadius: '0 0 2px 2px',
                             zIndex: 1,
                         }}

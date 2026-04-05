@@ -76,7 +76,12 @@ fn read_wav(path: &Path) -> Result<(Vec<Vec<f32>>, u32, u16), String> {
     Ok((per_channel, sample_rate, spec.channels))
 }
 
-fn write_wav(path: &Path, data: &[Vec<f32>], sample_rate: u32, channels: u16) -> Result<(), String> {
+fn write_wav(
+    path: &Path,
+    data: &[Vec<f32>],
+    sample_rate: u32,
+    channels: u16,
+) -> Result<(), String> {
     let spec = WavSpec {
         channels,
         sample_rate,

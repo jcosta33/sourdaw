@@ -12,12 +12,7 @@ type LevainMacroStripProps = {
     compact?: boolean;
 };
 
-export const LevainMacroStrip = ({
-    macros,
-    labels,
-    onMacroChange,
-    compact,
-}: LevainMacroStripProps): ReactElement => (
+export const LevainMacroStrip = ({ macros, labels, onMacroChange, compact }: LevainMacroStripProps): ReactElement => (
     <div className={compact ? 'grid grid-cols-4 gap-1' : 'flex items-center gap-2 flex-wrap'}>
         {labels.map((label, i) => (
             <RotaryKnob

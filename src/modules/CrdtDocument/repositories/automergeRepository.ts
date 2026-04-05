@@ -1,11 +1,6 @@
 import * as Automerge from '@automerge/automerge';
 
-import {
-    type DocId,
-    type DocumentBundle,
-    type MergeResult,
-    DOC_PREFIX_ROOT,
-} from '../models/CrdtDocumentTypes';
+import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
 type AnyDoc = Record<string, unknown>;
 
@@ -19,10 +14,7 @@ let _crdtWorkerNextId = 0;
 
 function getCrdtWorker(): Worker {
     if (!_crdtWorker) {
-        _crdtWorker = new Worker(
-            new URL('../workers/crdtWorker.ts', import.meta.url),
-            { type: 'module' }
-        );
+        _crdtWorker = new Worker(new URL('../workers/crdtWorker.ts', import.meta.url), { type: 'module' });
     }
     return _crdtWorker;
 }
@@ -137,9 +129,7 @@ class AutomergeRepository {
             throw new Error(`Document not found: ${id}`);
         }
 
-        const updated = message
-            ? Automerge.change(doc, { message }, changeFn)
-            : Automerge.change(doc, changeFn);
+        const updated = message ? Automerge.change(doc, { message }, changeFn) : Automerge.change(doc, changeFn);
         this.docs.set(id, updated as Automerge.Doc<AnyDoc>);
         this.notifyListeners();
     }

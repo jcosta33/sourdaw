@@ -245,7 +245,8 @@ export async function importMidiFile(file: File): Promise<void> {
     const trackSnapshotAfter = structuredClone(trackStore.value);
     const midiSnapshotAfter = structuredClone(midiStore.value);
 
-    const name = parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
+    const name =
+        parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
     pushUndo(
         createCallbackUndoEntry(
             `Import MIDI: ${name}`,

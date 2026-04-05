@@ -15,36 +15,83 @@ export type InstrumentFamily = 'strings' | 'brass' | 'woodwinds' | 'percussion' 
 
 export type InstrumentId =
     // Strings
-    | 'violin-1' | 'violin-2' | 'viola' | 'cello' | 'double-bass'
-    | 'solo-violin' | 'solo-viola' | 'solo-cello'
+    | 'violin-1'
+    | 'violin-2'
+    | 'viola'
+    | 'cello'
+    | 'double-bass'
+    | 'solo-violin'
+    | 'solo-viola'
+    | 'solo-cello'
     // Brass
-    | 'trumpet' | 'horn' | 'trombone' | 'tuba'
-    | 'solo-trumpet' | 'solo-horn'
+    | 'trumpet'
+    | 'horn'
+    | 'trombone'
+    | 'tuba'
+    | 'solo-trumpet'
+    | 'solo-horn'
     // Woodwinds
-    | 'flute' | 'oboe' | 'clarinet' | 'bassoon'
-    | 'piccolo' | 'english-horn' | 'bass-clarinet' | 'contrabassoon'
+    | 'flute'
+    | 'oboe'
+    | 'clarinet'
+    | 'bassoon'
+    | 'piccolo'
+    | 'english-horn'
+    | 'bass-clarinet'
+    | 'contrabassoon'
     // Percussion
-    | 'timpani' | 'snare' | 'bass-drum' | 'cymbals'
-    | 'glockenspiel' | 'xylophone' | 'marimba' | 'vibraphone'
-    | 'celesta' | 'tubular-bells' | 'tam-tam' | 'triangle' | 'harp'
+    | 'timpani'
+    | 'snare'
+    | 'bass-drum'
+    | 'cymbals'
+    | 'glockenspiel'
+    | 'xylophone'
+    | 'marimba'
+    | 'vibraphone'
+    | 'celesta'
+    | 'tubular-bells'
+    | 'tam-tam'
+    | 'triangle'
+    | 'harp'
     // Choir
-    | 'soprano' | 'alto' | 'tenor' | 'bass-voice';
+    | 'soprano'
+    | 'alto'
+    | 'tenor'
+    | 'bass-voice';
 
 // ---------------------------------------------------------------------------
 // Articulation types
 // ---------------------------------------------------------------------------
 
 export type ArticulationType =
-    | 'sustain' | 'sustain-non-vib' | 'con-sordino'
-    | 'flautando' | 'sul-tasto' | 'sul-ponticello' | 'harmonics'
-    | 'spiccato' | 'staccato' | 'staccatissimo'
-    | 'pizzicato' | 'bartok-pizz' | 'col-legno'
-    | 'tremolo' | 'trill-half' | 'trill-whole'
-    | 'legato' | 'legato-portamento'
-    | 'marcato' | 'sforzando'
+    | 'sustain'
+    | 'sustain-non-vib'
+    | 'con-sordino'
+    | 'flautando'
+    | 'sul-tasto'
+    | 'sul-ponticello'
+    | 'harmonics'
+    | 'spiccato'
+    | 'staccato'
+    | 'staccatissimo'
+    | 'pizzicato'
+    | 'bartok-pizz'
+    | 'col-legno'
+    | 'tremolo'
+    | 'trill-half'
+    | 'trill-whole'
+    | 'legato'
+    | 'legato-portamento'
+    | 'marcato'
+    | 'sforzando'
     | 'flutter-tongue'
-    | 'muted-straight' | 'muted-cup' | 'muted-harmon' | 'muted-plunger'
-    | 'crescendo' | 'decrescendo' | 'runs';
+    | 'muted-straight'
+    | 'muted-cup'
+    | 'muted-harmon'
+    | 'muted-plunger'
+    | 'crescendo'
+    | 'decrescendo'
+    | 'runs';
 
 export type ArticulationEntry = {
     type: ArticulationType;
@@ -58,17 +105,23 @@ export type ArticulationEntry = {
 // ---------------------------------------------------------------------------
 
 export type MicPositionType =
-    | 'close' | 'decca-tree' | 'room' | 'outrigger'
-    | 'balcony' | 'leader' | 'spot' | 'surround';
+    | 'close'
+    | 'decca-tree'
+    | 'room'
+    | 'outrigger'
+    | 'balcony'
+    | 'leader'
+    | 'spot'
+    | 'surround';
 
 export type MicPositionState = {
     type: MicPositionType;
     name: string;
-    volume: number;         // 0-1
-    pan: number;            // -1 to 1
-    delayMs: number;        // distance simulation (~1ms per foot)
+    volume: number; // 0-1
+    pan: number; // -1 to 1
+    delayMs: number; // distance simulation (~1ms per foot)
     enabled: boolean;
-    stereoWidth: number;    // 0-2
+    stereoWidth: number; // 0-2
     phaseInvert: boolean;
 };
 
@@ -80,11 +133,11 @@ export type CcCurve = 'linear' | 's-curve' | 'logarithmic';
 
 export type ExpressionConfig = {
     cc1Curve: CcCurve;
-    dynamicCrossfadeTime: number;   // seconds
-    vibratoRateMin: number;         // Hz
-    vibratoRateMax: number;         // Hz
-    vibratoDepthMax: number;        // cents
-    vibratoOnsetDelay: number;      // seconds
+    dynamicCrossfadeTime: number; // seconds
+    vibratoRateMin: number; // Hz
+    vibratoRateMax: number; // Hz
+    vibratoDepthMax: number; // cents
+    vibratoOnsetDelay: number; // seconds
 };
 
 // ---------------------------------------------------------------------------
@@ -104,12 +157,12 @@ export type LegatoConfig = {
 // ---------------------------------------------------------------------------
 
 export type HumanizeConfig = {
-    amount: number;             // 0-1 (master humanize knob)
-    timingMaxMs: number;        // max timing offset
-    tuningMaxCents: number;     // max tuning offset
-    dynamicMax: number;         // max dynamic variation (0-1)
-    vibratoVarMax: number;      // max vibrato variation (0-1)
-    seed: number;               // RNG seed for deterministic renders
+    amount: number; // 0-1 (master humanize knob)
+    timingMaxMs: number; // max timing offset
+    tuningMaxCents: number; // max tuning offset
+    dynamicMax: number; // max dynamic variation (0-1)
+    vibratoVarMax: number; // max vibrato variation (0-1)
+    seed: number; // RNG seed for deterministic renders
 };
 
 // ---------------------------------------------------------------------------
@@ -118,7 +171,7 @@ export type HumanizeConfig = {
 
 export type ReleaseTriggerConfig = {
     enabled: boolean;
-    durationScaleMax: number;   // seconds
+    durationScaleMax: number; // seconds
     dynamicScale: boolean;
 };
 
@@ -133,7 +186,7 @@ export type LevainPatch = {
     // Instrument identity
     instrumentId: InstrumentId;
     instrumentFamily: InstrumentFamily;
-    keyRange: [number, number];         // MIDI note range
+    keyRange: [number, number]; // MIDI note range
 
     // Articulations
     articulations: ArticulationEntry[];
@@ -155,7 +208,7 @@ export type LevainPatch = {
     releaseTriggers: ReleaseTriggerConfig;
 
     // Master controls
-    masterGain: number;                 // 0-2
+    masterGain: number; // 0-2
 
     // 8 assignable macros (musical labels)
     macros: [number, number, number, number, number, number, number, number];
@@ -199,9 +252,36 @@ export const DEFAULT_RELEASE_TRIGGER_CONFIG: ReleaseTriggerConfig = {
 };
 
 export const DEFAULT_MIC_POSITIONS: MicPositionState[] = [
-    { type: 'close', name: 'Close', volume: 0.8, pan: 0, delayMs: 0, enabled: true, stereoWidth: 1, phaseInvert: false },
-    { type: 'decca-tree', name: 'Decca Tree', volume: 0.6, pan: 0, delayMs: 10, enabled: true, stereoWidth: 1.2, phaseInvert: false },
-    { type: 'room', name: 'Room', volume: 0.3, pan: 0, delayMs: 30, enabled: false, stereoWidth: 1.5, phaseInvert: false },
+    {
+        type: 'close',
+        name: 'Close',
+        volume: 0.8,
+        pan: 0,
+        delayMs: 0,
+        enabled: true,
+        stereoWidth: 1,
+        phaseInvert: false,
+    },
+    {
+        type: 'decca-tree',
+        name: 'Decca Tree',
+        volume: 0.6,
+        pan: 0,
+        delayMs: 10,
+        enabled: true,
+        stereoWidth: 1.2,
+        phaseInvert: false,
+    },
+    {
+        type: 'room',
+        name: 'Room',
+        volume: 0.3,
+        pan: 0,
+        delayMs: 30,
+        enabled: false,
+        stereoWidth: 1.5,
+        phaseInvert: false,
+    },
 ];
 
 export function createDefaultPatch(instrumentId: InstrumentId = 'violin-1'): LevainPatch {
@@ -233,13 +313,29 @@ function getInstrumentFamily(id: InstrumentId): InstrumentFamily {
         return 'choir';
     }
     // Woodwinds before brass (to catch 'english-horn' before 'horn').
-    if (id.includes('flute') || id.includes('oboe') || id.includes('clarinet') || id.includes('bassoon') || id.includes('piccolo') || id === 'english-horn' || id === 'bass-clarinet' || id === 'contrabassoon') {
+    if (
+        id.includes('flute') ||
+        id.includes('oboe') ||
+        id.includes('clarinet') ||
+        id.includes('bassoon') ||
+        id.includes('piccolo') ||
+        id === 'english-horn' ||
+        id === 'bass-clarinet' ||
+        id === 'contrabassoon'
+    ) {
         return 'woodwinds';
     }
     if (id.includes('violin') || id.includes('viola') || id.includes('cello') || id === 'double-bass') {
         return 'strings';
     }
-    if (id === 'trumpet' || id === 'solo-trumpet' || id === 'horn' || id === 'solo-horn' || id.includes('trombone') || id.includes('tuba')) {
+    if (
+        id === 'trumpet' ||
+        id === 'solo-trumpet' ||
+        id === 'horn' ||
+        id === 'solo-horn' ||
+        id.includes('trombone') ||
+        id.includes('tuba')
+    ) {
         return 'brass';
     }
     return 'percussion';
@@ -330,9 +426,7 @@ function getDefaultArticulations(family: InstrumentFamily): ArticulationEntry[] 
                 { type: 'flutter-tongue', keyswitch: 28, name: 'Flutter', enabled: true },
             ];
         case 'percussion':
-            return [
-                { type: 'sustain', keyswitch: null, name: 'Hit', enabled: true },
-            ];
+            return [{ type: 'sustain', keyswitch: null, name: 'Hit', enabled: true }];
         case 'choir':
             return [
                 { type: 'sustain', keyswitch: 24, name: 'Ah', enabled: true },

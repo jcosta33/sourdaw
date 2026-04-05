@@ -117,8 +117,8 @@ export const BeatRulerBar = (): React.ReactElement => {
                 ctx.fillStyle = is8BarBoundary
                     ? 'rgba(224, 224, 224, 0.7)'
                     : is4BarBoundary
-                        ? 'rgba(224, 224, 224, 0.55)'
-                        : 'rgba(224, 224, 224, 0.35)';
+                      ? 'rgba(224, 224, 224, 0.55)'
+                      : 'rgba(224, 224, 224, 0.35)';
                 ctx.fillText(String(bar + 1), barX + 3, 11);
             }
 
@@ -129,9 +129,7 @@ export const BeatRulerBar = (): React.ReactElement => {
                     // Beat 2 (halfway through bar) gets a taller tick
                     const isHalf = beat === Math.floor(beatsPerBar / 2);
                     const tickH = isHalf ? 7 : 4;
-                    ctx.strokeStyle = isHalf
-                        ? 'rgba(255, 255, 255, 0.12)'
-                        : 'rgba(255, 255, 255, 0.07)';
+                    ctx.strokeStyle = isHalf ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.07)';
                     ctx.lineWidth = 1;
                     ctx.beginPath();
                     ctx.moveTo(beatX, h - tickH);

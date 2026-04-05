@@ -82,11 +82,17 @@ export const pushStore = new Store<PushState>(logger, {
         model: null,
         padMode: 'session',
         pads: Array.from({ length: 64 }, (_, i) => ({
-            index: i, midiNote: 36 + i, velocity: 0,
-            color: { r: 0, g: 0, b: 0 }, aftertouch: 0,
+            index: i,
+            midiNote: 36 + i,
+            velocity: 0,
+            color: { r: 0, g: 0, b: 0 },
+            aftertouch: 0,
         })),
         encoders: Array.from({ length: 8 }, (_, i) => ({
-            index: i, value: 64, parameterPath: null, label: '',
+            index: i,
+            value: 64,
+            parameterPath: null,
+            label: '',
         })),
         display: { lines: ['', '', '', ''] },
         rootNote: 0, // C

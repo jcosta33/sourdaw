@@ -17,9 +17,7 @@ export const ClipMidiAiSection = ({ clipId }: ClipMidiAiSectionProps): ReactElem
         setIsGeneratingVariations(true);
         try {
             await generateMidiVariations(clipId);
-            notifyAiChange('MIDI variations generated', [
-                '3 unique musical variations created as alternative clips',
-            ]);
+            notifyAiChange('MIDI variations generated', ['3 unique musical variations created as alternative clips']);
         } catch (err) {
             notifyUser(err instanceof Error ? err.message : 'Variation generation failed', 'error');
         } finally {

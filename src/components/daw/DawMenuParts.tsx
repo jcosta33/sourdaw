@@ -3,11 +3,7 @@ import { cn } from '#/helpers/Styles/cn';
 
 type DawMenuSectionLabelProps = HTMLAttributes<HTMLParagraphElement>;
 
-export const DawMenuSectionLabel = ({
-    className,
-    children,
-    ...props
-}: DawMenuSectionLabelProps): ReactElement => (
+export const DawMenuSectionLabel = ({ className, children, ...props }: DawMenuSectionLabelProps): ReactElement => (
     <p
         className={cn('px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground', className)}
         {...props}
@@ -24,11 +20,7 @@ export const DawMenuSeparator = ({ className, ...props }: DawMenuSeparatorProps)
 
 type DawMenuMutedRowProps = HTMLAttributes<HTMLDivElement>;
 
-export const DawMenuMutedRow = ({
-    className,
-    children,
-    ...props
-}: DawMenuMutedRowProps): ReactElement => (
+export const DawMenuMutedRow = ({ className, children, ...props }: DawMenuMutedRowProps): ReactElement => (
     <div className={cn('px-3 py-1 text-[10px] text-muted-foreground', className)} {...props}>
         {children}
     </div>
@@ -38,12 +30,7 @@ type DawMenuDisabledRowProps = HTMLAttributes<HTMLDivElement> & {
     icon?: ReactNode;
 };
 
-export const DawMenuDisabledRow = ({
-    icon,
-    className,
-    children,
-    ...props
-}: DawMenuDisabledRowProps): ReactElement => (
+export const DawMenuDisabledRow = ({ icon, className, children, ...props }: DawMenuDisabledRowProps): ReactElement => (
     <div
         className={cn('flex cursor-not-allowed items-center gap-2 px-3 py-2 opacity-50', className)}
         aria-disabled="true"

@@ -272,7 +272,12 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 value={`${formatDb(state.truePeakDb)} dBTP`}
                                 detail="True peak ceiling"
                             />
-                            <DawPluginMetricTile className="proof-window" label="LRA" value={`${state.lra.toFixed(1)} LU`} detail="Loudness range" />
+                            <DawPluginMetricTile
+                                className="proof-window"
+                                label="LRA"
+                                value={`${state.lra.toFixed(1)} LU`}
+                                detail="Loudness range"
+                            />
                         </DawPluginMetricStrip>
                     </div>
 
@@ -347,7 +352,12 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             >
                                 {state.abBypass ? 'A / dry' : 'B / wet'}
                             </DawPluginChip>
-                            <DawPluginChip type="button" tone="mint" size="sm" onClick={() => resetIntegratedMeters(deviceId)}>
+                            <DawPluginChip
+                                type="button"
+                                tone="mint"
+                                size="sm"
+                                onClick={() => resetIntegratedMeters(deviceId)}
+                            >
                                 Reset loudness
                             </DawPluginChip>
                             <div className="flex flex-col items-center gap-1 pt-1">
@@ -595,15 +605,39 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Module controls — scrollable */}
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
-                <ProofEqSection patch={patch} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
+                <ProofEqSection
+                    patch={patch}
+                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
+                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofDynSection patch={patch} dynGr={state.dynGr} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
+                <ProofDynSection
+                    patch={patch}
+                    dynGr={state.dynGr}
+                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
+                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofImagerSection patch={patch} correlation={state.correlation} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
+                <ProofImagerSection
+                    patch={patch}
+                    correlation={state.correlation}
+                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
+                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofExciterSection patch={patch} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
+                <ProofExciterSection
+                    patch={patch}
+                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
+                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofLimiterSection patch={patch} limiterGrDb={state.limiterGrDb} truePeakDb={state.truePeakDb} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
+                <ProofLimiterSection
+                    patch={patch}
+                    limiterGrDb={state.limiterGrDb}
+                    truePeakDb={state.truePeakDb}
+                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
+                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                />
             </div>
 
             {/* Right: Loudness history + summary */}

@@ -2,12 +2,12 @@ export type ProofChamberAlgorithm = 'Dattorro Plate' | 'FDN Room' | 'Spring' | '
 
 export interface ProofChamberEngineState {
     algorithm: ProofChamberAlgorithm;
-    
+
     // Level 1 Parameters
     mix: number; // 0.0 - 1.0
     size: number; // 0.0 - 1.0 (abstract dial scaling decay & mod)
     decaySeconds: number; // 0.1s to 30.0s
-    
+
     // Level 2 Parameters (Shape)
     preDelayMs: number; // 0 - 500ms
     diffusion: number; // 0.0 - 1.0
@@ -40,6 +40,6 @@ export function createDefaultChamberState(id: string): ProofChamberPluginState {
             modulationDepth: 0.3,
             bandwidth: 0.9995,
             damping: 0.0005,
-        }
+        },
     };
 }

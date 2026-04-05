@@ -96,7 +96,11 @@ export function setToasterPadParam(deviceId: string, padIndex: number, key: keyo
     }
 }
 
-export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(deviceId: string, key: K, value: ToasterKit[K]): void {
+export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(
+    deviceId: string,
+    key: K,
+    value: ToasterKit[K]
+): void {
     updateKit({ [key]: value } as Partial<ToasterKit>);
 
     const ref = findDeviceRef(deviceId);

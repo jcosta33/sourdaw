@@ -705,7 +705,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     rhodesTrack.pan = 35;
     organTrack.gain = 0.35;
     organTrack.pan = -20;
-    warmPadTrack.gain = 0.20;
+    warmPadTrack.gain = 0.2;
     warmPadTrack.pan = 30;
     shimmerPadTrack.gain = 0.19;
     shimmerPadTrack.pan = -45;

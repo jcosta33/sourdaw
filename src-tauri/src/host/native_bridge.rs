@@ -6,11 +6,10 @@
 ///
 /// RT-safety: all scratch buffers are preallocated. No heap allocation occurs
 /// in any `NativePlugin` method.
-
-use daw_engine::plugin_slot::{NativePlugin, MidiNoteEvent, TransportState};
+use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
+use daw_plugin_host::AudioPlugin;
 use daw_plugin_host::ClapWrapper;
 use daw_plugin_host::Vst3Wrapper;
-use daw_plugin_host::AudioPlugin;
 
 /// Maximum block size the native engine produces (matches ClapWrapper activation).
 const MAX_BUFFER: usize = 4096;
@@ -41,7 +40,11 @@ impl NativePlugin for ClapPluginSlot {
         let n = num_samples.min(MAX_BUFFER);
         let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
         // Destructure to satisfy the borrow checker: wrapper + scratch are separate fields.
-        let (wrapper, out_l, out_r) = (&mut self.wrapper, &mut self.out_l_scratch, &mut self.out_r_scratch);
+        let (wrapper, out_l, out_r) = (
+            &mut self.wrapper,
+            &mut self.out_l_scratch,
+            &mut self.out_r_scratch,
+        );
         {
             let mut outputs: [&mut [f32]; 2] = [&mut out_l[..n], &mut out_r[..n]];
             wrapper.process(&inputs, &mut outputs, n);
@@ -68,7 +71,11 @@ impl NativePlugin for ClapPluginSlot {
         }
 
         let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
-        let (wrapper, out_l, out_r) = (&mut self.wrapper, &mut self.out_l_scratch, &mut self.out_r_scratch);
+        let (wrapper, out_l, out_r) = (
+            &mut self.wrapper,
+            &mut self.out_l_scratch,
+            &mut self.out_r_scratch,
+        );
         {
             let mut outputs: [&mut [f32]; 2] = [&mut out_l[..n], &mut out_r[..n]];
             wrapper.process_with_midi(&inputs, &mut outputs, n, &event_buf[..count]);

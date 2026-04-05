@@ -22,34 +22,69 @@ const BYTES_PER_SLOT = FLOATS_PER_SLOT * Float32Array.BYTES_PER_ELEMENT;
 // These MUST match the write order in each AudioWorkletProcessor.
 
 export const GRINDER_IDX = Object.freeze({
-    inputDb: 0, preampDb: 1, powerAmpDb: 2, outputDb: 3,
-    gateOpen: 4, gateEnvelopeDb: 5, sagVoltage: 6, latency: 7,
-    neuralCpuPercent: 8, neuralWarmupProgress: 9,
+    inputDb: 0,
+    preampDb: 1,
+    powerAmpDb: 2,
+    outputDb: 3,
+    gateOpen: 4,
+    gateEnvelopeDb: 5,
+    sagVoltage: 6,
+    latency: 7,
+    neuralCpuPercent: 8,
+    neuralWarmupProgress: 9,
 });
 
 export const BACTERIA_IDX = Object.freeze({
-    inputDb: 0, outputDb: 1, latency: 2,
+    inputDb: 0,
+    outputDb: 1,
+    latency: 2,
 });
 
 export const GLUTEN_IDX = Object.freeze({
-    grDb: 0, inputDb: 1, outputDb: 2, crest: 3, phaseCorr: 4, latency: 5,
+    grDb: 0,
+    inputDb: 1,
+    outputDb: 2,
+    crest: 3,
+    phaseCorr: 4,
+    latency: 5,
 });
 
 /** active (0/1), then pitch fields. noteName is derived from noteIndex on the main thread. */
 export const SCORING_IDX = Object.freeze({
-    active: 0, frequency: 1, cents: 2, confidence: 3, noteIndex: 4, octave: 5, midiNote: 6,
+    active: 0,
+    frequency: 1,
+    cents: 2,
+    confidence: 3,
+    noteIndex: 4,
+    octave: 5,
+    midiNote: 6,
 });
 
 export const PROOF_IDX = Object.freeze({
-    inputLufs: 0, outputLufs: 1, outputStLufs: 2, integratedLufs: 3,
-    truePeakDb: 4, lra: 5, correlation: 6, limiterGrDb: 7,
-    dynGr0: 8, dynGr1: 9, dynGr2: 10, dynGr3: 11,
-    tap0PeakL: 12, tap0PeakR: 13,
-    tap1PeakL: 14, tap1PeakR: 15,
-    tap2PeakL: 16, tap2PeakR: 17,
-    tap3PeakL: 18, tap3PeakR: 19,
-    tap4PeakL: 20, tap4PeakR: 21,
-    tap5PeakL: 22, tap5PeakR: 23,
+    inputLufs: 0,
+    outputLufs: 1,
+    outputStLufs: 2,
+    integratedLufs: 3,
+    truePeakDb: 4,
+    lra: 5,
+    correlation: 6,
+    limiterGrDb: 7,
+    dynGr0: 8,
+    dynGr1: 9,
+    dynGr2: 10,
+    dynGr3: 11,
+    tap0PeakL: 12,
+    tap0PeakR: 13,
+    tap1PeakL: 14,
+    tap1PeakR: 15,
+    tap2PeakL: 16,
+    tap2PeakR: 17,
+    tap3PeakL: 18,
+    tap3PeakR: 19,
+    tap4PeakL: 20,
+    tap4PeakR: 21,
+    tap5PeakL: 22,
+    tap5PeakR: 23,
     latency: 24,
 });
 

@@ -25,9 +25,7 @@ const subscribeTrackStore = (cb: () => void) => trackStore.subscribe(() => cb())
 const getTrackStoreSnapshot = (): Track[] => trackStore.value?.tracks ?? [];
 
 /** Lit-edge separator that follows the NW light source model from the design system */
-const Sep = (): ReactElement => (
-    <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />
-);
+const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
 
 export const TransportBar = (): ReactElement => {
     const {
@@ -62,9 +60,7 @@ export const TransportBar = (): ReactElement => {
                 boxShadow: isRecording
                     ? 'inset 0 -1px 3px rgba(0,0,0,0.3), 0 1px 0 rgba(255,64,50,0.08), inset 0 1px 0 rgba(255,64,50,0.06)'
                     : 'inset 0 -1px 3px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.03)',
-                borderTop: isRecording
-                    ? '1px solid rgba(255,64,50,0.12)'
-                    : '1px solid rgba(255,255,255,0.04)',
+                borderTop: isRecording ? '1px solid rgba(255,64,50,0.12)' : '1px solid rgba(255,255,255,0.04)',
             }}
             role="toolbar"
             aria-label="Transport controls"
@@ -102,12 +98,13 @@ export const TransportBar = (): ReactElement => {
             <div className="w-full h-px bg-black/40 shadow-[0_1px_0_rgba(255,255,255,0.02)] shrink-0" />
 
             {/* ── ROW 2: Action Layer (Transport, Tools, Chronology) ── */}
-            <div className="flex w-full flex-1 min-h-[46px] items-center px-2"
-                 style={{
-                     background: isRecording 
-                        ? 'radial-gradient(ellipse at top, rgba(255,64,50,0.1) 0%, transparent 80%)' 
-                        : 'none'
-                 }}
+            <div
+                className="flex w-full flex-1 min-h-[46px] items-center px-2"
+                style={{
+                    background: isRecording
+                        ? 'radial-gradient(ellipse at top, rgba(255,64,50,0.1) 0%, transparent 80%)'
+                        : 'none',
+                }}
             >
                 {/* Left wing: Time and Tempo */}
                 <div className="flex flex-1 basis-0 justify-start items-center gap-1 min-w-0">

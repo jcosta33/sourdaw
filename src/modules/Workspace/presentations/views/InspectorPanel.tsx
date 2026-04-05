@@ -20,7 +20,8 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
     const { tracks, selectedTrackId } = useTracks();
     const masterTrack = tracks.find((t) => t.kind === 'master');
 
-    const selectedTrack = (selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null) ?? masterTrack ?? null;
+    const selectedTrack =
+        (selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null) ?? masterTrack ?? null;
     const wsSelectedClipId = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(cb),
         () => workspaceStore.value?.selectedClipId ?? null
@@ -39,7 +40,9 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             className="transition-[width,min-width] duration-200 ease-out"
             style={{
                 ...style,
-                width: isDeviceView ? Math.max((style?.width as number) ?? 260, 320) : (style?.width as number) ?? 260,
+                width: isDeviceView
+                    ? Math.max((style?.width as number) ?? 260, 320)
+                    : ((style?.width as number) ?? 260),
                 minWidth: isDeviceView ? 300 : 200,
             }}
             aria-label="Inspector panel"
@@ -63,11 +66,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                         onBack={() => setSelectedDeviceId(null)}
                     />
                 ) : selectedClip && selectedTrack ? (
-                    <ClipInspector
-                        clip={selectedClip}
-                        trackId={selectedTrack.id}
-                        onBack={clearClipSelection}
-                    />
+                    <ClipInspector clip={selectedClip} trackId={selectedTrack.id} onBack={clearClipSelection} />
                 ) : selectedTrack ? (
                     <TrackInspector
                         track={selectedTrack}

@@ -23,20 +23,30 @@ export function setFillActive(active: boolean): void {
 }
 
 function shouldTrigger(step: Step, loopIndex: number): boolean {
-    if (!step.active) { return false; }
+    if (!step.active) {
+        return false;
+    }
 
     switch (step.condition) {
         case 'fill':
-            if (!fillActive) { return false; }
+            if (!fillActive) {
+                return false;
+            }
             break;
         case 'not-fill':
-            if (fillActive) { return false; }
+            if (fillActive) {
+                return false;
+            }
             break;
         case 'first':
-            if (loopIndex > 0) { return false; }
+            if (loopIndex > 0) {
+                return false;
+            }
             break;
         case 'not-first':
-            if (loopIndex === 0) { return false; }
+            if (loopIndex === 0) {
+                return false;
+            }
             break;
         default:
             break;
@@ -50,13 +60,19 @@ function shouldTrigger(step: Step, loopIndex: number): boolean {
 }
 
 function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
-    if (!running) { return; }
+    if (!running) {
+        return;
+    }
 
     const state = toasterStore.value;
-    if (!state) { return; }
+    if (!state) {
+        return;
+    }
 
     const sourcePattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
-    if (!sourcePattern) { return; }
+    if (!sourcePattern) {
+        return;
+    }
 
     let pattern: Pattern = sourcePattern;
     if (state.morph.enabled && state.morph.targetPatternId) {
@@ -67,7 +83,7 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
     }
 
     const totalSteps = pattern.stepsPerBar * pattern.bars;
-    const stepDurationMs = (60_000 / bpm) / stepsPerBeat;
+    const stepDurationMs = 60_000 / bpm / stepsPerBeat;
 
     const toasterDeviceId = getFirstToasterDeviceId();
 
@@ -75,8 +91,12 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         const trackSteps = track.stepsOverride ?? totalSteps;
         const stepIdx = currentStep % trackSteps;
         const step = track.steps[stepIdx];
-        if (!step) { continue; }
-        if (!shouldTrigger(step, playCount)) { continue; }
+        if (!step) {
+            continue;
+        }
+        if (!shouldTrigger(step, playCount)) {
+            continue;
+        }
 
         const vel = Math.round(step.velocity * 127);
 
@@ -91,8 +111,15 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         if (toasterDeviceId) {
             const locks = step.paramLocks;
             for (const [key, value] of Object.entries(locks)) {
-                if (key.startsWith('_')) { continue; }
-                setToasterPadParam(toasterDeviceId, track.padIndex, key as keyof import('../models/ToasterKit').PadState, value);
+                if (key.startsWith('_')) {
+                    continue;
+                }
+                setToasterPadParam(
+                    toasterDeviceId,
+                    track.padIndex,
+                    key as keyof import('../models/ToasterKit').PadState,
+                    value
+                );
             }
         }
 
@@ -132,7 +159,9 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
     // Schedule next step using AudioContext clock to prevent drift
     const stepDurationSec = stepDurationMs / 1000;
     const nextStep = (currentStep + 1) % totalSteps;
-    if (nextStep === 0) { playCount++; }
+    if (nextStep === 0) {
+        playCount++;
+    }
 
     nextTickTime += stepDurationSec;
     const now = getAudioTime();

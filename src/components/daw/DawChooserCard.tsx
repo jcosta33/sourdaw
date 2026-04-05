@@ -44,13 +44,23 @@ export const DawChooserCard = ({
 
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                    <span className={cn('leading-tight', compact ? 'text-[11px] font-medium' : 'text-[12px] font-semibold')}>
+                    <span
+                        className={cn(
+                            'leading-tight',
+                            compact ? 'text-[11px] font-medium' : 'text-[12px] font-semibold'
+                        )}
+                    >
                         {title}
                     </span>
                     {badge}
                 </div>
                 {description ? (
-                    <div className={cn('mt-0.5 leading-tight text-muted-foreground/70', compact ? 'text-[9px]' : 'text-[10px]')}>
+                    <div
+                        className={cn(
+                            'mt-0.5 leading-tight text-muted-foreground/70',
+                            compact ? 'text-[9px]' : 'text-[10px]'
+                        )}
+                    >
                         {description}
                     </div>
                 ) : null}

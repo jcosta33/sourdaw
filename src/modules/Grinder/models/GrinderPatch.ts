@@ -318,9 +318,7 @@ export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch)
         prePedals: (patch.prePedals ?? DEFAULT_PATCH.prePedals).map((pedal, index) => clonePedal(pedal, index)),
         mic1: cloneMic(patch.mic1, DEFAULT_PATCH.mic1),
         mic2: cloneMic(patch.mic2, DEFAULT_PATCH.mic2),
-        postPedals: (patch.postPedals ?? DEFAULT_PATCH.postPedals).map((pedal, index) =>
-            clonePedal(pedal, index)
-        ),
+        postPedals: (patch.postPedals ?? DEFAULT_PATCH.postPedals).map((pedal, index) => clonePedal(pedal, index)),
         snapshots: (patch.snapshots ?? DEFAULT_PATCH.snapshots).map((snapshot, index) =>
             cloneSnapshot(snapshot, index)
         ),
@@ -382,7 +380,16 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     // Power amp
     { id: 'master', label: 'Master', min: 0, max: 10, default: 5, unit: '', step: 0.1, group: 'power' },
     { id: 'sagAmount', label: 'Sag', min: 0, max: 1, default: 0.4, unit: '', step: 0.01, group: 'power' },
-    { id: 'sagRecovery', label: 'Sag Recovery', min: 10, max: 2000, default: 200, unit: 'ms', group: 'power', scaling: 'log' },
+    {
+        id: 'sagRecovery',
+        label: 'Sag Recovery',
+        min: 10,
+        max: 2000,
+        default: 200,
+        unit: 'ms',
+        group: 'power',
+        scaling: 'log',
+    },
     { id: 'negFeedback', label: 'NFB', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'power' },
 
     // Transformer
@@ -418,7 +425,17 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     },
 
     // Cabinet
-    { id: 'cabResonanceFreq', label: 'Cab Res', min: 40, max: 200, default: 80, unit: 'Hz', step: 1, group: 'cabinet', scaling: 'log' },
+    {
+        id: 'cabResonanceFreq',
+        label: 'Cab Res',
+        min: 40,
+        max: 200,
+        default: 80,
+        unit: 'Hz',
+        step: 1,
+        group: 'cabinet',
+        scaling: 'log',
+    },
     { id: 'cabResonanceQ', label: 'Cab Q', min: 0.5, max: 10, default: 2, unit: '', step: 0.1, group: 'cabinet' },
     { id: 'cabDamping', label: 'Damping', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'cabinet' },
     { id: 'coneBreakup', label: 'Breakup', min: 0, max: 1, default: 0.3, unit: '', step: 0.01, group: 'cabinet' },

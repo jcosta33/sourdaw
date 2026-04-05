@@ -17,17 +17,17 @@ const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 
 
 function syncToasterPadParam(trackId: string, paramName: string, value: number): void {
     const tracks = trackStore.value?.tracks || [];
-    const track = tracks.find(t => t.id === trackId);
+    const track = tracks.find((t) => t.id === trackId);
     if (!track?.parentId) return;
 
-    const parent = tracks.find(t => t.id === track.parentId);
+    const parent = tracks.find((t) => t.id === track.parentId);
     if (!parent) return;
-    
-    const toasterDevice = parent.devices.find(d => d.type === 'toaster');
-    
+
+    const toasterDevice = parent.devices.find((d) => d.type === 'toaster');
+
     if (toasterDevice) {
-        const children = tracks.filter(t => t.parentId === parent.id);
-        const padIndex = children.findIndex(t => t.id === trackId);
+        const children = tracks.filter((t) => t.parentId === parent.id);
+        const padIndex = children.findIndex((t) => t.id === trackId);
         if (padIndex !== -1) {
             updateDeviceParam(parent.id, toasterDevice.id, `pad_${padIndex}_${paramName}`, value);
         }

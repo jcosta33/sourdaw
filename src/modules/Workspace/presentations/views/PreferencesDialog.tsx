@@ -37,20 +37,10 @@ import {
     type BufferSizeOption,
     type SampleRateOption,
 } from '../../models/Preferences';
-import {
-    configureCloudApi,
-    removeCloudApi,
-    isCloudAvailable,
-} from '#/modules/AiRuntime/useCases/cloudApiManagement';
+import { configureCloudApi, removeCloudApi, isCloudAvailable } from '#/modules/AiRuntime/useCases/cloudApiManagement';
 import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
 import { cn } from '#/helpers/Styles/cn';
-import {
-    SectionTitle,
-    FieldGroup,
-    ToggleRow,
-    VoiceKeyEditor,
-    GridSubdivisionSection,
-} from './preferencesShared';
+import { SectionTitle, FieldGroup, ToggleRow, VoiceKeyEditor, GridSubdivisionSection } from './preferencesShared';
 import { ShortcutsSection } from './ShortcutsSection';
 import { setSoloMode } from '../../useCases/togglePanel/panelToggles';
 
@@ -308,11 +298,23 @@ const GeneralSection = ({ prefs, update }: SectionProps): ReactElement => {
                         Determines how soloed tracks affect others. SIP (Solo In Place) is standard.
                     </p>
                     <div className="flex gap-1">
-                        {([
-                            { value: 'sip' as SoloModePreference, label: 'SIP', desc: 'Solo In Place — mute all others' },
-                            { value: 'afl' as SoloModePreference, label: 'AFL', desc: 'After Fader Listen — monitor at fader gain' },
-                            { value: 'pfl' as SoloModePreference, label: 'PFL', desc: 'Pre-Fader Listen — monitor at unity gain' },
-                        ]).map((mode) => (
+                        {[
+                            {
+                                value: 'sip' as SoloModePreference,
+                                label: 'SIP',
+                                desc: 'Solo In Place — mute all others',
+                            },
+                            {
+                                value: 'afl' as SoloModePreference,
+                                label: 'AFL',
+                                desc: 'After Fader Listen — monitor at fader gain',
+                            },
+                            {
+                                value: 'pfl' as SoloModePreference,
+                                label: 'PFL',
+                                desc: 'Pre-Fader Listen — monitor at unity gain',
+                            },
+                        ].map((mode) => (
                             <Tooltip key={mode.value}>
                                 <TooltipTrigger asChild>
                                     <Button
@@ -416,12 +418,16 @@ const LayoutSection = ({ prefs, update }: SectionProps): ReactElement => (
                             variant={prefs.panelPlacementSidebar === 'left' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementSidebar: 'left' })}
-                        >Left</Button>
+                        >
+                            Left
+                        </Button>
                         <Button
                             variant={prefs.panelPlacementSidebar === 'right' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementSidebar: 'right' })}
-                        >Right</Button>
+                        >
+                            Right
+                        </Button>
                     </div>
                 </div>
 
@@ -432,12 +438,16 @@ const LayoutSection = ({ prefs, update }: SectionProps): ReactElement => (
                             variant={prefs.panelPlacementInspector === 'left' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementInspector: 'left' })}
-                        >Left</Button>
+                        >
+                            Left
+                        </Button>
                         <Button
                             variant={prefs.panelPlacementInspector === 'right' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementInspector: 'right' })}
-                        >Right</Button>
+                        >
+                            Right
+                        </Button>
                     </div>
                 </div>
 
@@ -448,12 +458,16 @@ const LayoutSection = ({ prefs, update }: SectionProps): ReactElement => (
                             variant={prefs.panelPlacementChat === 'left' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementChat: 'left' })}
-                        >Left</Button>
+                        >
+                            Left
+                        </Button>
                         <Button
                             variant={prefs.panelPlacementChat === 'right' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementChat: 'right' })}
-                        >Right</Button>
+                        >
+                            Right
+                        </Button>
                     </div>
                 </div>
 
@@ -464,12 +478,16 @@ const LayoutSection = ({ prefs, update }: SectionProps): ReactElement => (
                             variant={prefs.panelPlacementAi === 'left' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementAi: 'left' })}
-                        >Left</Button>
+                        >
+                            Left
+                        </Button>
                         <Button
                             variant={prefs.panelPlacementAi === 'right' ? 'secondary' : 'outline'}
                             size="xs"
                             onClick={() => update({ panelPlacementAi: 'right' })}
-                        >Right</Button>
+                        >
+                            Right
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -605,9 +623,11 @@ const AiSection = (): ReactElement => {
                     <span
                         className={cn(
                             'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium',
-                            backend === 'native' && 'bg-[var(--color-state-success)]/15 text-[var(--color-state-success)]',
+                            backend === 'native' &&
+                                'bg-[var(--color-state-success)]/15 text-[var(--color-state-success)]',
                             backend === 'webllm' && 'bg-[var(--color-accent-cyan)]/15 text-[var(--color-accent-cyan)]',
-                            backend === 'cloud' && 'bg-[var(--color-accent-lavender)]/15 text-[var(--color-accent-lavender)]',
+                            backend === 'cloud' &&
+                                'bg-[var(--color-accent-lavender)]/15 text-[var(--color-accent-lavender)]',
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
@@ -675,7 +695,13 @@ const AiSection = (): ReactElement => {
                 <div className="flex items-center justify-between mt-2">
                     <span className="text-[10px] text-muted-foreground">
                         Status:{' '}
-                        <span className={isCloudAvailable() ? 'text-[var(--color-state-success)]' : 'text-[var(--color-state-warning)]'}>
+                        <span
+                            className={
+                                isCloudAvailable()
+                                    ? 'text-[var(--color-state-success)]'
+                                    : 'text-[var(--color-state-warning)]'
+                            }
+                        >
                             {isCloudAvailable() ? 'Connected' : 'Not configured'}
                         </span>
                     </span>

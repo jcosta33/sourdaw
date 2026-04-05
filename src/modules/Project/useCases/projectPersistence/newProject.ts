@@ -8,10 +8,17 @@ import { clearUndoHistory, resetModuleStoresToDefault } from './helpers';
 
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
 import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
+import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
 
 let stopAutoSave: (() => void) | null = null;
 
 export function newProject(name = 'Untitled Project'): void {
+    // Stop any in-flight playback and tear down the previous project's audio
+    // graph before we start mutating stores for the new project.
+    stopPlayback();
+    resetAudioGraph();
+
     // 1. Initialize CRDT Document structure so subsequent .set() calls persist
     void createCrdtProject(name).catch((error) => {
         console.error('[newProject] Failed to initialize CRDT structure:', error);

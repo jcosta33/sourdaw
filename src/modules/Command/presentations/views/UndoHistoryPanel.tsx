@@ -103,7 +103,10 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                                     key={entry.id}
                                     active={i === 0}
                                     title={entry.label}
-                                    titleClassName={cn('text-xs', i === 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                    titleClassName={cn(
+                                        'text-xs',
+                                        i === 0 ? 'text-foreground' : 'text-muted-foreground'
+                                    )}
                                     endSlot={
                                         entry.source !== 'manual' ? (
                                             <DawMicroBadge className="px-1" tone="muted">

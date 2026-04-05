@@ -19,7 +19,10 @@ export const MacroStrip = ({ values, onChange, compact }: MacroStripProps): Reac
                 key={label}
                 value={values[i] ?? 0.5}
                 onChange={(v) => onChange(i, v)}
-                min={0} max={1} step={0.01} defaultValue={0.5}
+                min={0}
+                max={1}
+                step={0.01}
+                defaultValue={0.5}
                 size={compact ? 'sm' : 'md'}
                 label={label}
             />

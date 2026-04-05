@@ -95,11 +95,15 @@ export const generationHandlers = {
                 return;
             }
 
-            applyDrumPatternToTrack(trackId, {
-                style,
-                bars: a.payload.bars,
-                density: a.payload.density,
-            }, getPlayheadBeat());
+            applyDrumPatternToTrack(
+                trackId,
+                {
+                    style,
+                    bars: a.payload.bars,
+                    density: a.payload.density,
+                },
+                getPlayheadBeat()
+            );
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} drum pattern` }),
         undoable: true,
@@ -120,12 +124,16 @@ export const generationHandlers = {
                 return;
             }
 
-            applyMelodyToTrack(trackId, {
-                style,
-                key,
-                scale,
-                bars: a.payload.bars,
-            }, getPlayheadBeat());
+            applyMelodyToTrack(
+                trackId,
+                {
+                    style,
+                    key,
+                    scale,
+                    bars: a.payload.bars,
+                },
+                getPlayheadBeat()
+            );
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} melody` }),
         undoable: true,
@@ -150,13 +158,17 @@ export const generationHandlers = {
                 return;
             }
 
-            applyChordProgressionToTrack(trackId, {
-                style,
-                key,
-                scale,
-                bars: a.payload.bars,
-                voicing,
-            }, getPlayheadBeat());
+            applyChordProgressionToTrack(
+                trackId,
+                {
+                    style,
+                    key,
+                    scale,
+                    bars: a.payload.bars,
+                    voicing,
+                },
+                getPlayheadBeat()
+            );
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} chord progression` }),
         undoable: true,

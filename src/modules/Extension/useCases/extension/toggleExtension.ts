@@ -8,8 +8,6 @@ export function toggleExtension(extensionId: string): void {
 
     extensionStore.set({
         ...state,
-        installed: state.installed.map((e) =>
-            e.manifest.id === extensionId ? { ...e, enabled: !e.enabled } : e
-        ),
+        installed: state.installed.map((e) => (e.manifest.id === extensionId ? { ...e, enabled: !e.enabled } : e)),
     });
 }

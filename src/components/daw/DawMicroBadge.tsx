@@ -11,7 +11,8 @@ const TONE_CLASS_NAMES: Record<NonNullable<DawMicroBadgeProps['tone']>, string> 
     primary: 'border-primary/30 bg-primary/12 text-primary',
     cyan: 'border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]',
     peach: 'border-[var(--color-accent-peach)]/30 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]',
-    success: 'border-[var(--color-state-success)]/30 bg-[var(--color-state-success)]/12 text-[var(--color-state-success)]',
+    success:
+        'border-[var(--color-state-success)]/30 bg-[var(--color-state-success)]/12 text-[var(--color-state-success)]',
     danger: 'border-[var(--color-state-danger)]/30 bg-[var(--color-state-danger)]/12 text-[var(--color-state-danger)]',
 };
 

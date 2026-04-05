@@ -128,13 +128,17 @@ export const ProofChamber = ({ instanceId }: { instanceId: string }): ReactEleme
                         <KnobControl
                             label="Mix"
                             value={engineState.mix * 100}
-                            onChange={(value) => updateChamberEngine(instanceId, (state) => ({ ...state, mix: value / 100 }))}
+                            onChange={(value) =>
+                                updateChamberEngine(instanceId, (state) => ({ ...state, mix: value / 100 }))
+                            }
                             displayValue={`${(engineState.mix * 100).toFixed(0)}%`}
                         />
                         <KnobControl
                             label="Size"
                             value={engineState.size * 100}
-                            onChange={(value) => updateChamberEngine(instanceId, (state) => ({ ...state, size: value / 100 }))}
+                            onChange={(value) =>
+                                updateChamberEngine(instanceId, (state) => ({ ...state, size: value / 100 }))
+                            }
                             displayValue={`${(engineState.size * 100).toFixed(0)}%`}
                         />
                         <KnobControl
@@ -142,7 +146,9 @@ export const ProofChamber = ({ instanceId }: { instanceId: string }): ReactEleme
                             value={engineState.decaySeconds}
                             min={0.1}
                             max={30}
-                            onChange={(value) => updateChamberEngine(instanceId, (state) => ({ ...state, decaySeconds: value }))}
+                            onChange={(value) =>
+                                updateChamberEngine(instanceId, (state) => ({ ...state, decaySeconds: value }))
+                            }
                             displayValue={`${engineState.decaySeconds.toFixed(1)}s`}
                         />
                         <KnobControl
@@ -200,7 +206,10 @@ export const ProofChamber = ({ instanceId }: { instanceId: string }): ReactEleme
                                 min={0}
                                 max={100}
                                 onChange={(value) =>
-                                    updateChamberEngine(instanceId, (state) => ({ ...state, modulationDepth: value / 100 }))
+                                    updateChamberEngine(instanceId, (state) => ({
+                                        ...state,
+                                        modulationDepth: value / 100,
+                                    }))
                                 }
                                 displayValue={`${(engineState.modulationDepth * 100).toFixed(0)}%`}
                             />

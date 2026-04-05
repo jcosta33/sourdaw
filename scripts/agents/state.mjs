@@ -8,14 +8,14 @@ import { join } from 'path';
  * @returns {object|null}
  */
 export function readState(slug, stateDir) {
-  const file = join(stateDir, `${slug}.json`);
-  if (!existsSync(file)) return null;
-  try {
-    return JSON.parse(readFileSync(file, 'utf8'));
-  } catch (e) {
-    console.warn(`Warning: could not parse state file for "${slug}": ${e.message}`);
-    return null;
-  }
+    const file = join(stateDir, `${slug}.json`);
+    if (!existsSync(file)) return null;
+    try {
+        return JSON.parse(readFileSync(file, 'utf8'));
+    } catch (e) {
+        console.warn(`Warning: could not parse state file for "${slug}": ${e.message}`);
+        return null;
+    }
 }
 
 /**
@@ -25,10 +25,10 @@ export function readState(slug, stateDir) {
  * @param {object} data
  */
 export function writeState(slug, stateDir, data) {
-  const file = join(stateDir, `${slug}.json`);
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
-  renameSync(tmp, file); // atomic on same filesystem
+    const file = join(stateDir, `${slug}.json`);
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
+    renameSync(tmp, file); // atomic on same filesystem
 }
 
 /**
@@ -37,10 +37,10 @@ export function writeState(slug, stateDir, data) {
  * @returns {string[]}
  */
 export function listSlugs(stateDir) {
-  if (!existsSync(stateDir)) return [];
-  return readdirSync(stateDir)
-    .filter(f => f.endsWith('.json') && f !== 'registry.json')
-    .map(f => f.slice(0, -5));
+    if (!existsSync(stateDir)) return [];
+    return readdirSync(stateDir)
+        .filter((f) => f.endsWith('.json') && f !== 'registry.json')
+        .map((f) => f.slice(0, -5));
 }
 
 /**
@@ -49,9 +49,9 @@ export function listSlugs(stateDir) {
  * @returns {object[]}
  */
 export function listStates(stateDir) {
-  return listSlugs(stateDir)
-    .map(slug => readState(slug, stateDir))
-    .filter(Boolean);
+    return listSlugs(stateDir)
+        .map((slug) => readState(slug, stateDir))
+        .filter(Boolean);
 }
 
 /**
@@ -60,6 +60,6 @@ export function listStates(stateDir) {
  * @param {string} stateDir
  */
 export function removeState(slug, stateDir) {
-  const file = join(stateDir, `${slug}.json`);
-  if (existsSync(file)) unlinkSync(file);
+    const file = join(stateDir, `${slug}.json`);
+    if (existsSync(file)) unlinkSync(file);
 }

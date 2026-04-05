@@ -6,12 +6,7 @@ import { type Macro } from '../../models/Macro';
 export type { Macro } from '../../models/Macro';
 
 /** Actions that should NOT be recorded inside a macro (meta-actions). */
-const EXCLUDED_ACTIONS = new Set([
-    'startMacroRecording',
-    'stopMacroRecording',
-    'playMacro',
-    'deleteMacro',
-]);
+const EXCLUDED_ACTIONS = new Set(['startMacroRecording', 'stopMacroRecording', 'playMacro', 'deleteMacro']);
 
 export function startMacroRecording(): void {
     const state = macroStore.value;

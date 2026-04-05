@@ -96,7 +96,7 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
 
     const trackState = getTrackStoreState();
     const track = trackState?.tracks.find((t) => t.id === targetTrackId);
-    
+
     // Always play live instrument, even when recording
     let instrumentTrackId = targetTrackId;
     let instrumentTrack = track;
@@ -170,7 +170,7 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
             dn.fermenterControls.noteOn(note, velocity);
             noteData.fermenterDeviceId = fermenterDev.id;
         }
-        return; 
+        return;
     }
 
     // Toaster drum machine
@@ -182,12 +182,12 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
             // If the user's keyboard is an octave higher (C3 = 60), shift them automatically if playing parent tracks.
             let pad = toasterChildPad;
             let pitchNote = note;
-            
+
             if (pad === null || pad === -1) {
                 pad = note - 36;
-                // If they played between C3 and D#4, assume they forgot to drop octave and gently remap 
+                // If they played between C3 and D#4, assume they forgot to drop octave and gently remap
                 if (pad >= 24 && pad <= 39) {
-                    pad = pad - 24; 
+                    pad = pad - 24;
                 }
                 // Lock pitch to C3 (60) when playing the kit, so mapping keys don't detune the pads
                 pitchNote = 60;
@@ -197,65 +197,65 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
                 noteData.toasterDeviceId = toasterDev.id;
             }
         }
-        return; 
+        return;
     }
 
-        // Levain instrument
-        const levainDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
-        if (levainDev) {
-            const dn = strip.deviceNodes.find((d) => d.deviceId === levainDev.id || d.type === 'levain');
-            if (dn?.levainControls?.ready) {
-                dn.levainControls.noteOn(note, velocity);
-                (noteData as Record<string, unknown>).levainDeviceId = levainDev.id;
-                return;
-            }
-            return; // not ready
+    // Levain instrument
+    const levainDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
+    if (levainDev) {
+        const dn = strip.deviceNodes.find((d) => d.deviceId === levainDev.id || d.type === 'levain');
+        if (dn?.levainControls?.ready) {
+            dn.levainControls.noteOn(note, velocity);
+            (noteData as Record<string, unknown>).levainDeviceId = levainDev.id;
+            return;
         }
+        return; // not ready
+    }
 
-        // ── Built-in synth / drum kit fallback ────────────────────────
-        let osc: OscillatorNode | null = null;
-        const synthDevice = instrumentTrack?.devices.find(
-            (d) =>
-                d.type === 'builtin-drum-kit' ||
-                d.type.startsWith('builtin-drum-machine') ||
-                d.type.startsWith('builtin-synth')
-        );
+    // ── Built-in synth / drum kit fallback ────────────────────────
+    let osc: OscillatorNode | null = null;
+    const synthDevice = instrumentTrack?.devices.find(
+        (d) =>
+            d.type === 'builtin-drum-kit' ||
+            d.type.startsWith('builtin-drum-machine') ||
+            d.type.startsWith('builtin-synth')
+    );
 
-        if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
-            const kitIndex = synthDevice.parameterValues.kit ?? 0;
-            const kitDef = getDrumKitDefByIndex(kitIndex);
-            if (kitDef) {
-                scheduleDrumKitNote(engine.context, strip.gainNode, kitDef, note, engine.context.currentTime, velocity);
-            } else {
-                const kit = getDrumKitByIndex(kitIndex);
-                if (kit) {
-                    osc = scheduleKitNote(
-                        engine.context,
-                        strip.gainNode,
-                        kit,
-                        note,
-                        engine.context.currentTime,
-                        60,
-                        velocity
-                    ) as OscillatorNode & { _env?: GainNode };
-                }
-            }
+    if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
+        const kitIndex = synthDevice.parameterValues.kit ?? 0;
+        const kitDef = getDrumKitDefByIndex(kitIndex);
+        if (kitDef) {
+            scheduleDrumKitNote(engine.context, strip.gainNode, kitDef, note, engine.context.currentTime, velocity);
         } else {
-            const synthParams = getSynthParamsForTrack(targetTrackId);
-            osc = scheduleNote(
-                engine.context,
-                strip.gainNode,
-                note,
-                engine.context.currentTime,
-                60,
-                velocity,
-                synthParams
-            ) as OscillatorNode & { _env?: GainNode };
+            const kit = getDrumKitByIndex(kitIndex);
+            if (kit) {
+                osc = scheduleKitNote(
+                    engine.context,
+                    strip.gainNode,
+                    kit,
+                    note,
+                    engine.context.currentTime,
+                    60,
+                    velocity
+                ) as OscillatorNode & { _env?: GainNode };
+            }
         }
+    } else {
+        const synthParams = getSynthParamsForTrack(targetTrackId);
+        osc = scheduleNote(
+            engine.context,
+            strip.gainNode,
+            note,
+            engine.context.currentTime,
+            60,
+            velocity,
+            synthParams
+        ) as OscillatorNode & { _env?: GainNode };
+    }
 
-        if (osc) {
-            noteData.osc = osc;
-        }
+    if (osc) {
+        noteData.osc = osc;
+    }
 }
 
 export function handleNoteOff(_channel: number, note: number): void {
@@ -285,16 +285,16 @@ export function handleNoteOff(_channel: number, note: number): void {
         const track = trackState?.tracks.find((t) => t.id === targetTrackId);
         let instrumentTrackId = targetTrackId;
         let toasterChildPad: number | null = null;
-        
+
         if (track && track.devices.length === 0 && track.parentId && trackState) {
             const parent = trackState.tracks.find((t) => t.id === track.parentId);
-            if (parent?.devices.some(d => d.type === 'toaster')) {
+            if (parent?.devices.some((d) => d.type === 'toaster')) {
                 instrumentTrackId = parent.id;
-                const children = trackState.tracks.filter(t => t.parentId === parent.id);
-                toasterChildPad = children.findIndex(t => t.id === track.id);
+                const children = trackState.tracks.filter((t) => t.parentId === parent.id);
+                toasterChildPad = children.findIndex((t) => t.id === track.id);
             }
         }
-        
+
         const strip = audioEngine.getTrackStrip(instrumentTrackId);
         const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.toasterDeviceId);
         if (dn?.toasterControls) {

@@ -19,15 +19,17 @@ deviceRegistry.register('builtin-', async (ctx, device) => createWebAudioDevice(
 deviceRegistry.register(isFaustModule, createFaustStrategy);
 
 const isNativeDevice = (type: string) => {
-    return isFermenterDevice(type) ||
-           isToasterDevice(type) ||
-           isLevainDevice(type) ||
-           isGlutenDevice(type) ||
-           isBacteriaDevice(type) ||
-           isGrinderDevice(type) ||
-           isProofDevice(type) ||
-           isProofChamberDevice(type) ||
-           isScoringDevice(type);
+    return (
+        isFermenterDevice(type) ||
+        isToasterDevice(type) ||
+        isLevainDevice(type) ||
+        isGlutenDevice(type) ||
+        isBacteriaDevice(type) ||
+        isGrinderDevice(type) ||
+        isProofDevice(type) ||
+        isProofChamberDevice(type) ||
+        isScoringDevice(type)
+    );
 };
 
 deviceRegistry.register(isNativeDevice, createNativeDspStrategy);

@@ -21,10 +21,7 @@ import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration/ba
 import { initEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
 import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { generateGroupId } from '#/modules/Command/useCases/commandQueries';
-import {
-    pushAiActionGroup,
-    type AiActionGroup,
-} from '#/modules/AiRuntime/stores/aiActionHistoryStore';
+import { pushAiActionGroup, type AiActionGroup } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
@@ -197,7 +194,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             const historyGroup: AiActionGroup = {
                 id: group.groupId,
                 prompt,
-                actions: executedLabels.map(l => ({ kind: 'appAction', action: l.action, label: l.label })),
+                actions: executedLabels.map((l) => ({ kind: 'appAction', action: l.action, label: l.label })),
                 groupId: group.groupId,
                 timestamp: Date.now(),
                 reverted: false,
@@ -271,21 +268,15 @@ export const usePromptExecution = (): PromptExecutionState => {
 
             // If the JSON editor already applied changes, we're done
             if (result._jsonEditApplied) {
-                notifyAiChange(
-                    result._jsonEditSummaries?.join('. ') ?? `Executed: ${value}`,
-                    [],
-                );
+                notifyAiChange(result._jsonEditSummaries?.join('. ') ?? `Executed: ${value}`, []);
             } else if (result.actions.length > 0) {
                 await executeWithGroup(result.actions, value);
                 notifyAiChange(
                     `Executed: ${value}`,
-                    result.actions.map((a) => a.type),
+                    result.actions.map((a) => a.type)
                 );
             } else {
-                notifyAiChange(
-                    'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
-                    [],
-                );
+                notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
             }
         } catch (error) {
             logger.error(new Error('Prompt execution failed', { cause: error }));

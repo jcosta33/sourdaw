@@ -453,51 +453,56 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                 >
                     <div className="relative h-full" style={{ width: TOTAL_WIDTH_PX, minHeight: '100%' }}>
                         <div className="absolute inset-0 flex">
-                        {Array.from({ length: TOTAL_WHITE_KEYS }, (_, whiteIdx) => {
-                            const midiNote = whiteIdxToMidi(whiteIdx);
-                            const semitone = ((midiNote % 12) + 12) % 12;
-                            const isC = semitone === 0;
-                            const isValid = midiNote >= 0 && midiNote <= 127 && WHITE_KEY_SEMITONES.has(semitone);
-                            const isCurrentOctaveStart =
-                                whiteIdx >= currentOctaveFirstWhite &&
-                                whiteIdx < currentOctaveFirstWhite + WHITES_PER_OCT;
-                            const isPressed = pressedNotes.has(midiNote);
-                            const displayOctave = Math.floor(midiNote / 12) - 1;
+                            {Array.from({ length: TOTAL_WHITE_KEYS }, (_, whiteIdx) => {
+                                const midiNote = whiteIdxToMidi(whiteIdx);
+                                const semitone = ((midiNote % 12) + 12) % 12;
+                                const isC = semitone === 0;
+                                const isValid = midiNote >= 0 && midiNote <= 127 && WHITE_KEY_SEMITONES.has(semitone);
+                                const isCurrentOctaveStart =
+                                    whiteIdx >= currentOctaveFirstWhite &&
+                                    whiteIdx < currentOctaveFirstWhite + WHITES_PER_OCT;
+                                const isPressed = pressedNotes.has(midiNote);
+                                const displayOctave = Math.floor(midiNote / 12) - 1;
 
-                            return (
-                                <div
-                                    key={whiteIdx}
-                                    className={cn(
-                                        'relative shrink-0 border-r flex flex-col justify-end items-center pb-1 cursor-pointer',
-                                        isPressed
-                                            ? 'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40'
-                                            : isCurrentOctaveStart
-                                              ? 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300'
-                                              : 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300'
-                                    )}
-                                    style={{
-                                        width: KEY_W,
-                                        boxShadow: 'inset -1px 0 0 rgba(0,0,0,0.08), inset 0 -2px 4px rgba(0,0,0,0.06)',
-                                    }}
-                                    onPointerDown={isValid ? (event) => onWhitePointerDown(midiNote, event) : undefined}
-                                    onPointerUp={isValid ? (event) => onWhitePointerUp(midiNote, event) : undefined}
-                                    onPointerEnter={
-                                        isValid ? (event) => onWhitePointerEnter(midiNote, event) : undefined
-                                    }
-                                    aria-label={isC ? `C${displayOctave} (MIDI ${midiNote})` : `MIDI ${midiNote}`}
-                                    role="button"
-                                >
-                                    {isC ? (
-                                        <span
-                                            className="text-[8px] font-medium select-none pointer-events-none leading-none"
-                                            style={{ color: isPressed ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.35)' }}
-                                        >
-                                            C{displayOctave}
-                                        </span>
-                                    ) : null}
-                                </div>
-                            );
-                        })}
+                                return (
+                                    <div
+                                        key={whiteIdx}
+                                        className={cn(
+                                            'relative shrink-0 border-r flex flex-col justify-end items-center pb-1 cursor-pointer',
+                                            isPressed
+                                                ? 'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40'
+                                                : isCurrentOctaveStart
+                                                  ? 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300'
+                                                  : 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300'
+                                        )}
+                                        style={{
+                                            width: KEY_W,
+                                            boxShadow:
+                                                'inset -1px 0 0 rgba(0,0,0,0.08), inset 0 -2px 4px rgba(0,0,0,0.06)',
+                                        }}
+                                        onPointerDown={
+                                            isValid ? (event) => onWhitePointerDown(midiNote, event) : undefined
+                                        }
+                                        onPointerUp={isValid ? (event) => onWhitePointerUp(midiNote, event) : undefined}
+                                        onPointerEnter={
+                                            isValid ? (event) => onWhitePointerEnter(midiNote, event) : undefined
+                                        }
+                                        aria-label={isC ? `C${displayOctave} (MIDI ${midiNote})` : `MIDI ${midiNote}`}
+                                        role="button"
+                                    >
+                                        {isC ? (
+                                            <span
+                                                className="text-[8px] font-medium select-none pointer-events-none leading-none"
+                                                style={{
+                                                    color: isPressed ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.35)',
+                                                }}
+                                            >
+                                                C{displayOctave}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                );
+                            })}
                         </div>
 
                         {ALL_BLACK_KEYS.map(({ midi: midiNote, leftPx }) => {

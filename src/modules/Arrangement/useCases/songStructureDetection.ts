@@ -109,7 +109,8 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     const mergedBoundaries: number[] = [boundaries[0]!];
     for (let i = 1; i < boundaries.length; i++) {
         const last = mergedBoundaries[mergedBoundaries.length - 1]!;
-        if (boundaries[i]! - last >= 4) { // 4 windows = 4 bars = 16 beats
+        if (boundaries[i]! - last >= 4) {
+            // 4 windows = 4 bars = 16 beats
             mergedBoundaries.push(boundaries[i]!);
         }
     }
@@ -129,7 +130,7 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
         for (let w = startWindow; w < endWindow; w++) {
             segEnergy += energy[w]!;
         }
-        segEnergy /= (endWindow - startWindow) || 1;
+        segEnergy /= endWindow - startWindow || 1;
 
         // Classify segment based on position and energy
         const progress = startWindow / numWindows;
@@ -163,7 +164,7 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
                 for (let w = nextStart; w < nextEnd; w++) {
                     nextEnergy += energy[w]!;
                 }
-                nextEnergy /= (nextEnd - nextStart) || 1;
+                nextEnergy /= nextEnd - nextStart || 1;
                 if (nextEnergy > avgEnergy * 1.3) {
                     sectionInfo = SECTION_PALETTE[2]!; // Pre-Chorus
                     confidence = 0.55;

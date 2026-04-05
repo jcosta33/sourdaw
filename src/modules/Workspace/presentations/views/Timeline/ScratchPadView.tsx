@@ -179,7 +179,9 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 <div className="flex-1 overflow-x-auto overflow-y-hidden px-2 py-1.5">
                     {sections.length === 0 ? (
                         <div className="flex items-center justify-center h-full">
-                            <DawInlineHint>Click "Capture" to snapshot the current arrangement · Drag to reorder</DawInlineHint>
+                            <DawInlineHint>
+                                Click "Capture" to snapshot the current arrangement · Drag to reorder
+                            </DawInlineHint>
                         </div>
                     ) : (
                         <div className="flex gap-1 h-full items-stretch">

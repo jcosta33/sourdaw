@@ -7,8 +7,31 @@ import { type PluginDescriptor, type DeviceParameter } from '../DeviceParameter'
  * so the inspector shows controls immediately (before Faust compilation).
  */
 
-function fp(id: string, deviceId: string, name: string, min: number, max: number, defaultValue: number, _step: number, unit = '', scaling?: 'log' | 'linear'): DeviceParameter {
-    return { id, deviceId, name, type: 'float', value: defaultValue, defaultValue, minValue: min, maxValue: max, unit, scaling, automatable: true, hasAutomation: false };
+function fp(
+    id: string,
+    deviceId: string,
+    name: string,
+    min: number,
+    max: number,
+    defaultValue: number,
+    _step: number,
+    unit = '',
+    scaling?: 'log' | 'linear'
+): DeviceParameter {
+    return {
+        id,
+        deviceId,
+        name,
+        type: 'float',
+        value: defaultValue,
+        defaultValue,
+        minValue: min,
+        maxValue: max,
+        unit,
+        scaling,
+        automatable: true,
+        hasAutomation: false,
+    };
 }
 
 export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
@@ -128,9 +151,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
-        parameters: [
-            fp('gain', 'faust-gain-utility', 'Gain', -60, 12, 0, 0.1, 'dB'),
-        ],
+        parameters: [fp('gain', 'faust-gain-utility', 'Gain', -60, 12, 0, 0.1, 'dB')],
     },
     {
         id: 'faust-lufs-meter',
@@ -148,9 +169,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
-        parameters: [
-            fp('width', 'faust-stereo-widener', 'Width', 0, 2, 1, 0.01),
-        ],
+        parameters: [fp('width', 'faust-stereo-widener', 'Width', 0, 2, 1, 0.01)],
     },
     {
         id: 'faust-de-esser',

@@ -3,7 +3,11 @@ import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { type GenerateChordProgressionOptions } from './algorithm';
 import { generateChordProgression } from './algorithm';
 
-export function applyChordProgressionToTrack(trackId: string, options: GenerateChordProgressionOptions, startBeat: number = 0): void {
+export function applyChordProgressionToTrack(
+    trackId: string,
+    options: GenerateChordProgressionOptions,
+    startBeat: number = 0
+): void {
     const bars = options.bars ?? 4;
     const totalBeats = bars * 4;
 

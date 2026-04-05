@@ -107,13 +107,20 @@ export const DelayTaps = ({
 
             // Gradient per tap: brighter at top
             const grad = ctx.createLinearGradient(0, pad + plotH - barH, 0, pad + plotH);
-            grad.addColorStop(0, `${accentCyan}${Math.round(amplitude * 200).toString(16).padStart(2, '0')}`);
+            grad.addColorStop(
+                0,
+                `${accentCyan}${Math.round(amplitude * 200)
+                    .toString(16)
+                    .padStart(2, '0')}`
+            );
             grad.addColorStop(1, `${accentCyan}10`);
             ctx.fillStyle = grad;
             ctx.fillRect(x - barWidth / 2, pad + plotH - barH, barWidth, barH);
 
             // Top highlight
-            ctx.fillStyle = `${accentCyan}${Math.round(amplitude * 180).toString(16).padStart(2, '0')}`;
+            ctx.fillStyle = `${accentCyan}${Math.round(amplitude * 180)
+                .toString(16)
+                .padStart(2, '0')}`;
             ctx.fillRect(x - barWidth / 2, pad + plotH - barH, barWidth, 1);
         }
 

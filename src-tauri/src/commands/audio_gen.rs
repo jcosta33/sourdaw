@@ -114,9 +114,7 @@ pub async fn start_audio_gen_sidecar(app: AppHandle) -> Result<(), String> {
         Err(_) => {
             // Fall back to running the Python script directly
             eprintln!("[Audio Gen] Bundled sidecar not found, trying Python script...");
-            let sidecar_dir = std::env::current_dir()
-                .unwrap_or_default()
-                .join("sidecar");
+            let sidecar_dir = std::env::current_dir().unwrap_or_default().join("sidecar");
             let script_path = sidecar_dir.join("audio_gen.py");
 
             app.shell()
@@ -251,16 +249,14 @@ pub async fn generate_audio_clip(
     };
 
     let (tx, rx) = oneshot::channel();
-    state
-        .pending
-        .lock()
-        .await
-        .insert(request_id.clone(), tx);
+    state.pending.lock().await.insert(request_id.clone(), tx);
 
     // Write JSON request to sidecar stdin
     {
         let mut child_lock = state.child.lock().await;
-        let child = child_lock.as_mut().ok_or("Audio generation sidecar not running")?;
+        let child = child_lock
+            .as_mut()
+            .ok_or("Audio generation sidecar not running")?;
         let msg = serde_json::to_string(&request).map_err(|e| e.to_string())? + "\n";
         child
             .write(msg.as_bytes())
@@ -280,9 +276,7 @@ pub async fn generate_audio_clip(
 
 /// Stop the audio generation sidecar.
 #[tauri::command]
-pub async fn stop_audio_gen_sidecar(
-    state: tauri::State<'_, AudioGenState>,
-) -> Result<(), String> {
+pub async fn stop_audio_gen_sidecar(state: tauri::State<'_, AudioGenState>) -> Result<(), String> {
     let mut guard = state.child.lock().await;
     if let Some(ref mut child) = *guard {
         let _ = child.write(b"{\"command\":\"quit\"}\n");
@@ -295,5 +289,3 @@ pub async fn stop_audio_gen_sidecar(
     eprintln!("[Audio Gen] Sidecar stopped");
     Ok(())
 }
-
-

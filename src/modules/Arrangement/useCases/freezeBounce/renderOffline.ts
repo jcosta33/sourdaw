@@ -17,7 +17,11 @@ for (let n = 0; n < 128; n++) {
     MIDI_FREQUENCIES[n] = 440 * 2 ** ((n - 69) / 12);
 }
 
-export async function renderTrackOffline(track: Track, startBeat: number, endBeat: number): Promise<AudioBuffer | null> {
+export async function renderTrackOffline(
+    track: Track,
+    startBeat: number,
+    endBeat: number
+): Promise<AudioBuffer | null> {
     const durationBeats = endBeat - startBeat;
     const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;

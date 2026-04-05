@@ -3,7 +3,13 @@
  * Uses Bjorklund's algorithm. Can drive the arp pattern or standalone note emission.
  */
 
-import { type MidiEvent, type TransportInfo, type RateValue, rateToBeats, samplesPerBeat } from '../../models/MidiEvent';
+import {
+    type MidiEvent,
+    type TransportInfo,
+    type RateValue,
+    rateToBeats,
+    samplesPerBeat,
+} from '../../models/MidiEvent';
 import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProcessor';
 
 /** Bjorklund's algorithm — distribute `hits` across `steps` as evenly as possible. */
@@ -70,7 +76,7 @@ export class EuclideanGenerator implements MidiProcessor {
         // Apply rotation
         this.pattern = [];
         for (let i = 0; i < this.steps; i++) {
-            this.pattern.push(base[((i - this.rotation) % this.steps + this.steps) % this.steps]!);
+            this.pattern.push(base[(((i - this.rotation) % this.steps) + this.steps) % this.steps]!);
         }
     }
 
@@ -121,23 +127,50 @@ export class EuclideanGenerator implements MidiProcessor {
         this.lastStepTime = -Infinity;
         this.scheduled.clear();
     }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'hits': this.hits = Math.max(0, Math.min(32, Math.round(value))); this.rebuildPattern(); break;
-            case 'steps': this.steps = Math.max(1, Math.min(32, Math.round(value))); this.rebuildPattern(); break;
-            case 'rotation': this.rotation = Math.round(value); this.rebuildPattern(); break;
-            case 'rate_denom': this.rate = { ...this.rate, denom: Math.max(1, value) }; break;
-            case 'gate': this.gate = Math.max(0.01, Math.min(2, value)); break;
-            case 'note': this.note = Math.max(0, Math.min(127, Math.round(value))); break;
-            case 'velocity': this.velocity = Math.max(1, Math.min(127, Math.round(value))); break;
+            case 'hits':
+                this.hits = Math.max(0, Math.min(32, Math.round(value)));
+                this.rebuildPattern();
+                break;
+            case 'steps':
+                this.steps = Math.max(1, Math.min(32, Math.round(value)));
+                this.rebuildPattern();
+                break;
+            case 'rotation':
+                this.rotation = Math.round(value);
+                this.rebuildPattern();
+                break;
+            case 'rate_denom':
+                this.rate = { ...this.rate, denom: Math.max(1, value) };
+                break;
+            case 'gate':
+                this.gate = Math.max(0.01, Math.min(2, value));
+                break;
+            case 'note':
+                this.note = Math.max(0, Math.min(127, Math.round(value)));
+                break;
+            case 'velocity':
+                this.velocity = Math.max(1, Math.min(127, Math.round(value)));
+                break;
         }
     }
 
     /** Get current pattern for UI display. */
-    getPattern(): boolean[] { return [...this.pattern]; }
-    getCurrentStep(): number { return this.stepIndex; }
+    getPattern(): boolean[] {
+        return [...this.pattern];
+    }
+    getCurrentStep(): number {
+        return this.stepIndex;
+    }
 }

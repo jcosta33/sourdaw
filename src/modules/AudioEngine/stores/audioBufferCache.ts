@@ -369,10 +369,7 @@ export const audioBufferCache = {
     /** Reconstruct AudioBuffer objects from base64-encoded data embedded in a
      * .sourdaw project file, loading them into both the in-memory cache and IDB.
      * Buffers whose ID already exists in the cache are skipped. */
-    async importBuffers(
-        buffers: Record<string, ExportedAudioBuffer>,
-        context: BaseAudioContext
-    ): Promise<void> {
+    async importBuffers(buffers: Record<string, ExportedAudioBuffer>, context: BaseAudioContext): Promise<void> {
         for (const [id, data] of Object.entries(buffers)) {
             if (cache.has(id)) continue;
             try {

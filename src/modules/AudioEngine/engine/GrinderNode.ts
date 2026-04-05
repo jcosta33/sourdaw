@@ -121,7 +121,10 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: GrinderMeterData) => void) {
-            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
+            if (meterRafId !== null) {
+                cancelAnimationFrame(meterRafId);
+                meterRafId = null;
+            }
             if (!slot) return;
             const view = slot.view;
             const poll = () => {
@@ -150,8 +153,14 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             } catch {}
         },
         destroy() {
-            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
-            if (slot) { telemetryAllocator.releaseSlot(slot.byteOffset); slot = null; }
+            if (meterRafId !== null) {
+                cancelAnimationFrame(meterRafId);
+                meterRafId = null;
+            }
+            if (slot) {
+                telemetryAllocator.releaseSlot(slot.byteOffset);
+                slot = null;
+            }
             try {
                 node.disconnect();
             } catch {}

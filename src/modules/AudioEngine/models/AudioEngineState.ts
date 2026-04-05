@@ -92,6 +92,7 @@ export type AudioEngine = {
     getMasterGain(): number;
     getState(): AudioEngineState;
     dispose(): void;
+    resetGraph(): void;
     ensureTrackStrip(trackId: string): TrackChannelStrip;
     removeTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;

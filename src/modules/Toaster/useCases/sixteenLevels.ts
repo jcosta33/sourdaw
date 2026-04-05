@@ -37,7 +37,9 @@ export function get16LevelsTarget(): { padIndex: number; target: SixteenLevelsTa
  * Position 0 = lowest level, position 15 = highest level.
  */
 export function trigger16Level(gridIndex: number): void {
-    if (!active) { return; }
+    if (!active) {
+        return;
+    }
 
     const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
 
@@ -48,18 +50,24 @@ export function trigger16Level(gridIndex: number): void {
             triggerToasterPad(targetPad, Math.round(normalized * 127));
             break;
         case 'tune':
-            if (deviceId) { setToasterPadParam(deviceId, targetPad, 'tune', -24 + normalized * 48); }
+            if (deviceId) {
+                setToasterPadParam(deviceId, targetPad, 'tune', -24 + normalized * 48);
+            }
             triggerToasterPad(targetPad, 127);
             break;
         case 'decay':
-            if (deviceId) { setToasterPadParam(deviceId, targetPad, 'decay', normalized); }
+            if (deviceId) {
+                setToasterPadParam(deviceId, targetPad, 'decay', normalized);
+            }
             triggerToasterPad(targetPad, 127);
             break;
         case 'filter': {
             const minHz = 20;
             const maxHz = 20000;
             const freq = minHz * Math.pow(maxHz / minHz, normalized);
-            if (deviceId) { setToasterPadParam(deviceId, targetPad, 'filterCutoff', freq); }
+            if (deviceId) {
+                setToasterPadParam(deviceId, targetPad, 'filterCutoff', freq);
+            }
             triggerToasterPad(targetPad, 127);
             break;
         }

@@ -55,16 +55,24 @@ export const MergeResultDialog = ({ result, onClose }: MergeResultDialogProps): 
                 <div className="space-y-4 px-4 py-4">
                     <div className="space-y-2 text-sm text-foreground/88">
                         {result.tracksAdded > 0 ? (
-                            <p>{result.tracksAdded} new track{result.tracksAdded > 1 ? 's' : ''} added</p>
+                            <p>
+                                {result.tracksAdded} new track{result.tracksAdded > 1 ? 's' : ''} added
+                            </p>
                         ) : null}
                         {result.documentsMerged > 0 ? (
-                            <p>{result.documentsMerged} document{result.documentsMerged > 1 ? 's' : ''} merged</p>
+                            <p>
+                                {result.documentsMerged} document{result.documentsMerged > 1 ? 's' : ''} merged
+                            </p>
                         ) : null}
                         {result.documentsNew > 0 ? (
-                            <p>{result.documentsNew} new document{result.documentsNew > 1 ? 's' : ''} imported</p>
+                            <p>
+                                {result.documentsNew} new document{result.documentsNew > 1 ? 's' : ''} imported
+                            </p>
                         ) : null}
                         {result.documentsMerged === 0 && result.documentsNew === 0 ? (
-                            <p className="text-muted-foreground">No changes detected. The projects are already in sync.</p>
+                            <p className="text-muted-foreground">
+                                No changes detected. The projects are already in sync.
+                            </p>
                         ) : null}
                     </div>
                     <div className="flex justify-end">

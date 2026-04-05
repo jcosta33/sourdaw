@@ -13,11 +13,7 @@ export const DawPluginMetricStrip = ({
     ...props
 }: DawPluginMetricStripProps): ReactElement => (
     <div
-        className={cn(
-            'flex flex-wrap gap-2',
-            align === 'end' ? 'justify-end' : 'justify-start',
-            className
-        )}
+        className={cn('flex flex-wrap gap-2', align === 'end' ? 'justify-end' : 'justify-start', className)}
         {...props}
     >
         {children}

@@ -96,14 +96,26 @@ export async function parsePromptToActions(
 
             if (!result.success) {
                 logger.warn(`[AI] DSO editor failed: ${result.error ?? 'unknown'}`);
-                return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false, _jsonEditAttempted: true };
+                return {
+                    actions: [],
+                    confidence: 0,
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    _jsonEditAttempted: true,
+                };
             }
         } catch (error) {
             if (signal?.aborted) {
                 return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
             }
             logger.warn(`[AI] DSO editor failed: ${String(error)}`);
-            return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false, _jsonEditAttempted: true };
+            return {
+                actions: [],
+                confidence: 0,
+                rawText: prompt,
+                requiresConfirmation: false,
+                _jsonEditAttempted: true,
+            };
         }
     }
 

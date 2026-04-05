@@ -21,9 +21,6 @@ export const DawMeterFrame = ({
 }: DawMeterFrameProps): ReactElement => (
     <div className={cn('relative overflow-hidden rounded bg-[#0a0a0a] channel-inset', className)} {...props}>
         {children}
-        <div
-            className="pointer-events-none absolute inset-0 rounded"
-            style={{ background: OVERLAY_STYLES[overlay] }}
-        />
+        <div className="pointer-events-none absolute inset-0 rounded" style={{ background: OVERLAY_STYLES[overlay] }} />
     </div>
 );

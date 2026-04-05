@@ -6,8 +6,6 @@ export function toggleAdjustmentLayer(id: string): void {
         return;
     }
     adjustmentLayerStore.set({
-        layers: state.layers.map((l) =>
-            l.id === id ? { ...l, enabled: !l.enabled } : l
-        ),
+        layers: state.layers.map((l) => (l.id === id ? { ...l, enabled: !l.enabled } : l)),
     });
 }

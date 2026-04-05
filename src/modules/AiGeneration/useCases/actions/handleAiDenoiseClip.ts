@@ -1,7 +1,4 @@
-import {
-    denoiseAudio,
-    isTauri,
-} from '#/modules/AudioEngine/useCases/nativeAiBridge';
+import { denoiseAudio, isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
@@ -11,7 +8,9 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
     try {
         const start = performance.now();
         const buffer = audioBufferCache.get(clipId);
-        if (!buffer) { throw new Error('Audio buffer not found for clip'); }
+        if (!buffer) {
+            throw new Error('Audio buffer not found for clip');
+        }
 
         let outNoiseFloor = -60;
 
@@ -26,10 +25,7 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
         } else {
             const mono = buffer.getChannelData(0);
             const hop = 1024;
-            const noiseSamples = Math.min(
-                Math.floor(buffer.sampleRate * 0.5 / hop) * hop,
-                mono.length
-            );
+            const noiseSamples = Math.min(Math.floor((buffer.sampleRate * 0.5) / hop) * hop, mono.length);
 
             let noisePower = 0;
             for (let i = 0; i < noiseSamples; i++) {

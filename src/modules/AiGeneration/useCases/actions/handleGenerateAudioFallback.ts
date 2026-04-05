@@ -9,7 +9,9 @@ export async function handleGenerateAudioFallback(prompt: string, durationStr: s
 
         const { generateAudio, isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis/useCases/audioAi');
         if (!isAudioGenerationAvailable()) {
-            throw new Error('Audio generation requires the Sourdaw desktop app (uses Stable Audio Open via Python sidecar)');
+            throw new Error(
+                'Audio generation requires the Sourdaw desktop app (uses Stable Audio Open via Python sidecar)'
+            );
         }
 
         const duration = parseInt(durationStr) || 8;

@@ -24,9 +24,7 @@ export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactE
             {trackRoutes.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackRoutes.map((route) => (
-                        <SurfaceCard
-                            key={route.id}
-                        >
+                        <SurfaceCard key={route.id}>
                             <DawReadoutRow
                                 label={route.sourceId === track.id ? `→ ${route.destinationId}` : `← ${route.sourceId}`}
                                 value={`${(route.gain * 100).toFixed(0)}%`}

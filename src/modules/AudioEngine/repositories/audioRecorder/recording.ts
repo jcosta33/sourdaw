@@ -106,10 +106,7 @@ export async function startAudioRecording(
         sourceNode.connect(recordingNode);
 
         // ── OPFS Worker ──────────────────────────────────────────────────────
-        recordingWorker = new Worker(
-            new URL('../../workers/recordingWorker.ts', import.meta.url),
-            { type: 'module' }
-        );
+        recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), { type: 'module' });
 
         // Wire up the PCM-complete handler before sending 'start'.
         recordingWorker.onmessage = ({ data }: MessageEvent): void => {
@@ -165,11 +162,7 @@ export function stopAudioRecording(): void {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function buildAndDeliver(
-    samples: Float32Array,
-    sampleRate: number,
-    ctx: AudioContext
-): void {
+function buildAndDeliver(samples: Float32Array, sampleRate: number, ctx: AudioContext): void {
     const cb = onRecordingComplete;
     onRecordingComplete = null;
 

@@ -36,9 +36,7 @@ export const Oscilloscope = ({
         let rafId = 0;
 
         const draw = (): void => {
-            const analyser = trackId
-                ? (getTrackAnalyser(trackId) ?? getMasterAnalyser())
-                : getMasterAnalyser();
+            const analyser = trackId ? (getTrackAnalyser(trackId) ?? getMasterAnalyser()) : getMasterAnalyser();
 
             const bufferLength = analyser.frequencyBinCount;
             const data = new Float32Array(bufferLength);
@@ -139,13 +137,7 @@ export const Oscilloscope = ({
 
     return (
         <DawMeterFrame>
-            <canvas
-                ref={canvasRef}
-                width={width}
-                height={height}
-                className="block"
-                aria-label="Oscilloscope"
-            />
+            <canvas ref={canvasRef} width={width} height={height} className="block" aria-label="Oscilloscope" />
         </DawMeterFrame>
     );
 };

@@ -97,10 +97,7 @@ async function stopWorker(): Promise<void> {
     const arrayBuffer = await file.arrayBuffer();
     const samples = new Float32Array(arrayBuffer);
 
-    self.postMessage(
-        { type: 'pcm', samples, sampleRate: workerSampleRate },
-        [samples.buffer]
-    );
+    self.postMessage({ type: 'pcm', samples, sampleRate: workerSampleRate }, [samples.buffer]);
 
     // Remove the temp file — non-fatal if it fails.
     try {
@@ -115,10 +112,7 @@ async function stopWorker(): Promise<void> {
 self.onmessage = ({ data }: MessageEvent): void => {
     switch ((data as { type: string }).type) {
         case 'init':
-            void initWorker(
-                data.sab as SharedArrayBuffer,
-                data.sampleRate as number
-            ).then(() => {
+            void initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
                 self.postMessage({ type: 'ready' });
             });
             break;

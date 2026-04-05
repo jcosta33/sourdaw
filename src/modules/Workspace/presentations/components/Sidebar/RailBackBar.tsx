@@ -9,12 +9,7 @@ type RailBackBarProps = {
     iconColor?: string;
 };
 
-export const RailBackBar = ({
-    title,
-    onBack,
-    icon: Icon,
-    iconColor,
-}: RailBackBarProps): ReactElement => (
+export const RailBackBar = ({ title, onBack, icon: Icon, iconColor }: RailBackBarProps): ReactElement => (
     <div className="flex h-[34px] shrink-0 items-center gap-1 border-b border-border/50 bg-surface-overlay px-2 py-1.5">
         <Button
             variant="ghost"

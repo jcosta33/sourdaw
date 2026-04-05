@@ -18,9 +18,7 @@ type Props = {
 
 export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
-        const bands = patch.excBands.map((b, i) =>
-            i === idx ? { ...b, [key]: value } : b
-        );
+        const bands = patch.excBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
         onPatchChange({ excBands: bands });
         onSendParam(`exc_band${idx}_${key}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
     };
@@ -50,7 +48,10 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                 {BAND_LABELS.map((label, i) => {
                     const band = patch.excBands[i]!;
                     return (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50">
+                        <div
+                            key={i}
+                            className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50"
+                        >
                             <span className="text-[7px] text-muted-foreground">{label}</span>
 
                             {/* Enable */}
@@ -73,18 +74,34 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                                 onChange={(e) => updateBand(i, 'type', parseInt(e.target.value))}
                             >
                                 {SAT_TYPES.map((t, ti) => (
-                                    <option key={ti} value={ti}>{t}</option>
+                                    <option key={ti} value={ti}>
+                                        {t}
+                                    </option>
                                 ))}
                             </DawCompactSelect>
 
                             {/* Drive */}
-                            <RotaryKnob value={band.drive} onChange={(v) => updateBand(i, 'drive', v)}
-                                min={0} max={1} step={0.01} defaultValue={0.2} size="sm" />
+                            <RotaryKnob
+                                value={band.drive}
+                                onChange={(v) => updateBand(i, 'drive', v)}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0.2}
+                                size="sm"
+                            />
                             <span className="text-[6px] text-muted-foreground">Drive</span>
 
                             {/* Blend */}
-                            <RotaryKnob value={band.blend} onChange={(v) => updateBand(i, 'blend', v)}
-                                min={0} max={1} step={0.01} defaultValue={0.3} size="sm" />
+                            <RotaryKnob
+                                value={band.blend}
+                                onChange={(v) => updateBand(i, 'blend', v)}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0.3}
+                                size="sm"
+                            />
                             <span className="text-[6px] text-muted-foreground">Blend</span>
                         </div>
                     );

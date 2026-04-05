@@ -1,12 +1,6 @@
 import { type DragEvent, useState } from 'react';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
-import {
-    addClip,
-    addTrack,
-    addDevice,
-    importMidiFile,
-    decodeAudioFile,
-} from '../../useCases/timelineViewActions';
+import { addClip, addTrack, addDevice, importMidiFile, decodeAudioFile } from '../../useCases/timelineViewActions';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
@@ -72,9 +66,7 @@ export const useTimelineFileDrop = ({
                 // Without this, the clip has no bufferId and will be silent in exports.
                 let audioBufferId: string | undefined;
                 let assetHash: string | undefined;
-                let durationBeats = sample.durationSeconds
-                    ? Math.max(1, Math.ceil(sample.durationSeconds * 2))
-                    : 4;
+                let durationBeats = sample.durationSeconds ? Math.max(1, Math.ceil(sample.durationSeconds * 2)) : 4;
 
                 try {
                     const root = libraryStore.value?.roots.find((r) => r.id === sample.libraryRootId);
@@ -84,10 +76,16 @@ export const useTimelineFileDrop = ({
                         const { invoke } = await import('@tauri-apps/api/core');
                         const absPath = `${root.rootRef}/${sample.path}`;
                         const bytes = (await invoke('read_audio_file', { path: absPath })) as number[];
-                        const file = new File([new Uint8Array(bytes as ArrayLike<number>)], sample.path.split('/').pop() ?? sample.name);
+                        const file = new File(
+                            [new Uint8Array(bytes as ArrayLike<number>)],
+                            sample.path.split('/').pop() ?? sample.name
+                        );
                         const result = await decodeAudioFile(file);
                         audioBufferId = result.id;
-                        durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
+                        durationBeats = Math.max(
+                            1,
+                            Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
+                        );
                         assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
                     } else if (!isTauri() && root?.provider === 'browser' && root.handle) {
                         // Browser FileSystem Access API: walk the directory handle to the file
@@ -102,14 +100,23 @@ export const useTimelineFileDrop = ({
                         try {
                             const result = await decodeAudioFile(file);
                             audioBufferId = result.id;
-                            durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
+                            durationBeats = Math.max(
+                                1,
+                                Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
+                            );
                             assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
                         } catch {
-                            notifyUser(`"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`, 'warning');
+                            notifyUser(
+                                `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
+                                'warning'
+                            );
                         }
                     }
                 } catch {
-                    notifyUser(`Could not access "${sample.name}" — the file may have moved or folder permissions were revoked.`, 'warning');
+                    notifyUser(
+                        `Could not access "${sample.name}" — the file may have moved or folder permissions were revoked.`,
+                        'warning'
+                    );
                 }
 
                 addClip({

@@ -43,7 +43,7 @@ export const useAppInitialization = (): void => {
                         .filter((id): id is string => Boolean(id));
                     await audioBufferCache.restoreFromIdb(
                         getAudioContext(),
-                        referencedIds.length > 0 ? referencedIds : undefined,
+                        referencedIds.length > 0 ? referencedIds : undefined
                     );
                     verifyAudioBufferReferences();
                     void initWebMidi();

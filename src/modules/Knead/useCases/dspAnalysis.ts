@@ -5,14 +5,17 @@ import { updateTrackKneadState } from '../stores/kneadStore';
  * Parses raw analysis frames from the Rust/WASM engine and converts them
  * into editable NoteBlobs. This handles segmentation and drift calculation.
  */
-export function ingestDspAnalysis(trackId: string, frames: { time: number; f0: number | null; periodicity: number }[]): void {
+export function ingestDspAnalysis(
+    trackId: string,
+    frames: { time: number; f0: number | null; periodicity: number }[]
+): void {
     // Placeholder logic for MVP mapping pitch frames to discrete NoteBlobs
     const blobs: NoteBlob[] = [];
-    
+
     // Simulate finding a contiguous voiced region for now
     let currentBlob: Partial<NoteBlob> | null = null;
     let pitchPoints: number[] = [];
-    
+
     for (const frame of frames) {
         if (frame.f0 !== null && frame.periodicity > 0.7) {
             if (!currentBlob) {

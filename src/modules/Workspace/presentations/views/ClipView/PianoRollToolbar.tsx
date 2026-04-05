@@ -74,7 +74,13 @@ export const PianoRollToolbar = ({
             </Button>
         ))}
 
-        <div className="w-px h-4 mx-1" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
+        <div
+            className="w-px h-4 mx-1"
+            style={{
+                background:
+                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
+            }}
+        />
 
         <span className="text-[10px] text-muted-foreground">Scale:</span>
         <DawCompactSelect
@@ -116,7 +122,13 @@ export const PianoRollToolbar = ({
             Fold
         </Button>
 
-        <div className="w-px h-4 mx-1" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
+        <div
+            className="w-px h-4 mx-1"
+            style={{
+                background:
+                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
+            }}
+        />
 
         <Button
             variant={stepInput ? 'secondary' : 'ghost'}
@@ -132,7 +144,13 @@ export const PianoRollToolbar = ({
             Step
         </Button>
 
-        <div className="w-px h-4 mx-1" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
+        <div
+            className="w-px h-4 mx-1"
+            style={{
+                background:
+                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
+            }}
+        />
 
         <Button
             variant={showGhostNotes ? 'secondary' : 'ghost'}

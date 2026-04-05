@@ -141,4 +141,3 @@ export const MODULATOR_PRESETS: ModulatorPreset[] = [
         parameters: { value: 0 },
     },
 ];
-

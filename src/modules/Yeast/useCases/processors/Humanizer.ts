@@ -24,7 +24,7 @@ export class Humanizer implements MidiProcessor {
     private timingSigmaMs = 5;
     private velSigma = 8;
     private bypassed = false;
-    private rngState = 0xCAFE;
+    private rngState = 0xcafe;
     // Track timing offsets for matching Note Offs
     private noteTimingMap = new Map<string, number>(); // "ch:note" → timing offset samples
 
@@ -75,20 +75,34 @@ export class Humanizer implements MidiProcessor {
     }
 
     private nextRandom(): number {
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
-        return this.rngState / 0x7FFFFFFF;
+        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+        return this.rngState / 0x7fffffff;
     }
 
-    reset(): void { this.noteTimingMap.clear(); }
-    setBypassed(b: boolean): void { this.bypassed = b; }
-    isBypassed(): boolean { return this.bypassed; }
-    latencySamples(): number { return 0; }
+    reset(): void {
+        this.noteTimingMap.clear();
+    }
+    setBypassed(b: boolean): void {
+        this.bypassed = b;
+    }
+    isBypassed(): boolean {
+        return this.bypassed;
+    }
+    latencySamples(): number {
+        return 0;
+    }
 
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'timing_mean_ms': this.timingMeanMs = Math.max(-30, Math.min(30, value)); break;
-            case 'timing_sigma_ms': this.timingSigmaMs = Math.max(0, Math.min(30, value)); break;
-            case 'vel_sigma': this.velSigma = Math.max(0, Math.min(30, value)); break;
+            case 'timing_mean_ms':
+                this.timingMeanMs = Math.max(-30, Math.min(30, value));
+                break;
+            case 'timing_sigma_ms':
+                this.timingSigmaMs = Math.max(0, Math.min(30, value));
+                break;
+            case 'vel_sigma':
+                this.velSigma = Math.max(0, Math.min(30, value));
+                break;
             case 'preset': {
                 const preset = (['tight', 'loose', 'drunk', 'rushed', 'laidBack'] as const)[Math.round(value)];
                 if (preset && PRESETS[preset]) {

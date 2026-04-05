@@ -115,7 +115,7 @@ export function startPlayheadScheduler(): void {
         const { jumpToPosition: rawJumpToPosition, shouldStop } = evaluateFollowActions(
             tracks,
             accumulatedPosition,
-            newPosition,
+            newPosition
         );
         let jumpToPosition = rawJumpToPosition;
 
@@ -204,8 +204,25 @@ export function startPlayheadScheduler(): void {
         const scheduleUpTo = newPosition + lookAheadBeats;
 
         scheduleMetronome(lastScheduledBeat, scheduleUpTo, accumulatedPosition, current, currentTempo);
-        await scheduleMidiNotes(lastScheduledBeat, scheduleUpTo, accumulatedPosition, lastScheduledBeat, activeAudioSources, current, currentTempo);
-        scheduleAudioClips(lastScheduledBeat, scheduleUpTo, accumulatedPosition, scheduledAudioClips, scheduledFrozenTracks, activeAudioSources, current, currentTempo);
+        await scheduleMidiNotes(
+            lastScheduledBeat,
+            scheduleUpTo,
+            accumulatedPosition,
+            lastScheduledBeat,
+            activeAudioSources,
+            current,
+            currentTempo
+        );
+        scheduleAudioClips(
+            lastScheduledBeat,
+            scheduleUpTo,
+            accumulatedPosition,
+            scheduledAudioClips,
+            scheduledFrozenTracks,
+            activeAudioSources,
+            current,
+            currentTempo
+        );
         applyVcaGains();
         applyAutomation(newPosition);
 

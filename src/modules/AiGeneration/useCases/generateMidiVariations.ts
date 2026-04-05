@@ -76,6 +76,8 @@ ONLY output raw JSON, no markdown blocks.`;
             createAlternativeClips(targetClip.id, data.variations as any);
         }
     } catch (error) {
-        throw new Error(`Failed to parse variations from AI: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(
+            `Failed to parse variations from AI: ${error instanceof Error ? error.message : String(error)}`
+        );
     }
 }

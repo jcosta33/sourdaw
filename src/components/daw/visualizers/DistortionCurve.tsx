@@ -9,9 +9,9 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type DistortionCurveProps = {
-    drive: number;      // 0–100
-    tone: number;       // 200–8000 Hz (for display label only)
-    mix: number;        // 0–1
+    drive: number; // 0–100
+    tone: number; // 200–8000 Hz (for display label only)
+    mix: number; // 0–1
     width?: number;
     height?: number;
     onParamChange?: (paramId: string, value: number) => void;
@@ -91,12 +91,12 @@ export const DistortionCurve = ({
         const steps = gw;
 
         for (let i = 0; i <= steps; i++) {
-            const inputNorm = i / steps;             // 0–1
-            const input = inputNorm * 2 - 1;         // -1 to +1
+            const inputNorm = i / steps; // 0–1
+            const input = inputNorm * 2 - 1; // -1 to +1
             const shaped = waveshape(input, normalizedDrive);
             // Blend with dry based on mix
             const blended = input * (1 - mix) + shaped * mix;
-            const outputNorm = (blended + 1) / 2;    // back to 0–1
+            const outputNorm = (blended + 1) / 2; // back to 0–1
             const x = pad + i;
             const y = pad + gh - outputNorm * gh;
             points.push([x, y]);

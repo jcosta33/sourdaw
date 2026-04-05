@@ -32,9 +32,7 @@ export const Oscilloscope = ({
         ctx.scale(dpr, dpr);
 
         // Resolve CSS variable color to hex for canvas
-        const resolvedColor = color.startsWith('var(')
-            ? resolveToken(color.slice(4, -1), '#a882ff')
-            : color;
+        const resolvedColor = color.startsWith('var(') ? resolveToken(color.slice(4, -1), '#a882ff') : color;
 
         // Background — deep gradient
         ctx.clearRect(0, 0, width, height);
@@ -108,11 +106,5 @@ export const Oscilloscope = ({
         ctx.stroke();
     }, [buffer, width, height, color]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            style={{ width, height }}
-            className="rounded-md"
-        />
-    );
+    return <canvas ref={canvasRef} style={{ width, height }} className="rounded-md" />;
 };

@@ -3,7 +3,13 @@ import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap, Check } from '
 
 import { isLlmAvailable, resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
 import { unloadEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
-import { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, type ModelInfo, getActiveModelId } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import {
+    NATIVE_MODEL_INFO,
+    CLOUD_MODEL_INFO,
+    WEBLLM_MODELS,
+    type ModelInfo,
+    getActiveModelId,
+} from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { Button } from '#/components/ui/button';
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
@@ -57,7 +63,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             ? NATIVE_MODEL_INFO
             : backend === 'cloud'
               ? CLOUD_MODEL_INFO
-              : WEBLLM_MODELS.find((m) => m.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
+              : (WEBLLM_MODELS.find((m) => m.id === selectedModelId) ?? WEBLLM_MODELS[1]!);
 
     if (!isLlmAvailable()) {
         return (

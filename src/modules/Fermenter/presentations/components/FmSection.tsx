@@ -31,9 +31,7 @@ export const FmSection = ({
 }: FmSectionProps): ReactElement => {
     return (
         <div className="space-y-2">
-            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
-                FM Engine
-            </div>
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">FM Engine</div>
 
             {/* Algorithm selector */}
             <div className="px-1">
@@ -43,7 +41,9 @@ export const FmSection = ({
                     className="w-full bg-surface-inset border border-border/40 rounded px-1.5 py-0.5 text-[9px] text-foreground cursor-pointer"
                 >
                     {FM_ALGORITHM_NAMES.map((name, i) => (
-                        <option key={i} value={i}>{name}</option>
+                        <option key={i} value={i}>
+                            {name}
+                        </option>
                     ))}
                 </select>
             </div>
@@ -60,7 +60,10 @@ export const FmSection = ({
                                 paramId={`fmRatio${i + 1}`}
                                 value={ratio}
                                 onChange={(v) => onParam(`fmRatio${i + 1}`, v)}
-                                min={0.5} max={16} step={0.5} defaultValue={i + 1}
+                                min={0.5}
+                                max={16}
+                                step={0.5}
+                                defaultValue={i + 1}
                                 size="sm"
                             />
                             <span className="text-[7px] text-muted-foreground/60 font-mono">{ratio.toFixed(1)}×</span>
@@ -68,10 +71,15 @@ export const FmSection = ({
                                 paramId={`fmLevel${i + 1}`}
                                 value={level}
                                 onChange={(v) => onParam(`fmLevel${i + 1}`, v)}
-                                min={0} max={1} step={0.01} defaultValue={1}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={1}
                                 size="sm"
                             />
-                            <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(level * 100)}%</span>
+                            <span className="text-[7px] text-muted-foreground/60 font-mono">
+                                {Math.round(level * 100)}%
+                            </span>
                         </div>
                     );
                 })}
@@ -84,7 +92,10 @@ export const FmSection = ({
                         paramId="fmFeedback"
                         value={feedback}
                         onChange={(v) => onParam('fmFeedback', v)}
-                        min={0} max={1} step={0.01} defaultValue={0}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0}
                         size="lg"
                     />
                     <span className="text-[8px] text-muted-foreground">Feedback</span>
@@ -94,7 +105,10 @@ export const FmSection = ({
                         paramId="fmModAmount"
                         value={modAmount}
                         onChange={(v) => onParam('fmModAmount', v)}
-                        min={0} max={4} step={0.01} defaultValue={1}
+                        min={0}
+                        max={4}
+                        step={0.01}
+                        defaultValue={1}
                         size="lg"
                     />
                     <span className="text-[8px] text-muted-foreground">Depth</span>

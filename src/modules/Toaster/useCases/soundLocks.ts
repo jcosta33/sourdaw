@@ -36,12 +36,8 @@ export function setSoundLock(padIndex: number, stepIndex: number, engineType: Dr
 
     newSteps[stepIndex] = step;
 
-    const newTracks = pattern.tracks.map((t) =>
-        t.padIndex === padIndex ? { ...t, steps: newSteps } : t
-    );
-    const newPatterns = state.kit.patterns.map((p) =>
-        p.id === pattern.id ? { ...p, tracks: newTracks } : p
-    );
+    const newTracks = pattern.tracks.map((t) => (t.padIndex === padIndex ? { ...t, steps: newSteps } : t));
+    const newPatterns = state.kit.patterns.map((p) => (p.id === pattern.id ? { ...p, tracks: newTracks } : p));
     toasterStore.set({ ...state, kit: { ...state.kit, patterns: newPatterns } });
 }
 

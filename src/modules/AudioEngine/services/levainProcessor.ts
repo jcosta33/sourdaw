@@ -38,13 +38,13 @@ const PARAM_MAP = {
 };
 
 class LevainProcessor extends AudioWorkletProcessor {
-    _instance = null;   // LevainInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory (for direct buffer access in process())
+    _instance = null; // LevainInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
     _faulted = false;
     _bypassed = false;
     _pendingMessages = [];
-    _queue = [];        // Sorted by sampleFrame (integer sample count)
+    _queue = []; // Sorted by sampleFrame (integer sample count)
 
     constructor() {
         super();
@@ -83,7 +83,8 @@ class LevainProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg) {
-        let lo = 0, hi = this._queue.length;
+        let lo = 0,
+            hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
             if (this._queue[mid].sampleFrame <= msg.sampleFrame) lo = mid + 1;
@@ -128,12 +129,27 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'addZone': {
                 const loopMode = msg.loopMode === 'forward' ? 1 : msg.loopMode === 'pingpong' ? 2 : 0;
                 inst.add_zone(
-                    msg.zoneId, msg.sampleId, msg.articulationId,
-                    msg.rootNote, msg.loKey, msg.hiKey, msg.loVel, msg.hiVel,
-                    msg.rrPos, msg.rrLen, msg.micId,
-                    !!msg.isRelease, loopMode,
-                    msg.loopStart, msg.loopEnd, msg.loopCrossfade,
-                    msg.gainDb, msg.attack, msg.decay, msg.sustain, msg.release
+                    msg.zoneId,
+                    msg.sampleId,
+                    msg.articulationId,
+                    msg.rootNote,
+                    msg.loKey,
+                    msg.hiKey,
+                    msg.loVel,
+                    msg.hiVel,
+                    msg.rrPos,
+                    msg.rrLen,
+                    msg.micId,
+                    !!msg.isRelease,
+                    loopMode,
+                    msg.loopStart,
+                    msg.loopEnd,
+                    msg.loopCrossfade,
+                    msg.gainDb,
+                    msg.attack,
+                    msg.decay,
+                    msg.sustain,
+                    msg.release
                 );
                 break;
             }

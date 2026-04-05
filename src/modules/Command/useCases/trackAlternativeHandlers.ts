@@ -112,9 +112,7 @@ export function handleRenameTrackAlternative(action: Extract<AppAction, { type: 
 
             return {
                 ...track,
-                alternatives: track.alternatives.map((alt) =>
-                    alt.id === alternativeId ? { ...alt, name } : alt
-                ),
+                alternatives: track.alternatives.map((alt) => (alt.id === alternativeId ? { ...alt, name } : alt)),
             };
         }),
     });

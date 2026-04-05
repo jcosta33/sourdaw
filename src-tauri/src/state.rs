@@ -1,10 +1,10 @@
+use daw_engine::audio_bridge::PluginAudioBridgeHandle;
+use daw_engine::EngineHandle;
+use daw_plugin_host::AudioPlugin;
+use daw_plugin_host::ClapWrapper;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
-use daw_plugin_host::AudioPlugin;
-use daw_plugin_host::ClapWrapper;
-use daw_engine::EngineHandle;
-use daw_engine::audio_bridge::PluginAudioBridgeHandle;
 
 pub struct PluginInstanceData {
     pub plugin: Box<dyn AudioPlugin>,

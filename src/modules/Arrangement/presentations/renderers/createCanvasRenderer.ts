@@ -5,7 +5,6 @@ import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureM
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { drawClip } from './clipDrawing';
 
-
 export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRenderer {
     const ctx = canvas.getContext('2d')!;
     let width = canvas.width;
@@ -279,8 +278,6 @@ function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel
         }
     }
 }
-
-
 
 function drawLoopRegion(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, height: number): void {
     const transport = transportStore.value;

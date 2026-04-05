@@ -5,13 +5,7 @@
  * Features: play, rename, delete macros + recording indicator.
  */
 
-import {
-    type ReactElement,
-    useSyncExternalStore,
-    useState,
-    useRef,
-    useEffect,
-} from 'react';
+import { type ReactElement, useSyncExternalStore, useState, useRef, useEffect } from 'react';
 import { Play, Trash2, Pencil, Circle, Square } from 'lucide-react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';

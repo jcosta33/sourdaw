@@ -15,10 +15,53 @@ import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 // Local type aliases — duplicated from AiGeneration algorithm files to avoid
 // a circular module dependency (AiGeneration already imports from AiRuntime).
 type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
-type ScaleType = 'major' | 'minor' | 'pentatonic' | 'minor-pentatonic' | 'blues' | 'dorian' | 'mixolydian' | 'lydian' | 'phrygian' | 'locrian' | 'harmonic-minor' | 'melodic-minor' | 'whole-tone' | 'chromatic';
-type ChordProgressionStyle = 'pop' | 'jazz' | 'classical' | 'edm' | 'blues' | 'rnb' | 'folk' | 'cinematic' | 'neo-soul' | 'gospel' | 'rock' | 'lofi';
+type ScaleType =
+    | 'major'
+    | 'minor'
+    | 'pentatonic'
+    | 'minor-pentatonic'
+    | 'blues'
+    | 'dorian'
+    | 'mixolydian'
+    | 'lydian'
+    | 'phrygian'
+    | 'locrian'
+    | 'harmonic-minor'
+    | 'melodic-minor'
+    | 'whole-tone'
+    | 'chromatic';
+type ChordProgressionStyle =
+    | 'pop'
+    | 'jazz'
+    | 'classical'
+    | 'edm'
+    | 'blues'
+    | 'rnb'
+    | 'folk'
+    | 'cinematic'
+    | 'neo-soul'
+    | 'gospel'
+    | 'rock'
+    | 'lofi';
 type ChordVoicing = 'close' | 'open' | 'spread' | 'power';
-type DrumPatternStyle = 'four-on-floor' | 'breakbeat' | 'trap' | 'jazz' | 'latin' | 'rock' | 'dnb' | 'half-time' | 'blues' | 'reggae' | 'lofi' | 'house' | 'techno' | 'synthwave' | 'afrobeat' | 'metal' | 'punk';
+type DrumPatternStyle =
+    | 'four-on-floor'
+    | 'breakbeat'
+    | 'trap'
+    | 'jazz'
+    | 'latin'
+    | 'rock'
+    | 'dnb'
+    | 'half-time'
+    | 'blues'
+    | 'reggae'
+    | 'lofi'
+    | 'house'
+    | 'techno'
+    | 'synthwave'
+    | 'afrobeat'
+    | 'metal'
+    | 'punk';
 
 // ── Safe enum mapping ────────────────────────────────────────────────────────
 
@@ -267,7 +310,7 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
     const findTrackId = (nameOrId: string): string | null => {
         if (state.tracks.some((t) => t.id === nameOrId)) return nameOrId;
         if (mockTracks.some((t) => t.id === nameOrId)) return nameOrId;
-        
+
         let match = bestMatch(nameOrId, state.tracks, (t) => t.name);
         if (!match) match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;
         return match?.id ?? null;
@@ -306,7 +349,8 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
                 const selectedTrackId = state.selectedTrackId;
                 const selectedTrack = selectedTrackId ? state.tracks.find((t) => t.id === selectedTrackId) : null;
                 const lowerName = dso.track_id.toLowerCase();
-                const isSelectedRef = lowerName.includes('selected') || lowerName.includes('current') || lowerName.includes('this');
+                const isSelectedRef =
+                    lowerName.includes('selected') || lowerName.includes('current') || lowerName.includes('this');
 
                 if (isSelectedRef && selectedTrack) {
                     // Resolve to the actually selected track
@@ -563,7 +607,11 @@ async function executeSingleDso(dso: Dso): Promise<void> {
 
     switch (dso.op) {
         case 'add_track': {
-            addTrack({ id: (dso as any).track_id, name: dso.name, kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master' });
+            addTrack({
+                id: (dso as any).track_id,
+                name: dso.name,
+                kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master',
+            });
             break;
         }
 
@@ -573,42 +621,66 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'rename_track': {
-            await executeAppAction({ type: 'renameTrack', payload: { trackId: dso.track_id, name: dso.name } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'renameTrack', payload: { trackId: dso.track_id, name: dso.name } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'set_track_volume': {
-            await executeAppAction({ type: 'setTrackGain', payload: { trackId: dso.track_id, gain: dso.gain } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'setTrackGain', payload: { trackId: dso.track_id, gain: dso.gain } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'set_track_pan': {
-            await executeAppAction({ type: 'setTrackPan', payload: { trackId: dso.track_id, pan: dso.pan } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'setTrackPan', payload: { trackId: dso.track_id, pan: dso.pan } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'mute_track': {
-            await executeAppAction({ type: 'muteTrack', payload: { trackId: dso.track_id, muted: dso.muted } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'muteTrack', payload: { trackId: dso.track_id, muted: dso.muted } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'solo_track': {
-            await executeAppAction({ type: 'soloTrack', payload: { trackId: dso.track_id, soloed: dso.soloed } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'soloTrack', payload: { trackId: dso.track_id, soloed: dso.soloed } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'arm_track': {
-            await executeAppAction({ type: 'armTrack', payload: { trackId: dso.track_id, armed: dso.armed } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'armTrack', payload: { trackId: dso.track_id, armed: dso.armed } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'color_track': {
-            await executeAppAction({ type: 'setTrackColor', payload: { trackId: dso.track_id, color: dso.color } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'setTrackColor', payload: { trackId: dso.track_id, color: dso.color } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'reorder_track': {
-            await executeAppAction({ type: 'reorderTrack', payload: { trackId: dso.track_id, newIndex: dso.new_index } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'reorderTrack', payload: { trackId: dso.track_id, newIndex: dso.new_index } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -629,13 +701,23 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'rename_clip': {
-            await executeAppAction({ type: 'renameClip', payload: { clipId: dso.clip_id, name: dso.name } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'renameClip', payload: { clipId: dso.clip_id, name: dso.name } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'move_clip': {
             await executeAppAction(
-                { type: 'moveClip', payload: { clipId: dso.clip_id, trackId: dso.destination_track_id, startBeat: dso.destination_start_beats } },
+                {
+                    type: 'moveClip',
+                    payload: {
+                        clipId: dso.clip_id,
+                        trackId: dso.destination_track_id,
+                        startBeat: dso.destination_start_beats,
+                    },
+                },
                 DSO_EXEC_OPTIONS
             );
             break;
@@ -659,7 +741,10 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'split_clip': {
-            await executeAppAction({ type: 'splitClip', payload: { clipId: dso.clip_id, beat: dso.split_at_beats } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: dso.clip_id, beat: dso.split_at_beats } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -688,12 +773,18 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'bypass_device': {
-            await executeAppAction({ type: 'bypassDevice', payload: { deviceId: dso.device_id, bypassed: dso.bypassed } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'bypassDevice', payload: { deviceId: dso.device_id, bypassed: dso.bypassed } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'set_tempo': {
-            await executeAppAction({ type: 'setTempo', payload: { bpm: Math.max(20, Math.min(999, dso.bpm)) } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'setTempo', payload: { bpm: Math.max(20, Math.min(999, dso.bpm)) } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -727,7 +818,10 @@ async function executeSingleDso(dso: Dso): Promise<void> {
                 break;
             }
             await executeAppAction(
-                { type: 'setDeviceParameter', payload: { deviceId: resolvedId, paramId: dso.param_name, value: dso.value } },
+                {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: resolvedId, paramId: dso.param_name, value: dso.value },
+                },
                 DSO_EXEC_OPTIONS
             );
             break;
@@ -742,13 +836,15 @@ async function executeSingleDso(dso: Dso): Promise<void> {
                 const clipStartBeat = clip?.startBeat ?? 0;
 
                 const existing = ms.notesByClipId[dso.clip_id] ?? [];
-                const newNotes = dso.notes.map((n: { pitch: number; start_beat: number; duration: number; velocity: number }, i: number) => ({
-                    id: `note-ai-${Date.now()}-${i}`,
-                    pitch: Math.max(0, Math.min(127, n.pitch)),
-                    startBeat: Math.max(0, clipStartBeat + n.start_beat),
-                    duration: Math.max(0.01, n.duration),
-                    velocity: Math.max(1, Math.min(127, n.velocity)),
-                }));
+                const newNotes = dso.notes.map(
+                    (n: { pitch: number; start_beat: number; duration: number; velocity: number }, i: number) => ({
+                        id: `note-ai-${Date.now()}-${i}`,
+                        pitch: Math.max(0, Math.min(127, n.pitch)),
+                        startBeat: Math.max(0, clipStartBeat + n.start_beat),
+                        duration: Math.max(0.01, n.duration),
+                        velocity: Math.max(1, Math.min(127, n.velocity)),
+                    })
+                );
                 midiStore.set({
                     ...ms,
                     notesByClipId: {
@@ -761,7 +857,10 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'set_clip_gain': {
-            await executeAppAction({ type: 'setClipGain', payload: { clipId: dso.clip_id, gain: dso.gain } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'setClipGain', payload: { clipId: dso.clip_id, gain: dso.gain } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -782,7 +881,8 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const key = noteNameToMidi(dso.key);
             const style = toChordStyle(dso.progression);
             const voicing = toChordVoicing(dso.voicing);
-            const { applyChordProgressionToTrack } = await import('#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack');
+            const { applyChordProgressionToTrack } =
+                await import('#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack');
             applyChordProgressionToTrack(
                 dso.track_id,
                 { style, key, scale: 'major', bars: dso.bars, voicing },
@@ -793,17 +893,17 @@ async function executeSingleDso(dso: Dso): Promise<void> {
 
         case 'generate_drums': {
             const style = toDrumStyle(dso.style);
-            const { applyDrumPatternToTrack } = await import('#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack');
-            applyDrumPatternToTrack(
-                dso.track_id,
-                { style, bars: dso.bars, density: dso.density },
-                dso.start_beat ?? 0
-            );
+            const { applyDrumPatternToTrack } =
+                await import('#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack');
+            applyDrumPatternToTrack(dso.track_id, { style, bars: dso.bars, density: dso.density }, dso.start_beat ?? 0);
             break;
         }
 
         case 'transpose_notes': {
-            await executeAppAction({ type: 'transposeNotes', payload: { clipId: dso.clip_id, semitones: dso.semitones } }, DSO_EXEC_OPTIONS);
+            await executeAppAction(
+                { type: 'transposeNotes', payload: { clipId: dso.clip_id, semitones: dso.semitones } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 

@@ -62,7 +62,12 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                         >
                             <RefreshCw className={`size-3 ${state.isAnalyzing ? 'animate-spin' : ''}`} />
                         </Button>
-                        <Button variant="ghost" size="icon-xs" onClick={toggleMixAnalysisPanel} aria-label="Close mix analysis">
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={toggleMixAnalysisPanel}
+                            aria-label="Close mix analysis"
+                        >
                             <X className="size-3" />
                         </Button>
                     </div>

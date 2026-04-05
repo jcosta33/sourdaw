@@ -16,8 +16,8 @@
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
 class ProofChamberProcessor extends AudioWorkletProcessor {
-    _instance = null;   // ProofChamberInstance (generated wasm-bindgen class)
-    _memory = null;     // WebAssembly.Memory
+    _instance = null; // ProofChamberInstance (generated wasm-bindgen class)
+    _memory = null; // WebAssembly.Memory
     _ready = false;
     _faulted = false;
     _bypassed = false;

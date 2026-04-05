@@ -12,25 +12,43 @@ import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
  * Must match toaster/src/pad.rs set_param("engine_type") match arms.
  */
 export const TOASTER_ENGINE_MAP: Record<DrumEngineType, number> = {
-    'kick-808': 0, 'kick-909': 0, 'kick-analog': 0,
-    'snare-808': 1, 'snare-analog': 1,
-    'hihat-closed': 2, 'hihat-open': 2,
-    'clap': 3,
-    'cowbell': 9, 'clave': 10, 'rimshot': 12, 'shaker': 11, 'perc-generic': 4,
-    'tom': 5,
-    'cymbal': 6,
-    'modal-tabla': 7, 'modal-bongo': 7, 'modal-woodblock': 7, 'modal-metal': 7,
+    'kick-808': 0,
+    'kick-909': 0,
+    'kick-analog': 0,
+    'snare-808': 1,
+    'snare-analog': 1,
+    'hihat-closed': 2,
+    'hihat-open': 2,
+    clap: 3,
+    cowbell: 9,
+    clave: 10,
+    rimshot: 12,
+    shaker: 11,
+    'perc-generic': 4,
+    tom: 5,
+    cymbal: 6,
+    'modal-tabla': 7,
+    'modal-bongo': 7,
+    'modal-woodblock': 7,
+    'modal-metal': 7,
     'fm-perc': 8,
-    'sample': 4,
+    sample: 4,
 };
 
-export function getToasterControls(): { setPadParam: (pad: number, name: string, value: number) => void; setParam: (name: string, value: number) => void } | null {
+export function getToasterControls(): {
+    setPadParam: (pad: number, name: string, value: number) => void;
+    setParam: (name: string, value: number) => void;
+} | null {
     const tracks = getAllTracks();
     const toasterTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
-    if (!toasterTrack) { return null; }
+    if (!toasterTrack) {
+        return null;
+    }
 
     const strip = getTrackStrip(toasterTrack.id);
-    if (!strip) { return null; }
+    if (!strip) {
+        return null;
+    }
 
     const dn = strip.deviceNodes.find((d) => d.toasterControls?.ready);
     return dn?.toasterControls ?? null;
@@ -42,7 +60,9 @@ export function loadToasterKitPreset(kit: ToasterKit): void {
 
     // Forward to the WASM engine
     const controls = getToasterControls();
-    if (!controls) { return; }
+    if (!controls) {
+        return;
+    }
 
     // Kit-level params (snake_case for Rust)
     controls.setParam('master_gain', kit.masterGain);
@@ -60,7 +80,7 @@ export function loadToasterKitPreset(kit: ToasterKit): void {
         const pad = kit.pads[i]!;
         const engineIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
         controls.setPadParam(i, 'engine_type', engineIdx);
-        
+
         if (pad.engineType === 'hihat-open') controls.setPadParam(i, 'open', 1);
         if (pad.engineType === 'hihat-closed') controls.setPadParam(i, 'open', 0);
 

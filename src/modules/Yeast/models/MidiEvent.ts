@@ -36,7 +36,7 @@ export type TransportInfo = {
 // ── Utility functions ────────────────────────────────────────────────────────
 
 export function samplesPerBeat(t: TransportInfo): number {
-    return t.sampleRate * 60.0 / t.bpm;
+    return (t.sampleRate * 60.0) / t.bpm;
 }
 
 export function ppqToSamples(ppq: number, t: TransportInfo): number {
@@ -56,8 +56,11 @@ export type RateValue =
 export function rateToBeats(rate: RateValue): number {
     const base = 4.0 / rate.denom;
     switch (rate.type) {
-        case 'straight': return base;
-        case 'dotted': return base * 1.5;
-        case 'triplet': return base * (2.0 / 3.0);
+        case 'straight':
+            return base;
+        case 'dotted':
+            return base * 1.5;
+        case 'triplet':
+            return base * (2.0 / 3.0);
     }
 }

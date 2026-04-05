@@ -6,7 +6,12 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
-import { grinderStore, getGrinderState, replaceGrinderPatchLocally, type GrinderState } from '../../stores/grinderStore';
+import {
+    grinderStore,
+    getGrinderState,
+    replaceGrinderPatchLocally,
+    type GrinderState,
+} from '../../stores/grinderStore';
 import { loadGrinderPatchWithAudio, setGrinderParamWithAudio } from '../../useCases/grinderParamBridge';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 import {
@@ -835,7 +840,16 @@ function ControlDeck({
                     step={0.1}
                     defaultValue={5}
                 />
-                <GrinderKnob deviceId={deviceId} value={patch.mid} param="mid" label="Mid" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob
+                    deviceId={deviceId}
+                    value={patch.mid}
+                    param="mid"
+                    label="Mid"
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    defaultValue={5}
+                />
                 <GrinderKnob
                     deviceId={deviceId}
                     value={patch.treble}

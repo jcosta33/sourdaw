@@ -94,7 +94,10 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             + {p.name}
                         </MixerInsetButton>
                     ))}
-                    <div className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider mt-0.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div
+                        className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider mt-0.5"
+                        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+                    >
                         MIDI FX
                     </div>
                     {MIDI_EFFECT_FACTORIES.map((fx) => (

@@ -1,5 +1,4 @@
-import { type ReactElement,
-    type MouseEvent, type ReactNode, useState, useRef } from 'react';
+import { type ReactElement, type MouseEvent, type ReactNode, useState, useRef } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
@@ -19,8 +18,6 @@ import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
-
-
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },

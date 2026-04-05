@@ -57,8 +57,8 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                         <span className="text-[10px] text-foreground/80">Follow Chord Track</span>
                     </label>
                     <p className="mt-1.5 text-[9px] text-muted-foreground leading-tight">
-                        Transpose MIDI notes in real-time based on the chord track. Notes are mapped
-                        relative to the chord at each clip's start position.
+                        Transpose MIDI notes in real-time based on the chord track. Notes are mapped relative to the
+                        chord at each clip's start position.
                     </p>
                 </SurfaceCard>
             </div>

@@ -32,11 +32,33 @@ const CORE_TOOLS = new Set([
 const KEYWORD_TOOLS: Array<{ keywords: RegExp; tools: string[] }> = [
     {
         keywords: /track|session|setup|song|project/i,
-        tools: ['addTrack', 'removeTrack', 'duplicateTrack', 'setTrackGain', 'setTrackPan', 'muteTrack', 'soloTrack', 'armTrack', 'renameTrack', 'setTrackColor'],
+        tools: [
+            'addTrack',
+            'removeTrack',
+            'duplicateTrack',
+            'setTrackGain',
+            'setTrackPan',
+            'muteTrack',
+            'soloTrack',
+            'armTrack',
+            'renameTrack',
+            'setTrackColor',
+        ],
     },
     {
         keywords: /midi|note|chord|melody|bass|drum|pattern|riff|beat/i,
-        tools: ['addNotes', 'completeMidi', 'variationMidi', 'generateBassline', 'generateDrumPattern', 'generateMelody', 'generateChordProgression', 'addMidiNote', 'quantizeMidi', 'transposeMidi'],
+        tools: [
+            'addNotes',
+            'completeMidi',
+            'variationMidi',
+            'generateBassline',
+            'generateDrumPattern',
+            'generateMelody',
+            'generateChordProgression',
+            'addMidiNote',
+            'quantizeMidi',
+            'transposeMidi',
+        ],
     },
     {
         keywords: /mix|volume|loud|quiet|gain|pan|level|balance/i,
@@ -68,7 +90,15 @@ const KEYWORD_TOOLS: Array<{ keywords: RegExp; tools: string[] }> = [
     },
     {
         keywords: /clip|split|trim|move|duplicate|copy|paste/i,
-        tools: ['addClip', 'removeClip', 'splitClip', 'moveClip', 'duplicateClip', 'duplicateClipToNextBar', 'renameClip'],
+        tools: [
+            'addClip',
+            'removeClip',
+            'splitClip',
+            'moveClip',
+            'duplicateClip',
+            'duplicateClipToNextBar',
+            'renameClip',
+        ],
     },
     {
         keywords: /stem|separate|vocal|instrumental/i,
@@ -109,9 +139,13 @@ export function selectToolsForPrompt(allTools: readonly ToolSchema[], userPrompt
         for (const { tools } of KEYWORD_TOOLS) {
             for (const t of tools) {
                 selected.add(t);
-                if (selected.size >= MAX_TOOLS) { break; }
+                if (selected.size >= MAX_TOOLS) {
+                    break;
+                }
             }
-            if (selected.size >= MAX_TOOLS) { break; }
+            if (selected.size >= MAX_TOOLS) {
+                break;
+            }
         }
     }
 

@@ -68,7 +68,7 @@ function parseFilename(filename) {
     if (velPart?.match(/^(v\d+|loud|soft|medium)$/i)) {
         dynamic = velPart.toLowerCase(); // v1, v2, v3...
         parts.pop();
-    } else if (['ppp','pp','p','mp','mf','f','ff','fff'].includes(velPart)) {
+    } else if (['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'].includes(velPart)) {
         dynamic = velPart;
         parts.pop();
     } else {
@@ -114,8 +114,7 @@ function buildKeyRanges(sortedMidis, [rangeMin, rangeMax]) {
 
 // ─── Velocity layer builder ─────────────────────────────────────────────
 
-const DYN_ORDER = ['ppp','pp','p','mp','mf','f','ff','fff',
-    'v1','v2','v3','v4','v5','v6','v7','v8'];
+const DYN_ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8'];
 
 function velLayers(dynamics) {
     const sorted = [...new Set(dynamics)].sort((a, b) => DYN_ORDER.indexOf(a) - DYN_ORDER.indexOf(b));
@@ -148,20 +147,20 @@ async function processArt({ files, vscoPath, artType, artId, loopMode, keyRange,
         byNote.get(p.midi).push(p);
     }
 
-    const allDynamics = parsed.map(p => p.dynamic);
+    const allDynamics = parsed.map((p) => p.dynamic);
     const layers = velLayers(allDynamics);
     const sortedMidis = [...byNote.keys()].sort((a, b) => a - b);
     const ranges = buildKeyRanges(sortedMidis, keyRange);
 
     const zones = [];
-    let dl = 0, cached = 0, errors = 0;
+    let dl = 0,
+        cached = 0,
+        errors = 0;
 
     for (const { midi, loKey, hiKey } of ranges) {
         const noteSamples = byNote.get(midi) || [];
         for (const layer of layers) {
-            const rrSamples = noteSamples
-                .filter(s => s.dynamic === layer.dynamic)
-                .sort((a, b) => a.rrPos - b.rrPos);
+            const rrSamples = noteSamples.filter((s) => s.dynamic === layer.dynamic).sort((a, b) => a.rrPos - b.rrPos);
             if (rrSamples.length === 0) continue;
 
             const rrLen = rrSamples.length;
@@ -178,21 +177,32 @@ async function processArt({ files, vscoPath, artType, artId, loopMode, keyRange,
                 }
                 zones.push({
                     file: sample.filename,
-                    rootNote: midi, loKey, hiKey,
-                    loVel: layer.loVel, hiVel: layer.hiVel,
-                    rrPos: sample.rrPos, rrLen,
-                    micId: 0, isRelease: false,
-                    loopMode, loopStart: 0, loopEnd: 0, loopCrossfade: 0,
+                    rootNote: midi,
+                    loKey,
+                    hiKey,
+                    loVel: layer.loVel,
+                    hiVel: layer.hiVel,
+                    rrPos: sample.rrPos,
+                    rrLen,
+                    micId: 0,
+                    isRelease: false,
+                    loopMode,
+                    loopStart: 0,
+                    loopEnd: 0,
+                    loopCrossfade: 0,
                     gainDb: 0,
-                    attack: ['sustain','tremolo'].includes(artType) ? 0.02 : 0.005,
-                    decay: 0.1, sustain: 1.0,
-                    release: ['sustain','tremolo'].includes(artType) ? 0.5 : 0.15,
+                    attack: ['sustain', 'tremolo'].includes(artType) ? 0.02 : 0.005,
+                    decay: 0.1,
+                    sustain: 1.0,
+                    release: ['sustain', 'tremolo'].includes(artType) ? 0.5 : 0.15,
                 });
             }
         }
     }
 
-    console.log(`    ✓ ${zones.length} zones — ${dl} downloaded, ${cached} cached${errors > 0 ? `, ${errors} errors` : ''}`);
+    console.log(
+        `    ✓ ${zones.length} zones — ${dl} downloaded, ${cached} cached${errors > 0 ? `, ${errors} errors` : ''}`
+    );
     if (zones.length === 0) return null;
     return { type: artType, id: artId, zones };
 }
@@ -207,7 +217,7 @@ async function fetchFileList(vscoPath) {
     if (!res.ok) {
         if (res.status === 429) return null; // Extreme HTTP rate limiting
         console.warn(`    ⚠️  Failed to fetch HTML tree: ${res.status}`);
-        return null; 
+        return null;
     }
     const html = await res.text();
     const regex = /href="\/sgossner\/VSCO-2-CE\/blob\/master\/([^"]+\.wav)"/gi;
@@ -224,127 +234,138 @@ async function fetchFileList(vscoPath) {
 
 const INSTRUMENTS = [
     {
-        id: 'violin-1', keyRange: [55, 103],
+        id: 'violin-1',
+        keyRange: [55, 103],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Strings/Solo Violin/Arco Vib' },
-            { artType: 'spiccato',  artId: 7,  loopMode: 'none',    vscoPath: 'Strings/Solo Violin/spic' },
-            { artType: 'pizzicato', artId: 10, loopMode: 'none',    vscoPath: 'Strings/Solo Violin/Pizz' },
-            { artType: 'tremolo',   artId: 13, loopMode: 'forward', vscoPath: 'Strings/Solo Violin/Trem' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Strings/Solo Violin/Arco Vib' },
+            { artType: 'spiccato', artId: 7, loopMode: 'none', vscoPath: 'Strings/Solo Violin/spic' },
+            { artType: 'pizzicato', artId: 10, loopMode: 'none', vscoPath: 'Strings/Solo Violin/Pizz' },
+            { artType: 'tremolo', artId: 13, loopMode: 'forward', vscoPath: 'Strings/Solo Violin/Trem' },
         ],
     },
     {
-        id: 'violin-2', keyRange: [55, 103],
+        id: 'violin-2',
+        keyRange: [55, 103],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Strings/Violin Section/susVib' },
-            { artType: 'spiccato',  artId: 7,  loopMode: 'none',    vscoPath: 'Strings/Violin Section/Spic' },
-            { artType: 'pizzicato', artId: 10, loopMode: 'none',    vscoPath: 'Strings/Violin Section/Pizz' },
-            { artType: 'tremolo',   artId: 13, loopMode: 'forward', vscoPath: 'Strings/Violin Section/Trem' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Strings/Violin Section/susVib' },
+            { artType: 'spiccato', artId: 7, loopMode: 'none', vscoPath: 'Strings/Violin Section/Spic' },
+            { artType: 'pizzicato', artId: 10, loopMode: 'none', vscoPath: 'Strings/Violin Section/Pizz' },
+            { artType: 'tremolo', artId: 13, loopMode: 'forward', vscoPath: 'Strings/Violin Section/Trem' },
         ],
     },
     {
-        id: 'viola', keyRange: [48, 93],
+        id: 'viola',
+        keyRange: [48, 93],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Strings/Viola Section/susvib' },
-            { artType: 'spiccato',  artId: 7,  loopMode: 'none',    vscoPath: 'Strings/Viola Section/spic' },
-            { artType: 'pizzicato', artId: 10, loopMode: 'none',    vscoPath: 'Strings/Viola Section/pizz' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Strings/Viola Section/susvib' },
+            { artType: 'spiccato', artId: 7, loopMode: 'none', vscoPath: 'Strings/Viola Section/spic' },
+            { artType: 'pizzicato', artId: 10, loopMode: 'none', vscoPath: 'Strings/Viola Section/pizz' },
         ],
     },
     {
-        id: 'cello', keyRange: [36, 84],
+        id: 'cello',
+        keyRange: [36, 84],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Strings/Cello Section/susvib' },
-            { artType: 'spiccato',  artId: 7,  loopMode: 'none',    vscoPath: 'Strings/Cello Section/spic' },
-            { artType: 'pizzicato', artId: 10, loopMode: 'none',    vscoPath: 'Strings/Cello Section/pizzT' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Strings/Cello Section/susvib' },
+            { artType: 'spiccato', artId: 7, loopMode: 'none', vscoPath: 'Strings/Cello Section/spic' },
+            { artType: 'pizzicato', artId: 10, loopMode: 'none', vscoPath: 'Strings/Cello Section/pizzT' },
         ],
     },
     {
-        id: 'double-bass', keyRange: [28, 67],
+        id: 'double-bass',
+        keyRange: [28, 67],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Strings/Solo Contrabass/SusVib' },
-            { artType: 'pizzicato', artId: 10, loopMode: 'none',    vscoPath: 'Strings/Solo Contrabass/Pizz' },
-            { artType: 'spiccato',  artId: 7,  loopMode: 'none',    vscoPath: 'Strings/Solo Contrabass/Spic' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Strings/Solo Contrabass/SusVib' },
+            { artType: 'pizzicato', artId: 10, loopMode: 'none', vscoPath: 'Strings/Solo Contrabass/Pizz' },
+            { artType: 'spiccato', artId: 7, loopMode: 'none', vscoPath: 'Strings/Solo Contrabass/Spic' },
         ],
     },
     {
-        id: 'trumpet', keyRange: [54, 82],
+        id: 'trumpet',
+        keyRange: [54, 82],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Brass/Trumpet/susvib' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Brass/Trumpet/stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Brass/Trumpet/susvib' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Brass/Trumpet/stac' },
         ],
     },
     {
-        id: 'horn', keyRange: [34, 77],
+        id: 'horn',
+        keyRange: [34, 77],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Brass/F Horn/sus' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Brass/F Horn/stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Brass/F Horn/sus' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Brass/F Horn/stac' },
         ],
     },
     {
-        id: 'trombone', keyRange: [40, 72],
+        id: 'trombone',
+        keyRange: [40, 72],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Brass/Tenor Trombone/sus' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Brass/Tenor Trombone/stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Brass/Tenor Trombone/sus' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Brass/Tenor Trombone/stac' },
         ],
     },
     {
-        id: 'tuba', keyRange: [28, 60],
+        id: 'tuba',
+        keyRange: [28, 60],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Brass/Tuba/sus' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Brass/Tuba/stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Brass/Tuba/sus' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Brass/Tuba/stac' },
         ],
     },
     {
-        id: 'flute', keyRange: [60, 96],
+        id: 'flute',
+        keyRange: [60, 96],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Woodwinds/Flute/susvib' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Woodwinds/Flute/stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Woodwinds/Flute/susvib' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Woodwinds/Flute/stac' },
         ],
     },
     {
-        id: 'oboe', keyRange: [58, 91],
+        id: 'oboe',
+        keyRange: [58, 91],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Woodwinds/Oboe/Sus' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Woodwinds/Oboe/Stacc' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Woodwinds/Oboe/Sus' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Woodwinds/Oboe/Stacc' },
         ],
     },
     {
-        id: 'clarinet', keyRange: [50, 91],
+        id: 'clarinet',
+        keyRange: [50, 91],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Woodwinds/Clarinet/susLong' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Woodwinds/Clarinet/stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Woodwinds/Clarinet/susLong' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Woodwinds/Clarinet/stac' },
         ],
     },
     {
-        id: 'bassoon', keyRange: [34, 75],
+        id: 'bassoon',
+        keyRange: [34, 75],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Woodwinds/Bassoon/sus' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Woodwinds/Bassoon/stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Woodwinds/Bassoon/sus' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Woodwinds/Bassoon/stac' },
         ],
     },
     {
-        id: 'piccolo', keyRange: [74, 108],
+        id: 'piccolo',
+        keyRange: [74, 108],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Woodwinds/Piccolo/Sus' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Woodwinds/Piccolo/Stac' },
+            { artType: 'sustain', artId: 0, loopMode: 'forward', vscoPath: 'Woodwinds/Piccolo/Sus' },
+            { artType: 'staccato', artId: 8, loopMode: 'none', vscoPath: 'Woodwinds/Piccolo/Stac' },
         ],
     },
     {
-        id: 'glockenspiel', keyRange: [72, 108],
-        articulations: [
-            { artType: 'sustain', artId: 0, loopMode: 'none', vscoPath: 'Percussion/Glock' },
-        ],
+        id: 'glockenspiel',
+        keyRange: [72, 108],
+        articulations: [{ artType: 'sustain', artId: 0, loopMode: 'none', vscoPath: 'Percussion/Glock' }],
     },
     {
-        id: 'marimba', keyRange: [45, 96],
-        articulations: [
-            { artType: 'sustain', artId: 0, loopMode: 'none', vscoPath: 'Percussion/Marimba' },
-        ],
+        id: 'marimba',
+        keyRange: [45, 96],
+        articulations: [{ artType: 'sustain', artId: 0, loopMode: 'none', vscoPath: 'Percussion/Marimba' }],
     },
     {
-        id: 'timpani', keyRange: [36, 57],
-        articulations: [
-            { artType: 'sustain', artId: 0, loopMode: 'none', vscoPath: 'Percussion/Timpani' },
-        ],
+        id: 'timpani',
+        keyRange: [36, 57],
+        articulations: [{ artType: 'sustain', artId: 0, loopMode: 'none', vscoPath: 'Percussion/Timpani' }],
     },
 ];
 
@@ -364,11 +385,13 @@ async function main() {
         if (existsSync(manifestPath)) {
             try {
                 const m = JSON.parse(await readFile(manifestPath, 'utf8'));
-                existingArts = m.articulations?.map(a => a.type) ?? [];
-            } catch { /* ignore */ }
+                existingArts = m.articulations?.map((a) => a.type) ?? [];
+            } catch {
+                /* ignore */
+            }
         }
 
-        const pending = articulations.filter(a => !existingArts.includes(a.artType));
+        const pending = articulations.filter((a) => !existingArts.includes(a.artType));
         if (pending.length === 0) {
             console.log(`✓ ${id} — already complete, skipping`);
             continue;
@@ -376,9 +399,8 @@ async function main() {
 
         console.log(`\n📂 ${id} (${pending.length} articulations to fetch)`);
 
-        const resultArts = existingArts.length > 0
-            ? JSON.parse(await readFile(manifestPath, 'utf8')).articulations
-            : [];
+        const resultArts =
+            existingArts.length > 0 ? JSON.parse(await readFile(manifestPath, 'utf8')).articulations : [];
 
         for (const art of pending) {
             console.log(`  🎵 ${art.artType} (${art.vscoPath})`);
@@ -396,7 +418,8 @@ async function main() {
             }
 
             const result = await processArt({
-                files, outDir,
+                files,
+                outDir,
                 vscoPath: art.vscoPath,
                 artType: art.artType,
                 artId: art.artId,
@@ -409,7 +432,9 @@ async function main() {
 
         if (resultArts.length > 0) {
             const manifest = {
-                version: 1, instrumentId: id, sampleRate: 44100,
+                version: 1,
+                instrumentId: id,
+                sampleRate: 44100,
                 micPositions: ['close'],
                 articulations: resultArts,
             };
@@ -426,4 +451,7 @@ async function main() {
     }
 }
 
-main().catch(err => { console.error('❌', err); process.exit(1); });
+main().catch((err) => {
+    console.error('❌', err);
+    process.exit(1);
+});

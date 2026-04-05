@@ -6,7 +6,7 @@
 
 export type GrooveTemplate = {
     name: string;
-    offsets: number[];  // 16 values, one per step
+    offsets: number[]; // 16 values, one per step
 };
 
 export const GROOVE_TEMPLATES: GrooveTemplate[] = [
@@ -27,7 +27,7 @@ export const GROOVE_TEMPLATES: GrooveTemplate[] = [
     {
         // SP-1200 timing (slightly uneven quantization from the Z80 processor)
         name: 'SP-1200',
-        offsets: [0, 0.12, 0.02, 0.10, 0, 0.11, 0.01, 0.12, 0, 0.12, 0.02, 0.10, 0, 0.11, 0.01, 0.12],
+        offsets: [0, 0.12, 0.02, 0.1, 0, 0.11, 0.01, 0.12, 0, 0.12, 0.02, 0.1, 0, 0.11, 0.01, 0.12],
     },
     {
         // TR-808 shuffle

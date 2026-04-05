@@ -134,7 +134,9 @@ export async function restoreLibrary(): Promise<void> {
                 if (handle) {
                     // Check if we still have permission
                     try {
-                        const perm = await (handle as unknown as { queryPermission: (opts: { mode: string }) => Promise<string> }).queryPermission({ mode: 'read' });
+                        const perm = await (
+                            handle as unknown as { queryPermission: (opts: { mode: string }) => Promise<string> }
+                        ).queryPermission({ mode: 'read' });
                         if (perm === 'granted') {
                             root.handle = handle;
                             root.status = 'ready';
@@ -195,7 +197,9 @@ export async function requestPermission(rootId: string): Promise<boolean> {
     }
 
     try {
-        const perm = await (root.handle as unknown as { requestPermission: (opts: { mode: string }) => Promise<string> }).requestPermission({ mode: 'read' });
+        const perm = await (
+            root.handle as unknown as { requestPermission: (opts: { mode: string }) => Promise<string> }
+        ).requestPermission({ mode: 'read' });
         if (perm === 'granted') {
             const { updateLibraryRootStatus } = await import('../stores/libraryStore');
             updateLibraryRootStatus(rootId, 'ready');

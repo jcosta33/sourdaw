@@ -1,4 +1,11 @@
-import { adjustmentLayerStore, getNextLayerId, EFFECT_PRESETS, LAYER_COLORS, type AdjustmentEffectType, type AdjustmentLayer } from '#/modules/Arrangement/stores/adjustmentLayer';
+import {
+    adjustmentLayerStore,
+    getNextLayerId,
+    EFFECT_PRESETS,
+    LAYER_COLORS,
+    type AdjustmentEffectType,
+    type AdjustmentLayer,
+} from '#/modules/Arrangement/stores/adjustmentLayer';
 
 export function createAdjustmentLayer(
     name: string,
@@ -20,7 +27,7 @@ export function createAdjustmentLayer(
         regions: [],
         enabled: true,
         mix: 1,
-        color: LAYER_COLORS[(state.layers.length) % LAYER_COLORS.length]!,
+        color: LAYER_COLORS[state.layers.length % LAYER_COLORS.length]!,
     };
 
     adjustmentLayerStore.set({ layers: [...state.layers, layer] });

@@ -19,9 +19,7 @@ export const ModulationSection = ({
     onParam,
 }: ModulationSectionProps): ReactElement => (
     <div className="space-y-2">
-        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
-            Modulation
-        </div>
+        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Modulation</div>
 
         {/* MSEG */}
         <div className="space-y-0.5">
@@ -29,8 +27,13 @@ export const ModulationSection = ({
             <div className="flex items-end gap-2 px-1">
                 <div className="flex flex-col items-center gap-0.5">
                     <RotaryKnob
-                        value={msegToFilter} onChange={(v) => onParam('msegToFilter', v)}
-                        min={-1} max={1} step={0.01} defaultValue={0} size="lg"
+                        value={msegToFilter}
+                        onChange={(v) => onParam('msegToFilter', v)}
+                        min={-1}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0}
+                        size="lg"
                     />
                     <span className="text-[7px] text-muted-foreground">→ Filter</span>
                 </div>
@@ -43,16 +46,26 @@ export const ModulationSection = ({
             <div className="flex items-end gap-2 px-1">
                 <div className="flex flex-col items-center gap-0.5">
                     <RotaryKnob
-                        value={seqRate} onChange={(v) => onParam('seqRate', v)}
-                        min={0.5} max={20} step={0.1} defaultValue={4} size="lg"
+                        value={seqRate}
+                        onChange={(v) => onParam('seqRate', v)}
+                        min={0.5}
+                        max={20}
+                        step={0.1}
+                        defaultValue={4}
+                        size="lg"
                     />
                     <span className="text-[7px] text-muted-foreground">Rate</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">{seqRate.toFixed(1)}Hz</span>
                 </div>
                 <div className="flex flex-col items-center gap-0.5">
                     <RotaryKnob
-                        value={seqToPitch} onChange={(v) => onParam('seqToPitch', v)}
-                        min={-1} max={1} step={0.01} defaultValue={0} size="lg"
+                        value={seqToPitch}
+                        onChange={(v) => onParam('seqToPitch', v)}
+                        min={-1}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0}
+                        size="lg"
                     />
                     <span className="text-[7px] text-muted-foreground">→ Pitch</span>
                 </div>

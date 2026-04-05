@@ -23,9 +23,13 @@ async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) { return cachedWasmBytes; }
+    if (cachedWasmBytes) {
+        return cachedWasmBytes;
+    }
     const response = await fetch(url);
-    if (!response.ok) { throw new Error(`Failed to fetch Bacteria WASM: ${response.status}`); }
+    if (!response.ok) {
+        throw new Error(`Failed to fetch Bacteria WASM: ${response.status}`);
+    }
     cachedWasmBytes = await response.arrayBuffer();
     return cachedWasmBytes;
 }
@@ -77,11 +81,18 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-            if (!settled) { settled = true; reject(new Error('BacteriaNode init timeout (10s)')); }
+            if (!settled) {
+                settled = true;
+                reject(new Error('BacteriaNode init timeout (10s)'));
+            }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
             if (e.data.type === 'ready') {
-                if (!settled) { settled = true; clearTimeout(timeout); resolve(); }
+                if (!settled) {
+                    settled = true;
+                    clearTimeout(timeout);
+                    resolve();
+                }
             } else if (e.data.type === 'error' && !settled) {
                 settled = true;
                 clearTimeout(timeout);
@@ -105,7 +116,10 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: BacteriaMeterData) => void) {
-            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
+            if (meterRafId !== null) {
+                cancelAnimationFrame(meterRafId);
+                meterRafId = null;
+            }
             if (!slot) return;
             const view = slot.view;
             const poll = () => {
@@ -119,12 +133,26 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             };
             meterRafId = requestAnimationFrame(poll);
         },
-        connect(dest: AudioNode) { node.connect(dest); },
-        disconnect() { try { node.disconnect(); } catch {} },
+        connect(dest: AudioNode) {
+            node.connect(dest);
+        },
+        disconnect() {
+            try {
+                node.disconnect();
+            } catch {}
+        },
         destroy() {
-            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
-            if (slot) { telemetryAllocator.releaseSlot(slot.byteOffset); slot = null; }
-            try { node.disconnect(); } catch {}
+            if (meterRafId !== null) {
+                cancelAnimationFrame(meterRafId);
+                meterRafId = null;
+            }
+            if (slot) {
+                telemetryAllocator.releaseSlot(slot.byteOffset);
+                slot = null;
+            }
+            try {
+                node.disconnect();
+            } catch {}
             node.port.close();
         },
         ready: readyPromise,

@@ -48,11 +48,21 @@ let groupId = 1;
 let takeSetId = 1;
 let regionId = 1;
 
-export function getNextGroupId(): string { return `grp-${groupId++}`; }
-export function getNextTakeSetId(): string { return `ts-${takeSetId++}`; }
-export function getNextRegionId(): string { return `gr-${regionId++}`; }
+export function getNextGroupId(): string {
+    return `grp-${groupId++}`;
+}
+export function getNextTakeSetId(): string {
+    return `ts-${takeSetId++}`;
+}
+export function getNextRegionId(): string {
+    return `gr-${regionId++}`;
+}
 
 export const GROUP_COLORS = [
-    'oklch(0.42 0.10 150)', 'oklch(0.42 0.10 210)', 'oklch(0.42 0.10 290)',
-    'oklch(0.42 0.10 340)', 'oklch(0.42 0.10 50)', 'oklch(0.42 0.10 80)',
+    'oklch(0.42 0.10 150)',
+    'oklch(0.42 0.10 210)',
+    'oklch(0.42 0.10 290)',
+    'oklch(0.42 0.10 340)',
+    'oklch(0.42 0.10 50)',
+    'oklch(0.42 0.10 80)',
 ];

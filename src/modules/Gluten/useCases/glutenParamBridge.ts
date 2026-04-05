@@ -95,7 +95,11 @@ function encodeGlutenValue(key: string, value: unknown): number | null {
     return null;
 }
 
-export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(deviceId: string, key: K, value: GlutenPatch[K]): void {
+export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
+    deviceId: string,
+    key: K,
+    value: GlutenPatch[K]
+): void {
     setGlutenParam(deviceId, key, value);
 
     const encodedValue = encodeGlutenValue(key, value);

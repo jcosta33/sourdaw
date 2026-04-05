@@ -58,10 +58,7 @@ export function isLevainDevice(deviceType: string): boolean {
  * Resumes the AudioContext if suspended. Caches WASM binary across calls.
  * Await `result.ready` before sending MIDI.
  */
-export async function createLevainNode(
-    ctx: BaseAudioContext,
-    wasmUrl?: string,
-): Promise<LevainNodeResult> {
+export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<LevainNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
@@ -111,13 +108,15 @@ export async function createLevainNode(
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 
     // Auto-load levain samples after WASM is ready.
-    readyPromise.then(() => {
-        autoLoadLevainSamples(node.port).catch((err) => {
-            console.warn('[LevainNode] Sample loading failed:', err);
+    readyPromise
+        .then(() => {
+            autoLoadLevainSamples(node.port).catch((err) => {
+                console.warn('[LevainNode] Sample loading failed:', err);
+            });
+        })
+        .catch(() => {
+            // WASM init failed — no samples to load
         });
-    }).catch(() => {
-        // WASM init failed — no samples to load
-    });
 
     const noteOn = (note: number, velocity: number, sampleFrame?: number): void => {
         if (!bypassed) {

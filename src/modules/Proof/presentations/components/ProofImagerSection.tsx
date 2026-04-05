@@ -25,9 +25,12 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
     };
 
     // Correlation bar color
-    const corrColor = correlation > 0.5 ? 'var(--color-accent-mint)'
-        : correlation > 0 ? 'var(--color-accent-peach)'
-        : 'var(--color-state-danger)';
+    const corrColor =
+        correlation > 0.5
+            ? 'var(--color-accent-mint)'
+            : correlation > 0
+              ? 'var(--color-accent-peach)'
+              : 'var(--color-state-danger)';
 
     return (
         <div className="flex flex-col gap-1.5 px-2">
@@ -59,10 +62,16 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                             <RotaryKnob
                                 value={patch.imgBandWidth[i]!}
                                 onChange={(v) => updateWidth(i, v)}
-                                min={0} max={2} step={0.01} defaultValue={i === 0 ? 0 : 1} size="md"
+                                min={0}
+                                max={2}
+                                step={0.01}
+                                defaultValue={i === 0 ? 0 : 1}
+                                size="md"
                             />
                             <span className="text-[7px] text-muted-foreground font-mono">
-                                {patch.imgBandWidth[i]! === 0 ? 'Mono' : `${(patch.imgBandWidth[i]! * 100).toFixed(0)}%`}
+                                {patch.imgBandWidth[i]! === 0
+                                    ? 'Mono'
+                                    : `${(patch.imgBandWidth[i]! * 100).toFixed(0)}%`}
                             </span>
                         </div>
                     ))}
@@ -84,10 +93,19 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                     </DawPluginToggle>
                     <RotaryKnob
                         value={patch.imgMonoBassFreq}
-                        onChange={(v) => { onPatchChange({ imgMonoBassFreq: v }); onSendParam('img_mono_bass_freq', v); }}
-                        min={40} max={200} step={1} defaultValue={80} size="sm"
+                        onChange={(v) => {
+                            onPatchChange({ imgMonoBassFreq: v });
+                            onSendParam('img_mono_bass_freq', v);
+                        }}
+                        min={40}
+                        max={200}
+                        step={1}
+                        defaultValue={80}
+                        size="sm"
                     />
-                    <span className="text-[6px] text-muted-foreground font-mono">{patch.imgMonoBassFreq.toFixed(0)} Hz</span>
+                    <span className="text-[6px] text-muted-foreground font-mono">
+                        {patch.imgMonoBassFreq.toFixed(0)} Hz
+                    </span>
                 </div>
 
                 {/* Correlation meter */}
@@ -101,14 +119,14 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                             className="absolute top-0 h-full rounded transition-all duration-100"
                             style={{
                                 backgroundColor: corrColor,
-                                left: correlation >= 0
-                                    ? '50%'
-                                    : `${50 + correlation * 50}%`,
+                                left: correlation >= 0 ? '50%' : `${50 + correlation * 50}%`,
                                 width: `${Math.abs(correlation) * 50}%`,
                             }}
                         />
                     </div>
-                    <span className="text-[7px] text-muted-foreground font-mono w-8 text-right">{correlation.toFixed(2)}</span>
+                    <span className="text-[7px] text-muted-foreground font-mono w-8 text-right">
+                        {correlation.toFixed(2)}
+                    </span>
                 </div>
             </div>
         </div>

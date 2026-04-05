@@ -179,11 +179,7 @@ export const NotePropertyLane = ({
 
     return (
         <div ref={containerRef} className="relative h-full w-full" role="group" aria-label={`${label} lane`}>
-            <canvas
-                ref={canvasRef}
-                className="cursor-ns-resize"
-                onMouseDown={handleMouseDown}
-            />
+            <canvas ref={canvasRef} className="cursor-ns-resize" onMouseDown={handleMouseDown} />
         </div>
     );
 };

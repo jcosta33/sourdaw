@@ -75,7 +75,7 @@ let generated = readFileSync(srcFile, 'utf8');
 // bundle the .wasm from src/ (it doesn't exist there — it lives in public/).
 generated = generated.replace(
     "module_or_path = new URL('daw_dsp_bg.wasm', import.meta.url);",
-    "module_or_path = '/wasm/daw-dsp/daw_dsp_bg.wasm'; // served from public/",
+    "module_or_path = '/wasm/daw-dsp/daw_dsp_bg.wasm'; // served from public/"
 );
 
 writeFileSync(destFile, polyfills + generated, 'utf8');

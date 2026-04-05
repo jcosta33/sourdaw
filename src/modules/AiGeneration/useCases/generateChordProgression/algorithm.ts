@@ -5,7 +5,19 @@
 
 import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededRandom';
 
-export type ChordProgressionStyle = 'pop' | 'jazz' | 'classical' | 'edm' | 'blues' | 'rnb' | 'folk' | 'cinematic' | 'neo-soul' | 'gospel' | 'rock' | 'lofi';
+export type ChordProgressionStyle =
+    | 'pop'
+    | 'jazz'
+    | 'classical'
+    | 'edm'
+    | 'blues'
+    | 'rnb'
+    | 'folk'
+    | 'cinematic'
+    | 'neo-soul'
+    | 'gospel'
+    | 'rock'
+    | 'lofi';
 
 export type ChordVoicing = 'close' | 'open' | 'spread' | 'power';
 
@@ -181,7 +193,10 @@ function buildRhythmEvents(rhythm: 'whole' | 'half' | 'quarter' | 'syncopated', 
     }
 }
 
-export function generateChordProgression(options: GenerateChordProgressionOptions & { seed?: number }): { notes: GeneratedNote[]; seed: number } {
+export function generateChordProgression(options: GenerateChordProgressionOptions & { seed?: number }): {
+    notes: GeneratedNote[];
+    seed: number;
+} {
     const { style, key, scale, bars = 4, voicing = 'close', octave = 3, rhythm = 'whole', seed } = options;
     const usedSeed = seed ?? generateSeed();
     const rng = createSeededRandom(usedSeed);

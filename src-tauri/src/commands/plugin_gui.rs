@@ -24,10 +24,13 @@ pub async fn is_plugin_gui_supported(
     instance_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, String> {
-    let plugins = state.plugins.lock()
+    let plugins = state
+        .plugins
+        .lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get(&instance_id)
+    let instance = plugins
+        .get(&instance_id)
         .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
     Ok(instance.has_gui())
@@ -51,9 +54,12 @@ pub async fn open_plugin_gui(
 ) -> Result<PluginGuiInfo, String> {
     // 1. Get plugin name and check GUI support
     let plugin_name = {
-        let plugins = state.plugins.lock()
+        let plugins = state
+            .plugins
+            .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-        let instance = plugins.get(&instance_id)
+        let instance = plugins
+            .get(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
         if !instance.has_gui() {
@@ -82,7 +88,8 @@ pub async fn open_plugin_gui(
         .map_err(|e| format!("Failed to create plugin window: {}", e))?;
 
     // 3. Extract the native window handle
-    let handle = plugin_window.window_handle()
+    let handle = plugin_window
+        .window_handle()
         .map_err(|e| format!("Failed to get window handle: {}", e))?;
 
     let handle_ptr = match handle.as_raw() {
@@ -95,9 +102,12 @@ pub async fn open_plugin_gui(
 
     // 4. Open the plugin GUI (CLAP lifecycle: create → scale → get_size → set_parent → show)
     let (width, height) = {
-        let mut plugins = state.plugins.lock()
+        let mut plugins = state
+            .plugins
+            .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-        let instance = plugins.get_mut(&instance_id)
+        let instance = plugins
+            .get_mut(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
         instance.open_gui(handle_ptr)?
@@ -110,7 +120,9 @@ pub async fn open_plugin_gui(
 
     // 6. Track the window
     {
-        let mut windows = state.plugin_windows.lock()
+        let mut windows = state
+            .plugin_windows
+            .lock()
             .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
         windows.insert(instance_id.clone(), window_label);
     }
@@ -132,7 +144,9 @@ pub async fn close_plugin_gui(
 ) -> Result<(), String> {
     // Close the CLAP GUI
     {
-        let mut plugins = state.plugins.lock()
+        let mut plugins = state
+            .plugins
+            .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         if let Some(instance) = plugins.get_mut(&instance_id) {
             instance.close_gui();
@@ -141,7 +155,9 @@ pub async fn close_plugin_gui(
 
     // Destroy the native window
     let window_label = {
-        let mut windows = state.plugin_windows.lock()
+        let mut windows = state
+            .plugin_windows
+            .lock()
             .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
         windows.remove(&instance_id)
     };
@@ -163,7 +179,9 @@ pub async fn close_all_plugin_guis(
 ) -> Result<(), String> {
     // Close all CLAP GUIs
     {
-        let mut plugins = state.plugins.lock()
+        let mut plugins = state
+            .plugins
+            .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         for instance in plugins.values_mut() {
             instance.close_gui();
@@ -172,7 +190,9 @@ pub async fn close_all_plugin_guis(
 
     // Destroy all native windows
     let labels: Vec<String> = {
-        let mut windows = state.plugin_windows.lock()
+        let mut windows = state
+            .plugin_windows
+            .lock()
             .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
         let labels: Vec<String> = windows.values().cloned().collect();
         windows.clear();
@@ -194,7 +214,9 @@ pub async fn hide_all_plugin_guis(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let windows = state.plugin_windows.lock()
+    let windows = state
+        .plugin_windows
+        .lock()
         .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
 
     for label in windows.values() {
@@ -212,7 +234,9 @@ pub async fn show_all_plugin_guis(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let windows = state.plugin_windows.lock()
+    let windows = state
+        .plugin_windows
+        .lock()
         .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
 
     for label in windows.values() {

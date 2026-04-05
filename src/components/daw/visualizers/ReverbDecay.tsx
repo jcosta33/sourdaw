@@ -94,7 +94,7 @@ export const ReverbDecay = ({
                 const decayFrac = (tFrac - decayStart) / (1 - decayStart);
                 // Decay constant based on RT60
                 const tau = decay / 6.9; // seconds to time constant
-                const normalizedDecay = tau * 1000 / maxTimeMs;
+                const normalizedDecay = (tau * 1000) / maxTimeMs;
                 const expDecay = Math.exp(-decayFrac / Math.max(normalizedDecay, 0.01));
                 // Damping reduces high reflections (faster initial drop)
                 const dampFactor = 1 - damping * 0.3;
@@ -134,7 +134,7 @@ export const ReverbDecay = ({
                 const decayStart = predelayFrac + 0.02;
                 const decayFrac = (tFrac - decayStart) / (1 - decayStart);
                 const tau = decay / 6.9;
-                const normalizedDecay = tau * 1000 / maxTimeMs;
+                const normalizedDecay = (tau * 1000) / maxTimeMs;
                 const expDecay = Math.exp(-decayFrac / Math.max(normalizedDecay, 0.01));
                 const dampFactor = 1 - damping * 0.3;
                 const ripple = 1 + Math.sin(decayFrac * (30 + size * 50)) * 0.08 * expDecay;
@@ -165,7 +165,7 @@ export const ReverbDecay = ({
                 const decayStart = predelayFrac + 0.02;
                 const decayFrac = (tFrac - decayStart) / (1 - decayStart);
                 const tau = decay / 6.9;
-                const normalizedDecay = tau * 1000 / maxTimeMs;
+                const normalizedDecay = (tau * 1000) / maxTimeMs;
                 const expDecay = Math.exp(-decayFrac / Math.max(normalizedDecay, 0.01));
                 const dampFactor = 1 - damping * 0.3;
                 const ripple = 1 + Math.sin(decayFrac * (30 + size * 50)) * 0.08 * expDecay;

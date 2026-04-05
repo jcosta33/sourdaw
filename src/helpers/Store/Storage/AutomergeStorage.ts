@@ -146,13 +146,17 @@ export class AutomergeStorage<TDataSchema> implements Storage<TDataSchema> {
         const semanticCtx = getSemanticContext();
         const message = semanticCtx?.message;
 
-        automergeRepository.changeDoc(this.#docId, (doc: Record<string, unknown>) => {
-            if (crdtValue === null) {
-                delete doc[this.#key];
-            } else {
-                doc[this.#key] = this.#toDocSafe(crdtValue);
-            }
-        }, message);
+        automergeRepository.changeDoc(
+            this.#docId,
+            (doc: Record<string, unknown>) => {
+                if (crdtValue === null) {
+                    delete doc[this.#key];
+                } else {
+                    doc[this.#key] = this.#toDocSafe(crdtValue);
+                }
+            },
+            message
+        );
     }
 
     /**

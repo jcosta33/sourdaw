@@ -12,13 +12,25 @@ import { addDevice } from '../device/addDevice';
 import { setDeviceParameter } from '../device/setDeviceParameter';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackById } from '../../repositories/track/getTrackById';
-import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls';
+import {
+    addDeviceToStrip,
+    updateDeviceParam,
+    removeDeviceFromStrip,
+} from '#/modules/AudioEngine/useCases/deviceControls';
 
 const logger = Container.getInstance().get(Logger);
 
 let nextPresetDeviceId = 1;
 
-const INSTRUMENT_TYPES = new Set(['synth', 'builtin-synth', 'drum-kit', 'builtin-drum-kit', 'builtin-drum-machine', 'fermenter', 'toaster']);
+const INSTRUMENT_TYPES = new Set([
+    'synth',
+    'builtin-synth',
+    'drum-kit',
+    'builtin-drum-kit',
+    'builtin-drum-machine',
+    'fermenter',
+    'toaster',
+]);
 
 function isInstrumentDevice(type: string): boolean {
     return INSTRUMENT_TYPES.has(type) || type.startsWith('faust-');

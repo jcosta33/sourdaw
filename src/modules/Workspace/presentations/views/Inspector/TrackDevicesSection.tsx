@@ -72,59 +72,66 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 role="menu"
                             >
                                 <DawMenuSectionLabel>Effects</DawMenuSectionLabel>
-                                {getPlatformPlugins().filter((p) => p.category === 'effect').map((plugin) => (
-                                    <button
-                                        type="button"
-                                        key={plugin.id}
-                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                                        role="menuitem"
-                                        onClick={() => {
-                                            addDevice(track.id, plugin.name);
-                                            setShowDeviceMenu(false);
-                                        }}
-                                    >
-                                        {plugin.name}
-                                    </button>
-                                ))}
+                                {getPlatformPlugins()
+                                    .filter((p) => p.category === 'effect')
+                                    .map((plugin) => (
+                                        <button
+                                            type="button"
+                                            key={plugin.id}
+                                            className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                            role="menuitem"
+                                            onClick={() => {
+                                                addDevice(track.id, plugin.name);
+                                                setShowDeviceMenu(false);
+                                            }}
+                                        >
+                                            {plugin.name}
+                                        </button>
+                                    ))}
                                 <DawMenuSeparator />
                                 <DawMenuSectionLabel>Utility</DawMenuSectionLabel>
-                                {getPlatformPlugins().filter((p) => p.category === 'utility').map((plugin) => (
-                                    <button
-                                        type="button"
-                                        key={plugin.id}
-                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                        role="menuitem"
-                                        onClick={() => {
-                                            addDevice(track.id, plugin.name);
-                                            setShowDeviceMenu(false);
-                                        }}
-                                    >
-                                        {plugin.name}
-                                    </button>
-                                ))}
+                                {getPlatformPlugins()
+                                    .filter((p) => p.category === 'utility')
+                                    .map((plugin) => (
+                                        <button
+                                            type="button"
+                                            key={plugin.id}
+                                            className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                            role="menuitem"
+                                            onClick={() => {
+                                                addDevice(track.id, plugin.name);
+                                                setShowDeviceMenu(false);
+                                            }}
+                                        >
+                                            {plugin.name}
+                                        </button>
+                                    ))}
                                 {getPlatformPlugins().filter((p) => p.category === 'analyzer').length > 0 ? (
                                     <>
                                         <DawMenuSeparator />
                                         <DawMenuSectionLabel>Analyzer</DawMenuSectionLabel>
-                                        {getPlatformPlugins().filter((p) => p.category === 'analyzer').map((plugin) => (
-                                            <button
-                                                type="button"
-                                                key={plugin.id}
-                                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                                                role="menuitem"
-                                                onClick={() => {
-                                                    addDevice(track.id, plugin.name);
-                                                    setShowDeviceMenu(false);
-                                                }}
-                                            >
-                                                {plugin.name}
-                                            </button>
-                                        ))}
+                                        {getPlatformPlugins()
+                                            .filter((p) => p.category === 'analyzer')
+                                            .map((plugin) => (
+                                                <button
+                                                    type="button"
+                                                    key={plugin.id}
+                                                    className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                                    role="menuitem"
+                                                    onClick={() => {
+                                                        addDevice(track.id, plugin.name);
+                                                        setShowDeviceMenu(false);
+                                                    }}
+                                                >
+                                                    {plugin.name}
+                                                </button>
+                                            ))}
                                     </>
                                 ) : null}
                                 <DawMenuSeparator />
                                 <DawMenuSectionLabel>External</DawMenuSectionLabel>
-                                {getPlatformCapabilities().hasNativePlugins && pluginScanState.scannedPlugins.length > 0 ? (
+                                {getPlatformCapabilities().hasNativePlugins &&
+                                pluginScanState.scannedPlugins.length > 0 ? (
                                     <div className="max-h-32 overflow-y-auto">
                                         {pluginScanState.scannedPlugins.map((plugin) => (
                                             <button
@@ -184,7 +191,11 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             onClick={() => {
                                 const descriptor = getPluginById(device.type);
                                 if (descriptor?.hasCustomUI) {
-                                    document.dispatchEvent(new CustomEvent(`sourdaw:show-${device.type}-tab`, { detail: { deviceId: device.id } }));
+                                    document.dispatchEvent(
+                                        new CustomEvent(`sourdaw:show-${device.type}-tab`, {
+                                            detail: { deviceId: device.id },
+                                        })
+                                    );
                                 } else {
                                     onSelectDevice(device.id);
                                 }

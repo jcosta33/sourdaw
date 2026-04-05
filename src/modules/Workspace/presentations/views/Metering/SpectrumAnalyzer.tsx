@@ -36,9 +36,7 @@ export const SpectrumAnalyzer = ({
         let rafId = 0;
 
         const draw = (): void => {
-            const analyser = trackId
-                ? (getTrackAnalyser(trackId) ?? getMasterAnalyser())
-                : getMasterAnalyser();
+            const analyser = trackId ? (getTrackAnalyser(trackId) ?? getMasterAnalyser()) : getMasterAnalyser();
 
             const fftSize = analyser.frequencyBinCount;
             const freqData = new Float32Array(fftSize);

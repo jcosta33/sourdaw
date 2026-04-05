@@ -184,11 +184,7 @@ const TemplateCard = ({
                     <MiniPianoRoll notes={notes} lengthBeats={template.lengthBeats} />
                 </div>
             }
-            heading={
-                <span className="truncate pr-1">
-                    {template.name}
-                </span>
-            }
+            heading={<span className="truncate pr-1">{template.name}</span>}
             action={
                 <Button
                     variant="ghost"

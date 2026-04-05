@@ -85,8 +85,8 @@ export const ChatComposer = ({
                     isGenerating
                         ? 'AI is thinking...'
                         : chatMode === 'prompt'
-                            ? 'Type a command to execute or generate...'
-                            : 'Send a message... (Shift+Enter for newline)'
+                          ? 'Type a command to execute or generate...'
+                          : 'Send a message... (Shift+Enter for newline)'
                 }
                 className="max-h-32 min-h-[44px] w-full flex-1 resize-none bg-transparent p-3 text-xs text-foreground placeholder:text-muted-foreground scrollbar-thin scrollbar-thumb-white/10 focus:outline-none"
                 disabled={isGenerating || !isLlmAvailable}
@@ -102,16 +102,12 @@ export const ChatComposer = ({
                         isGenerating
                             ? 'border border-destructive/30 bg-destructive/20 text-destructive hover:bg-destructive/30'
                             : inputValue.trim()
-                                ? 'bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]'
-                                : 'bg-transparent text-muted-foreground hover:bg-white/5'
+                              ? 'bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]'
+                              : 'bg-transparent text-muted-foreground hover:bg-white/5'
                     )}
                     title={isGenerating ? 'Stop Generation' : undefined}
                 >
-                    {isGenerating ? (
-                        <Square className="size-3 fill-current" />
-                    ) : (
-                        <Send className="size-3.5" />
-                    )}
+                    {isGenerating ? <Square className="size-3 fill-current" /> : <Send className="size-3.5" />}
                 </Button>
             </div>
         </div>

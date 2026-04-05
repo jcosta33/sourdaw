@@ -69,7 +69,9 @@ export const NotificationToast = (): ReactElement | null => {
                 <AlertTriangle
                     className={cn(
                         'mt-0.5 size-4 shrink-0',
-                        latest.level === 'error' ? 'text-[var(--color-state-danger)]' : 'text-[var(--color-state-warning)]'
+                        latest.level === 'error'
+                            ? 'text-[var(--color-state-danger)]'
+                            : 'text-[var(--color-state-warning)]'
                     )}
                 />
                 <p className="flex-1 text-xs text-foreground">{latest.message}</p>
@@ -82,7 +84,9 @@ export const NotificationToast = (): ReactElement | null => {
                     <X className="size-3" />
                 </Button>
             </div>
-            {items.length > 1 ? <p className="mt-1 text-[10px] text-muted-foreground">+{items.length - 1} more</p> : null}
+            {items.length > 1 ? (
+                <p className="mt-1 text-[10px] text-muted-foreground">+{items.length - 1} more</p>
+            ) : null}
         </div>
     );
 };

@@ -8,9 +8,7 @@ export function recordUsage(sampleId: string): void {
     sampleDatabaseStore.set({
         ...state,
         samples: state.samples.map((s) =>
-            s.id === sampleId
-                ? { ...s, useCount: s.useCount + 1, lastUsedAt: new Date().toISOString() }
-                : s
+            s.id === sampleId ? { ...s, useCount: s.useCount + 1, lastUsedAt: new Date().toISOString() } : s
         ),
     });
 }

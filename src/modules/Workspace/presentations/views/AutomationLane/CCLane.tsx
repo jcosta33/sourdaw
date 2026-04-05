@@ -153,7 +153,8 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                 <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
                     <polyline
                         fill="none"
-                        stroke="var(--color-accent-lavender)" opacity="0.5"
+                        stroke="var(--color-accent-lavender)"
+                        opacity="0.5"
                         strokeWidth="1.5"
                         points={points
                             .map((p: MidiCC) => {

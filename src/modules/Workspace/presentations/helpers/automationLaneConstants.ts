@@ -26,12 +26,18 @@ export const SHAPE_OPTIONS: { value: AutomationShapeType; label: string }[] = [
 /** Map curve type to single-char label for breakpoint nodes. */
 export const curveLabel = (curve: AutomationCurveType): string => {
     switch (curve) {
-        case 's-curve': return 'S';
-        case 'exponential': return 'E';
-        case 'step': return '⌐';
-        case 'stairs': return '⊏';
-        case 'smooth': return '~';
-        default: return '';
+        case 's-curve':
+            return 'S';
+        case 'exponential':
+            return 'E';
+        case 'step':
+            return '⌐';
+        case 'stairs':
+            return '⊏';
+        case 'smooth':
+            return '~';
+        default:
+            return '';
     }
 };
 

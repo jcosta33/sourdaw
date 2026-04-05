@@ -7,7 +7,9 @@ import { cvGateStore } from '#/modules/Synth/stores/cvGate';
  */
 export function midiNoteToCv(note: number): number {
     const state = cvGateStore.value;
-    if (!state) { return 0; }
+    if (!state) {
+        return 0;
+    }
     if (state.voltageStandard === '1v-per-octave') {
         return (note - 24) / 12;
     }

@@ -3,15 +3,7 @@
  * All parameter definitions, defaults, and the CRUST_PARAMS list.
  */
 
-export type CrustAlgorithm =
-    | 'transparent'
-    | 'punchy'
-    | 'dynamic'
-    | 'allround'
-    | 'aggressive'
-    | 'bus'
-    | 'safe'
-    | 'wall';
+export type CrustAlgorithm = 'transparent' | 'punchy' | 'dynamic' | 'allround' | 'aggressive' | 'bus' | 'safe' | 'wall';
 
 export type CrustSatAlgorithm = 'soft' | 'hard' | 'tape' | 'tube' | 'fold';
 
@@ -19,13 +11,7 @@ export type CrustMultiBand = 'wideband' | '3band' | '5band';
 
 export type CrustStereoMode = 'stereo' | 'ms';
 
-export type CrustDither =
-    | 'off'
-    | 'tpdf16'
-    | 'tpdf24'
-    | 'powr1'
-    | 'powr2'
-    | 'powr3';
+export type CrustDither = 'off' | 'tpdf16' | 'tpdf24' | 'powr1' | 'powr2' | 'powr3';
 
 export type CrustScrollSpeed = 'slow' | 'normal' | 'fast';
 
@@ -45,36 +31,36 @@ export type CrustPatch = {
     name: string;
 
     // Level 1 — PLAY
-    gain: number;              // 0 – 18 dB (input gain / "push" control)
-    ceiling: number;           // -6 to 0 dBTP
+    gain: number; // 0 – 18 dB (input gain / "push" control)
+    ceiling: number; // -6 to 0 dBTP
     style: 'transparent' | 'punchy' | 'loud'; // L1 simplification
 
     // Level 2 — SHAPE
     algorithm: CrustAlgorithm;
-    lookahead: number;         // 0 – 10 ms
-    attack: number;            // 0 – 100 ms (0 = auto)
-    release: number;           // 0 – 1000 ms (0 = auto)
+    lookahead: number; // 0 – 10 ms
+    attack: number; // 0 – 100 ms (0 = auto)
+    release: number; // 0 – 1000 ms (0 = auto)
     attackAuto: boolean;
     releaseAuto: boolean;
     channelLinkTransient: number; // 0 – 100 %
-    channelLinkRelease: number;   // 0 – 100 %
+    channelLinkRelease: number; // 0 – 100 %
     truePeak: boolean;
     oversampling: 1 | 4 | 8 | 16 | 32;
 
     // Level 3 — BUILD
     satEnabled: boolean;
     satAlgorithm: CrustSatAlgorithm;
-    satDrive: number;          // 0 – 18 dB
-    satMix: number;            // 0 – 100 %
+    satDrive: number; // 0 – 18 dB
+    satMix: number; // 0 – 100 %
     deltaListen: boolean;
     unityGain: boolean;
 
     // Level 4 — ROUTE
     multiBand: CrustMultiBand;
-    crossover1: number;        // Hz (default 80)
-    crossover2: number;        // Hz (default 2000)
+    crossover1: number; // Hz (default 80)
+    crossover2: number; // Hz (default 2000)
     scHpfEnabled: boolean;
-    scHpfFreq: number;         // 20 – 200 Hz
+    scHpfFreq: number; // 20 – 200 Hz
     stereoMode: CrustStereoMode;
     dither: CrustDither;
     outputBitDepth: 16 | 24 | 32;
@@ -137,17 +123,17 @@ export type CrustParamDef = {
 };
 
 export const CRUST_PARAMS: readonly CrustParamDef[] = [
-    { id: 'gain',              label: 'Gain',            min: 0,    max: 18,   default: 0,    unit: 'dB',  step: 0.1  },
-    { id: 'ceiling',           label: 'Ceiling',         min: -6,   max: 0,    default: -0.3, unit: 'dBTP', step: 0.1 },
-    { id: 'lookahead',         label: 'Lookahead',       min: 0,    max: 10,   default: 2,    unit: 'ms',  step: 0.1  },
-    { id: 'attack',            label: 'Attack',          min: 0,    max: 100,  default: 0,    unit: 'ms',  step: 0.1  },
-    { id: 'release',           label: 'Release',         min: 0,    max: 1000, default: 0,    unit: 'ms',  step: 1    },
-    { id: 'channelLinkTransient', label: 'Link Trans',   min: 0,    max: 100,  default: 100,  unit: '%',   step: 1    },
-    { id: 'channelLinkRelease',   label: 'Link Rel',     min: 0,    max: 100,  default: 100,  unit: '%',   step: 1    },
-    { id: 'truePeak',          label: 'True Peak',       min: 0,    max: 1,    default: 1,    unit: '',    step: 1    },
-    { id: 'oversampling',      label: 'Oversampling',   min: 1,    max: 32,   default: 4,    unit: 'x',   step: 1    },
-    { id: 'satDrive',          label: 'Sat Drive',       min: 0,    max: 18,   default: 0,    unit: 'dB',  step: 0.1  },
-    { id: 'satMix',            label: 'Sat Mix',         min: 0,    max: 100,  default: 0,    unit: '%',   step: 1    },
-    { id: 'deltaListen',       label: 'Delta',           min: 0,    max: 1,    default: 0,    unit: '',    step: 1    },
-    { id: 'scHpfFreq',         label: 'SC HPF',          min: 20,   max: 200,  default: 60,   unit: 'Hz',  step: 1    },
+    { id: 'gain', label: 'Gain', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },
+    { id: 'ceiling', label: 'Ceiling', min: -6, max: 0, default: -0.3, unit: 'dBTP', step: 0.1 },
+    { id: 'lookahead', label: 'Lookahead', min: 0, max: 10, default: 2, unit: 'ms', step: 0.1 },
+    { id: 'attack', label: 'Attack', min: 0, max: 100, default: 0, unit: 'ms', step: 0.1 },
+    { id: 'release', label: 'Release', min: 0, max: 1000, default: 0, unit: 'ms', step: 1 },
+    { id: 'channelLinkTransient', label: 'Link Trans', min: 0, max: 100, default: 100, unit: '%', step: 1 },
+    { id: 'channelLinkRelease', label: 'Link Rel', min: 0, max: 100, default: 100, unit: '%', step: 1 },
+    { id: 'truePeak', label: 'True Peak', min: 0, max: 1, default: 1, unit: '', step: 1 },
+    { id: 'oversampling', label: 'Oversampling', min: 1, max: 32, default: 4, unit: 'x', step: 1 },
+    { id: 'satDrive', label: 'Sat Drive', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },
+    { id: 'satMix', label: 'Sat Mix', min: 0, max: 100, default: 0, unit: '%', step: 1 },
+    { id: 'deltaListen', label: 'Delta', min: 0, max: 1, default: 0, unit: '', step: 1 },
+    { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 200, default: 60, unit: 'Hz', step: 1 },
 ];

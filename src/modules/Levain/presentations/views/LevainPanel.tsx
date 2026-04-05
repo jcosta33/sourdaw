@@ -169,7 +169,11 @@ export const LevainPanel = (): ReactElement => {
                         <div className="px-2 pb-2 text-[8px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
                             Articulation rail
                         </div>
-                        <ArticulationList articulations={patch.articulations} current={patch.currentArticulation} onSelect={setCurrentArticulation} />
+                        <ArticulationList
+                            articulations={patch.articulations}
+                            current={patch.currentArticulation}
+                            onSelect={setCurrentArticulation}
+                        />
                     </section>
                 </aside>
 
@@ -183,8 +187,18 @@ export const LevainPanel = (): ReactElement => {
                         </div>
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <DawPluginMetricTile className="levain-window" label="Artic" value={currentArt} detail="Current technique" />
-                            <DawPluginMetricTile className="levain-window" label="Voices" value={`${activeVoices}`} detail="Live active voices" />
+                            <DawPluginMetricTile
+                                className="levain-window"
+                                label="Artic"
+                                value={currentArt}
+                                detail="Current technique"
+                            />
+                            <DawPluginMetricTile
+                                className="levain-window"
+                                label="Voices"
+                                value={`${activeVoices}`}
+                                detail="Live active voices"
+                            />
                             <DawPluginMetricTile
                                 className="levain-window"
                                 label="Legato"
@@ -334,7 +348,11 @@ export const LevainPanel = (): ReactElement => {
                     <SectionCard title="Quick read" detail="A compact performance summary for the current line.">
                         <div className="space-y-2">
                             <DawReadoutRow label="Instrument" value={instLabel} valueClassName="text-foreground/85" />
-                            <DawReadoutRow label="Family" value={patch.instrumentFamily} valueClassName="text-foreground/85" />
+                            <DawReadoutRow
+                                label="Family"
+                                value={patch.instrumentFamily}
+                                valueClassName="text-foreground/85"
+                            />
                             <DawReadoutRow label="Phrase" value={currentArt} valueClassName="text-foreground/85" />
                             <DawReadoutRow
                                 label="Humanize"

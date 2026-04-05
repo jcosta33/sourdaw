@@ -90,12 +90,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             aria-label="Master Track Spectrum"
         >
             <div className="absolute inset-x-0 bottom-0 h-full pointer-events-none opacity-40">
-                <canvas
-                    ref={canvasRef}
-                    className="w-full h-full block"
-                    width={180}
-                    height={80}
-                />
+                <canvas ref={canvasRef} className="w-full h-full block" width={180} height={80} />
             </div>
 
             <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_1px,rgba(0,0,0,0.1)_1px,rgba(0,0,0,0.1)_2px)] opacity-50" />

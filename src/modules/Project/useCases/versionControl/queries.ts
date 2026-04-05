@@ -23,6 +23,8 @@ export function getCurrentBranchName(): string {
 
 export function setAutoSaveInterval(minutes: number): void {
     const state = versionControlStore.value;
-    if (!state) { return; }
+    if (!state) {
+        return;
+    }
     versionControlStore.set({ ...state, autoSaveInterval: minutes });
 }

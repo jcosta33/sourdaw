@@ -85,12 +85,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     };
 
     return (
-        <DawPanelSurface
-            tone="dock"
-            style={style}
-            role="region"
-            aria-label="Mixer panel"
-        >
+        <DawPanelSurface tone="dock" style={style} role="region" aria-label="Mixer panel">
             <DawHeaderBand
                 className="rounded-none px-3 py-1.5"
                 title={`Mixer - ${tracks.filter((t) => t.kind !== 'folder').length} channels`}
@@ -143,7 +138,10 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                             </Button>
 
                             {showSnapshots && snapshots.length > 0 ? (
-                                <div ref={snapshotsRef} className="daw-floating-surface absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg p-1">
+                                <div
+                                    ref={snapshotsRef}
+                                    className="daw-floating-surface absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg p-1"
+                                >
                                     {snapshots.map((snap) => (
                                         <div key={snap.id} className="flex items-center gap-1">
                                             {editingSnapshotId === snap.id ? (

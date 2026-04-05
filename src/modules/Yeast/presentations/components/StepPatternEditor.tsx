@@ -61,15 +61,20 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 className="relative bg-surface-inset rounded-sm overflow-hidden"
                                 style={{ width: STEP_WIDTH - 4, height: STEP_HEIGHT }}
                                 onClick={(e) => setVelocity(i, e)}
-                                onContextMenu={(e) => { e.preventDefault(); toggleStep(i); }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    toggleStep(i);
+                                }}
                             >
                                 {/* Fill */}
                                 <div
                                     className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${
                                         step.active
-                                            ? step.stepType === 'rest' ? 'bg-muted-foreground/20'
-                                            : step.stepType === 'tie' ? 'bg-[var(--color-accent-cyan)]/50'
-                                            : 'bg-[var(--color-accent-peach)]'
+                                            ? step.stepType === 'rest'
+                                                ? 'bg-muted-foreground/20'
+                                                : step.stepType === 'tie'
+                                                  ? 'bg-[var(--color-accent-cyan)]/50'
+                                                  : 'bg-[var(--color-accent-peach)]'
                                             : 'bg-muted-foreground/10'
                                     }`}
                                     style={{
@@ -89,8 +94,16 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 {step.octaveOffset !== 0 ? (
                                     <div
                                         className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
-                                        style={{ color: step.octaveOffset > 0 ? 'var(--color-accent-cyan)' : 'var(--color-accent-lavender)' }}
-                                        onClick={(e) => { e.stopPropagation(); cycleOctave(i); }}
+                                        style={{
+                                            color:
+                                                step.octaveOffset > 0
+                                                    ? 'var(--color-accent-cyan)'
+                                                    : 'var(--color-accent-lavender)',
+                                        }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            cycleOctave(i);
+                                        }}
                                     >
                                         {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
                                     </div>
@@ -98,7 +111,9 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             </div>
 
                             {/* Step number */}
-                            <span className={`text-[6px] ${isPlaying ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/40'}`}>
+                            <span
+                                className={`text-[6px] ${isPlaying ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/40'}`}
+                            >
                                 {i + 1}
                             </span>
                         </div>

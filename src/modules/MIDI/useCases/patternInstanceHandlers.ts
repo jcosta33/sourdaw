@@ -1,8 +1,5 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
-import {
-    createPatternInstance,
-    detachPatternInstance,
-} from '#/modules/MIDI/useCases/patternInstance';
+import { createPatternInstance, detachPatternInstance } from '#/modules/MIDI/useCases/patternInstance';
 
 export const patternInstanceHandlers: Record<string, ActionHandler<any>> = {
     createPatternInstance: {

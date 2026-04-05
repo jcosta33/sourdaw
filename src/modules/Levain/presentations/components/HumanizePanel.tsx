@@ -9,7 +9,6 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type HumanizeConfig } from '../../models/LevainPatch';
 
-
 type HumanizePanelProps = {
     config: HumanizeConfig;
     onChange: (partial: Partial<HumanizeConfig>) => void;
@@ -32,9 +31,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                     defaultValue={0.5}
                     size="xl"
                 />
-                <span className="text-[9px] text-muted-foreground uppercase tracking-wider">
-                    Humanize
-                </span>
+                <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Humanize</span>
                 <span className="text-[7px] text-muted-foreground/40 tabular-nums">
                     {Math.round(config.amount * 100)}%
                 </span>
@@ -52,9 +49,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         defaultValue={15}
                         size="md"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Timing
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Timing</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{config.timingMaxMs.toFixed(0)}ms
                     </span>
@@ -70,9 +65,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         defaultValue={5}
                         size="md"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Tuning
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Tuning</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{config.tuningMaxCents.toFixed(0)}ct
                     </span>
@@ -88,9 +81,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         defaultValue={8}
                         size="md"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Dynamic
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Dynamic</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{(config.dynamicMax * 100).toFixed(0)}%
                     </span>
@@ -106,9 +97,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         defaultValue={15}
                         size="md"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Vib Var
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Vib Var</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{(config.vibratoVarMax * 100).toFixed(0)}%
                     </span>

@@ -109,9 +109,7 @@ function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
 
 function getIndexedValue<T extends readonly string[]>(options: T, raw: number): T[number] {
     const rounded = Math.round(raw);
-    const safeIndex = Number.isFinite(rounded)
-        ? Math.max(0, Math.min(options.length - 1, rounded))
-        : 0;
+    const safeIndex = Number.isFinite(rounded) ? Math.max(0, Math.min(options.length - 1, rounded)) : 0;
     return (options[safeIndex] ?? options[0]) as T[number];
 }
 
@@ -225,11 +223,7 @@ export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(deviceId:
     if (key === 'engineMode') {
         setGrinderParam(deviceId, 'neuralEnabled', (patchValue !== 'circuit') as GrinderPatch['neuralEnabled']);
     } else if (key === 'neuralEnabled') {
-        setGrinderParam(
-            deviceId,
-            'engineMode',
-            (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']
-        );
+        setGrinderParam(deviceId, 'engineMode', (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']);
     }
 
     const ref = findDeviceRef(deviceId);

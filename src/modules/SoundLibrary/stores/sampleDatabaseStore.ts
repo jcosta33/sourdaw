@@ -8,12 +8,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
-import {
-    type SampleTag,
-    type SampleEntry,
-    type SampleCategory,
-    type SampleDatabaseState,
-} from '../models/SampleEntry';
+import { type SampleTag, type SampleEntry, type SampleCategory, type SampleDatabaseState } from '../models/SampleEntry';
 
 export type { SampleTag, SampleEntry, SampleCategory, SampleDatabaseState };
 

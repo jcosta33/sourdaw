@@ -109,7 +109,12 @@ const DynamicsCurve = ({ curve, crossfadeTime }: { curve: string; crossfadeTime:
     );
 };
 
-export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }: ExpressionPanelProps): ReactElement => {
+export const ExpressionPanel = ({
+    expression,
+    legato,
+    onChangeExp,
+    onChangeLeg,
+}: ExpressionPanelProps): ReactElement => {
     return (
         <div className="space-y-3 max-w-[340px]">
             {/* Header */}
@@ -148,10 +153,7 @@ export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }
             />
 
             {/* Hero: dynamics curve */}
-            <DynamicsCurve
-                curve={expression.cc1Curve}
-                crossfadeTime={expression.dynamicCrossfadeTime}
-            />
+            <DynamicsCurve curve={expression.cc1Curve} crossfadeTime={expression.dynamicCrossfadeTime} />
 
             {/* Knob row: crossfade + vibrato controls */}
             <div className="flex items-end gap-3">
@@ -165,9 +167,7 @@ export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }
                         defaultValue={0.1}
                         size="lg"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                        Xfade
-                    </span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Xfade</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         {Math.round(expression.dynamicCrossfadeTime * 1000)}ms
                     </span>
@@ -184,9 +184,7 @@ export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }
                             defaultValue={20}
                             size="lg"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                            Vib Depth
-                        </span>
+                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Vib Depth</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {expression.vibratoDepthMax.toFixed(0)}ct
                         </span>
@@ -202,9 +200,7 @@ export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }
                             defaultValue={7}
                             size="md"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                            Rate
-                        </span>
+                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {expression.vibratoRateMax.toFixed(1)}Hz
                         </span>
@@ -220,9 +216,7 @@ export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }
                             defaultValue={0.2}
                             size="md"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">
-                            Onset
-                        </span>
+                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Onset</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {Math.round(expression.vibratoOnsetDelay * 1000)}ms
                         </span>

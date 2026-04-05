@@ -18,11 +18,7 @@ export const DawPluginRail = ({
 
     return (
         <Component
-            className={cn(
-                'flex min-h-0 flex-col gap-3',
-                scrollable ? 'overflow-y-auto pr-1' : '',
-                className
-            )}
+            className={cn('flex min-h-0 flex-col gap-3', scrollable ? 'overflow-y-auto pr-1' : '', className)}
             {...props}
         >
             {children}

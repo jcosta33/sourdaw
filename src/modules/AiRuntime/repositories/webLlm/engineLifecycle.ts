@@ -123,11 +123,11 @@ export async function generateWebLlmCompletion(systemPrompt: string, userMessage
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
     ];
-    const response = await eng.chat.completions.create({
+    const response = (await eng.chat.completions.create({
         messages,
         temperature: 0.3,
         max_tokens: 1024,
         seed: 0,
-    }) as { choices: Array<{ message: { content: string } }> };
+    })) as { choices: Array<{ message: { content: string } }> };
     return response.choices[0]?.message.content ?? '';
 }

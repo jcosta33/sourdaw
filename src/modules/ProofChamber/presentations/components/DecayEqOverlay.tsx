@@ -43,12 +43,7 @@ function yToMult(y: number, height: number): number {
     return Math.pow(2, logMult);
 }
 
-export const DecayEqOverlay = ({
-    multipliers,
-    onChange,
-    width,
-    height,
-}: DecayEqOverlayProps): ReactElement => {
+export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEqOverlayProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const dragRef = useRef<{ bandIndex: number } | null>(null);
 
