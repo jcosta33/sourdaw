@@ -1,14 +1,9 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { ConsoleWriter } from '#/helpers/Logger/Writer/ConsoleWriter';
-import { EventBus } from '#/helpers/Event/EventBus';
+// registerDependencies MUST be the first import — it populates the DI Container
+// before any downstream module (like toasterSubscriber → toasterStore) resolves
+// Logger/EventBus at module scope.
+import { eventBus, logger } from './registerDependencies';
 import { initToasterSubscribers } from '#/modules/Toaster/useCases/toasterSubscriber';
 
-const logger = new Logger([new ConsoleWriter()]);
-Container.getInstance().register(Logger, logger);
-
-export const eventBus = new EventBus(logger);
-Container.getInstance().register(EventBus, eventBus);
-
 initToasterSubscribers();
-export { logger };
+
+export { eventBus, logger };
