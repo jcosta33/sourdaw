@@ -46,5 +46,13 @@
     "requiresSpec": false,
     "requiresDepsValidate": false,
     "readonly": true
+  },
+  {
+    "id": "tests",
+    "label": "Tests",
+    "description": "Write new tests, improve existing ones, close coverage gaps — follows docs/06-testing.md",
+    "requiresSpec": false,
+    "requiresDepsValidate": true,
+    "readonly": false
   }
 ]

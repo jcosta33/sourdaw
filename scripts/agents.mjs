@@ -205,13 +205,14 @@ function fzfSelect(items, { prompt = '> ', preview = '' } = {}) {
 }
 
 /**
- * Prompt for text input via bash read, with an optional pre-filled default.
- * Returns the entered value, or defaultValue if the user just pressed enter.
+ * Prompt for text input via bash read. Returns the entered value, or
+ * defaultValue if the user just pressed enter. Callers should include the
+ * default in the prompt text (e.g. "Title [my-default]: ") since macOS bash
+ * 3.2 does not support `read -i` for pre-fill.
  */
 function promptInput(question, defaultValue = '') {
-  const safe = defaultValue.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
   const result = spawnSync(
-    'bash', ['-c', `read -rp $'${question}' -e -i '${safe}' val && printf '%s' "$val"`],
+    'bash', ['-c', `read -rp $'${question}' val && printf '%s' "$val"`],
     { stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8' },
   );
   if (result.status !== 0) return defaultValue;

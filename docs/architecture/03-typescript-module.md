@@ -517,7 +517,111 @@ Transformers are not mini-services with hidden behavior.
 
 ---
 
-## 4.10 `presentations/`
+## 4.10 Dependency injection with `inject()`
+
+Use cases and other injectable functions declare their dependencies explicitly using `inject()` from `#/helpers/DependencyInjector/inject`. This is the canonical DI mechanism for the business layer.
+
+### Why `inject()`
+
+Use cases need to call repositories, event buses, loggers, and other services. Three options exist for getting those references:
+
+- **Direct imports** — the function imports its collaborators by name. Simple, but impossible to swap in tests without module-level mocking.
+- **`Container.getInstance().get(Token)`** — call the container from inside the function. Works, but scatters resolution logic and makes dependencies implicit. Also: if called at module top-level, the read races with bootstrap order.
+- **`inject()`** — declare dependencies as a map at the top of the file; the factory receives them as an argument. Dependencies are explicit, testable, and resolved from the container **at call time** (not import time).
+
+`inject()` is the preferred pattern. It is what `injectDependencies()` (the test helper) expects, and it sidesteps the import-time-ordering trap.
+
+### Shape
+
+```typescript
+import { inject } from '#/helpers/DependencyInjector/inject';
+import { EventBus } from '#/helpers/Event/EventBus';
+import { Logger } from '#/helpers/Logger/Logger';
+import { TrackRepo } from '../repositories/TrackRepo';
+import { TrackAddedEvent } from '../events/TrackAddedEvent';
+import { createTrack } from '../models/Track';
+
+type AddTrackInput = { name: string; kind: TrackKind };
+
+export const addTrack = inject(
+    { eventBus: EventBus, logger: Logger, trackRepo: TrackRepo },
+    ({ eventBus, logger, trackRepo }) =>
+        (input: AddTrackInput): Track | null => {
+            const state = trackRepo.getState();
+            if (state === null) {
+                logger.log('addTrack called before store was ready');
+                return null;
+            }
+            const track = createTrack(input);
+            trackRepo.setState({
+                ...state,
+                tracks: [...state.tracks, track],
+                selectedTrackId: track.id,
+            });
+            eventBus.emit(new TrackAddedEvent({ trackId: track.id, name: track.name, kind: track.kind }));
+            return track;
+        },
+);
+```
+
+At call time, `addTrack(input)` resolves each dependency from the `Container` and invokes the factory with the resolved map. The caller writes `addTrack(input)` — they do not see or touch the dependency map.
+
+**The factory must return a function** (the invoker). When you call the injectable, the wrapper calls the invoker with your args. Objects/services flow into the injectable via the dependency map, not as the factory's return.
+
+### Dependency map values
+
+The dependency map accepts three kinds of values:
+
+| Value | Resolution |
+|-------|------------|
+| A class (e.g. `EventBus`) | Looked up via `Container.get(Class)` |
+| Another injectable (from `inject(...)`) | Recursively resolved — the injectable's factory is invoked with its own deps, and the resulting function is passed to the outer factory |
+| Anything else (plain function, object, constant) | Used as-is, no container lookup |
+
+Classes resolve to their registered instance in the container. Injectables resolve to their invoker function. Plain values pass through.
+
+### Resolution semantics
+
+- **Memoized.** The first call to an injectable resolves its dependencies and calls the factory exactly once. The invoker is cached on the `Container` keyed by the injectable's token. Subsequent calls are a direct function invocation — no re-walk.
+- **Cache reset on `Container.reset()`.** Test setup (`injectDependencies`) relies on this: it calls `reset()` before registering mocks, so the next invocation re-resolves against the fresh mocks.
+- **Circular dependencies throw with a chain.** `A → B → A` fails at first invocation with the full chain in the message. Break the cycle by introducing an event or restructuring.
+- **Async dependencies are forbidden.** If any value in the dependency map is a Promise, `inject()` throws at construction time. Resolve async modules before passing them in (typically in bootstrap). This is a deliberate constraint — keeps resolution sync and fast.
+
+### What to wrap with `inject()`
+
+| Layer | Wrap? | Why |
+|-------|-------|-----|
+| Use cases | **Yes** | Orchestrate repos/services, need to be mockable |
+| Event subscribers | **Yes** | Need the EventBus + a service chain |
+| Repositories with service dependencies | **Yes** | Logger, EventBus, Tauri shims |
+| Pure transformers | No | Pure functions need nothing from the container |
+| Validators / services (no I/O) | No | Pure functions |
+| Models | No | Data |
+| React hooks / components | No | Stay in the presentation layer; read stores directly |
+| Engine classes (`TrackNode`, etc.) | No | Constructor-injected (pass `AudioContext` as an arg) |
+| Audio-thread / hot-path code | **No** | The resolution + cached invocation has a cost; hot paths must not pay it |
+
+If a function has no outbound side-effect dependencies, it does not need `inject()`. Wrapping pure code adds ceremony without benefit.
+
+### Bootstrap discipline
+
+Container registrations live in `src/app/bootstrap.ts`. The rules:
+
+- **All class-token registrations happen in `bootstrap.ts` before any use case runs.** Use `registerOnce(Token, instance)` for this — it throws on duplicate registration, catching accidental double-wires.
+- **Injectables self-register.** Don't hand-register an injectable's token in bootstrap; the resolver does it lazily on first call.
+- **Never call `Container.get()` at module top-level.** If you need a value from the container outside a function body, wrap the surrounding function with `inject()` instead. Module-top-level `get()` calls race with bootstrap and trip the strict-mode guard in dev/test.
+
+### Strict mode
+
+In dev and test, `Container.get()` throws if the token is not registered. In production it currently falls back to a lazy Proxy with a `console.warn` (legacy behaviour for code-split chunks that evaluate before bootstrap). As the codebase migrates to `inject()`, the production fallback will be retired.
+
+### Testing injectables
+
+In tests, call `injectDependencies(injectable, mocks)` from `#/helpers/Testing/injectDependencies` to register a complete mock for every dependency. Use `spy<T>()` from `#/helpers/Testing/spy` to build typed method-level spies. See `docs/06-testing.md §5` for the canonical test shape.
+
+---
+
+## 4.11 `presentations/`
 
 This is the UI-facing layer inside a module.
 

@@ -32,6 +32,16 @@ export class Store<TDataSchema> {
         this.#notify();
     }
 
+    /**
+     * Atomic read-modify-write. Applies `updater` to the current value and
+     * writes the result back. Use this instead of `store.set({ ...store.value, x })`
+     * to avoid repeating the spread at every call site and to make the
+     * read-then-write intent explicit.
+     */
+    update(updater: (current: TDataSchema | null) => TDataSchema | null): void {
+        this.set(updater(this.value));
+    }
+
     subscribe(callback: (value: TDataSchema | null) => void): () => void {
         this.#subscribers.add(callback);
 

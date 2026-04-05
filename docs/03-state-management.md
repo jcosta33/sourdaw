@@ -116,22 +116,21 @@ export function getDawLayoutStore(initialState: LayoutState): Store<LayoutState>
 
 ### 4. Update the store in response to events
 
-Stores are often updated in response to domain events. Subscribe to an event and call the store's `set` method to update its value.
+Stores are often updated in response to domain events. Subscribe to an event and call the store's `update` method, which passes the current value to your updater and writes the result back atomically. Prefer `update` over `set({ ...store.value, ... })` — it removes the read-then-write gap and makes intent explicit.
 
 ```typescript
 // Workspace/useCases/handleMetricsToggled.ts
 
 getEventBus().on(MetricsToggledEvent, (event) => {
     const store = getWorkspacePreferencesStore();
-    const current = store.value;
 
-    if (!current) {
-        return;
-    }
-
-    store.set({ ...current, showMetrics: event.payload.isEnabled });
+    store.update((current) =>
+        current ? { ...current, showMetrics: event.payload.isEnabled } : current
+    );
 });
 ```
+
+Use `set` directly when you are replacing the value wholesale (e.g., loading from persistence), and `clear()` to remove it entirely.
 
 ### 5. Use React Context with `use()` (React 19)
 

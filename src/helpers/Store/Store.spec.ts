@@ -69,6 +69,36 @@ describe('Store', () => {
         });
     });
 
+    describe('update', () => {
+        it('should apply the updater to the current value and notify subscribers', () => {
+            const callback = vi.fn();
+            store.set('hello');
+            store.subscribe(callback);
+
+            store.update((current) => `${current} world`);
+
+            expect(store.value).toBe('hello world');
+            expect(callback).toHaveBeenCalledWith('hello world');
+        });
+
+        it('should pass null to the updater when the store is empty', () => {
+            const updater = vi.fn((_current: string | null) => 'initialised');
+
+            store.update(updater);
+
+            expect(updater).toHaveBeenCalledWith(null);
+            expect(store.value).toBe('initialised');
+        });
+
+        it('should allow the updater to clear the store by returning null', () => {
+            store.set('value');
+
+            store.update(() => null);
+
+            expect(store.value).toBeNull();
+        });
+    });
+
     describe('subscribe', () => {
         it('should add subscriber and return unsubscribe function', () => {
             const callback = vi.fn();

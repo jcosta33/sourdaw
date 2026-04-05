@@ -128,7 +128,7 @@ const eventBus = Container.getInstance().get(EventBus);
 export async function handleTrackAdded(event: TrackAddedEvent): Promise<void> {
     // Update the mixer tracks store so the new track fader appears
     const store = getMixerTracksStore();
-    store.set([...store.value, event.payload]);
+    store.update((current) => [...(current ?? []), event.payload]);
 }
 
 // Register event handlers
