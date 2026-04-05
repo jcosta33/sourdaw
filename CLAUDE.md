@@ -31,6 +31,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Check off **Progress checklist** steps as you complete them
 - Log **Decisions** and **Findings** as they emerge
 - Fill in **Handoff** before ending the session — never leave it empty
+- **Self-review is mandatory.** A task is not complete until every question in the Self-review section of the task file has a written answer directly beneath it, including pasted verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`). A Handoff written while any Self-review question is unanswered is an invalid session output. Do not check off `Handoff written` before Self-review is complete.
 
 ## Hard rules (Claude Code-specific)
 

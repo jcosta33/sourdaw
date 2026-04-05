@@ -50,7 +50,12 @@ Update this if the plan changes.
 
 - [ ] Step or deliverable
 - [ ] Step or deliverable
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Correctness answered
+- [ ] Self-review: Architecture answered
+- [ ] Self-review: Conventions answered
+- [ ] Self-review: Scope answered
+- [ ] Self-review: Completeness answered
 - [ ] Handoff written
 
 ---
@@ -92,16 +97,45 @@ Concrete starting points for the next session if this one ends incomplete.
 
 Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't write it. You are looking for a reason to reject it. Read every change adversarially.
 
-- **Correctness:** Does the implementation do exactly what was asked? Not approximately — exactly.
-- **Architecture:** Run `pnpm deps:validate` right now. Zero violations required. Does `pnpm typecheck` pass?
-- **Conventions:** No `useMemo`/`useCallback`/`React.memo`. No `&&` in JSX rendering. No `interface` — use `type`. No `enum` — use `as const`. No barrel files. No cross-module internal imports.
-- **Scope:** Did you touch anything outside the stated scope? Did you make improvements that weren't asked for? Revert them.
-- **Completeness:** Is anything left stubbed, TODO'd, or half-finished?
-- **Handoff quality:** Would the next developer be able to continue from your Handoff with zero questions?
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
-Only when you can answer every one of these honestly should you write the Handoff.
+### Verification outputs (paste actual command output — do not paraphrase)
+
+- `git status` →
+- `pnpm deps:validate` (last line):
+- `pnpm typecheck` (last line):
+
+### Correctness
+
+- Does the implementation do exactly what was asked? Not approximately — exactly.
+  Answer:
+
+### Architecture
+
+- Zero `pnpm deps:validate` violations? (see pasted output above) Does `pnpm typecheck` pass?
+  Answer:
+
+### Conventions
+
+- No `useMemo`/`useCallback`/`React.memo`. No `&&` in JSX rendering. No `interface` — use `type`. No `enum` — use `as const`. No barrel files. No cross-module internal imports.
+  Answer:
+
+### Scope
+
+- Did you touch anything outside the stated scope? Did you make improvements that weren't asked for? Revert them.
+  Answer:
+
+### Completeness
+
+- Is anything left stubbed, TODO'd, or half-finished? Would the next developer be able to continue from your Handoff with zero questions?
+  Answer:
+
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 Summary for the next session or reviewer.
 

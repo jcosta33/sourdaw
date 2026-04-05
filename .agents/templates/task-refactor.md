@@ -75,7 +75,12 @@ Every public path you add a compatibility shim to. Do not remove a shim until al
 - [ ] `pnpm deps:validate` — final pass, zero violations
 - [ ] `pnpm typecheck` passes
 - [ ] All shim contracts documented
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Architecture answered
+- [ ] Self-review: Completeness answered
+- [ ] Self-review: Shim contracts answered
+- [ ] Self-review: Behaviour preservation answered
+- [ ] Self-review: Scope answered
 - [ ] Handoff written
 
 ---
@@ -108,37 +113,45 @@ Concrete starting points for the next session if this one ends incomplete.
 
 Before writing the Handoff, stop. Refactors are high-risk: they touch many files, they drift from intent, and they leave subtle breakage that only shows up later. Act as a senior engineer who did not write this refactor and is about to approve or reject it.
 
-**Architecture — the non-negotiable**
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
-- Run `pnpm deps:validate` right now. Not from memory. Not from a previous checkpoint. Right now. Zero violations required.
-- Did you introduce any new architectural violations while cleaning up old ones? Cross-module internals, barrel files, wrong import paths?
-- Does `pnpm typecheck` pass cleanly?
+### Verification outputs (paste actual command output — do not paraphrase)
 
-**Completeness**
+- `git status` →
+- `pnpm deps:validate` (last line):
+- `pnpm typecheck` (last line):
 
-- Is there anything still in the old location that should have moved? Search for the old paths explicitly — do not assume.
-- Did you leave behind any empty directories, dead files, or orphaned imports pointing at nothing?
-- Is every module in scope fully migrated, or did you stop partway through one?
+### Architecture — the non-negotiable
 
-**Shim contracts**
+- Zero `pnpm deps:validate` violations (see pasted output above)? Any new architectural violations introduced while cleaning up old ones — cross-module internals, barrel files, wrong import paths?
+  Answer:
 
-- Is every shim you added documented in the table above? Every single one.
-- Are all shim targets correct — do they point to the new location, not the old one?
-- Is it obvious from your Handoff which shims are still live and which consumers must act?
+### Completeness
 
-**Behaviour preservation**
+- Is there anything still in the old location that should have moved? (grep for the old paths — do not assume) Any empty directories, dead files, or orphaned imports? Every module in scope fully migrated?
+  Answer:
 
-- Did you change any behaviour while restructuring? Restructuring means moving and renaming, not rewriting. If you changed logic, justify it explicitly.
-- Did you delete anything that is still needed somewhere?
+### Shim contracts
 
-**Scope**
+- Every shim documented in the table? All shim targets point to the new location? Is it obvious from your Handoff which shims are still live and which consumers must act?
+  Answer:
 
-- Did you touch files outside your team scope without documenting why?
-- Did you make improvements or cleanups unrelated to the refactor? Revert them.
+### Behaviour preservation
 
-Only when you can answer every one of these honestly should you write the Handoff.
+- Did you change any behaviour while restructuring? Restructuring means moving and renaming, not rewriting. Did you delete anything still needed somewhere?
+  Answer:
+
+### Scope
+
+- Files outside your team scope touched without documenting why? Unrelated improvements or cleanups?
+  Answer:
+
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 ### Done:
 

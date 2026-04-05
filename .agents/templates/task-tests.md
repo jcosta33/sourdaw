@@ -114,7 +114,16 @@ Be explicit about what you are NOT testing in this session:
 - [ ] Full suite `pnpm test:run` passes — nothing outside scope regressed
 - [ ] `pnpm deps:validate` passes with zero new violations
 - [ ] `pnpm typecheck` passes
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Conformance to testing guide answered
+- [ ] Self-review: Test quality answered
+- [ ] Self-review: Mock hygiene answered
+- [ ] Self-review: Isolation answered
+- [ ] Self-review: Coverage of target answered
+- [ ] Self-review: Architecture answered
+- [ ] Self-review: Production code changes answered
+- [ ] Self-review: Completeness answered
+- [ ] Self-review: Mode-specific sections answered (extended/rewrote/deleted/de-flaked — whichever apply)
 - [ ] Handoff written
 
 ---
@@ -158,6 +167,15 @@ Concrete starting points for the next session if this one ends incomplete. List 
 ## Self-review
 
 Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing these tests as if you didn't write them. You are looking for tests that will rot — flaky tests, tests that re-assert mocks, tests that test the framework instead of the code. Read every spec adversarially.
+
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
+
+### Verification outputs (paste actual command output — do not paraphrase)
+
+- `git status` →
+- `pnpm test:run` (last line):
+- `pnpm deps:validate` (last line):
+- `pnpm typecheck` (last line):
 
 **Conformance to the testing guide**
 
@@ -227,9 +245,12 @@ Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing th
 - Can you name the specific source of non-determinism you fixed (real timer, shared mutable state, test ordering dependency, race on async work)?
 - Did you re-run the affected test at least 10 times in a row to confirm it is now stable?
 
-Only when you can answer every one of these honestly should you write the Handoff.
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 Summary for the next session or reviewer.
 

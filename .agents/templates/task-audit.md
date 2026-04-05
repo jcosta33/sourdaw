@@ -57,7 +57,12 @@ Load `.agents/skills/write-audit/SKILL.md` before starting.
 - [ ] Identify performance concerns
 - [ ] Identify correctness or safety concerns
 - [ ] Write audit document at `.agents/audits/{{slug}}.md`
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Read-only constraint answered
+- [ ] Self-review: Coverage answered
+- [ ] Self-review: Evidence quality answered
+- [ ] Self-review: Severity calibration answered
+- [ ] Self-review: Recommendations answered
 - [ ] Handoff written
 
 ---
@@ -90,32 +95,43 @@ Concrete starting points for the next session if this one ends incomplete.
 
 Before writing the Handoff, stop. An audit that is incomplete, inaccurate, or contaminated by code changes is worse than no audit — it creates false confidence. Act as a senior engineer reviewing this audit document before it is published.
 
-**The read-only constraint — check this first**
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line for a finding, do not pad the list.
 
-- Run `git status` right now. Are there any modified files? If yes, identify them immediately. Revert any source file, config file, or dependency change before proceeding. An audit session that modified code is invalid.
+### Verification outputs (paste actual command output — do not paraphrase)
 
-**Coverage**
+- `git status` →
 
-- Does your audit document cover every area defined in the scope above? Go through the scope line by line. Did you skip anything because it was hard to read, large, or unclear? That is not acceptable — flag it explicitly as "not covered" with a reason.
-- Did you read the actual code, or did you skim file names and make assumptions?
+### The read-only constraint — check this first
 
-**Evidence quality**
+- Any modified files in `git status` above? A read-only session that modified code is invalid — revert immediately.
+  Answer:
 
-- Is every finding backed by a specific file path and, where applicable, a line number or code excerpt? "The module structure seems inconsistent" is not a finding. "Line 47 of `useCase/getFoo.ts` imports from `models/` directly, violating the no-cross-module-internals rule" is a finding.
-- Would a developer reading this audit be able to locate every issue you found without any additional context from you?
+### Coverage
 
-**Severity calibration**
+- Does the audit cover every area in the scope, line by line? Anything skipped because it was hard/large/unclear must be flagged explicitly as "not covered" with a reason. Did you read actual code, or skim file names?
+  Answer:
 
-- Are your critical findings actually critical? Are your minor findings actually minor? Over-inflating severities destroys trust in the document. Under-reporting buries real problems.
-- Did you miss anything in the Critical or Major categories that you filed as Minor or Observation to avoid conflict?
+### Evidence quality
 
-**Recommendations**
+- Is every finding backed by a specific file path and (where applicable) line number or code excerpt? Could a developer locate every issue without more context from you?
+  Answer:
 
-- Is every recommendation specific and actionable? "Improve error handling" is not actionable. "Add a `Result<T, AppError>` return type to `getUserById.ts` and handle the error at the call site in `CommandHandler.ts`" is.
+### Severity calibration
 
-Only when you can answer every one of these honestly should you write the Handoff.
+- Are critical findings actually critical? Are minor findings actually minor? Anything filed as Minor/Observation that belongs in Critical/Major?
+  Answer:
+
+### Recommendations
+
+- Is every recommendation specific and actionable (specific file, specific change) rather than a vibe ("improve X")?
+  Answer:
+
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 ### Audit document written at:
 

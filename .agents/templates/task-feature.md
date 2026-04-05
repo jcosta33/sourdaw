@@ -70,7 +70,12 @@ Which modules will be touched and what changes in each.
 - [ ] Implement
 - [ ] `pnpm deps:validate` passes with zero violations
 - [ ] `pnpm typecheck` passes
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Correctness answered
+- [ ] Self-review: Architecture answered
+- [ ] Self-review: React and TypeScript conventions answered
+- [ ] Self-review: Scope answered
+- [ ] Self-review: Completeness answered
 - [ ] Handoff written
 
 ---
@@ -111,37 +116,45 @@ Concrete starting points for the next session if this one ends incomplete.
 
 Before writing the Handoff, stop. Act as a senior engineer doing an adversarial review of this implementation — someone who is looking for a reason to reject it. Read every diff as if you didn't write it. Be the critic.
 
-**Correctness**
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
-- Does the implementation satisfy every acceptance criterion exactly as stated in the spec? Not approximately — exactly. Go through them one by one.
-- Is there anything in the spec you haven't addressed? Search the spec for requirements you might have skimmed.
+### Verification outputs (paste actual command output — do not paraphrase)
 
-**Architecture**
+- `git status` →
+- `pnpm deps:validate` (last line):
+- `pnpm typecheck` (last line):
 
-- Run `pnpm deps:validate` right now. Do not rely on a previous run. Zero violations required.
-- Did you introduce any cross-module imports that go through internals (`models/`, `repositories/`, `engine/`, `presentations/components/`, `presentations/hooks/`)? Those are forbidden.
-- Did you create any barrel files (`index.ts`) or pseudo-barrel re-exports? Remove them.
+### Correctness
 
-**React and TypeScript conventions**
+- Does the implementation satisfy every acceptance criterion exactly as stated in the spec? Not approximately — exactly. Go through them one by one. Is there anything in the spec you haven't addressed?
+  Answer:
 
-- Did you use `useMemo`, `useCallback`, or `React.memo`? The compiler handles this — remove them.
-- Did you use `&&` for conditional rendering? Use ternaries or early returns.
-- Did you use `interface` instead of `type`? Did you use `enum` instead of `as const`?
-- Does `pnpm typecheck` pass cleanly with zero errors?
+### Architecture
 
-**Scope**
+- Zero `pnpm deps:validate` violations (see pasted output above)? Did you introduce any cross-module imports through internals (`models/`, `repositories/`, `engine/`, `presentations/components/`, `presentations/hooks/`)? Any barrel files (`index.ts`) or pseudo-barrel re-exports?
+  Answer:
 
-- Did you touch files outside your team scope without a documented reason in Findings?
-- Did you make any "while I'm here" improvements that weren't asked for? If yes, revert them — they don't belong in this branch.
+### React and TypeScript conventions
 
-**Completeness**
+- Did you use `useMemo`, `useCallback`, or `React.memo`? Did you use `&&` for conditional rendering? Did you use `interface` instead of `type`, or `enum` instead of `as const`? Does `pnpm typecheck` pass cleanly?
+  Answer:
 
-- Is anything left stubbed, TODO'd, or half-implemented?
-- Would the next developer be able to pick this up with zero questions from your Handoff alone?
+### Scope
 
-Only when you can answer every one of these honestly should you write the Handoff.
+- Did you touch files outside your team scope without a documented reason in Findings? Did you make any "while I'm here" improvements that weren't asked for?
+  Answer:
+
+### Completeness
+
+- Is anything left stubbed, TODO'd, or half-implemented? Would the next developer be able to pick this up with zero questions from your Handoff alone?
+  Answer:
+
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 Summary for the next session or reviewer.
 

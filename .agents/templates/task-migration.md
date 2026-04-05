@@ -91,7 +91,11 @@ One row per module. Update status as you go: `pending` / `in-progress` / `done`.
 - [ ] All shim contracts documented
 - [ ] `pnpm deps:validate` — final pass, zero violations
 - [ ] `pnpm typecheck` passes
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Completeness answered
+- [ ] Self-review: Architecture answered
+- [ ] Self-review: Shim contracts answered
+- [ ] Self-review: Blast radius answered
 - [ ] Handoff written
 
 ---
@@ -124,31 +128,41 @@ Concrete starting points for the next session if this one ends incomplete.
 
 Before writing the Handoff, stop. A partial migration is a ticking time bomb — it leaves the codebase in an inconsistent state that quietly breaks things downstream. Act as a senior engineer about to approve this migration for merge.
 
-**Completeness — the most important thing**
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
-- Is every module in the checklist above marked `done`? If anything is `in-progress` or `pending`, this task is not complete.
-- Search the codebase right now for imports pointing at the source location. Do not assume you got them all. Use grep. If you find any, fix them before proceeding.
-- Are there empty directories or dead files left at the source location that should have been removed?
+### Verification outputs (paste actual command output — do not paraphrase)
 
-**Architecture**
+- `git status` →
+- `pnpm deps:validate` (last line):
+- `pnpm typecheck` (last line):
+- grep for old source paths (paste result or "none"):
 
-- Run `pnpm deps:validate` right now. Not from a previous checkpoint — right now. Zero violations required.
-- Does `pnpm typecheck` pass cleanly?
-- Did you introduce any new violations while migrating? Moving code is not a license to restructure it.
+### Completeness — the most important thing
 
-**Shim contracts**
+- Every module in the checklist marked `done`? Did you grep for imports pointing at the old location (paste result above)? Any empty directories or dead files left at the source?
+  Answer:
 
-- Is every shim you added documented in the table with its old path, new path, known consumers, and the condition under which it can be removed?
-- Are the shim targets correct — do they point to the new location?
-- Is your Handoff unambiguous about which shims are still live and exactly what each consuming team needs to do?
+### Architecture
 
-**Blast radius**
+- Zero `pnpm deps:validate` violations (see pasted output above)? `pnpm typecheck` clean? Did you introduce any new violations while migrating? Moving code is not a license to restructure it.
+  Answer:
 
-- Did you touch files outside your team scope without documenting why? A migration that silently edits other teams' modules is a coordination failure.
+### Shim contracts
 
-Only when you can answer every one of these honestly should you write the Handoff.
+- Every shim documented with old path, new path, known consumers, and removal condition? All shim targets correct? Is your Handoff unambiguous about which shims are still live?
+  Answer:
+
+### Blast radius
+
+- Did you touch files outside your team scope without documenting why?
+  Answer:
+
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 ### Done:
 

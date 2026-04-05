@@ -74,7 +74,11 @@ List the specific files you expect to modify. If you find yourself touching more
 - [ ] Verify fix resolves the issue
 - [ ] `pnpm deps:validate` passes with zero violations
 - [ ] `pnpm typecheck` passes
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Root cause answered
+- [ ] Self-review: Minimality answered
+- [ ] Self-review: Correctness answered
+- [ ] Self-review: Conventions answered
 - [ ] Handoff written
 
 ---
@@ -109,30 +113,41 @@ Concrete starting points for the next session if this one ends incomplete.
 
 Before writing the Handoff, stop. The standard for a fix is brutal simplicity: the minimum change that addresses the root cause, nothing more. Act as a senior engineer reviewing this diff with maximum skepticism. You are looking for anything that shouldn't be there.
 
-**Root cause**
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
-- Does the fix address the root cause, or just the symptom? If the bug were triggered in a slightly different way, would it reappear?
-- Is the root cause documented accurately in the field above? A vague root cause is a sign the fix is also vague.
+### Verification outputs (paste actual command output — do not paraphrase)
 
-**Minimality — the hardest part**
+- `git status` →
+- `git diff --stat` →
+- `pnpm deps:validate` (last line):
+- `pnpm typecheck` (last line):
 
-- Count the files you changed. Could you fix this bug by touching fewer files? If yes, do it.
-- Read every line you changed. Is every single line necessary to fix the bug? Anything that isn't — revert it. Cleanup, refactoring, and improvements do not belong in a fix branch.
-- Did you change any behaviour beyond what was broken? Any change you cannot directly trace to the bug report is scope creep. Remove it.
+### Root cause
 
-**Correctness**
+- Does the fix address the root cause, or just the symptom? If the bug were triggered in a slightly different way, would it reappear? Is the root cause documented accurately above?
+  Answer:
 
-- Run `pnpm deps:validate`. Zero violations.
-- Does `pnpm typecheck` pass?
-- Could this fix introduce a regression in any code path that depends on what you changed? Search for callers.
+### Minimality — the hardest part
 
-**Conventions**
+- Could you fix this bug by touching fewer files? Is every single line necessary to fix the bug? Anything traceable to "cleanup" or "while I'm here" — revert it.
+  Answer:
 
-- Did you accidentally violate any React 19 rules, architectural boundaries, or coding conventions while fixing the bug? A fix is no excuse for a new violation.
+### Correctness
 
-Only when you can answer every one of these honestly should you write the Handoff.
+- Zero `pnpm deps:validate` violations? `pnpm typecheck` clean? Could this fix introduce a regression in any code path that depends on what you changed? Did you grep for callers?
+  Answer:
+
+### Conventions
+
+- Did you accidentally violate any React 19 rules, architectural boundaries, or coding conventions while fixing the bug?
+  Answer:
+
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 ### Done:
 

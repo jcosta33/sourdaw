@@ -95,7 +95,13 @@ If you cannot find any prior art, state that explicitly — "no existing pattern
 - [ ] Fill in requirements and acceptance criteria
 - [ ] Review for completeness and correctness
 - [ ] Write spec at `.agents/specs/{{slug}}.md`
-- [ ] Self-review complete (see Self-review section below)
+- [ ] Self-review: Verification outputs pasted
+- [ ] Self-review: Read-only constraint answered
+- [ ] Self-review: Completeness answered
+- [ ] Self-review: Scope and boundaries answered
+- [ ] Self-review: Open questions answered
+- [ ] Self-review: Consistency answered
+- [ ] Self-review: Integration with existing patterns answered
 - [ ] Handoff written
 
 ---
@@ -130,39 +136,48 @@ Concrete starting points for the next session if this one ends incomplete.
 
 Before writing the Handoff, stop. A spec that ships with gaps, ambiguities, or unresolved questions will cause a developer to make incorrect assumptions during implementation — and those assumptions compound. Act as a senior engineer who is about to greenlight this spec for implementation and is looking for every reason not to.
 
-**The read-only constraint — check this first**
+> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific requirement/section/file for a finding, do not pad the list.
 
-- Run `git status` right now. Are there any modified source files, config files, or dependencies? If yes, revert them immediately. A spec session produces one output: the spec document.
+### Verification outputs (paste actual command output — do not paraphrase)
 
-**Completeness**
+- `git status` →
 
-- Could a developer start implementation tomorrow with no follow-up questions, based solely on this spec? If the answer is "probably not," the spec is not done.
-- Go through every requirement. Does each one have a testable acceptance criterion? "Should feel responsive" is not an acceptance criterion. "Renders within 16ms on a mid-range device" is.
-- Is every edge case and failure mode addressed? What happens when the network is unavailable? When the input is invalid? When the user cancels mid-flow?
+### The read-only constraint — check this first
 
-**Scope and boundaries**
+- Any modified source/config/dependency files in `git status` above? A spec session produces one output: the spec document. Revert anything else immediately.
+  Answer:
 
-- Is the scope of this spec clearly bounded? Could a developer accidentally implement something adjacent but out-of-scope and believe they were following the spec?
-- Does the spec inadvertently describe work that belongs to a different team or a different spec?
+### Completeness
 
-**Open questions**
+- Could a developer start implementation tomorrow with no follow-up questions, based solely on this spec? Does every requirement have a testable acceptance criterion? Is every edge case and failure mode addressed?
+  Answer:
 
-- Are all unresolved questions flagged explicitly for stakeholders? A spec that silently assumes the answer to a contested question is a liability.
-- Is it clear who needs to answer each open question and by when?
+### Scope and boundaries
 
-**Consistency**
+- Is the scope clearly bounded? Could a developer accidentally implement something adjacent but out-of-scope and believe they were following the spec? Does the spec inadvertently describe work that belongs to a different team or spec?
+  Answer:
+
+### Open questions
+
+- Are all unresolved questions flagged explicitly for stakeholders? Is it clear who needs to answer each and by when?
+  Answer:
+
+### Consistency
 
 - Are all terms used consistently throughout? Does this spec contradict, duplicate, or conflict with anything in existing specs in `.agents/specs/`?
+  Answer:
 
-**Integration with existing patterns**
+### Integration with existing patterns
 
-- Did you complete the Pattern survey above? A spec written without surveying prior art reinvents mechanisms that already exist and creates integration debt.
-- For each major design choice in the spec, does it reuse an established helper/primitive/convention, or does it introduce a new one? If new, is the justification in "Deliberate departures" defensible?
-- Would a reviewer familiar with the codebase recognize the spec's shape immediately, or would they ask "why isn't this using <existing pattern>?"
+- Did you complete the Pattern survey above? For each major design choice, does it reuse an established helper/primitive/convention, or does it introduce a new one? If new, is the "Deliberate departures" justification defensible? Would a reviewer familiar with the codebase recognize the spec's shape immediately?
+  Answer:
 
-Only when you can answer every one of these honestly should you write the Handoff.
+Only when every answer above is written should you write the Handoff.
 
 ## Handoff
+
+> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
+
 
 ### Spec written at:
 
