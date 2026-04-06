@@ -13,6 +13,17 @@ import {
     createDefaultGrandBouleConfig,
 } from '../models/GrandBouleConfig';
 import {
+    type GrandBouleMidiCalibration,
+    createDefaultMidiCalibration,
+} from '../models/GrandBouleMidiCalibration';
+import {
+    type GrandBouleMorphState,
+    createDefaultMorphState,
+} from '../models/GrandBouleMorphState';
+import {
+    type GrandBoulePerNoteMap,
+} from '../models/GrandBoulePerNoteParams';
+import {
     type GrandBoulePresetParameters,
     createNeutralPresetParameters,
 } from '../models/GrandBoulePreset';
@@ -28,10 +39,25 @@ export type GrandBoulePedalState = {
     sostenuto: boolean;
 };
 
+/**
+ * Historical temperament index. Matches the Rust enum `Temperament` values.
+ * 0 = Equal (default), 1 = Werckmeister III, 2 = Kirnberger III,
+ * 3 = Vallotti, 4 = Young II, 5 = Meantone ¼-comma.
+ */
+export type TemperamentIndex = 0 | 1 | 2 | 3 | 4 | 5;
+
 export type GrandBouleState = {
     config: GrandBouleConfig;
     parameters: GrandBoulePresetParameters;
     pedals: GrandBoulePedalState;
+    /** MIDI controller calibration per spec §3.1. */
+    midiCalibration: GrandBouleMidiCalibration;
+    /** Per-note parameter overrides per spec §3.1. */
+    perNoteOverrides: GrandBoulePerNoteMap;
+    /** Morph/layer state per spec §3.1. */
+    morph: GrandBouleMorphState;
+    /** Active historical temperament per spec §4. */
+    temperament: TemperamentIndex;
     /** True once the WASM engine has been constructed and is accepting notes. */
     engineReady: boolean;
     /** Number of voices currently sounding (telemetry — read-only). */
@@ -47,6 +73,10 @@ export const grandBouleStore = new Store<GrandBouleState>(logger, {
             unaCorda: false,
             sostenuto: false,
         },
+        midiCalibration: createDefaultMidiCalibration(),
+        perNoteOverrides: new Map(),
+        morph: createDefaultMorphState(),
+        temperament: 0,
         engineReady: false,
         activeVoices: 0,
     },

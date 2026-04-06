@@ -19,6 +19,56 @@ pub const NUM_KEYS: usize = 88;
 /// Reference tuning frequency for A4 (MIDI 69, key 49).
 pub const A4_HZ: f32 = 440.0;
 
+/// Historical temperament index. Used to select a tuning system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Temperament {
+    Equal = 0,
+    WerckmeisterIII = 1,
+    KirnbergerIII = 2,
+    Vallotti = 3,
+    YoungII = 4,
+    MeantoneQuarterComma = 5,
+}
+
+impl Temperament {
+    /// Parse from an integer (used by set_param / WASM). Unknown values
+    /// return `Equal`.
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::WerckmeisterIII,
+            2 => Self::KirnbergerIII,
+            3 => Self::Vallotti,
+            4 => Self::YoungII,
+            5 => Self::MeantoneQuarterComma,
+            _ => Self::Equal,
+        }
+    }
+}
+
+/// Historical temperament cent offsets relative to A = 0 per spec §4.
+/// Indexed by pitch class: [C, C#, D, D#, E, F, F#, G, G#, A, A#, B].
+const WERCKMEISTER_III: [f32; 12] = [11.7, 2.0, 3.9, 5.9, 2.0, 9.8, 0.0, 7.8, 3.9, 0.0, 7.8, 3.9];
+const KIRNBERGER_III: [f32; 12] = [10.3, 0.5, 3.4, 4.4, -3.4, 8.3, 0.5, 6.8, 2.4, 0.0, 6.4, -1.5];
+const VALLOTTI: [f32; 12] = [5.9, 0.0, 2.0, 3.9, -2.0, 7.8, -2.0, 3.9, 2.0, 0.0, 5.9, -3.9];
+const YOUNG_II: [f32; 12] = [5.9, -3.9, 2.0, 0.0, -2.0, 3.9, -5.9, 3.9, -2.0, 0.0, 2.0, -3.9];
+const MEANTONE_QUARTER_COMMA: [f32; 12] = [10.3, -13.7, 3.4, 20.5, -3.4, 13.7, -10.3, 6.8, -17.1, 0.0, 17.1, -6.8];
+
+/// Get the temperament cent offset for a given MIDI note. Returns 0.0 for
+/// equal temperament.
+pub fn temperament_offset_cents(temperament: Temperament, midi_note: u8) -> f32 {
+    let table = match temperament {
+        Temperament::Equal => return 0.0,
+        Temperament::WerckmeisterIII => &WERCKMEISTER_III,
+        Temperament::KirnbergerIII => &KIRNBERGER_III,
+        Temperament::Vallotti => &VALLOTTI,
+        Temperament::YoungII => &YOUNG_II,
+        Temperament::MeantoneQuarterComma => &MEANTONE_QUARTER_COMMA,
+    };
+    let pitch_class = (midi_note % 12) as usize;
+    table[pitch_class]
+}
+
 /// Convert a MIDI note number to a 1-indexed piano key (A0 = 1 .. C8 = 88).
 /// Returns `None` if the note lies outside the piano range.
 pub fn midi_to_key(midi_note: u8) -> Option<u32> {
@@ -210,5 +260,33 @@ mod tests {
     #[test]
     fn hammer_mass_decreases_with_pitch() {
         assert!(hammer_mass_kg(1) > hammer_mass_kg(88));
+    }
+
+    #[test]
+    fn equal_temperament_has_zero_offsets() {
+        for midi in 21..=108 {
+            assert_eq!(temperament_offset_cents(Temperament::Equal, midi), 0.0);
+        }
+    }
+
+    #[test]
+    fn werckmeister_a_is_zero() {
+        // A is pitch class 9. MIDI 69 = A4.
+        assert_eq!(temperament_offset_cents(Temperament::WerckmeisterIII, 69), 0.0);
+    }
+
+    #[test]
+    fn meantone_has_large_offsets() {
+        // D# should be +20.5 cents in meantone.
+        let offset = temperament_offset_cents(Temperament::MeantoneQuarterComma, 63); // D#4
+        assert!((offset - 20.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn temperament_from_u8_roundtrips() {
+        assert_eq!(Temperament::from_u8(0), Temperament::Equal);
+        assert_eq!(Temperament::from_u8(1), Temperament::WerckmeisterIII);
+        assert_eq!(Temperament::from_u8(5), Temperament::MeantoneQuarterComma);
+        assert_eq!(Temperament::from_u8(99), Temperament::Equal);
     }
 }

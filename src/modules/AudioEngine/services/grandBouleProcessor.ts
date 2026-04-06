@@ -13,6 +13,7 @@
  *   { type: 'unaCorda', engaged }
  *   { type: 'sostenuto', engaged }
  *   { type: 'noteOnMidi2', midiNote, velocity16bit, pitchOffsetQ24 }
+ *   { type: 'temperament', index }
  *   { type: 'allNotesOff' }
  */
 
@@ -55,7 +56,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     _initWasm(wasmBytes) {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
-        this._instance = new GrandBouleInstance(sampleRate, 32);
+        this._instance = new GrandBouleInstance(sampleRate, 64);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
     }
@@ -110,6 +111,12 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
                 break;
             case 'noteOnMidi2':
                 inst.note_on_midi2(msg.midiNote, msg.velocity16bit, msg.pitchOffsetQ24);
+                break;
+            case 'temperament':
+                inst.set_temperament(msg.index);
+                break;
+            case 'loadAttackClip':
+                inst.load_attack_clip(msg.key, msg.samples);
                 break;
             case 'allNotesOff':
                 inst.all_notes_off();

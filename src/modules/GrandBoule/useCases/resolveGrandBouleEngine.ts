@@ -44,7 +44,8 @@ export const resolveGrandBouleEngine = (
         setSustain: (i) => controls.setSustain(i.position),
         setUnaCorda: (i) => controls.setUnaCorda(i.engaged),
         setSostenuto: (i) => controls.setSostenuto(i.engaged),
-        loadAttackClip: () => {},
+        setTemperament: (i) => controls.setTemperament(i.index),
+        loadAttackClip: (i) => controls.loadAttackClip(i.key, i.samples),
         allNotesOff: () => controls.allNotesOff(),
         isReady: () => true,
     };

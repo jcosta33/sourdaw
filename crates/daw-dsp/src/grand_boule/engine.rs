@@ -6,7 +6,7 @@
 
 use super::attack_sampler::AttackSampleSet;
 use super::mechanical_noise::{MechanicalNoise, NoiseEvent};
-use super::parameters::{key_fundamental_hz, midi_to_key};
+use super::parameters::{key_fundamental_hz, midi_to_key, temperament_offset_cents, Temperament};
 use super::pedals::PedalState;
 use super::soundboard::Soundboard;
 use super::sympathetic::Sympathetic;
@@ -31,6 +31,8 @@ pub struct GrandBouleEngine {
     /// Send amount into the sympathetic bank (0..1).
     sympathetic_send: f32,
     sample_rate: f32,
+    /// Active historical temperament.
+    temperament: Temperament,
 }
 
 impl GrandBouleEngine {
@@ -51,6 +53,7 @@ impl GrandBouleEngine {
             soundboard_send: 0.6,
             sympathetic_send: 0.25,
             sample_rate,
+            temperament: Temperament::Equal,
         }
     }
 
@@ -81,6 +84,10 @@ impl GrandBouleEngine {
         let Some(key) = midi_to_key(midi_note) else {
             return;
         };
+        // Apply historical temperament offset on top of the caller's pitch ratio.
+        let temperament_cents = temperament_offset_cents(self.temperament, midi_note);
+        let temperament_ratio = (2.0_f32).powf(temperament_cents / 1200.0);
+        let combined_ratio = pitch_ratio * temperament_ratio;
         let stiffness_scale = self.pedals.hammer_stiffness_scale();
         self.pedals.press_key(key);
         self.noise.trigger(NoiseEvent::KeyDown, velocity);
@@ -89,7 +96,7 @@ impl GrandBouleEngine {
         // Retrigger the same voice if this note is already held.
         for voice in self.voices.iter_mut() {
             if !voice.is_idle() && voice.midi_note() == midi_note {
-                voice.note_on(midi_note, velocity, key, pitch_ratio, stiffness_scale);
+                voice.note_on(midi_note, velocity, key, combined_ratio, stiffness_scale);
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
                 return;
             }
@@ -116,7 +123,7 @@ impl GrandBouleEngine {
                 .iter_mut()
                 .max_by_key(|voice| voice.age_samples());
             if let Some(voice) = oldest {
-                voice.note_on(midi_note, velocity, key, pitch_ratio, stiffness_scale);
+                voice.note_on(midi_note, velocity, key, combined_ratio, stiffness_scale);
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
             }
             return;
@@ -125,7 +132,7 @@ impl GrandBouleEngine {
         if !voice.is_idle() {
             voice.begin_steal();
         }
-        voice.note_on(midi_note, velocity, key, pitch_ratio, stiffness_scale);
+        voice.note_on(midi_note, velocity, key, combined_ratio, stiffness_scale);
         voice.arm_attack(key, self.attack_samples.length_for_key(key));
     }
 
@@ -198,11 +205,16 @@ impl GrandBouleEngine {
         self.pedals.set_sostenuto(engaged);
     }
 
+    pub fn set_temperament(&mut self, temperament: Temperament) {
+        self.temperament = temperament;
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
             "soundboard_send" => self.soundboard_send = value.clamp(0.0, 1.0),
             "sympathetic_send" => self.sympathetic_send = value.clamp(0.0, 1.0),
+            "temperament" => self.temperament = Temperament::from_u8(value as u8),
             _ => {}
         }
     }

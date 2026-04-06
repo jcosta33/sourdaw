@@ -23,6 +23,7 @@ pub mod sympathetic;
 pub mod voice;
 
 use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
+use parameters::Temperament;
 use wasm_bindgen::prelude::*;
 
 /// Pre-allocated maximum block size exposed to the AudioWorklet side.
@@ -93,6 +94,12 @@ impl GrandBouleInstance {
     /// Load an attack-sample clip into the hybrid sampled-attack set.
     pub fn load_attack_clip(&mut self, key: u32, samples: &[f32]) {
         self.engine.attack_samples_mut().set_clip(key, samples);
+    }
+
+    /// Set the historical temperament (0 = Equal, 1 = Werckmeister III,
+    /// 2 = Kirnberger III, 3 = Vallotti, 4 = Young II, 5 = Meantone ¼-comma).
+    pub fn set_temperament(&mut self, index: u8) {
+        self.engine.set_temperament(Temperament::from_u8(index));
     }
 
     /// Panic: silence every voice immediately.

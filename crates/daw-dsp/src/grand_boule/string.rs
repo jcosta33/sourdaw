@@ -24,8 +24,17 @@ use super::parameters::inharmonicity_b;
 /// aligns to 6 × f32x8 lanes.
 pub const MAX_PARTIALS: usize = 48;
 
+/// Maximum number of low-frequency partials processed in f64 precision.
+/// Per spec §7.3: "Use f64 for resonators below 200 Hz." Typically 1-7
+/// partials for bass notes.
+const MAX_F64_PARTIALS: usize = 8;
+
 /// Struct-of-Arrays modal resonator bank. One instance represents one
 /// polarization of one string.
+///
+/// Partials below 200 Hz are processed in f64 precision for numerical
+/// stability with very narrow bandwidths (spec §7.3). The f64 partials
+/// are stored separately and summed first before adding f32 partials.
 #[repr(C, align(64))]
 #[derive(Clone, Debug)]
 pub struct ModalString {
@@ -36,6 +45,16 @@ pub struct ModalString {
     x2: [f32; MAX_PARTIALS],
     y1: [f32; MAX_PARTIALS],
     y2: [f32; MAX_PARTIALS],
+    /// f64-precision coefficients and state for low-frequency partials.
+    c0_64: [f64; MAX_F64_PARTIALS],
+    c1_64: [f64; MAX_F64_PARTIALS],
+    c2_64: [f64; MAX_F64_PARTIALS],
+    x1_64: [f64; MAX_F64_PARTIALS],
+    x2_64: [f64; MAX_F64_PARTIALS],
+    y1_64: [f64; MAX_F64_PARTIALS],
+    y2_64: [f64; MAX_F64_PARTIALS],
+    /// Number of partials processed in f64 (those below 200 Hz).
+    f64_partials: usize,
     active_partials: usize,
     /// Damping mode: if true, bandwidth is scaled up by the damper state,
     /// which produces a faster decay (applied via re-configure).
@@ -52,6 +71,14 @@ impl ModalString {
             x2: [0.0; MAX_PARTIALS],
             y1: [0.0; MAX_PARTIALS],
             y2: [0.0; MAX_PARTIALS],
+            c0_64: [0.0; MAX_F64_PARTIALS],
+            c1_64: [0.0; MAX_F64_PARTIALS],
+            c2_64: [0.0; MAX_F64_PARTIALS],
+            x1_64: [0.0; MAX_F64_PARTIALS],
+            x2_64: [0.0; MAX_F64_PARTIALS],
+            y1_64: [0.0; MAX_F64_PARTIALS],
+            y2_64: [0.0; MAX_F64_PARTIALS],
+            f64_partials: 0,
             active_partials: 0,
             damped: false,
         }
@@ -63,6 +90,10 @@ impl ModalString {
         self.x2.fill(0.0);
         self.y1.fill(0.0);
         self.y2.fill(0.0);
+        self.x1_64.fill(0.0);
+        self.x2_64.fill(0.0);
+        self.y1_64.fill(0.0);
+        self.y2_64.fill(0.0);
     }
 
     pub fn active_partials(&self) -> usize {
@@ -94,6 +125,7 @@ impl ModalString {
         let b_coefficient = inharmonicity_b(key);
         let nyquist = sample_rate * 0.5;
         let mut active = 0;
+        let mut f64_count = 0_usize;
 
         for index in 0..MAX_PARTIALS {
             let partial_number = (index + 1) as f32;
@@ -114,15 +146,35 @@ impl ModalString {
             // Partial bandwidth grows with frequency to approximate the b₂·ω²
             // damping term from the full wave equation.
             let bandwidth = base_bandwidth_hz + 0.0008 * freq * freq.sqrt() + extra_damping_hz;
-            let theta = TAU * freq / sample_rate;
-            let r = (-PI * bandwidth / sample_rate).exp();
 
-            self.c0[index] = amp * (1.0 - r * r) * theta.sin() * 0.5;
-            self.c1[index] = 2.0 * r * theta.cos();
-            self.c2[index] = -(r * r);
+            // §7.3: Use f64 for resonators below 200 Hz for numerical stability
+            // with very narrow bandwidths.
+            if freq < 200.0 && f64_count < MAX_F64_PARTIALS {
+                let freq64 = freq as f64;
+                let sr64 = sample_rate as f64;
+                let amp64 = amp as f64;
+                let bw64 = bandwidth as f64;
+                let theta64 = core::f64::consts::TAU * freq64 / sr64;
+                let r64 = (-core::f64::consts::PI * bw64 / sr64).exp();
+                self.c0_64[f64_count] = amp64 * (1.0 - r64 * r64) * theta64.sin() * 0.5;
+                self.c1_64[f64_count] = 2.0 * r64 * theta64.cos();
+                self.c2_64[f64_count] = -(r64 * r64);
+                // Zero out the f32 slot so it doesn't double-contribute.
+                self.c0[index] = 0.0;
+                self.c1[index] = 0.0;
+                self.c2[index] = 0.0;
+                f64_count += 1;
+            } else {
+                let theta = TAU * freq / sample_rate;
+                let r = (-PI * bandwidth / sample_rate).exp();
+                self.c0[index] = amp * (1.0 - r * r) * theta.sin() * 0.5;
+                self.c1[index] = 2.0 * r * theta.cos();
+                self.c2[index] = -(r * r);
+            }
             active = index + 1;
         }
 
+        self.f64_partials = f64_count;
         self.active_partials = active;
     }
 
@@ -139,6 +191,7 @@ impl ModalString {
         use core::f32::consts::{PI, TAU};
         let b_coefficient = inharmonicity_b(key);
         let nyquist = sample_rate * 0.5;
+        let mut f64_idx = 0_usize;
 
         for index in 0..self.active_partials {
             let partial_number = (index + 1) as f32;
@@ -149,20 +202,48 @@ impl ModalString {
                 continue;
             }
             let bandwidth = base_bandwidth_hz + 0.0008 * freq * freq.sqrt() + extra_damping_hz;
-            let theta = TAU * freq / sample_rate;
-            let r = (-PI * bandwidth / sample_rate).exp();
-            self.c1[index] = 2.0 * r * theta.cos();
-            self.c2[index] = -(r * r);
+            if freq < 200.0 && f64_idx < self.f64_partials {
+                let freq64 = freq as f64;
+                let sr64 = sample_rate as f64;
+                let bw64 = bandwidth as f64;
+                let theta64 = core::f64::consts::TAU * freq64 / sr64;
+                let r64 = (-core::f64::consts::PI * bw64 / sr64).exp();
+                self.c1_64[f64_idx] = 2.0 * r64 * theta64.cos();
+                self.c2_64[f64_idx] = -(r64 * r64);
+                f64_idx += 1;
+            } else {
+                let theta = TAU * freq / sample_rate;
+                let r = (-PI * bandwidth / sample_rate).exp();
+                self.c1[index] = 2.0 * r * theta.cos();
+                self.c2[index] = -(r * r);
+            }
         }
     }
 
-    /// Process one sample. Loop structure keeps arrays in cache and auto-
-    /// vectorises on release builds.
+    /// Process one sample. f64 partials (below 200 Hz) are processed first
+    /// for numerical stability (§7.3), then f32 partials via the SIMD-friendly
+    /// SoA loop.
     #[inline]
     pub fn tick(&mut self, input: f32) -> f32 {
         let mut output = 0.0_f32;
+
+        // f64-precision partials (below 200 Hz).
+        let input_64 = input as f64;
+        let n64 = self.f64_partials;
+        for index in 0..n64 {
+            let y = self.c0_64[index] * (input_64 - self.x2_64[index])
+                + self.c1_64[index] * self.y1_64[index]
+                + self.c2_64[index] * self.y2_64[index];
+            self.x2_64[index] = self.x1_64[index];
+            self.x1_64[index] = input_64;
+            self.y2_64[index] = self.y1_64[index];
+            self.y1_64[index] = y;
+            output += y as f32;
+        }
+
+        // f32-precision partials (200 Hz and above). Tight inner loop over
+        // SoA arrays for auto-vectorization.
         let n = self.active_partials;
-        // Tight inner loop over SoA arrays.
         for index in 0..n {
             let y = self.c0[index] * (input - self.x2[index])
                 + self.c1[index] * self.y1[index]
@@ -179,9 +260,25 @@ impl ModalString {
     /// Cheaper linear-model tick — used by progressive simplification (§4.1)
     /// once a voice has aged past the threshold. Reduces the effective partial
     /// count by half, keeping the loudest low partials (largest amp ∝ 1/n).
+    /// f64 partials are always processed in full (they are already few).
     #[inline]
     pub fn tick_simplified(&mut self, input: f32) -> f32 {
         let mut output = 0.0_f32;
+
+        // Always process f64 partials in full (max 8, negligible cost).
+        let input_64 = input as f64;
+        let n64 = self.f64_partials;
+        for index in 0..n64 {
+            let y = self.c0_64[index] * (input_64 - self.x2_64[index])
+                + self.c1_64[index] * self.y1_64[index]
+                + self.c2_64[index] * self.y2_64[index];
+            self.x2_64[index] = self.x1_64[index];
+            self.x1_64[index] = input_64;
+            self.y2_64[index] = self.y1_64[index];
+            self.y1_64[index] = y;
+            output += y as f32;
+        }
+
         let n = (self.active_partials / 2).max(1);
         for index in 0..n {
             let y = self.c0[index] * (input - self.x2[index])

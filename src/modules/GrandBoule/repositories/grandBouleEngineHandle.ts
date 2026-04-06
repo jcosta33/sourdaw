@@ -30,6 +30,8 @@ export type GrandBouleEngineHandle = {
     setUnaCorda: (input: { engaged: boolean }) => void;
     /** Sostenuto (CC66) pedal state. */
     setSostenuto: (input: { engaged: boolean }) => void;
+    /** Set historical temperament (0=Equal, 1=Werckmeister III, 2=Kirnberger III, 3=Vallotti, 4=Young II, 5=Meantone ¼-comma). */
+    setTemperament: (input: { index: number }) => void;
     /** Load an attack-transient clip for the hybrid pathway (§3.3). */
     loadAttackClip: (input: { key: number; samples: Float32Array }) => void;
     /** Panic: silence every voice immediately. */
@@ -51,6 +53,7 @@ export const createDisconnectedGrandBouleEngineHandle = (): GrandBouleEngineHand
     setSustain: () => {},
     setUnaCorda: () => {},
     setSostenuto: () => {},
+    setTemperament: () => {},
     loadAttackClip: () => {},
     allNotesOff: () => {},
     isReady: () => false,
