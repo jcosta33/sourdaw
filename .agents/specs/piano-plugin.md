@@ -24,7 +24,41 @@ This specification defines the implementation of a state-of-the-art physically m
 - **Per-note Expression**: Maps pitch bend, pressure, and timbre controllers to per-voice modal parameters.
 - **Microtuning**: Supports 1/512th of a semitone precision per note for historical temperaments.
 
-## 3. Synthesis Engine: Modal Synthesis
+## 3. User-Visible Behavior & Scope
+
+### 3.1 User-Visible Behavior
+- **Zero-Friction Playability**: High-polyphony support (256 voices) and MIDI 2.0 resolution ensure a seamless experience from pianissimo to fortissimo.
+- **WebGPU Visualizations**: Real-time feedback via 3D string vibration splines, spectral waterfall, and an interactive 3D grand piano model with articulated lid/hammers.
+- **Authentic Pedaling**: Support for continuous half-pedaling, repedaling (catch pedaling), and authentic timbral shifts via Una Corda and Sostenuto.
+- **Custom Calibration**: User-adjustable velocity curves and MIDI controller calibration to match the instrument to the player's touch.
+- **Granular Control**: **Per-note parameter editing** of 30+ physical parameters (hammer hardness, string stiffness, bridge coupling, etc.).
+- **Morphing Capabilities**: Support for morphing and layering across different piano models.
+- **Near-Zero Footprint**: Instant loading (~50MB) and near-zero disk anxiety compared to multi-gigabyte sample libraries.
+
+### 3.2 Scope
+- **In scope**:
+    - **Rust Audio Engine (DSP)**: Modal synthesis with pre-allocated lock-free voice pool.
+    - **React Frontend**: Modern UI with Zustand state management.
+    - **Visuals (WebGPU)**: Compute shaders for wave equation (string vibration) and rolling 3D spectrogram (spectral waterfall).
+    - **Usability Features**: MIDI controller calibration tool, per-note parameter editing, and preset/model marketplace integration.
+    - **Advanced Modeling**: Sympathetic resonance (global resonator bank), dampers, mechanical noise components, **longitudinal modes** (phantom partials), and **duplex scale resonance**.
+    - **Historical Temperaments**: Full support for historical tuning systems with cent-accurate offsets.
+
+---
+
+## 4. Historical Temperament Offsets (Relative to A=0)
+
+| Temperament | C | C# | D | D# | E | F | F# | G | G# | A | A# | B |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Werckmeister III** | +11.7 | +2.0 | +3.9 | +5.9 | +2.0 | +9.8 | 0.0 | +7.8 | +3.9 | 0.0 | +7.8 | +3.9 |
+| **Kirnberger III** | +10.3 | +0.5 | +3.4 | +4.4 | -3.4 | +8.3 | +0.5 | +6.8 | +2.4 | 0.0 | +6.4 | -1.5 |
+| **Vallotti** | +5.9 | 0.0 | +2.0 | +3.9 | -2.0 | +7.8 | -2.0 | +3.9 | +2.0 | 0.0 | +5.9 | -3.9 |
+| **Young II** | +5.9 | -3.9 | +2.0 | 0.0 | -2.0 | +3.9 | -5.9 | +3.9 | -2.0 | 0.0 | +2.0 | -3.9 |
+| **Meantone ¼-comma** | +10.3 | -13.7 | +3.4 | +20.5 | -3.4 | +13.7 | -10.3 | +6.8 | -17.1 | 0.0 | +17.1 | -6.8 |
+
+---
+
+## 5. Synthesis Engine: Modal Synthesis
 
 ### 3.1 The Stiff String Wave Equation
 
@@ -221,6 +255,9 @@ Triggered short filtered noise bursts: `noise_burst(t) = A · envelope(t) · ban
 - [ ] 256 voices native, 64 voices WASM (SIMD optimized). Progressive simplification active for decayed notes.
 - [ ] Correct inharmonicity `B` implementation for all 88 keys.
 - [ ] Continuous half-pedaling response (CC64) and proper Una Corda/Sostenuto logic.
+- [ ] Velocity curve editor correctly scales MIDI 2.0 16-bit velocity to the hammer force model.
+- [ ] 3D piano model correctly animates lid position and per-key hammer/damper state.
+- [ ] Preset loading is instantaneous (<100ms) and does not cause audio glitches.
 - [ ] `pnpm deps:validate` passes with zero violations.
 - [ ] Sympathetic resonance gated by sustain pedal/held keys.
 - [ ] Longitudinal modes and duplex scale present at specified levels.
