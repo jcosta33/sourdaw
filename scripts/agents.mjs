@@ -326,16 +326,8 @@ async function cmdNew(argv) {
     const config = loadConfig(repoRoot);
     ensureRuntimeDirs(repoRoot);
 
-    // Resolve type and team — interactive values take priority, then --type/--team flags
+    // Resolve type — interactive values take priority, then --type flag
     const taskType = interactiveType || flags.get('type') || '';
-    const teamKey = interactiveTeamKey || flags.get('team') || '';
-    const teamData =
-        interactiveTeamData ||
-        (() => {
-            if (!teamKey) return null;
-            const teams = loadTeams(repoRoot);
-            return teams[teamKey] || null;
-        })();
 
     const agentName = flags.get('agent') || agentFromPositional || config.defaultAgent;
     const baseBranch = flags.get('base') || config.defaultBaseBranch;
