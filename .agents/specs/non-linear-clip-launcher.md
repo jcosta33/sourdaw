@@ -40,7 +40,8 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
 - **Launcher State Machine**: Per-track source multiplexer (Arrangement, Launcher, Stopped).
 - **Quantization**: Sample-accurate buffer splitting at quantization boundaries.
 - **Follow Actions**: Full implementation of Ableton-style A/B probability and Linked/Unlinked modes.
-- **Warp/Time-stretch**: Integration with Rubber Band Library for tempo-synced clip playback.
+- **Warp/Time-stretch**: Integration with a custom or permissively licensed (e.g., MIT/Apache) time-stretch engine (such as a Phase Vocoder + WSOLA hybrid) for tempo-synced clip playback.
+> ⚠️ **LEGAL & COMPLIANCE WARNING**: Do not link against or implement algorithms directly sourced from GPL-licensed software such as the Rubber Band Library. Rubber Band may be referenced for performance benchmarks, but all stretching logic must be implemented clean-room or utilize compatible permissive licenses.
 - **Legato Mode**: Position inheritance in beat-time across clip launches.
 - **MIDI State Tracking**: Note-on tracking, CC chase, and cleanup to prevent stuck notes.
 - **Recording to Arrangement**: Flattening of launcher performance logs into arrangement clips.
@@ -85,7 +86,7 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
     - **Params**: `atomic_float`.
 
 ### 3. Warp & Legato
-- **Rubber Band**: Push-input/pull-output model.
+- **Time-Stretch Engine**: Push-input/pull-output model supporting generic variable-ratio processing.
 - **Warp Map**: Piecewise linear interpolation between `(beat_pos, sample_pos)` markers.
 - **Legato**: Inherit beat position, map through target warp map to new source sample offset.
 
@@ -141,5 +142,5 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
 
 ## Tradeoffs and risks
 
-- **Rubber Band Latency**: `getStartDelay` must be compensated for by priming with silence.
+- **Time-stretch Latency**: Algorithmic group delay (e.g., FFT frame latency in phase vocoders) must be compensated for by priming with silence.
 - **IPC Latency**: Tauri command serialization overhead. Mitigation: Keep payloads minimal.

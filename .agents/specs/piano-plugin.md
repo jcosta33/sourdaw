@@ -2,7 +2,9 @@
 
 ## 1. Overview
 
-This specification defines the implementation of a state-of-the-art physically modeled piano for Sourdaw, based on **modal synthesis**. It aims to achieve professional-grade realism, unlimited dynamic range, and a small footprint (~50MB), deployable across Native (Tauri) and WASM (Browser) environments. It includes an optional hybrid sampled-attack pathway and MIDI 2.0 support.
+This specification defines the implementation of a state-of-the-art physically modeled piano for Sourdaw, based on generic **modal and waveguide synthesis** principles. It aims to achieve professional-grade realism, unlimited dynamic range, and a small footprint (~50MB), deployable across Native (Tauri) and WASM (Browser) environments. It includes an optional hybrid sampled-attack pathway and MIDI 2.0 support.
+
+> ⚠️ **LEGAL & COMPLIANCE WARNING**: While commercial products like Modartt's Pianoteq serve as the benchmark for expected quality and performance, **under no circumstances** should any patented algorithms (such as US7915515B2) or proprietary code be implemented or reverse-engineered. The implementation MUST be entirely clean-room, utilizing open-source (MIT/Apache) or public domain acoustic physics research (e.g., standard digital waveguide synthesis, generic modal synthesis).
 
 ## 2. Architecture & Deployment
 
