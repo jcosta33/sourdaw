@@ -221,6 +221,9 @@ Triggered short filtered noise bursts: `noise_burst(t) = A · envelope(t) · ban
 - [ ] 256 voices native, 64 voices WASM (SIMD optimized). Progressive simplification active for decayed notes.
 - [ ] Correct inharmonicity `B` implementation for all 88 keys.
 - [ ] Continuous half-pedaling response (CC64) and proper Una Corda/Sostenuto logic.
+- [ ] Velocity curve editor correctly scales MIDI 2.0 16-bit velocity to the hammer force model.
+- [ ] 3D piano model correctly animates lid position and per-key hammer/damper state.
+- [ ] Preset loading is instantaneous (<100ms) and does not cause audio glitches.
 - [ ] `pnpm deps:validate` passes with zero violations.
 - [ ] Sympathetic resonance gated by sustain pedal/held keys.
 - [ ] Longitudinal modes and duplex scale present at specified levels.

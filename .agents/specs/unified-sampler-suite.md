@@ -17,9 +17,11 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 ## User-visible behavior
 
 - **One-click context-aware loading:** Dragging a sample auto-detects if it is percussive (defaults to 1-Shot/Drum), a loop (defaults to Slice), or tonal (defaults to Quick with auto root key).
-- **In-place slicing:** Visual waveform with draggable slice markers. Slices map directly to playable pads without leaving the sampler or creating new tracks.
+- **In-place slicing:** Visual waveform with draggable slice markers (absolute `<div>` overlays). Slices map directly to playable pads without leaving the sampler or creating new tracks.
+- **MPC/SP-404-style recording:** Support for threshold-triggered recording directly to pads, enabling seamless capture into the instrument.
 - **Independent time-stretch:** Time-stretching algorithms that act as playable/modulatable parameters decoupled from project BPM.
-- **Deep modulation and FX:** Per-slice FX processing combined with multi-sample zones.
+- **Deep modulation and FX:** Per-slice FX processing (Ableton Drum Rack-level) combined with multi-sample zones.
+- **Smart Loop Points:** Automatic zero-crossing detection and crossfade length calculation for click-free loops.
 
 ---
 
@@ -34,6 +36,7 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - **Analysis:** Background SuperFlux/HFC onset detection, YIN pitch detection, and beat/BPM estimation.
 - **DSP Modulators & Processors:** Cubic Hermite interpolation, 1-multiply iterative AHDSR, Cytomic/Zavalishin TPT SVF filter, and one-pole exponential parameter smoothing.
 - **React Frontend:** WebGL/Canvas waveform rendering, Zustand state (`useSamplerStore`, `usePadStore`, `useSliceStore`).
+- **Interaction Design:** Drag-and-drop for file loading (Tauri `DragDropEvent`) and pad-to-pad reordering. Mini-waveform thumbnails for pads. Velocity-sensitive flash animations on pad triggers.
 - **Tauri v2 IPC:** Using binary `tauri::ipc::Response` for transferring waveform peak mipmaps.
 
 ## **Non-goals (explicitly out of scope):**
@@ -85,6 +88,12 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
    - **Binary IPC:** Waveform mipmaps MUST be transferred via raw `ArrayBuffer` using `tauri::ipc::Response`.
    - **Position Tracking:** UI MUST update from the `playback_position` channel (emitted at 30Hz). Management thread MUST sample an `AtomicU64` written by the audio thread.
    - **Metering:** Audio thread MUST write `peak_level` and `active_voice_count` to atomics with `Relaxed` ordering.
+   - **Responsiveness:** The playback cursor MUST use `requestAnimationFrame` for 60fps visual interpolation between 30Hz position updates. Waveform rendering MUST use mipmap levels to enable smooth, lag-free zoom.
+
+8. **State Management & Interaction**
+   - **Stores:** Frontend state MUST use lightweight stores (Zustand) to manage mode, sample metadata, and pad/slice configurations. 
+   - **Markers:** Interaction with draggable slice markers MUST be debounced (50ms) to prevent IPC flooding.
+   - **Direct Recording:** The engine MUST support a "Recorder" mode with SP-404 style threshold triggering to capture audio directly into memory buffers.
 
 ---
 
@@ -131,6 +140,10 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - [ ] `pnpm deps:validate` passes with zero violations.
 - [ ] `assert_no_alloc` verifies zero heap allocations occur in the `process()` callback.
 - [ ] Engine plays 128 simultaneous streamed voices from disk without audible dropouts or buffer underruns on a standard NVMe drive.
+- [ ] Dragging a sample onto the sampler correctly auto-detects and switches to the recommended mode (Percussive -> Drum, Loop -> Slice, Tonal -> Quick).
+- [ ] Threshold-triggered recording captures audio into a pad without audible gaps or clicks.
+- [ ] Waveform zoom and scroll remain responsive (60fps) during heavy 128-voice playback.
+- [ ] Pad-to-pad reordering via drag-and-drop correctly updates the underlying `usePadStore`.
 - [ ] Dragging a tonal sample successfully triggers the YIN pitch detector, returning the correct root MIDI note.
 - [ ] YIN pitch detector reports 440Hz for an A4 test sine wave with parabolic refinement.
 - [ ] Dragging a percussive loop successfully runs SuperFlux, placing slice markers at transients within 5ms accuracy and snapping to zero-crossings.
