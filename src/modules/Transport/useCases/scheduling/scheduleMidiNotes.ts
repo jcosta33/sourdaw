@@ -339,6 +339,15 @@ export async function scheduleMidiNotes(
                                     dn.fermenterControls.noteOff(pitch, endSampleFrame);
                                 }
                             }
+                        } else if (track.devices.some((d) => d.type === 'grand-boule')) {
+                            const grandBouleDevice = track.devices.find((d) => d.type === 'grand-boule');
+                            if (grandBouleDevice) {
+                                const dn = strip.deviceNodes.find((d) => d.deviceId === grandBouleDevice.id);
+                                if (dn?.grandBouleControls) {
+                                    dn.grandBouleControls.noteOn(pitch, (note.velocity ?? 100) / 127, sampleFrame);
+                                    dn.grandBouleControls.noteOff(pitch, endSampleFrame);
+                                }
+                            }
                         } else if (track.devices.some((d) => d.type === 'levain')) {
                             const levainDevice = track.devices.find((d) => d.type === 'levain');
                             if (levainDevice) {

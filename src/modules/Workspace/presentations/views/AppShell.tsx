@@ -28,6 +28,7 @@ import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/Pr
 import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views/BacteriaPanel';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views/GrinderPanel';
+import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views/GrandBoulePanel';
 
 import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
@@ -107,6 +108,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         virtualKeyboardOpen,
         virtualKeyboardHeight,
         crustHeight,
+        grandBouleHeight,
     } = workspaceState;
 
     const project = useProjectState();
@@ -133,6 +135,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [proofDeviceId, setProofDeviceId] = useState<string | null>(null);
     const [yeastOpen, setYeastOpen] = useState(false);
     const [crustDeviceId, setCrustDeviceId] = useState<string | null>(null);
+    const [grandBouleDeviceId, setGrandBouleDeviceId] = useState<string | null>(null);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -194,6 +197,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setProofDeviceId(null);
         setYeastOpen(false);
         setCrustDeviceId(null);
+        setGrandBouleDeviceId(null);
     };
 
     // Listen for fermenter panel open (from inspector device click)
@@ -305,6 +309,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
     }, []);
 
+    // Listen for Grand Boule panel open (from sidebar instrument click)
+    useEffect(() => {
+        const handler = (e: Event): void => {
+            closeAllDevicePanels();
+            setGrandBouleDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_GRAND_BOULE_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_GRAND_BOULE_TAB, handler);
+    }, []);
+
     // ─── Panel dimension setters (persisted via workspace store) ───
     const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
     const setInspectorWidth = (fn: (prev: number) => number) =>
@@ -329,6 +343,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         updateWorkspaceState({ scoringHeight: fn(scoringHeight) });
     const setYeastHeight = (fn: (prev: number) => number) => updateWorkspaceState({ yeastHeight: fn(yeastHeight) });
     const setCrustHeight = (fn: (prev: number) => number) => updateWorkspaceState({ crustHeight: fn(crustHeight) });
+    const setGrandBouleHeight = (fn: (prev: number) => number) =>
+        updateWorkspaceState({ grandBouleHeight: fn(grandBouleHeight) });
 
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). Two effects manage transitions:
@@ -560,6 +576,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onClose={() => setCrustDeviceId(null)}
                             >
                                 <CrustPanel deviceId={crustDeviceId} />
+                            </InstrumentBottomPanel>
+                        ) : null}
+
+                        {grandBouleDeviceId !== null ? (
+                            <InstrumentBottomPanel
+                                label="Grand Boule"
+                                labelColor="text-amber-400"
+                                borderColor="border-amber-500/20"
+                                height={grandBouleHeight}
+                                onResize={setGrandBouleHeight}
+                                onClose={() => setGrandBouleDeviceId(null)}
+                            >
+                                <GrandBoulePanel deviceId={grandBouleDeviceId} />
                             </InstrumentBottomPanel>
                         ) : null}
 

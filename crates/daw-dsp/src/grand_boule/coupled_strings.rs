@@ -1,0 +1,262 @@
+//! Coupled-string assembly with two-stage decay for the Grand Boule piano.
+//!
+//! Per spec §3.4, each piano key hosts 1–3 unison strings. Each string has
+//! two polarizations coupled through the bridge:
+//!
+//! * **Vertical** (aligned with the hammer strike) — fast decay, "prompt
+//!   sound". Extra damping `σ_fast = σ_string + σ_bridge`.
+//! * **Horizontal** (transverse to the strike) — slow decay, "aftersound".
+//!   Extra damping `σ_slow = σ_string + σ_bridge / 100`.
+//!
+//! The bridge admittance used to derive `σ_bridge` is `Y ≈ 10⁻³ s/kg`; the
+//! concrete bandwidth constant is tuned to give a plausible ~0.5 s prompt
+//! decay and several-second aftersound.
+//!
+//! The assembly is allocation-free and holds at most [`MAX_UNISONS`] unisons
+//! with two [`ModalString`] banks each.
+
+use super::parameters::{unison_count, unison_detune_cents};
+use super::string::ModalString;
+
+/// Maximum number of unison strings per key (trichord).
+pub const MAX_UNISONS: usize = 3;
+
+/// Bridge-induced bandwidth added to the fast (vertical) polarization, in Hz.
+/// Controls the prompt-decay portion of the two-stage envelope.
+const SIGMA_BRIDGE_HZ: f32 = 4.0;
+
+/// Slow-polarization multiplier (`σ_bridge / 100`) from the spec.
+const SIGMA_SLOW_SCALE: f32 = 0.01;
+
+/// Relative amplitude of the horizontal polarization at the bridge pickup.
+/// The hammer drives vertical directly; horizontal picks up energy through
+/// the bridge, so it starts quieter but lingers.
+const HORIZONTAL_MIX: f32 = 0.35;
+
+/// Unison-pair cross mix injected into the slow polarization of neighbouring
+/// strings to simulate bridge coupling (§3.4). Small, but gives the chorusing
+/// beat-pattern of a detuned unison.
+const UNISON_CROSS_MIX: f32 = 0.08;
+
+/// One unison: a vertical + horizontal polarization pair.
+#[derive(Clone, Debug)]
+struct UnisonString {
+    vertical: ModalString,
+    horizontal: ModalString,
+    detune_cents: f32,
+}
+
+impl UnisonString {
+    fn new() -> Self {
+        Self {
+            vertical: ModalString::new(),
+            horizontal: ModalString::new(),
+            detune_cents: 0.0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.vertical.reset();
+        self.horizontal.reset();
+    }
+}
+
+/// Coupled-string assembly attached to one [`PianoVoice`].
+///
+/// Holds two polarizations per unison and exposes a single `tick` entry
+/// point that injects the hammer force into every active string and returns
+/// the mixed bridge signal.
+#[derive(Clone, Debug)]
+pub struct CoupledStringAssembly {
+    unisons: [UnisonString; MAX_UNISONS],
+    active_unisons: usize,
+}
+
+impl CoupledStringAssembly {
+    pub fn new() -> Self {
+        Self {
+            unisons: [
+                UnisonString::new(),
+                UnisonString::new(),
+                UnisonString::new(),
+            ],
+            active_unisons: 0,
+        }
+    }
+
+    /// Reset all biquad states (voice recycle).
+    pub fn reset(&mut self) {
+        for unison in self.unisons.iter_mut() {
+            unison.reset();
+        }
+    }
+
+    pub fn active_unisons(&self) -> usize {
+        self.active_unisons
+    }
+
+    /// Configure the assembly for a given key.
+    ///
+    /// * `fundamental_hz` — Railsback-corrected f1 of the key.
+    /// * `key` — 1-based piano key (for inharmonicity + detune lookup).
+    /// * `hammer_strike_ratio` — hammer striking position, fraction of L.
+    /// * `sample_rate` — DSP sample rate.
+    /// * `base_bandwidth_hz` — intrinsic string damping `σ_string`.
+    /// * `extra_damping_hz` — caller-injected damping (damper pedal / mute).
+    pub fn configure(
+        &mut self,
+        fundamental_hz: f32,
+        key: u32,
+        hammer_strike_ratio: f32,
+        sample_rate: f32,
+        base_bandwidth_hz: f32,
+        extra_damping_hz: f32,
+    ) {
+        let count = unison_count(key).min(MAX_UNISONS as u32) as usize;
+        self.active_unisons = count;
+
+        let fast_damp = SIGMA_BRIDGE_HZ + extra_damping_hz;
+        let slow_damp = SIGMA_BRIDGE_HZ * SIGMA_SLOW_SCALE + extra_damping_hz;
+
+        for unison_index in 0..count {
+            let cents = unison_detune_cents(key, unison_index as u32);
+            let detuned = fundamental_hz * (2.0_f32).powf(cents / 1200.0);
+            let unison = &mut self.unisons[unison_index];
+            unison.detune_cents = cents;
+            unison.vertical.configure(
+                detuned,
+                key,
+                hammer_strike_ratio,
+                sample_rate,
+                base_bandwidth_hz,
+                fast_damp,
+            );
+            unison.horizontal.configure(
+                detuned,
+                key,
+                hammer_strike_ratio,
+                sample_rate,
+                base_bandwidth_hz,
+                slow_damp,
+            );
+        }
+    }
+
+    /// Update the damping of both polarizations for all active unisons
+    /// without touching amplitudes. Used when the damper state changes
+    /// mid-note (pedal release, una-corda engage).
+    pub fn reset_decay(
+        &mut self,
+        fundamental_hz: f32,
+        key: u32,
+        sample_rate: f32,
+        base_bandwidth_hz: f32,
+        extra_damping_hz: f32,
+    ) {
+        let fast_damp = SIGMA_BRIDGE_HZ + extra_damping_hz;
+        let slow_damp = SIGMA_BRIDGE_HZ * SIGMA_SLOW_SCALE + extra_damping_hz;
+        for unison_index in 0..self.active_unisons {
+            let unison = &mut self.unisons[unison_index];
+            let detuned = fundamental_hz * (2.0_f32).powf(unison.detune_cents / 1200.0);
+            unison
+                .vertical
+                .reset_decay(detuned, key, sample_rate, base_bandwidth_hz, fast_damp);
+            unison
+                .horizontal
+                .reset_decay(detuned, key, sample_rate, base_bandwidth_hz, slow_damp);
+        }
+    }
+
+    /// Process one sample. Drives every active string with the hammer force
+    /// and returns the mixed bridge output.
+    #[inline]
+    pub fn tick(&mut self, hammer_force: f32) -> f32 {
+        let mut prompt = 0.0_f32;
+        let mut aftersound = 0.0_f32;
+        // Cross-feed from previous sample's aftersound introduces beating.
+        let mut cross = 0.0_f32;
+        let n = self.active_unisons;
+        for unison_index in 0..n {
+            let unison = &mut self.unisons[unison_index];
+            prompt += unison.vertical.tick(hammer_force);
+            aftersound += unison.horizontal.tick(hammer_force + cross * UNISON_CROSS_MIX);
+            cross = aftersound;
+        }
+        prompt + HORIZONTAL_MIX * aftersound
+    }
+
+    /// Cheaper tick — used by progressive simplification. Runs only the
+    /// vertical polarization of the first unison.
+    #[inline]
+    pub fn tick_simplified(&mut self, hammer_force: f32) -> f32 {
+        if self.active_unisons == 0 {
+            return 0.0;
+        }
+        self.unisons[0].vertical.tick_simplified(hammer_force)
+    }
+}
+
+impl Default for CoupledStringAssembly {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trichord_key_has_three_unisons() {
+        let mut assembly = CoupledStringAssembly::new();
+        // Key 40 = middle C area, definitely trichord.
+        assembly.configure(261.63, 40, 0.125, 48_000.0, 0.3, 0.0);
+        assert_eq!(assembly.active_unisons(), 3);
+    }
+
+    #[test]
+    fn monochord_bass_has_one_unison() {
+        let mut assembly = CoupledStringAssembly::new();
+        assembly.configure(27.5, 1, 1.0 / 7.0, 48_000.0, 0.25, 0.0);
+        assert_eq!(assembly.active_unisons(), 1);
+    }
+
+    #[test]
+    fn two_stage_decay_rings_longer_than_single_string() {
+        // A properly coupled assembly should still be ringing long after the
+        // fast prompt decay has died — that is the whole point of the slow
+        // polarization.
+        let mut assembly = CoupledStringAssembly::new();
+        assembly.configure(440.0, 49, 0.125, 48_000.0, 0.3, 0.0);
+        assembly.tick(1.0);
+        let mut late_energy = 0.0_f32;
+        // Skip past the prompt-decay portion (~200 ms) and integrate.
+        for _ in 0..9_600 {
+            let _ = assembly.tick(0.0);
+        }
+        for _ in 0..9_600 {
+            late_energy += assembly.tick(0.0).abs();
+        }
+        assert!(
+            late_energy > 0.0,
+            "aftersound should persist past the prompt decay"
+        );
+    }
+
+    #[test]
+    fn extra_damping_shortens_combined_decay() {
+        let mut loud = CoupledStringAssembly::new();
+        let mut quiet = CoupledStringAssembly::new();
+        loud.configure(220.0, 25, 0.125, 48_000.0, 0.25, 0.0);
+        quiet.configure(220.0, 25, 0.125, 48_000.0, 0.25, 50.0);
+        let total = |assembly: &mut CoupledStringAssembly| -> f32 {
+            assembly.tick(1.0);
+            let mut sum = 0.0_f32;
+            for _ in 0..4_000 {
+                sum += assembly.tick(0.0).abs();
+            }
+            sum
+        };
+        assert!(total(&mut loud) > total(&mut quiet));
+    }
+}

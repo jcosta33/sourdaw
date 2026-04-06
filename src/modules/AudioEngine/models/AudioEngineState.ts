@@ -37,6 +37,20 @@ export type BuiltinDeviceNode = {
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
+    /** Controls for the Grand Boule piano (MIDI + pedals + param updates via MessagePort) */
+    grandBouleControls?: {
+        ready: boolean;
+        noteOn: (midiNote: number, velocity: number, sampleFrame?: number) => void;
+        noteOff: (midiNote: number, sampleFrame?: number) => void;
+        setParam: (name: string, value: number) => void;
+        setSustain: (position: number) => void;
+        setUnaCorda: (engaged: boolean) => void;
+        setSostenuto: (engaged: boolean) => void;
+        noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
+        allNotesOff: () => void;
+        setBypass: (bypassed: boolean) => void;
+        destroy: () => void;
+    };
     /** Controls for the Levain suite (MIDI + CC + param updates via MessagePort) */
     levainControls?: {
         ready: boolean;

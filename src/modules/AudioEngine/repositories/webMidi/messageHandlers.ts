@@ -131,6 +131,13 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
                     dn?.fermenterControls?.noteOn(evtNote, evtVel);
                     continue;
                 }
+                // Try grand-boule
+                const gbDev = instrumentTrack?.devices.find((d) => d.type === 'grand-boule');
+                if (gbDev) {
+                    const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
+                    dn?.grandBouleControls?.noteOn(evtNote, evtVel / 127);
+                    continue;
+                }
                 // Try levain
                 const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
                 if (lDev) {
@@ -149,6 +156,12 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
                 if (fDev) {
                     const dn = strip.deviceNodes.find((d) => d.type === 'fermenter');
                     dn?.fermenterControls?.noteOff(evtNote);
+                    continue;
+                }
+                const gbDev2 = instrumentTrack?.devices.find((d) => d.type === 'grand-boule');
+                if (gbDev2) {
+                    const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
+                    dn?.grandBouleControls?.noteOff(evtNote);
                     continue;
                 }
                 const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
@@ -196,6 +209,17 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
                 dn.toasterControls.noteOn(pad, velocity, pitchNote);
                 noteData.toasterDeviceId = toasterDev.id;
             }
+        }
+        return;
+    }
+
+    // Grand Boule piano
+    const grandBouleDev = instrumentTrack?.devices.find((d) => d.type === 'grand-boule');
+    if (grandBouleDev) {
+        const dn = strip.deviceNodes.find((d) => d.deviceId === grandBouleDev.id || d.type === 'grand-boule');
+        if (dn?.grandBouleControls?.ready) {
+            dn.grandBouleControls.noteOn(note, velocity / 127);
+            noteData.grandBouleDeviceId = grandBouleDev.id;
         }
         return;
     }
@@ -311,6 +335,15 @@ export function handleNoteOff(_channel: number, note: number): void {
         }
     }
 
+    // Grand Boule noteOff — send via worklet MessagePort
+    if (noteData.grandBouleDeviceId && targetTrackId) {
+        const strip = audioEngine.getTrackStrip(targetTrackId);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.grandBouleDeviceId);
+        if (dn?.grandBouleControls) {
+            dn.grandBouleControls.noteOff(note);
+        }
+    }
+
     // Levain noteOff — send via worklet MessagePort
     if ((noteData as any).levainDeviceId && targetTrackId) {
         const strip = audioEngine.getTrackStrip(targetTrackId);
@@ -415,9 +448,25 @@ export function handleCC(channel: number, cc: number, value: number): void {
         audioEngine.setTrackPan(targetTrackId, ((value / 127) * 2 - 1) * 50);
     }
 
-    // Forward expression CCs (CC1, CC2, CC11, CC64) to levain engine
+    // Forward piano pedal CCs to Grand Boule engine
     const trackState = getTrackStoreState();
     const track = trackState?.tracks.find((t) => t.id === targetTrackId);
+    const grandBouleDevice = track?.devices.find((d) => d.type === 'grand-boule');
+    if (grandBouleDevice) {
+        const strip = audioEngine.getTrackStrip(targetTrackId);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === grandBouleDevice.id || d.type === 'grand-boule');
+        if (dn?.grandBouleControls?.ready) {
+            if (cc === 64) {
+                dn.grandBouleControls.setSustain(value / 127);
+            } else if (cc === 66) {
+                dn.grandBouleControls.setSostenuto(value >= 64);
+            } else if (cc === 67) {
+                dn.grandBouleControls.setUnaCorda(value >= 64);
+            }
+        }
+    }
+
+    // Forward expression CCs (CC1, CC2, CC11, CC64) to levain engine
     const levainDevice = track?.devices.find((d) => d.type === 'levain');
     if (levainDevice) {
         const strip = audioEngine.getTrackStrip(targetTrackId);

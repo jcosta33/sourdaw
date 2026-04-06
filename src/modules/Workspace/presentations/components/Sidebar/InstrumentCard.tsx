@@ -117,6 +117,14 @@ export const YEAST_THEME: InstrumentCardTheme = {
     glow: 'bg-[var(--color-accent-peach)]/8',
 };
 
+export const GRAND_BOULE_THEME: InstrumentCardTheme = {
+    button: 'border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-surface-raised to-amber-500/5 hover:border-amber-500/50 hover:from-amber-500/15',
+    iconBox: 'bg-amber-500/20 border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]',
+    iconColor: 'text-amber-400',
+    badgeColor: 'bg-amber-500/20 text-amber-400',
+    glow: 'bg-amber-500/8',
+};
+
 export const CRUST_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-peach)]/30 bg-gradient-to-br from-[var(--color-accent-peach)]/10 via-surface-raised to-[var(--color-accent-peach)]/5 hover:border-[var(--color-accent-peach)]/50 hover:from-[var(--color-accent-peach)]/15',
     iconBox:

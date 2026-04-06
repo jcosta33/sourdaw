@@ -74,6 +74,7 @@ import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
 import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
 import { GRINDER_DESCRIPTOR } from './pluginDescriptors/grinderDescriptor';
 import { CRUST_DESCRIPTOR } from './pluginDescriptors/crustDescriptor';
+import { GRAND_BOULE_DESCRIPTOR } from './pluginDescriptors/grandBouleDescriptor';
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
@@ -176,6 +177,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     PROOF_DESCRIPTOR,
     YEAST_DESCRIPTOR,
     CRUST_DESCRIPTOR,
+    GRAND_BOULE_DESCRIPTOR,
 ];
 
 // ── Utility functions ──────────────────────────────────────────────────────
