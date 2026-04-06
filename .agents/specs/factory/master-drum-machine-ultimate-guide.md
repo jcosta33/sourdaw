@@ -19,7 +19,7 @@ A pad-based drum instrument where every pad is a full instrument channel. Each p
 
 This must surpass Logic's Drum Machine Designer, Ableton's Drum Rack, NI Battery 4, FL Studio's FPC, Bitwig's Drum Machine, NI Maschine, and hardware references (MPC, TR-808/909, SP-1200, Digitakt).
 
-## Reference Machines — What to Steal From Each
+## Reference Machines — Architectural Inspirations
 
 **Logic DMD**: Each pad is a full DAW channel strip (any instrument + FX chain). Drum Synth has purpose-built engines per category (not generic osc+filter). Track stack architecture = mixer sees individual channels per drum piece. **Take**: per-pad full instrument hosting, purpose-built engines, the "container for channels" concept.
 

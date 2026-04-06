@@ -10,7 +10,6 @@
 - Created: {{createdAt}}
 - Status: active
 - Type: tests
-- Team: {{team}}
 
 ---
 
@@ -38,9 +37,9 @@ Which files/modules are being worked on in this session, and what the testing go
 
 ---
 
-## Scope
+## Linked docs
 
-{{teamScope}}
+- Reference: `{{specFile}}`
 
 ---
 
@@ -98,6 +97,7 @@ Be explicit about what you are NOT testing in this session:
 - Run `pnpm test:run` on the full suite before handoff — nothing outside your scope should have regressed
 - Run `pnpm deps:validate` before handoff — test work must not introduce architectural violations
 - Run `pnpm typecheck` before handoff — must be clean
+- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 

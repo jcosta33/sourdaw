@@ -10,7 +10,6 @@
 - Created: {{createdAt}}
 - Status: active
 - Type: audit
-- Team: {{team}}
 
 ---
 
@@ -24,16 +23,16 @@ What area to audit and what question to answer. One paragraph maximum.
 
 ---
 
-## Scope
+## Linked docs
 
-{{teamScope}}
+- Spec: `{{specFile}}`
 
 ---
 
 ## Audit output
 
 Write your findings to: `.agents/audits/{{slug}}.md`
-Use the audit template at `.agents/templates/audit.md`.
+Use the audit template at `scripts/agents/templates/audit.md`.
 Load `.agents/skills/write-audit/SKILL.md` before starting.
 
 ---
@@ -44,7 +43,7 @@ Load `.agents/skills/write-audit/SKILL.md` before starting.
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- **Do not read other specs or research documents** beyond any linked doc provided to you. If context from another spec/research file is needed, ask the user — do not browse `.agents/specs/` or `.agents/research/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
+- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 

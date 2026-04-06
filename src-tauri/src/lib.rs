@@ -2,21 +2,10 @@ mod commands;
 pub mod host;
 pub mod state;
 
-const SENTRY_DSN: &str = "https://666a44d19fe7746cab1f89db2f3610fb@o4511158245654528.ingest.de.sentry.io/4511158252732496";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let _sentry = sentry::init((
-        SENTRY_DSN,
-        sentry::ClientOptions {
-            release: Some(format!("sourdaw@{APP_VERSION}").into()),
-            attach_stacktrace: true,
-            send_default_pii: false,
-            ..Default::default()
-        },
-    ));
-
     tauri::Builder::default()
         .manage(state::AppState::default())
         .manage(commands::collab::CollabState::default())

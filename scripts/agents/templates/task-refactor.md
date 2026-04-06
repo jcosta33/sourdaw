@@ -10,7 +10,6 @@
 - Created: {{createdAt}}
 - Status: active
 - Type: refactor
-- Team: {{team}}
 
 ---
 
@@ -24,9 +23,9 @@ What this session must accomplish. One paragraph maximum. Be specific.
 
 ---
 
-## Scope
+## Linked docs
 
-{{teamScope}}
+- Audit: `{{specFile}}`
 
 ---
 
@@ -61,6 +60,7 @@ Every public path you add a compatibility shim to. Do not remove a shim until al
 - **Run `pnpm deps:validate` after every 10 files — mandatory, not optional**
 - No codemods, no automated mutations, no shell loops over files
 - Document every shim contract in the table above before continuing
+- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 

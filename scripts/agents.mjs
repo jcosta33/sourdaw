@@ -146,16 +146,6 @@ const KNOWN_AGENTS = ['claude', 'gemini', 'codex'];
 
 // ─── Config loaders ──────────────────────────────────────────────────────────
 
-function loadTeams(repoRoot) {
-    const teamsPath = join(repoRoot, 'scripts', 'agents', 'teams.json');
-    try {
-        return JSON.parse(readFileSync(teamsPath, 'utf8'));
-    } catch (e) {
-        console.warn(`Warning: could not load teams.json: ${e.message}`);
-        return {};
-    }
-}
-
 function loadTaskTypes(repoRoot) {
     const typesPath = join(repoRoot, 'scripts', 'agents', 'task-types.json');
     try {
@@ -261,8 +251,6 @@ async function cmdNew(argv) {
 
     // Interactive mode: no spec and no title — drop into guided wizard
     let interactiveType = '';
-    let interactiveTeamKey = '';
-    let interactiveTeamData = null;
 
     if (!specFile && !title) {
         if (!agentCommandAvailable('fzf')) {
@@ -274,7 +262,6 @@ async function cmdNew(argv) {
 
         const repoRootEarly = getRepoRoot();
         const taskTypes = loadTaskTypes(repoRootEarly);
-        const teams = loadTeams(repoRootEarly);
 
         console.log('');
 
@@ -321,23 +308,7 @@ async function cmdNew(argv) {
         }
         if (!title) process.exit(0);
 
-        // Step 4: Team scope
-        const teamEntries = Object.entries(teams);
-        const teamItems = [
-            '(no team)             —  Cross-cutting task, no boundary constraint',
-            ...teamEntries.map(([k, v]) => `${k.padEnd(20)}  —  ${v.description}`),
-        ];
-        const selectedTeamRaw = fzfSelect(teamItems, { prompt: 'team > ' });
-        // Cancelled team picker = cross-cutting (non-fatal)
-        if (selectedTeamRaw) {
-            const parsedTeam = selectedTeamRaw.split(/\s+—\s+/)[0].trim();
-            if (parsedTeam !== '(no team)') {
-                interactiveTeamKey = parsedTeam;
-                interactiveTeamData = teams[parsedTeam] || null;
-            }
-        }
-
-        // Step 5: Agent — skip if already specified as a positional
+        // Step 4: Agent — skip if already specified as a positional
         if (!agentFromPositional) {
             const selectedAgent = fzfSelect(KNOWN_AGENTS, { prompt: 'agent > ' });
             if (selectedAgent) agentFromPositional = selectedAgent;
@@ -383,7 +354,7 @@ async function cmdNew(argv) {
     let slug = typePrefix + toSlug(title, titleMaxLen);
     if (suffix) slug = `${slug}-${toSlug(suffix, 20)}`;
 
-    const templateDir = join(repoRoot, '.agents', 'templates');
+    const templateDir = join(repoRoot, 'scripts', 'agents', 'templates');
 
     // Handle duplicate mode — find next available slug using git worktrees
     if (duplicate) {
@@ -440,9 +411,6 @@ async function cmdNew(argv) {
             specFile,
             createdAt: new Date().toISOString(),
             type: taskType,
-            team: teamKey,
-            teamLabel: teamData?.label || '',
-            teamPaths: teamData?.paths || [],
         });
     }
 
@@ -514,7 +482,7 @@ async function cmdOpen(argv) {
     // Create task file if missing (e.g. worktree predates this feature, or reuse path from cmdNew)
     const taskFileAbs = join(worktreeAbs, names.taskFile);
     if (config.writeTaskTemplateOnCreate && !existsSync(taskFileAbs)) {
-        const templateDir = join(repoRoot, '.agents', 'templates');
+        const templateDir = join(repoRoot, 'scripts', 'agents', 'templates');
         mkdirSync(join(worktreeAbs, '.agents/tasks'), { recursive: true });
         createOrUpdateTaskFile(taskFileAbs, templateDir, {
             title: slug,
@@ -1056,8 +1024,6 @@ QOL subcommands:
 Flags for \`new\`:
   --agent <name>            Agent to launch: claude (default), gemini, codex
   --type <type>             Task type: feature, refactor, fix, audit, migration, spec
-  --team <team>             Team scope: conductor, engine-room, instrument-workshop,
-                            session, studio-shell, platform, rust-core
   --spec <path>             Spec file to embed in task (also accepted as positional)
   --base <branch>           Base branch (default: main)
   --terminal <backend>      Terminal backend: current (default), terminal, iterm

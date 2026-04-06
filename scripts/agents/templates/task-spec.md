@@ -10,7 +10,6 @@
 - Created: {{createdAt}}
 - Status: active
 - Type: spec
-- Team: {{team}}
 
 ---
 
@@ -24,17 +23,20 @@ What spec to write and what decision or design it resolves. One paragraph maximu
 
 ---
 
-## Scope
+## Linked docs
 
-{{teamScope}}
+- Research: `{{specFile}}`
 
 ---
 
 ## Spec output
 
 Write your spec to: `.agents/specs/{{slug}}.md`
-Use the spec template at `.agents/templates/spec.md`.
+Use the spec template at `scripts/agents/templates/spec.md`.
 Load `.agents/skills/write-spec/SKILL.md` before starting.
+
+> ⚠️ **MANDATORY: LOSSLESS DISTILLATION**
+> The spec must be a **lossless distillation** of the key information from the research. You are **STRICTLY FORBIDDEN** from omitting vital implementation details, UI/UX behavior specifications, critical listings of user controls, or architectural requirements that live in the research. The research is the source of truth; the spec removes only the fluff and never cuts to the bone. If the research specifies a control or a behavior, it MUST appear in the spec.
 
 ---
 
@@ -80,7 +82,7 @@ If you cannot find any prior art, state that explicitly — "no existing pattern
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- **Do not read other specs or research documents** beyond any linked doc provided to you. If context from another spec/research file is needed, ask the user — do not browse `.agents/specs/` or `.agents/research/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
+- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 

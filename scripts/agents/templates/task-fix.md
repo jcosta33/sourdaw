@@ -10,7 +10,6 @@
 - Created: {{createdAt}}
 - Status: active
 - Type: fix
-- Team: {{team}}
 
 ---
 
@@ -24,9 +23,9 @@ What this session must accomplish. One paragraph maximum. Be specific.
 
 ---
 
-## Scope
+## Linked docs
 
-{{teamScope}}
+- Bug: `{{specFile}}`
 
 ---
 
@@ -62,6 +61,7 @@ List the specific files you expect to modify. If you find yourself touching more
 - Run `pnpm i` to install dependencies
 - Run `pnpm deps:validate` and `pnpm typecheck` after fixing
 - **Minimum necessary changes only** — no refactoring, no cleanup, no improvements
+- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
 

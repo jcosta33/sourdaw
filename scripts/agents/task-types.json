@@ -23,8 +23,8 @@
         "id": "fix",
         "label": "Fix",
         "description": "Targeted bug fix — minimal blast radius",
-        "docsSource": null,
-        "docsLabel": null,
+        "docsSource": "bugs",
+        "docsLabel": "Bug",
         "requiresDoc": false,
         "requiresDepsValidate": true,
         "readonly": false

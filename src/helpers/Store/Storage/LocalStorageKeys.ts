@@ -89,9 +89,6 @@ export type LocalStorageKey =
     // Toggle for the developer mode of platform apps
     | 'developer-mode'
 
-    // [Dev] Enables segment analytics logger
-    | 'segmentAnalyticsLoggerEnabled'
-
     // [Dev] DevTools settings (visibility, activeTab, reactScanStatus, fpsMeterState, triggerPosition)
     | 'sourdaw-devtools-settings'
 
