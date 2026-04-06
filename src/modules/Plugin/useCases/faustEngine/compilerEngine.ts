@@ -24,6 +24,17 @@ import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/mo
 // Module registry (raw Map singleton)
 const modules = new Map<string, FaustModule>();
 
+// Compilation promise cache to prevent concurrent compilations for the same module
+const compilationPromises = new Map<string, Promise<boolean>>();
+
+/**
+ * Registration promise cache to prevent concurrent AudioWorklet registration
+ * for the same module on the same AudioContext.
+ * 
+ * WeakMap<AudioContext, Map<moduleId, Promise<void>>>
+ */
+const registrationPromises = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
+
 // Compiler singleton (lazy init)
 let compilerPromise: Promise<IFaustCompiler> | null = null;
 let compilerReady = false;
@@ -94,6 +105,11 @@ export function registerFaustDSP(
     return mod;
 }
 
+/**
+ * Compiles a Faust module to WASM.
+ * Uses a promise cache to ensure concurrent requests for the same module
+ * share the same compilation process and resulting generator.
+ */
 export async function compileFaustDSP(moduleId: string): Promise<boolean> {
     const mod = modules.get(moduleId);
     if (!mod) {
@@ -104,45 +120,54 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
         return true;
     }
 
-    try {
-        const compiler = await getCompiler();
-        const generator = new FaustMonoDspGenerator();
-        const result = await generator.compile(
-            compiler,
-            mod.name.replaceAll(/\s+/g, '_'),
-            mod.dspCode,
-            '-I libraries/'
-        );
-        if (!result) {
-            console.error(`[Faust] Compilation returned null for "${mod.name}". DSP code may have syntax errors.`);
+    // Return existing promise if compilation is already in progress
+    const existingPromise = compilationPromises.get(moduleId);
+    if (existingPromise) {
+        return existingPromise;
+    }
+
+    const promise = (async () => {
+        try {
+            const compiler = await getCompiler();
+            const generator = new FaustMonoDspGenerator();
+            // Use sanitized name as processor name
+            const processorName = mod.name.replaceAll(/\s+/g, '_');
+            const result = await generator.compile(compiler, processorName, mod.dspCode, '-I libraries/');
+            if (!result) {
+                console.error(`[Faust] Compilation returned null for "${mod.name}". DSP code may have syntax errors.`);
+                return false;
+            }
+            mod.generator = generator;
+            mod.compiled = true;
+            modules.set(moduleId, mod);
+            return true;
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
             return false;
+        } finally {
+            compilationPromises.delete(moduleId);
         }
-        mod.generator = generator;
-        mod.compiled = true;
-        modules.set(moduleId, mod);
-        return true;
-    } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.error(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
-        return false;
-    }
+    })();
+
+    compilationPromises.set(moduleId, promise);
+    return promise;
 }
 
+/**
+ * Compiles all registered Faust modules.
+ */
 export async function compileAllFaustModules(): Promise<number> {
-    let compiled = 0;
-    for (const [id, mod] of modules) {
-        if (mod.compiled) {
-            compiled++;
-            continue;
-        }
-        const success = await compileFaustDSP(id);
-        if (success) {
-            compiled++;
-        }
-    }
-    return compiled;
+    const results = await Promise.all([...modules.keys()].map((id) => compileFaustDSP(id)));
+    return results.filter(Boolean).length;
 }
 
+/**
+ * Creates an AudioWorkletNode from a compiled Faust module.
+ * 
+ * Uses a WeakMap-based promise cache to ensure that AudioWorklet registration
+ * (which happens inside generator.createNode) is serialized per context and module.
+ */
 export async function createFaustNode(
     moduleId: string,
     context: BaseAudioContext
@@ -153,10 +178,63 @@ export async function createFaustNode(
         console.error(`[Faust] Cannot create node for "${moduleId}": ${reason}`);
         return null;
     }
+
+    // Get or create the registration map for this context
+    let contextRegistrations = registrationPromises.get(context);
+    if (!contextRegistrations) {
+        contextRegistrations = new Map();
+        registrationPromises.set(context, contextRegistrations);
+    }
+
+    // Check if this module is already being registered in this context
+    const existingReg = contextRegistrations.get(moduleId);
+    if (existingReg) {
+        await existingReg;
+    }
+
+    // We use a manual promise to track the registration phase of createNode
+    let resolveReg: () => void;
+    const regPromise = new Promise<void>((resolve) => {
+        resolveReg = resolve;
+    });
+
+    // If no existing registration was in progress, we become the "primary" creator
+    // that performs the registration. Subsequent concurrent calls will await regPromise.
+    if (!existingReg) {
+        contextRegistrations.set(moduleId, regPromise);
+    }
+
     try {
-        return await mod.generator.createNode(context);
+        const node = await mod.generator.createNode(context);
+        
+        // Registration successful (or was already done)
+        if (!existingReg) resolveReg!();
+        
+        return node;
     } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
+        
+        // If the error is "already registered", it means we collided despite the cache
+        // or faustwasm's internal state is out of sync. We can try to recover by 
+        // assuming it's now registered and just trying again, but faustwasm's 
+        // createNode is what performs both registration and node instantiation.
+        
+        if (msg.includes('already registered')) {
+            // Signal that registration is "done" (even if it failed with "already registered")
+            // so other waiters can try to create their nodes.
+            if (!existingReg) resolveReg!();
+            
+            // Try one more time — if it was just a race, it might succeed now.
+            try {
+                return await mod.generator.createNode(context);
+            } catch (retryError) {
+                console.error(`[Faust] Node creation retry failed for "${mod.name}": ${retryError}`);
+            }
+        } else {
+            // Real error, allow other waiters to fail too if they want
+            if (!existingReg) resolveReg!();
+        }
+
         console.error(`[Faust] Node creation failed for "${mod.name}": ${msg}`);
         return null;
     }
