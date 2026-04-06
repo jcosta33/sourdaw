@@ -19,8 +19,12 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - **One-click context-aware loading:** Dragging a sample auto-detects if it is percussive (defaults to 1-Shot/Drum), a loop (defaults to Slice), or tonal (defaults to Quick with auto root key).
 - **In-place slicing:** Visual waveform with draggable slice markers (absolute `<div>` overlays). Slices map directly to playable pads without leaving the sampler or creating new tracks.
 - **MPC/SP-404-style recording:** Support for threshold-triggered recording directly to pads, enabling seamless capture into the instrument.
-- **Independent time-stretch:** Time-stretching algorithms that act as playable/modulatable parameters decoupled from project BPM.
-- **Deep modulation and FX:** Per-slice FX processing (Ableton Drum Rack-level) combined with multi-sample zones.
+- **Independent time-stretch:** Time-stretching algorithms that act as playable/modulatable parameters decoupled from project BPM. **Flex Speed** (Logic-style) MUST be a first-class modulation target.
+- **Deep modulation and FX:** 
+    - **8 Articulator Groups** (FL Studio style): Each slice/pad has independent envelopes, filters, and LFOs.
+    - **Mod X/Y Crossfading**: Dual decks with morphing capabilities between sample states.
+    - **Bitwig-level Modulation**: A unified modulation system where any parameter is a target.
+    - **Voice Stacking**: Per-voice detuning and stacking for layered sounds.
 - **Smart Loop Points:** Automatic zero-crossing detection and crossfade length calculation for click-free loops.
 
 ---
@@ -35,6 +39,7 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - **Disk Streaming:** Wait-free ring buffer (`rtrb`) architecture supporting up to 128 voices with RAM-cached attack (12KB preload) + disk-streamed sustain.
 - **Analysis:** Background SuperFlux/HFC onset detection, YIN pitch detection, and beat/BPM estimation.
 - **DSP Modulators & Processors:** Cubic Hermite interpolation, 1-multiply iterative AHDSR, Cytomic/Zavalishin TPT SVF filter, and one-pole exponential parameter smoothing.
+- **Organization:** Drum Rack-style nesting where each slice has its own channel strip and independent FX chain.
 - **React Frontend:** WebGL/Canvas waveform rendering, Zustand state (`useSamplerStore`, `usePadStore`, `useSliceStore`).
 - **Interaction Design:** Drag-and-drop for file loading (Tauri `DragDropEvent`) and pad-to-pad reordering. Mini-waveform thumbnails for pads. Velocity-sensitive flash animations on pad triggers.
 - **Tauri v2 IPC:** Using binary `tauri::ipc::Response` for transferring waveform peak mipmaps.
