@@ -24,7 +24,7 @@ A modern, browser-native digital audio workstation (DAW) built with React 19, Ty
 | Language     | TypeScript 5.9                                                     |
 | Build Tool   | Vite 8                                                             |
 | Styling      | Tailwind CSS v4                                                    |
-| State        | Zustand-style stores + TanStack Query                              |
+| State        | Vanilla TypeScript Stores + TanStack Query         |
 | Routing      | TanStack Router                                                    |
 | Audio        | Web Audio API + AudioWorklet                                       |
 | Desktop      | Tauri 2                                                            |
