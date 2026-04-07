@@ -5,6 +5,7 @@
 Track freezing is the single most impactful CPU-saving feature a DAW can offer. It replaces real-time plugin processing with pre-rendered audio, allowing users to work with complex projects on limited hardware. This spec defines a unified freeze/flatten/bounce architecture for Sourdaw based on extensive UX research across Ableton Live, Logic Pro, Pro Tools, Cubase, Studio One, Reaper, FL Studio, and Bitwig.
 
 Key findings from research:
+
 - **Two-phase model is essential**: Reversible freeze for CPU savings, irreversible flatten for commitment
 - **Freeze must preserve editability**: Volume, pan, sends remain live; only source content and inserts are baked
 - **Staleness detection is novel**: No surveyed DAW detects when frozen content becomes outdated
@@ -24,6 +25,7 @@ Implement a complete freeze/flatten/bounce system that: (1) allows users to free
 ## User-Visible Behavior
 
 ### Freeze Track
+
 - User selects "Freeze Track" from track context menu or shortcut
 - Track enters "freezing" state with progress indicator
 - All clips and devices on the track are rendered to a 32-bit float WAV file
@@ -34,16 +36,19 @@ Implement a complete freeze/flatten/bounce system that: (1) allows users to free
 - Frozen audio plays back instantly without CPU load from plugins
 
 ### Unfreeze Track
+
 - User selects "Unfreeze Track" to restore live processing
 - Original clips and devices become active again
 - Freeze file is marked for garbage collection (retained in undo history)
 
 ### Staleness Detection
+
 - If user modifies frozen track content (clips, devices, MIDI notes), track enters "stale" state
 - Stale tracks continue playing frozen audio but display warning indicator
 - User can re-freeze to update or unfreeze to discard
 
 ### Flatten Track
+
 - Available only when track is frozen and up-to-date (not stale)
 - Permanently replaces original clips and devices with frozen audio clip
 - Track type may change (MIDI track becomes audio track)
@@ -51,6 +56,7 @@ Implement a complete freeze/flatten/bounce system that: (1) allows users to free
 - Undoable via CRDT undo, but becomes irreversible after project close
 
 ### Bounce in Place / Bounce to New Track
+
 - Renders track to audio without freezing intermediate state
 - Option to include/exclude: inserts, sends, volume/pan automation, tail
 - Option to normalize (off / overload protection / full)
@@ -58,6 +64,7 @@ Implement a complete freeze/flatten/bounce system that: (1) allows users to free
 - Non-destructive: original track can be muted or deleted
 
 ### Freeze File Management
+
 - Freeze files stored in project `freeze/` directory
 - Automatic cleanup of unreferenced files on project close
 - Undo history protects recently unreferenced files
@@ -68,6 +75,7 @@ Implement a complete freeze/flatten/bounce system that: (1) allows users to free
 ## Scope
 
 ### In Scope:
+
 - Freeze/unfreeze operations with state machine (unfrozen → freezing → frozen → stale → unfrozen)
 - Offline render pipeline for freeze using existing `OfflineAudioContext` infrastructure
 - CRDT freeze state model extending existing `Track.frozen` boolean
@@ -81,6 +89,7 @@ Implement a complete freeze/flatten/bounce system that: (1) allows users to free
 - Multi-output instrument freeze (render all outputs as separate freeze files)
 
 ### Non-Goals (Explicitly Out of Scope):
+
 - Partial freeze up to specific insert (Pro Tools feature) — may be added later
 - Real-time freeze fallback — offline only for MVP
 - Plugin-specific freeze optimizations (VST3 kOffline mode) — use generic offline flag
@@ -96,7 +105,9 @@ Implement a complete freeze/flatten/bounce system that: (1) allows users to free
 ## Requirements
 
 ### R1: Freeze State Model
+
 The system MUST maintain a freeze state machine per track with the following states:
+
 - `unfrozen`: Normal live processing
 - `freezing`: Render in progress, UI shows progress indicator
 - `frozen`: Frozen audio active, live plugins bypassed
@@ -104,35 +115,41 @@ The system MUST maintain a freeze state machine per track with the following sta
 - `error`: Freeze failed, error message displayed, revert to unfrozen
 
 ### R2: Freeze State CRDT Schema
+
 The `Track` model MUST be extended with:
+
 ```typescript
 type FreezeState = {
     status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
-    freezeId?: string;                    // Unique render identifier
-    frozenBufferId?: string;              // Reference to audioBufferCache
-    frozenAudioHash?: string;             // SHA-256 of rendered audio
-    sourceContentHash?: string;           // Hash of clips + positions + device states
-    deviceChainHash?: string;             // Hash of ordered device IDs + states
+    freezeId?: string; // Unique render identifier
+    frozenBufferId?: string; // Reference to audioBufferCache
+    frozenAudioHash?: string; // SHA-256 of rendered audio
+    sourceContentHash?: string; // Hash of clips + positions + device states
+    deviceChainHash?: string; // Hash of ordered device IDs + states
     renderSettings?: {
         sampleRate: number;
-        bitDepth: number;                 // Always 32 for freeze
+        bitDepth: number; // Always 32 for freeze
         channelCount: number;
         tailLengthSeconds: number;
     };
-    renderProgress?: number;              // 0.0-1.0 during freezing
-    errorMessage?: string;                // Set when status is 'error'
-    renderedAt?: number;                  // Unix epoch ms
+    renderProgress?: number; // 0.0-1.0 during freezing
+    errorMessage?: string; // Set when status is 'error'
+    renderedAt?: number; // Unix epoch ms
 };
 ```
 
 ### R3: Content Hash Computation
+
 The system MUST compute `sourceContentHash` by SHA-256 hashing:
+
 - Sorted clips: `${id}:${startBeat}:${duration}:${assetHash ?? ''}:${gain}`
 - Sorted devices: `${device.id}:${device.type}:${sortedParamValues}:${device.bypassed}`
 - Hash recomputed on every CRDT change and compared to `FreezeState.sourceContentHash`
 
 ### R4: Offline Freeze Render
+
 When freezing, the system MUST:
+
 1. Compute source content hash at initiation
 2. Calculate total render duration: max clip end beat + tail length
 3. Query all devices for tail length; use max reported
@@ -145,14 +162,18 @@ When freezing, the system MUST:
 10. Update CRDT with `status: 'frozen'` and metadata
 
 ### R5: Sidechain Handling
+
 The system MUST detect sidechain inputs and:
+
 - Include sidechain source tracks in dependency subgraph
 - Render sidechain sources before or alongside frozen track
 - Render with silent sidechain if source unavailable (with warning)
 - Block freeze with error if circular sidechain detected
 
 ### R6: Real-Time Playback of Frozen Tracks
+
 The audio engine MUST:
+
 - Check `track.freezeState.status` on each process block
 - If `frozen` or `stale`: read from frozen buffer, skip device processing
 - If `unfrozen`: normal clip → device chain → output
@@ -160,14 +181,18 @@ The audio engine MUST:
 - Apply live volume, pan, sends, mute to frozen audio
 
 ### R7: Unfreeze Operation
+
 The system MUST:
+
 - Restore `status: 'unfrozen'` in CRDT
 - Clear freeze metadata (buffer ID, hashes)
 - Retain freeze file in undo history (protected from GC)
 - Resume normal live processing immediately
 
 ### R8: Staleness Detection
+
 The system MUST:
+
 - Recompute `sourceContentHash` after every track modification
 - Compare to `FreezeState.sourceContentHash`
 - If different and `status === 'frozen'`, transition to `status: 'stale'`
@@ -175,7 +200,9 @@ The system MUST:
 - Allow playback to continue (prevent CPU spike during editing)
 
 ### R9: Flatten Operation
+
 The system MUST:
+
 - Require `status === 'frozen'` and hash match (not stale)
 - Warn if `deviceChainHash` differs from current devices (params changed)
 - Display pre-flatten dialog: _"Plugin settings changed since this track was frozen. Flattening will commit the older rendered audio, not the current plugin state."_ with options to re-freeze first or proceed
@@ -188,13 +215,17 @@ The system MUST:
 - Warn that flatten becomes irreversible after project close (matches Ableton/Logic behavior)
 
 ### R10: Bounce Operations
+
 The system MUST support:
+
 - **Bounce in Place**: Render track, replace clips with audio, remove devices
 - **Bounce to New Track**: Render track, create new audio track with result, mute source
 - Options dialog with: include inserts (yes/no), include sends (yes/no), include volume/pan automation (yes/no), tail handling (auto/manual/off), normalization (off/protection/full), destination (new track/replace)
 
 ### R11: Freeze File Management
+
 The system MUST:
+
 - Store freeze files in `Project/freeze/<freezeId>.wav`
 - Write to `.tmp` file and atomic rename on completion
 - Delete `.tmp` files on startup (crash recovery)
@@ -204,14 +235,18 @@ The system MUST:
 - CRDT sync to audio engine: debounce into 16ms batches (one animation frame); if fewer than 10 tracks changed, send incremental per-track updates; if more, send full project snapshot
 
 ### R12: Progress and Cancellation
+
 The system MUST:
+
 - Report render progress via callback (0.0-1.0)
 - Display progress in track header during freezing
 - Allow cancellation mid-render (clean up temp file, revert to unfrozen)
 - Set 5-minute watchdog timer to auto-revert stuck freeze operations
 
 ### R13: Error Handling
+
 The system MUST handle:
+
 - Disk space exhaustion: Check before render with 2x safety margin
 - Plugin crash during render: Abort, clean up, set error status
 - Missing audio buffer: Warning, continue with silence
@@ -219,7 +254,9 @@ The system MUST handle:
 - Render timeout: Auto-cancel, revert to unfrozen
 
 ### R14: UI Indicators
+
 The track header MUST display:
+
 - Snowflake icon when frozen
 - Yellow warning overlay when stale
 - Progress spinner/bar when freezing
@@ -249,6 +286,7 @@ The track header MUST display:
 **Chosen:** Extend existing `Track` model with `freezeState` object, keeping `frozen` boolean for backward compatibility.
 
 **Considered and rejected:**
+
 - New `Freeze` module: Would separate freeze logic from track ownership, complicating CRDT updates and track deletion
 - Separate freeze metadata document: Would introduce cross-document references, harder to keep in sync
 
@@ -259,6 +297,7 @@ The track header MUST display:
 **Chosen:** Use existing Automerge integration.
 
 **Considered and rejected:**
+
 - Migrate to Loro as recommended in research: Would require massive refactoring of existing collaboration system
 
 **Rationale:** The research recommends Loro for its Rust-native implementation and MovableList/MovableTree types. However, Sourdaw already has a working Automerge integration. The freeze state model is simple enough (single Map per track) to work well in Automerge.
@@ -268,6 +307,7 @@ The track header MUST display:
 **Chosen:** Implement using Web Audio `OfflineAudioContext` for freeze rendering.
 
 **Considered and rejected:**
+
 - Rust/Tauri offline executor as primary: Research assumes native backend, but current Sourdaw is browser-first with Tauri as optional wrapper
 
 **Rationale:** The existing `offlineRender.ts` already uses `OfflineAudioContext` successfully for mixdown/stem export. Freeze can reuse this infrastructure. When Tauri native backend is added, the freeze pipeline can be extended with a Rust executor path.
@@ -277,6 +317,7 @@ The track header MUST display:
 **Chosen:** SHA-256 hash of canonical clip and device state representation.
 
 **Considered and rejected:**
+
 - Timestamp-based staleness: Would false-positive on non-content changes (e.g., clip selection)
 - Deep equality comparison: Too slow for large tracks
 - Event-based staleness tracking: Complex to maintain, misses edge cases
@@ -288,6 +329,7 @@ The track header MUST display:
 **Chosen:** Include sidechain sources in freeze render subgraph.
 
 **Considered and rejected:**
+
 - Block freeze with sidechain (Ableton approach): Limits user workflow
 - Render without sidechain (silent): Produces incorrect audio
 - Require frozen sidechain sources: Complex dependency management
@@ -322,6 +364,7 @@ The track header MUST display:
 ## Implementation Notes
 
 ### Key Files to Modify
+
 - `src/modules/Arrangement/models/Track.ts` — Add `FreezeState` type, extend `Track`
 - `src/modules/Arrangement/useCases/freezeTrack.ts` — New: initiate freeze
 - `src/modules/Arrangement/useCases/unfreezeTrack.ts` — New: restore live processing
@@ -332,12 +375,14 @@ The track header MUST display:
 - `src/modules/Arrangement/events/FreezeStateChangedEvent.ts` — New: freeze state notifications
 
 ### Reuse Patterns
+
 - Offline render: Extend `offlineRender.ts` with freeze-specific duration/tail handling
 - Audio cache: Use existing `audioBufferCache` with freeze-specific IDs
 - CRDT mutations: Follow `mutateCrdtDoc.ts` patterns
 - Progress UI: Reuse existing progress components from stem export
 
 ### Testing Strategy
+
 - Unit: Content hash computation, state machine transitions
 - Integration: Freeze/unfreeze roundtrip, flatten commit, GC sweep
 - E2E: Full workflow with plugins, sidechain, collaborative editing
@@ -347,6 +392,7 @@ The track header MUST display:
 ## Test Plan
 
 ### Manual Testing
+
 1. Create MIDI track with instrument, add some notes
 2. Freeze track — verify progress indicator, verify snowflake appears
 3. Verify CPU usage drops (plugins bypassed)
@@ -360,6 +406,7 @@ The track header MUST display:
 11. Delete track with freeze file — verify GC removes file on close
 
 ### Automated Testing
+
 - State machine property tests: all valid transitions
 - Content hash tests: detect changes, ignore non-changes
 - GC tests: reference tracking, age-based eviction
@@ -378,11 +425,13 @@ The track header MUST display:
 ## Tradeoffs and Risks
 
 ### Tradeoffs
+
 - **Stale state vs auto-refreeze**: Auto-refreeze would be seamless but CPU-intensive during editing. Explicit stale indicator gives user control.
 - **Include sidechain vs block**: Including sidechain makes freeze slower but more useful. Blocking limits workflow.
 - **GC aggressiveness**: Conservative GC (7-day retention) vs aggressive (immediate). Conservative is safer but uses more disk.
 
 ### Risks
+
 - **Disk space exhaustion**: Large projects with many freeze iterations could fill disk. Mitigation: Pre-render check, user warning.
 - **Plugin non-determinism**: Some plugins produce slightly different output each render. Mitigation: Accept as limitation, document.
 - **Collaborative conflicts**: Two users freezing same track simultaneously wastes render effort. Mitigation: LWW semantics, UI lock indicator.

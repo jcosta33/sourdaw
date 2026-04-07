@@ -7,21 +7,21 @@ type MyEvents = {
 };
 
 describe('Event Testing Helpers', () => {
-    it('recordEvents() records emissions', async () => {
+    it('should record emissions and stop recording', async () => {
         const bus = createEventBus<MyEvents>();
-        const { entries, stop } = recordEvents(bus);
+        const recorder = recordEvents(bus);
 
         await bus.emit('test:event', { id: 1 });
         await bus.emit('test:event', { id: 2 });
 
-        expect(entries).toEqual([
+        expect(recorder.entries).toEqual([
             { event: 'test:event', payload: { id: 1 } },
             { event: 'test:event', payload: { id: 2 } },
         ]);
 
-        stop();
+        recorder.stop();
         await bus.emit('test:event', { id: 3 });
-        
-        expect(entries.length).toBe(2); // Should not record the third one
+
+        expect(recorder.entries.length).toBe(2);
     });
 });

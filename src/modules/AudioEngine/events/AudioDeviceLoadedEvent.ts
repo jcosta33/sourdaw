@@ -1,6 +1,4 @@
-import { DomainEvent } from '#/helpers/Event/DomainEvent';
-
-export class AudioDeviceLoadedEvent extends DomainEvent<{
+export type AudioDeviceLoadedPayload = {
     deviceId: string;
     deviceType: string;
-}> {}
+};

@@ -2,7 +2,6 @@ import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { eventBus } from '#/app/bootstrap';
-import { TrackRemovedEvent } from '../events/TrackRemovedEvent';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
@@ -57,5 +56,5 @@ export function removeTrack(trackId: string): void {
         });
     }
 
-    eventBus.emit(new TrackRemovedEvent({ trackId }));
+    void eventBus.emit('track.removed', { trackId });
 }

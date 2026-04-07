@@ -1,7 +1,3 @@
-import { DomainEvent } from '#/helpers/Event/DomainEvent';
-
-type TrackRemovedPayload = {
+export type TrackRemovedPayload = {
     trackId: string;
 };
-
-export class TrackRemovedEvent extends DomainEvent<TrackRemovedPayload> {}

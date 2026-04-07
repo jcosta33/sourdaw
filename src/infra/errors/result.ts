@@ -1,46 +1,55 @@
-export type Ok<T> = Readonly<{ ok: true; value: T }>;
-export type Err<E> = Readonly<{ ok: false; error: E }>;
-export type Result<T, E> = Ok<T> | Err<E>;
+export type Ok<TValue> = Readonly<{ ok: true; value: TValue }>;
+export type Err<TError> = Readonly<{ ok: false; error: TError }>;
+export type Result<TValue, TError> = Ok<TValue> | Err<TError>;
 
-export const ok = <T>(value: T): Ok<T> => ({ ok: true, value });
+export const ok = <TValue>(value: TValue): Ok<TValue> => ({ ok: true, value });
 
-export const err = <E>(error: E): Err<E> => ({ ok: false, error });
+export const err = <TError>(error: TError): Err<TError> => ({ ok: false, error });
 
-export const isOk = <T, E>(result: Result<T, E>): result is Ok<T> => {
+export const isOk = <TValue, TError>(result: Result<TValue, TError>): result is Ok<TValue> => {
     return result.ok === true;
 };
 
-export const isErr = <T, E>(result: Result<T, E>): result is Err<E> => {
+export const isErr = <TValue, TError>(result: Result<TValue, TError>): result is Err<TError> => {
     return result.ok === false;
 };
 
-export const map = <T, E, U>(result: Result<T, E>, fn: (value: T) => U): Result<U, E> => {
+export const map = <TValue, TError, TMapped>(
+    result: Result<TValue, TError>,
+    fn: (value: TValue) => TMapped,
+): Result<TMapped, TError> => {
     if (result.ok) {
         return ok(fn(result.value));
     }
     return result;
 };
 
-export const mapError = <T, E, F>(result: Result<T, E>, fn: (error: E) => F): Result<T, F> => {
+export const mapError = <TValue, TError, TMappedError>(
+    result: Result<TValue, TError>,
+    fn: (error: TError) => TMappedError,
+): Result<TValue, TMappedError> => {
     if (!result.ok) {
         return err(fn(result.error));
     }
     return result;
 };
 
-export const flatMap = <T, E, U>(result: Result<T, E>, fn: (value: T) => Result<U, E>): Result<U, E> => {
+export const flatMap = <TValue, TError, TMapped>(
+    result: Result<TValue, TError>,
+    fn: (value: TValue) => Result<TMapped, TError>,
+): Result<TMapped, TError> => {
     if (result.ok) {
         return fn(result.value);
     }
     return result;
 };
 
-export const match = <T, E, TReturn>(
-    result: Result<T, E>,
+export const match = <TValue, TError, TReturn>(
+    result: Result<TValue, TError>,
     branches: {
-        ok: (value: T) => TReturn;
-        err: (error: E) => TReturn;
-    }
+        ok: (value: TValue) => TReturn;
+        err: (error: TError) => TReturn;
+    },
 ): TReturn => {
     if (result.ok) {
         return branches.ok(result.value);
@@ -48,24 +57,30 @@ export const match = <T, E, TReturn>(
     return branches.err(result.error);
 };
 
-export const unwrapOr = <T, E>(result: Result<T, E>, fallback: T): T => {
+export const unwrapOr = <TValue, TError>(result: Result<TValue, TError>, fallback: TValue): TValue => {
     if (result.ok) {
         return result.value;
     }
     return fallback;
 };
 
-export const fromNullable = <T, E>(value: T | null | undefined, errorFactory: () => E): Result<T, E> => {
+export const fromNullable = <TValue, TError>(
+    value: TValue | null | undefined,
+    errorFactory: () => TError,
+): Result<TValue, TError> => {
     if (value === null || value === undefined) {
         return err(errorFactory());
     }
-    return ok(value as T);
+    return ok(value as TValue);
 };
 
-export const tryCatch = <T, E>(fn: () => T, errorFactory: (e: unknown) => E): Result<T, E> => {
+export const tryCatch = <TValue, TError>(
+    fn: () => TValue,
+    errorFactory: (caught: unknown) => TError,
+): Result<TValue, TError> => {
     try {
         return ok(fn());
-    } catch (e) {
-        return err(errorFactory(e));
+    } catch (caught) {
+        return err(errorFactory(caught));
     }
 };

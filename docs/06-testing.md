@@ -10,7 +10,7 @@ This codebase currently has zero TypeScript tests. This document defines how we 
 - **No integration tests. No E2E.** Not yet. Adding cross-module or Playwright-style tests before the unit layer is populated is premature — wire up the skeleton first, then grow outward when we have a real reason to.
 - **One test file per source file.** Co-located: `addTrack.ts` sits next to `addTrack.spec.ts`. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `@tauri-apps/api/core` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
-- **Real domain types in tests.** `DomainEvent` subclasses and `AppError` subclasses are instantiated for real in tests. They are cheap, correct, and faking them hides bugs.
+- **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
 
 ---
 
@@ -66,7 +66,7 @@ src/modules/Arrangement/
         └── useTracks.spec.ts
 ```
 
-Cross-module test utilities (mock `AudioContext`, mock `EventBus`, `Container` helpers) live in `src/helpers/_tests/`.
+Cross-module test utilities (mock `AudioContext`, `Container` helpers) live in `src/helpers/_tests/`. DI and event test helpers live in `src/infra/di/testing/` and `src/infra/events/testing/`.
 
 ---
 
@@ -84,9 +84,9 @@ Every `it` block starts with `should` or `should not`, followed by a concise des
 
 The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typescript-module.md §4.10`). Tests for injectable functions **must** use the companion test helpers rather than `vi.mock()`:
 
-- **`inject(dependencies, factory)`** — `#/helpers/DependencyInjector/inject` — wraps a function with a dependency map. The wrapped function carries `.dependencies`, `.factory`, and `.token` as metadata for tests.
-- **`injectDependencies(subject, mocks)`** — `#/helpers/Testing/injectDependencies` — resets the `Container` and registers a **complete** set of mocks against the subject's dependencies. Throws if a dependency is missing from `mocks` or if `mocks` contains a key the subject doesn't have. Returns the subject for chaining.
-- **`spy<T>(overrides?)`** — `#/helpers/Testing/spy` — creates a typed spy. Every accessed method is a `vi.fn()` typed to the original signature — no casts needed. Optional `overrides` pre-seed specific methods or properties (function overrides stay assertable as `vi.fn()`).
+- **`inject(deps)(factory)`** — `#/infra/di/inject` — curried DI wrapper. The first call takes a dependency map, the second takes a factory that receives resolved deps. The wrapped function carries `.dependencies`, `.factory`, and `.token` as metadata for tests.
+- **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — resets the `Container` and registers a **complete** set of mocks against the subject's dependencies. Throws if a dependency is missing from `mocks` or if `mocks` contains a key the subject doesn't have. Returns the subject for chaining.
+- **`spy<T>(overrides?)`** — `#/infra/di/testing/spy` — creates a typed spy. Every accessed method is a `vi.fn()` typed to the original signature — no casts needed. Optional `overrides` pre-seed specific methods or properties (function overrides stay assertable as `vi.fn()`).
 
 ### When to use which
 
@@ -102,20 +102,18 @@ Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { spy } from '#/helpers/Testing/spy';
-import { injectDependencies } from '#/helpers/Testing/injectDependencies';
-import { EventBus } from '#/helpers/Event/EventBus';
+import { spy } from '#/infra/di/testing/spy';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { Logger } from '#/helpers/Logger/Logger';
 import { TrackRepo } from '../repositories/TrackRepo';
 import { addTrack } from './addTrack';
-import { TrackAddedEvent } from '../events/TrackAddedEvent';
 
 describe('addTrack', () => {
-    it('should append the track to the repo and emit TrackAddedEvent', () => {
+    it('should append the track to the repo and emit track.added', () => {
         const trackRepo = spy<TrackRepo>({
             getState: () => ({ tracks: [], selectedTrackId: null }),
         });
-        const eventBus = spy<EventBus>();
+        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
         const logger = spy<Logger>();
 
         injectDependencies(addTrack, { trackRepo, eventBus, logger });
@@ -129,12 +127,12 @@ describe('addTrack', () => {
                 selectedTrackId: result!.id,
             })
         );
-        expect(eventBus.emit).toHaveBeenCalledWith(expect.any(TrackAddedEvent));
+        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
     });
 
     it('should return null when the repo state is uninitialized', () => {
         const trackRepo = spy<TrackRepo>({ getState: () => null });
-        const eventBus = spy<EventBus>();
+        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
         const logger = spy<Logger>();
 
         injectDependencies(addTrack, { trackRepo, eventBus, logger });
@@ -168,22 +166,20 @@ Use the canonical shape from §5: `spy<T>()` + `injectDependencies()`. No `vi.mo
 ```typescript
 // src/modules/Arrangement/useCases/addTrack.spec.ts
 import { describe, it, expect } from 'vitest';
-import { spy } from '#/helpers/Testing/spy';
-import { injectDependencies } from '#/helpers/Testing/injectDependencies';
-import { EventBus } from '#/helpers/Event/EventBus';
+import { spy } from '#/infra/di/testing/spy';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { Logger } from '#/helpers/Logger/Logger';
 import { TrackRepo } from '../repositories/TrackRepo';
 import { addTrack } from './addTrack';
-import { TrackAddedEvent } from '../events/TrackAddedEvent';
 import { TrackDummy } from '../_tests/TrackDummy';
 
 describe('addTrack', () => {
-    it('should append the track to the repo and emit TrackAddedEvent', () => {
+    it('should append the track to the repo and emit track.added', () => {
         const existing = TrackDummy.create({ id: 'track-1' });
         const trackRepo = spy<TrackRepo>({
             getState: () => ({ tracks: [existing], selectedTrackId: 'track-1' }),
         });
-        const eventBus = spy<EventBus>();
+        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
         const logger = spy<Logger>();
 
         injectDependencies(addTrack, { trackRepo, eventBus, logger });
@@ -195,12 +191,12 @@ describe('addTrack', () => {
             tracks: [existing, result],
             selectedTrackId: result!.id,
         });
-        expect(eventBus.emit).toHaveBeenCalledWith(expect.any(TrackAddedEvent));
+        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Lead Vocals' }));
     });
 
     it('should return null and not emit when the repo is uninitialized', () => {
         const trackRepo = spy<TrackRepo>({ getState: () => null });
-        const eventBus = spy<EventBus>();
+        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
         const logger = spy<Logger>();
 
         injectDependencies(addTrack, { trackRepo, eventBus, logger });
@@ -216,7 +212,7 @@ describe('addTrack', () => {
 
 Notes:
 
-- We construct `TrackAddedEvent` for real (`expect.any(TrackAddedEvent)`). We do not stub the event class.
+- Event payloads are plain objects — assert on the string key and payload shape directly.
 - `injectDependencies` resets the Container and validates the mock map — no `beforeEach` reset is needed.
 - If `addTrack` is not yet wrapped with `inject()`, that refactor comes _with_ the test. See `docs/architecture/03-typescript-module.md §4.10`.
 
@@ -410,45 +406,40 @@ describe('Store', () => {
 
 ### 6.8 Event subscribers
 
-Files that wire a domain handler via `eventBus.on(...)`. When the subscriber is wrapped with `inject()`, build an `EventBus` spy, inject it, invoke the subscriber, then retrieve the registered handler from the spy's `.mock.calls` and invoke it directly.
+Files that wire a domain handler via `eventBus.on(...)`. For integration-style subscriber tests, use `createEventBus()` from `#/infra/events/createEventBus` to create a real bus, wire the subscriber, then emit events and assert on side effects.
 
 ```typescript
-// src/modules/Toaster/useCases/subscribeToAudioDeviceLoaded.spec.ts
+// src/modules/Toaster/useCases/toasterSubscriber.spec.ts
 import { describe, it, expect, vi } from 'vitest';
-import { spy } from '#/helpers/Testing/spy';
-import { injectDependencies } from '#/helpers/Testing/injectDependencies';
-import { EventBus } from '#/helpers/Event/EventBus';
-import { subscribeToAudioDeviceLoaded } from './subscribeToAudioDeviceLoaded';
-import { AudioDeviceLoadedEvent } from '#/modules/AudioEngine/events/AudioDeviceLoadedEvent';
+import { createEventBus } from '#/infra/events/createEventBus';
+import type { AppEvents } from '#/app/registerDependencies';
 
-describe('subscribeToAudioDeviceLoaded', () => {
-    it('should register a handler for AudioDeviceLoadedEvent', () => {
-        const eventBus = spy<EventBus>();
-        injectDependencies(subscribeToAudioDeviceLoaded, { eventBus });
+describe('initToasterSubscribers', () => {
+    it('should hydrate Toaster controls when audioDevice.loaded fires', async () => {
+        const bus = createEventBus<AppEvents>();
+        // wire up the subscriber with the test bus
+        const unsubscribe = initToasterSubscribers(bus);
 
-        const callback = vi.fn();
-        subscribeToAudioDeviceLoaded(callback);
+        await bus.emit('audioDevice.loaded', { deviceId: 'dev-1', deviceType: 'toaster' });
 
-        expect(eventBus.on).toHaveBeenCalledWith(AudioDeviceLoadedEvent, expect.any(Function));
-    });
+        // assert on the side effects (store updates, param calls, etc.)
+        // ...
 
-    it('should call the callback with the event payload when the event fires', () => {
-        const eventBus = spy<EventBus>();
-        injectDependencies(subscribeToAudioDeviceLoaded, { eventBus });
-
-        const callback = vi.fn();
-        subscribeToAudioDeviceLoaded(callback);
-
-        const handler = eventBus.on.mock.calls[0][1];
-        const event = new AudioDeviceLoadedEvent({ deviceId: 'dev-1' });
-        handler(event);
-
-        expect(callback).toHaveBeenCalledWith(event.payload);
+        unsubscribe();
     });
 });
 ```
 
-Note: `eventBus.on.mock.calls[0][1]` works directly — no cast needed, because `spy<T>` types each method as `Mock & OriginalSignature`.
+For unit-style tests using spies, build a spy with `on` and `emit` methods and inject it:
+
+```typescript
+import { spy } from '#/infra/di/testing/spy';
+
+const eventBus = spy<{ on: (event: string, handler: Function) => () => void }>();
+// retrieve the registered handler from spy mock calls
+const handler = eventBus.on.mock.calls[0][1];
+handler({ deviceId: 'dev-1', deviceType: 'toaster' });
+```
 
 ### 6.9 Presentation hooks
 
@@ -593,16 +584,18 @@ Use a deterministic counter for IDs, not `Math.random`. Tests should be reproduc
 
 ### 7.2 EventBus spying
 
-For injectables that depend on `EventBus`, build a local spy per test with `spy<EventBus>()` — no shared module-level mock is needed:
+For injectables that depend on the event bus, build a local spy per test — no shared module-level mock is needed:
 
 ```typescript
-const eventBus = spy<EventBus>();
+const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void>; on: (event: string, handler: Function) => () => void }>();
 injectDependencies(subjectUnderTest, { eventBus /* other deps */ });
 ```
 
 The spy gives you typed `eventBus.emit` and `eventBus.on` as `Mock`s directly. Retrieve registered handlers via `eventBus.on.mock.calls[n][1]` and invoke them to test subscriber behaviour (see §6.8).
 
-For code that is not yet wrapped with `inject()` and reads `EventBus` via `Container.getInstance().get(EventBus)`, use `vi.mock('#/app/bootstrap', ...)` as a temporary bridge — but migrate the subject to `inject()` when the opportunity arises.
+Alternatively, use `createEventBus()` from `#/infra/events/createEventBus` for a real bus in integration-style tests, paired with `recordEvents()` from `#/infra/events/testing/recordEvents` to capture emitted events.
+
+For code that is not yet wrapped with `inject()` and reads the event bus at module scope, use `vi.mock('#/app/bootstrap', ...)` as a temporary bridge — but migrate the subject to `inject()` when the opportunity arises.
 
 ### 7.3 DI Container handling
 
@@ -618,9 +611,9 @@ Tests do not need manual container management and must not call `Container.reset
 For the rare code that reads dependencies from `Container.getInstance()` directly (legacy / not yet migrated to `inject()`), reset and re-register manually before each test:
 
 ```typescript
-import { Container } from '#/helpers/DependencyInjector/Container';
+import { Container } from '#/infra/di/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { spy } from '#/helpers/Testing/spy';
+import { spy } from '#/infra/di/testing/spy';
 
 beforeEach(() => {
     const container = Container.getInstance();
@@ -780,7 +773,7 @@ Do not:
 
 - **Write integration tests yet.** If a test can only be written by wiring up two modules' real code, delete it and write the unit tests for each module separately.
 - **Test real Web Audio rendering.** AudioContext-in-jsdom does not exist. Use the mock from §7.4.
-- **Mock `DomainEvent` or `AppError` subclasses.** They are cheap. Construct them for real.
+- **Mock event payloads or `AppError` values.** They are cheap plain objects. Construct them for real.
 - **Write React Query tests.** This codebase does not use TanStack Query for core state — state flows through `Store<T>`.
 - **Depend on real time.** No `setTimeout` in tests, no real `AudioContext.currentTime`, no real `Date.now()` assertions. Use fake timers (`vi.useFakeTimers()`) or explicit values.
 - **Share mutable state between tests.** Every test sets up its own dummies, its own mocks, its own store instances. `beforeEach` resets.

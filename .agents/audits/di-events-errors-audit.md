@@ -9,7 +9,7 @@ The purpose of this audit is to provide an exhaustive list of architectural viol
 > - `Container.get()` now **throws in dev/test** when a token isn't registered (strict mode). Production keeps a lazy-proxy fallback temporarily, but every migration closes one more caller off that fallback.
 > - `inject()` resolves and memoizes dependencies on first call; cached until `Container.reset()`. Async dependencies are forbidden at construction time.
 > - Tests use `spy<T>()` + `injectDependencies(subject, mocks)`. The latter throws if any dependency is missing a mock.
-> - `EventBus` exposes `on(EventClass, handler)` and `emit(eventInstance)` — not `subscribe` / `publish`.
+> - `EventBus` (via `createEventBus<AppEvents>()`) exposes `on('event.name', handler)` and `emit('event.name', payload)` — string keys, typed payloads, no class wrappers.
 
 ---
 
@@ -45,16 +45,20 @@ In dev/test this throws at module load if this file is imported before bootstrap
 **Example (Correct):**
 
 ```typescript
-import { inject } from '#/helpers/DependencyInjector/inject';
+import { inject } from '#/infra/di/inject';
 import { Logger } from '#/helpers/Logger/Logger';
 import { EventBus } from '#/helpers/Event/EventBus';
 import { DataEvent } from '../events/DataEvent';
 
-export const myUseCase = inject({ logger: Logger, eventBus: EventBus }, ({ logger, eventBus }) => (data: string) => {
-    logger.info(data);
-    eventBus.emit(new DataEvent(data));
+export const myUseCase = inject({ logger: Logger, eventBus: EventBus })(({ logger, eventBus }) => {
+    return (data: string) => {
+        logger.info(data);
+        eventBus.emit(new DataEvent(data));
+    };
 });
 ```
+
+Note the **curried API**: `inject(deps)(factory)`. The first call takes the dependency map, the second takes the factory. TypeScript infers the resolved types — `logger` is typed as `Logger`, `eventBus` as `EventBus`.
 
 Caller side is unchanged: `myUseCase('hello')`. Dependencies resolve at call time, not import time — the file can load in any order.
 
@@ -64,8 +68,8 @@ Every migrated injectable gains the canonical test shape:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { spy } from '#/helpers/Testing/spy';
-import { injectDependencies } from '#/helpers/Testing/injectDependencies';
+import { spy } from '#/infra/di/testing/spy';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { Logger } from '#/helpers/Logger/Logger';
 import { EventBus } from '#/helpers/Event/EventBus';
 import { DataEvent } from '../events/DataEvent';
@@ -155,17 +159,17 @@ No `vi.mock()`. No casts. No `beforeEach` — `injectDependencies` resets the co
 
 ### How to Resolve
 
-1.  **Define a Domain Event:** Create a typed event in the module's `events/` folder (e.g., `ExportStartedEvent`).
+1.  **Define a typed event payload:** Create a typed payload type in the module's `events/` folder (e.g., `ExportStartedPayload`) and add it to the `AppEvents` map in `app/registerDependencies.ts`.
 2.  **Move Logic to Use Case:**
     - Identify the action being performed (e.g., toggling a panel).
     - Create/Update a **Use Case** to perform this action.
-    - Use `inject` in the Use Case to get the `EventBus`.
-    - Call `eventBus.emit(new MyEvent())` from the Use Case.
+    - Import `eventBus` from `#/app/bootstrap`.
+    - Call `void eventBus.emit('export.started', payload)` from the Use Case.
 3.  **Update UI:**
     - The hook or component should only call the Use Case.
     - Example: Instead of `document.dispatchEvent(new CustomEvent('sourdaw:open-export'))`, call `openExportUseCase()`.
 4.  **Subscribe via EventBus:**
-    - In `AppShell.tsx` or other listeners, replace `document.addEventListener` with `eventBus.on(MyEvent, handler)`.
+    - In `AppShell.tsx` or other listeners, replace `document.addEventListener` with `eventBus.on('export.started', handler)`. The `on()` method returns an unsubscribe function.
 
 ### Violation List
 
@@ -188,12 +192,20 @@ No `vi.mock()`. No casts. No `beforeEach` — `injectDependencies` resets the co
 
 ## 3. Error Handling Violations
 
-**Standard:** Throw domain-specific errors instead of generic `Error`.
+**Standard:** Use domain-specific errors instead of generic `Error`. Errors are created via `createAppError()` from `#/infra/errors/createAppError` — plain `Readonly` objects, not class instances.
 
 ### How to Resolve
 
-1.  **Define Domain Error:** Create a class extending `Error` in the module's `errors/` folder.
-2.  **Replace Throw:** Replace `throw new Error('msg')` with `throw new MyModuleError('msg')`.
+1. **Define Domain Error:** Create a typed error using `createAppError` in the module's `errors/` folder:
+
+```typescript
+import { createAppError, type AppError } from '#/infra/errors/createAppError';
+export type MyModuleError = AppError<'MyModule', { detail: string }>;
+export const createMyModuleError = (detail: string): MyModuleError =>
+    createAppError('MyModule', `Something went wrong: ${detail}`, { detail });
+```
+
+2. **Replace Throw:** Replace `throw new Error('msg')` with the appropriate `createMyModuleError('msg')` call (either throw it or return it via `Result`).
 
 ### Violation List
 

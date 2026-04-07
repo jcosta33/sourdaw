@@ -1,6 +1,5 @@
-import { EventBus } from '#/helpers/Event/EventBus';
+import { eventBus } from '#/app/registerDependencies';
 import { Container } from '#/helpers/DependencyInjector/Container';
-import { AudioDeviceLoadedEvent } from '#/modules/AudioEngine/events/AudioDeviceLoadedEvent';
 import { toasterStore } from '../stores/toasterStore';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
@@ -11,14 +10,12 @@ import { Logger } from '#/helpers/Logger/Logger';
 const logger = Container.getInstance().get(Logger);
 
 export function initToasterSubscribers(): () => void {
-    const eventBus = Container.getInstance().get(EventBus);
-
-    const unsubscribe = eventBus.on(AudioDeviceLoadedEvent, (event) => {
-        if (event.payload.deviceType === 'toaster') {
+    const unsubscribe = eventBus.on('audioDevice.loaded', (payload) => {
+        if (payload.deviceType === 'toaster') {
             logger.info('Hydrating newly loaded Toaster WASM engine with store state');
 
             const kit = toasterStore.value?.kit;
-            const deviceId = event.payload.deviceId;
+            const deviceId = payload.deviceId;
 
             if (kit) {
                 let foundStrip;

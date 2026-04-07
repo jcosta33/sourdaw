@@ -15,7 +15,10 @@ export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> =>
         return promise;
     };
 
-    const emit = async <K extends keyof TEvents & string>(event: K, payload: TEvents[K]): Promise<void> => {
+    const emit = async <TEventName extends keyof TEvents & string>(
+        event: TEventName,
+        payload: TEvents[TEventName],
+    ): Promise<void> => {
         const snapshot = registry.getSnapshot(event);
         if (snapshot.eventHandlers.length === 0 && snapshot.anyHandlers.length === 0) {
             return;
@@ -31,9 +34,8 @@ export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> =>
                     if (result instanceof Promise) {
                         promises.push(result);
                     }
-                } catch (err) {
-                    // Log but do not interrupt other handlers
-                    console.error(`Error in event handler for ${event}:`, err);
+                } catch (handlerError) {
+                    console.error(`Error in event handler for ${event}:`, handlerError);
                 }
             }
 
@@ -43,9 +45,8 @@ export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> =>
                     if (result instanceof Promise) {
                         promises.push(result);
                     }
-                } catch (err) {
-                    // Log but do not interrupt other handlers
-                    console.error(`Error in wildcard event handler for ${event}:`, err);
+                } catch (handlerError) {
+                    console.error(`Error in wildcard event handler for ${event}:`, handlerError);
                 }
             }
 

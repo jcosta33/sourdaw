@@ -1,6 +1,6 @@
 # Dependency Injection
 
-The `Container` class (at `src/helpers/DependencyInjector/Container.ts`) is a lightweight singleton registry that decouples business-layer code from its collaborators. It is the only supported way to share long-lived service instances across modules.
+The `Container` class (at `src/infra/di/Container.ts`) is a lightweight singleton registry that decouples business-layer code from its collaborators. It is the only supported way to share long-lived service instances across modules.
 
 ---
 
@@ -30,16 +30,15 @@ All dependencies registered in the Container are **singletons**. `register` over
 All registrations happen at bootstrap time — before any module code runs. Add your registration to the app's bootstrap file:
 
 ```typescript
-// src/bootstrap.ts
+// src/app/bootstrap.ts
 
-import { Container } from '#/helpers/DependencyInjector/Container';
+import { Container } from '#/infra/di/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { EventBus } from '#/helpers/Event/EventBus';
 
 const container = Container.getInstance();
 
 container.register(Logger, new Logger());
-container.register(EventBus, new EventBus());
+// EventBus is created via createEventBus<AppEvents>() in registerDependencies.ts — not a Container registration
 ```
 
 > [!IMPORTANT]
@@ -54,17 +53,20 @@ Resolve dependencies **at module scope**, outside any function body. This ensure
 ```typescript
 // Arrangement/useCases/addTrack.ts
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { EventBus } from '#/helpers/Event/EventBus';
+import { Container } from '#/infra/di/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { eventBus } from '#/app/bootstrap';
 
-const eventBus = Container.getInstance().get(EventBus);
 const logger = Container.getInstance().get(Logger);
 
-export async function addTrack({ projectId, name, kind }: AddTrackInput): Promise<Track> {
-    const track = await createTrackApi({ projectId, name, kind });
+export function addTrack({ name, kind }: AddTrackInput): Track | null {
+    const state = getTrackState();
+    if (!state) return null;
 
-    eventBus.emit(new TrackAddedEvent({ trackId: track.id, name: track.name, kind: track.kind }));
+    const track = createTrack({ name, kind });
+    setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
+
+    void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
     logger.info(`Track added: ${track.id}`);
 
     return track;
@@ -83,15 +85,13 @@ The same pattern applies to repositories, stores, and any other business-layer f
 ```typescript
 // Workspace/presentations/hooks/useFlagSubscription.ts
 import { useEffect, useEffectEvent } from 'react';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { EventBus } from '#/helpers/Event/EventBus';
+import { eventBus } from '#/app/bootstrap';
 
 export const useFlagSubscription = (callback: () => void) => {
     const onFlagsFetched = useEffectEvent(callback);
 
     useEffect(() => {
-        const eventBus = Container.getInstance().get(EventBus);
-        const unsubscribe = eventBus.on(FlagsFetchedEvent, () => {
+        const unsubscribe = eventBus.on('flags.fetched', () => {
             onFlagsFetched();
         });
 
@@ -127,21 +127,19 @@ In tests, use `vi.mock` to substitute the concrete dependency at the module leve
 
 import { addTrack } from './addTrack';
 
-vi.mock('#/helpers/Event/EventBus', () => import('../_tests/getEventBus.mock'));
-vi.mock('../repositories/addTrackApi');
+vi.mock('#/app/bootstrap', () => ({
+    eventBus: { emit: vi.fn().mockResolvedValue(undefined), on: vi.fn() },
+}));
 
 describe('addTrack', () => {
     beforeEach(() => {
         vi.resetAllMocks();
     });
 
-    it('should emit TrackAddedEvent after successful creation', async () => {
-        const mockTrack = TrackDummy.create();
-        vi.mocked(addTrackApi).mockResolvedValue(mockTrack);
+    it('should emit track.added after successful creation', () => {
+        const result = addTrack({ name: 'Drums', kind: 'audio' });
 
-        await addTrack({ projectId: 'proj-1', name: 'Drums', kind: 'audio' });
-
-        expect(emitMock).toHaveBeenCalledWith(expect.any(TrackAddedEvent));
+        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
     });
 });
 ```
@@ -149,7 +147,7 @@ describe('addTrack', () => {
 If a test genuinely needs to replace a Container registration (e.g. to test bootstrap logic), use `container.reset()` in `afterEach` to avoid state leaking between tests:
 
 ```typescript
-import { Container } from '#/helpers/DependencyInjector/Container';
+import { Container } from '#/infra/di/Container';
 
 afterEach(() => {
     Container.getInstance().reset();

@@ -92,7 +92,7 @@ function warn(msg) {
 }
 
 async function loadAdapter(agentName) {
-    const allowed = ['claude', 'gemini', 'codex'];
+    const allowed = ['claude', 'gemini', 'codex', 'kimi'];
     if (!allowed.includes(agentName)) {
         die(`Unknown agent "${agentName}". Supported: ${allowed.join(', ')}`);
     }
@@ -142,7 +142,7 @@ function formatTable(rows, cols) {
     return [header, sep, ...body].join('\n');
 }
 
-const KNOWN_AGENTS = ['claude', 'gemini', 'codex'];
+const KNOWN_AGENTS = ['claude', 'gemini', 'codex', 'kimi'];
 
 // ─── Config loaders ──────────────────────────────────────────────────────────
 

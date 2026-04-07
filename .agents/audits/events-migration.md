@@ -10,31 +10,31 @@ The purpose of this audit is to track the migration from the legacy event infras
 - The global string-based `APP_EVENTS` constant removed; replaced by typed `emit()` and `on()` calls using the new `EventBus`.
 
 ## Current State
-The legacy infrastructure in `src/helpers/Event` is still heavily used across the application. It relies on a class-based `EventBus`, a class-based `DomainEvent` wrapper, and an untyped global `APP_EVENTS` constant string map. The new typed infrastructure has been implemented in `src/infra/events/` but has not yet been adopted by the consumer modules.
+The new typed event infrastructure (`src/infra/events/`) has been adopted for the core domain events. The global `EventBus` in `app/registerDependencies.ts` now uses `createEventBus<AppEvents>()`. Domain events (`TrackAddedEvent`, `TrackRemovedEvent`, `AudioDeviceLoadedEvent`) have been migrated from `DomainEvent` classes to plain typed payloads. All emit/subscribe call sites for these events use the new string-key API (`eventBus.emit('track.added', payload)` / `eventBus.on('track.added', handler)`). The remaining legacy piece is the `APP_EVENTS` constant used for DOM-level UI events.
 
 ## Findings
-- **Classes vs Plain Objects:** Domain events (`TrackAddedEvent`, `TrackRemovedEvent`, `AudioDeviceLoadedEvent`) are still extending the old `DomainEvent` class instead of being plain typed objects defined in an `EventMap`.
-- **Global Event Constants:** The `APP_EVENTS` constant is being used across multiple modules (Command, Workspace, helpers) to trigger untyped UI or application events.
-- **Dependency Injection:** The old `EventBus` class is being registered in `app/registerDependencies.ts` and injected into modules.
+- ~~**Classes vs Plain Objects:** Domain events are now plain typed payloads.~~ **RESOLVED**
+- **Global Event Constants:** The `APP_EVENTS` constant is still being used across multiple modules (Command, Workspace, helpers) to trigger untyped UI or application events.
+- ~~**Dependency Injection:** The old `EventBus` class has been replaced with `createEventBus<AppEvents>()`.~~ **RESOLVED**
 
 ## Priorities
-1. **Migrate `DomainEvent` classes to plain types:** This establishes the `EventMap` payload shapes needed for the new `EventBus`.
-2. **Replace `EventBus` in DI:** Swap the legacy `EventBus` class with `createEventBus()` in `app/registerDependencies.ts` and update consumer injections.
-3. **Eliminate `APP_EVENTS`:** Refactor components and use cases to use typed event names and payloads via the new `EventBus` instead of the global `APP_EVENTS` constant.
+1. ~~**Migrate `DomainEvent` classes to plain types.**~~ **DONE** — `TrackAddedEvent`, `TrackRemovedEvent`, `AudioDeviceLoadedEvent` are now plain payload types.
+2. ~~**Replace `EventBus` in DI.**~~ **DONE** — `app/registerDependencies.ts` now uses `createEventBus<AppEvents>()`.
+3. **Eliminate `APP_EVENTS`:** Refactor components and use cases to use typed event names and payloads via the new `EventBus` instead of the global `APP_EVENTS` constant. This is a larger change touching ~7 files that use `document.dispatchEvent`/`addEventListener` with `sourdaw:*` strings.
 
 ## Issues
 
-### 1. Legacy `EventBus` usages
-**Needed:** Replace imports of `#/helpers/Event/EventBus` with the new `EventBus` type from `#/infra/events/types` and instantiate using `createEventBus<TEventMap>()` from `#/infra/events/createEventBus`. Update `emit`, `subscribe`/`on` call sites to match the new API (e.g., removing `subscribe()` or `off()` in favor of the `on()` return function).
-- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts:13`
-- `src/modules/Toaster/useCases/toasterSubscriber.ts:1`
-- `src/app/registerDependencies.ts:4`
+### ~~1. Legacy `EventBus` usages~~ — RESOLVED
+All three files now use the new `createEventBus<AppEvents>()` bus imported from `#/app/registerDependencies` or `#/app/bootstrap`:
+- ~~`src/modules/AudioEngine/engine/wasmDeviceRegistry.ts`~~ — imports `eventBus` from `#/app/bootstrap`
+- ~~`src/modules/Toaster/useCases/toasterSubscriber.ts`~~ — imports `eventBus` from `#/app/registerDependencies`
+- ~~`src/app/registerDependencies.ts`~~ — creates `eventBus` via `createEventBus<AppEvents>()`
 
-### 2. Legacy `DomainEvent` class usages
-**Needed:** Remove `DomainEvent` inheritance. Define plain object payloads inside a module-specific `EventMap` type.
-- `src/modules/AudioEngine/events/AudioDeviceLoadedEvent.ts:1`
-- `src/modules/Arrangement/events/TrackRemovedEvent.ts:1`
-- `src/modules/Arrangement/events/TrackAddedEvent.ts:1`
+### ~~2. Legacy `DomainEvent` class usages~~ — RESOLVED
+All three event files are now plain typed payload exports:
+- ~~`src/modules/AudioEngine/events/AudioDeviceLoadedEvent.ts`~~ → `AudioDeviceLoadedPayload`
+- ~~`src/modules/Arrangement/events/TrackRemovedEvent.ts`~~ → `TrackRemovedPayload`
+- ~~`src/modules/Arrangement/events/TrackAddedEvent.ts`~~ → `TrackAddedPayload`
 
 ### 3. Legacy `APP_EVENTS` string map usages
 **Needed:** Remove `APP_EVENTS` imports. Define these events in the appropriate module's `EventMap` and emit/listen to them via the injected `EventBus`.
@@ -56,10 +56,11 @@ The legacy infrastructure in `src/helpers/Event` is still heavily used across th
 - **API Drift:** The legacy bus uses `subscribe` or separate `off` methods. Mixing both APIs in the codebase increases cognitive load and causes friction when moving between modules.
 
 ## Suggested Approaches
-- **Phase 1 (Payloads):** For modules defining `DomainEvent` classes, create an `EventMap` type (e.g., `ArrangementEvents`) that maps the event string (e.g., `'track:added'`) to its payload type.
-- **Phase 2 (Infrastructure):** In `app/registerDependencies.ts`, instantiate a bus via `createEventBus<GlobalEventMap>()` (or module-specific buses depending on the DI design) and register it in place of the old class.
-- **Phase 3 (Call Sites):** Update all `eventBus.emit(new TrackAddedEvent(track))` calls to `eventBus.emit('track:added', { track })`.
-- **Phase 4 (Cleanup):** Delete the entire `src/helpers/Event` directory once all usages are migrated.
+- ~~**Phase 1 (Payloads):**~~ **DONE** — Domain event classes converted to plain payload types.
+- ~~**Phase 2 (Infrastructure):**~~ **DONE** — `app/registerDependencies.ts` uses `createEventBus<AppEvents>()`.
+- ~~**Phase 3 (Call Sites):**~~ **DONE** — All `eventBus.emit(new Event(...))` calls converted to `void eventBus.emit('event.name', payload)`.
+- **Phase 4 (Cleanup):** Delete the entire `src/helpers/Event` directory once `APP_EVENTS` (Issue 3) is migrated. The legacy `EventBus` class, `DomainEvent` class, and `eventLogHelpers` are no longer used by the migrated code, but may still have references from `APP_EVENTS` consumers.
 
 ## Resolved
-- None yet.
+- **Issue 1 — Legacy `EventBus` usages** (2026-04-07): All three files migrated to new `createEventBus<AppEvents>()` API.
+- **Issue 2 — Legacy `DomainEvent` class usages** (2026-04-07): All three event files converted to plain typed payloads.

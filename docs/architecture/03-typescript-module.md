@@ -307,7 +307,7 @@ export const moveClip = (input: MoveClipInput): void => {
 
   projectStore.set(...);
 
-  eventBus.emit(new ClipMovedEvent(...));
+  void eventBus.emit('clip.moved', { clipId: input.clipId });
 };
 ```
 
@@ -527,7 +527,7 @@ Transformers are not mini-services with hidden behavior.
 
 ## 4.10 Dependency injection with `inject()`
 
-Use cases and other injectable functions declare their dependencies explicitly using `inject()` from `#/helpers/DependencyInjector/inject`. This is the canonical DI mechanism for the business layer.
+Use cases and other injectable functions declare their dependencies explicitly using `inject()` from `#/infra/di/inject`. This is the canonical DI mechanism for the business layer.
 
 ### Why `inject()`
 
@@ -535,46 +535,45 @@ Use cases need to call repositories, event buses, loggers, and other services. T
 
 - **Direct imports** — the function imports its collaborators by name. Simple, but impossible to swap in tests without module-level mocking.
 - **`Container.getInstance().get(Token)`** — call the container from inside the function. Works, but scatters resolution logic and makes dependencies implicit. Also: if called at module top-level, the read races with bootstrap order.
-- **`inject()`** — declare dependencies as a map at the top of the file; the factory receives them as an argument. Dependencies are explicit, testable, and resolved from the container **at call time** (not import time).
+- **`inject(deps)(factory)`** — curried DI wrapper. Declare dependencies as a map in the first call; the factory in the second call receives them as an argument. Dependencies are explicit, testable, and resolved from the container **at call time** (not import time). TypeScript gets two inference sites for better type resolution.
 
 `inject()` is the preferred pattern. It is what `injectDependencies()` (the test helper) expects, and it sidesteps the import-time-ordering trap.
 
 ### Shape
 
 ```typescript
-import { inject } from '#/helpers/DependencyInjector/inject';
-import { EventBus } from '#/helpers/Event/EventBus';
+import { inject } from '#/infra/di/inject';
 import { Logger } from '#/helpers/Logger/Logger';
 import { TrackRepo } from '../repositories/TrackRepo';
-import { TrackAddedEvent } from '../events/TrackAddedEvent';
 import { createTrack } from '../models/Track';
+import { eventBus } from '#/app/bootstrap';
 
 type AddTrackInput = { name: string; kind: TrackKind };
 
 export const addTrack = inject(
-    { eventBus: EventBus, logger: Logger, trackRepo: TrackRepo },
-    ({ eventBus, logger, trackRepo }) =>
-        (input: AddTrackInput): Track | null => {
-            const state = trackRepo.getState();
-            if (state === null) {
-                logger.log('addTrack called before store was ready');
-                return null;
-            }
-            const track = createTrack(input);
-            trackRepo.setState({
-                ...state,
-                tracks: [...state.tracks, track],
-                selectedTrackId: track.id,
-            });
-            eventBus.emit(new TrackAddedEvent({ trackId: track.id, name: track.name, kind: track.kind }));
-            return track;
+    { logger: Logger, trackRepo: TrackRepo },
+)(({ logger, trackRepo }) =>
+    (input: AddTrackInput): Track | null => {
+        const state = trackRepo.getState();
+        if (state === null) {
+            logger.log('addTrack called before store was ready');
+            return null;
         }
+        const track = createTrack(input);
+        trackRepo.setState({
+            ...state,
+            tracks: [...state.tracks, track],
+            selectedTrackId: track.id,
+        });
+        void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+        return track;
+    }
 );
 ```
 
 At call time, `addTrack(input)` resolves each dependency from the `Container` and invokes the factory with the resolved map. The caller writes `addTrack(input)` — they do not see or touch the dependency map.
 
-**The factory must return a function** (the invoker). When you call the injectable, the wrapper calls the invoker with your args. Objects/services flow into the injectable via the dependency map, not as the factory's return.
+**The factory must return a function** (the invoker). The curried API is `inject(deps)(factory)` — the first call takes the dependency map, the second takes the factory. Objects/services flow into the injectable via the dependency map, not as the factory's return.
 
 ### Dependency map values
 
@@ -625,7 +624,7 @@ In dev and test, `Container.get()` throws if the token is not registered. In pro
 
 ### Testing injectables
 
-In tests, call `injectDependencies(injectable, mocks)` from `#/helpers/Testing/injectDependencies` to register a complete mock for every dependency. Use `spy<T>()` from `#/helpers/Testing/spy` to build typed method-level spies. See `docs/06-testing.md §5` for the canonical test shape.
+In tests, call `injectDependencies(injectable, mocks)` from `#/infra/di/testing/injectDependencies` to register a complete mock for every dependency. Use `spy<T>()` from `#/infra/di/testing/spy` to build typed method-level spies. See `docs/06-testing.md §5` for the canonical test shape.
 
 ---
 
@@ -863,7 +862,7 @@ Use when:
 Example:
 
 ```typescript
-eventBus.emit(new TrackAddedEvent(...));
+void eventBus.emit('track.added', { trackId, name, kind });
 ```
 
 ## 7.3 Pattern C: shared store / selector read
@@ -1150,7 +1149,7 @@ export const saveProject = (): void => {
   const state = projectStore.value!;
   validateProjectBeforeSave(state);
   saveProjectToStorage(state);
-  eventBus.emit(new ProjectSavedEvent(...));
+  void eventBus.emit('project.saved', { projectId: state.id });
 };
 
 // repositories/saveProjectToStorage.ts

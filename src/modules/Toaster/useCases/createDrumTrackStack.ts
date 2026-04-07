@@ -16,7 +16,6 @@ import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStore
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
 import { eventBus } from '#/app/bootstrap';
-import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
 
 export function createDrumTrackStack(): string | null {
     const state = getTrackStoreState();
@@ -61,7 +60,7 @@ export function createDrumTrackStack(): string | null {
     // Wire the Toaster device into the audio engine
     addDeviceToStrip(parent.id, toasterId, 'toaster');
 
-    eventBus.emit(new TrackAddedEvent({ trackId: parent.id, name: parent.name, kind: parent.kind }));
+    void eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
 
     return parent.id;
 }

@@ -10,8 +10,7 @@
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { EventBus } from '#/helpers/Event/EventBus';
-import { AudioDeviceLoadedEvent } from '../events/AudioDeviceLoadedEvent';
+import { eventBus } from '#/app/bootstrap';
 
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
@@ -36,7 +35,6 @@ import {
 import { setEngineReady } from '#/modules/Levain/stores/levainStore';
 
 const logger = Container.getInstance().get(Logger);
-const eventBus = Container.getInstance().get(EventBus);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,7 +143,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit(new AudioDeviceLoadedEvent({ deviceId, deviceType }));
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
             .catch((err) => logger.warn(`[WebAudioEngine] Toaster failed: ${err}`));
         return { placeholder, loadPromise };

@@ -11,17 +11,17 @@ export type AppError<
 
 export const createAppError = <
     TTag extends string,
-    TData extends Record<string, unknown> = Record<string, unknown>
+    TData extends Record<string, unknown> = Record<string, unknown>,
 >(
     tag: TTag,
     message: string,
     data?: TData,
-    cause?: unknown
+    cause?: unknown,
 ): AppError<TTag, TData> => {
     return {
         _tag: tag,
         message,
-        cause,
         ...(data ?? ({} as TData)),
+        ...(cause !== undefined ? { cause } : {}),
     };
 };

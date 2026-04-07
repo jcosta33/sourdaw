@@ -1,12 +1,12 @@
 # Events
 
-Cross-module communication via domain events enables loose coupling. This guide explains how to define, publish, and subscribe to events. The base classes and APIs documented here match `src/helpers/Event/DomainEvent.ts` and `src/helpers/Event/EventBus.ts`. Event payloads often inform cache invalidations or UI updates in TanStack Query and [state management](./03-state-management.md).
+Cross-module communication via domain events enables loose coupling. This guide explains how to define, publish, and subscribe to events. The event infrastructure lives in `src/infra/events/` and is built around `createEventBus<TEventMap>()` — a fully typed, functional event bus. Event payloads often inform cache invalidations or UI updates in [state management](./03-state-management.md).
 
 ## Core workflow
 
 The process of using events follows three main steps:
 
-1. **[Define an Event](#1-define-the-event)**: Create a strongly-typed event class that represents a specific domain occurrence.
+1. **[Define an Event](#1-define-the-event)**: Define a typed payload in the app's `EventMap`.
 2. **[Publish an Event](#2-publish-the-event)**: Emit the event from a use case after a business operation completes.
 3. **[Subscribe to an Event](#3-subscribe-to-the-event)**: Listen for the event in other modules to trigger side effects, such as cache updates or analytics tracking.
 
@@ -38,41 +38,46 @@ graph TB
 
 ### 1. Define the event
 
-Define domain events with a clear type structure and follow consistent naming conventions.
+Events are plain typed payloads defined in the app's `AppEvents` map. Each event is a string key mapped to a payload type.
 
-#### Event definition
+#### Event map and payload definition
 
-Define domain events with clear type structure:
+All event payloads are defined as plain types in module `events/` folders, then assembled into the central `AppEvents` map:
 
 ```typescript
-// src/helpers/Event/DomainEvent.ts
-export abstract class DomainEvent<TPayload = unknown> {
-    // readonly payload: TPayload
-    // readonly timestamp: number (milliseconds)
-}
+// Arrangement/events/TrackAddedEvent.ts
+export type TrackAddedPayload = { trackId: string; name: string; kind: string };
 
-// Track/events/TrackAddedEvent.ts
-export class TrackAddedEvent extends DomainEvent<{ trackId: string; name: string; kind: 'audio' | 'midi' }> {
-    constructor(payload: TrackAddedEvent['payload']) {
-        super(payload);
-    }
-}
+// Arrangement/events/TrackRemovedEvent.ts
+export type TrackRemovedPayload = { trackId: string };
+
+// app/registerDependencies.ts
+import { createEventBus } from '#/infra/events/createEventBus';
+import { type TrackAddedPayload } from '#/modules/Arrangement/events/TrackAddedEvent';
+import { type TrackRemovedPayload } from '#/modules/Arrangement/events/TrackRemovedEvent';
+
+export type AppEvents = {
+    'track.added': TrackAddedPayload;
+    'track.removed': TrackRemovedPayload;
+};
+
+export const eventBus = createEventBus<AppEvents>();
 ```
 
 #### Event naming conventions
 
-Follow consistent naming patterns for clarity, using verbs in their past tense form at the end of each event name:
+Use `noun.pastTense` dot-separated string keys for clarity:
 
 ```typescript
 // ✅ Clear, descriptive names
-export class TransportStartedEvent extends DomainEvent<TransportStartedPayload> {}
-export class PluginLoadedEvent extends DomainEvent<PluginLoadedPayload> {}
-export class TrackMutedEvent extends DomainEvent<TrackMutedPayload> {}
+'transport.started'
+'plugin.loaded'
+'track.muted'
 
 // ❌ Vague or unclear names
-export class TransportEvent extends DomainEvent<TransportPayload> {}
-export class UpdateEvent extends DomainEvent<UpdatePayload> {}
-export class DataChangedEvent extends DomainEvent<DataPayload> {}
+'transport'
+'update'
+'data.changed'
 ```
 
 ### 2. Publish the event
@@ -81,31 +86,25 @@ Publish events from business operations, typically at the end of a use case afte
 
 #### Publishing from use cases
 
-Publish events from business operations:
-
 ```typescript
-// Track/useCases/addTrack.ts
+// Arrangement/useCases/addTrack.ts
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { EventBus } from '#/helpers/Event/EventBus';
+import { eventBus } from '#/app/bootstrap';
 
-const eventBus = Container.getInstance().get(EventBus);
+export function addTrack(input: AddTrackInput): Track | null {
+    const state = getTrackState();
+    if (!state) return null;
 
-export async function addTrack({ projectId, name, kind }: AddTrackInput): Promise<Track> {
-    const track = await createTrackApi({ projectId, name, kind });
+    const track = createTrack(input);
+    setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
 
-    // Publish domain event
-    eventBus.emit(
-        new TrackAddedEvent({
-            trackId: track.id,
-            name: track.name,
-            kind: track.kind,
-        })
-    );
-
+    void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
     return track;
 }
 ```
+
+> [!IMPORTANT]
+> `eventBus.emit()` returns `Promise<void>`. Prefix with `void` to satisfy `@typescript-eslint/no-floating-promises`.
 
 When publishing events, ensure the payload contains sufficient, immutable context so that subscribers can act on the event without needing to make additional API calls to fetch related data.
 
@@ -115,44 +114,37 @@ Subscribe to events in other domains to trigger side effects, such as updating a
 
 #### Cross-module event handling
 
-Subscribe to events from other domains:
+Subscribe to events from other domains. The `on()` method returns an unsubscribe function:
 
 ```typescript
 // Mixer/useCases/trackEventHandlers.ts
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { EventBus } from '#/helpers/Event/EventBus';
+import { eventBus } from '#/app/bootstrap';
 
-const eventBus = Container.getInstance().get(EventBus);
+export function initMixerSubscribers(): () => void {
+    const unsubscribe = eventBus.on('track.added', (payload) => {
+        // payload is typed as TrackAddedPayload — no .payload wrapper
+        const store = getMixerTracksStore();
+        store.update((current) => [...(current ?? []), payload]);
+    });
 
-export async function handleTrackAdded(event: TrackAddedEvent): Promise<void> {
-    // Update the mixer tracks store so the new track fader appears
-    const store = getMixerTracksStore();
-    store.update((current) => [...(current ?? []), event.payload]);
+    return unsubscribe;
 }
-
-// Register event handlers
-eventBus.on(TrackAddedEvent, handleTrackAdded);
 ```
 
 #### Creating reusable subscription helpers
 
-For events that are frequently subscribed to, you can create a reusable helper function. This encapsulates the subscription logic and makes it easy to use in different parts of the application, especially in React hooks.
+For events that are frequently subscribed to, you can create a reusable helper function:
 
 ```ts
 // Common/Flags/useCases/subscribeToFlagsFetchedEvent.ts
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { EventBus } from '#/helpers/Event/EventBus';
-import { FlagsFetchedEvent } from '../events/FlagsFetchedEvent';
+import { eventBus } from '#/app/bootstrap';
 
-const eventBus = Container.getInstance().get(EventBus);
+type Callback = (flags: FlagsFetchedPayload) => void;
 
-type SubscribeToFlagsFetchedEventCallback = (flags: FlagsFetchedEvent['payload']) => void;
-type Unsubscribe = () => void;
-
-export function subscribeToFlagsFetchedEvent(callback: SubscribeToFlagsFetchedEventCallback): Unsubscribe {
-    return eventBus.on(FlagsFetchedEvent, (event) => {
-        callback(event.payload);
+export function subscribeToFlagsFetchedEvent(callback: Callback): () => void {
+    return eventBus.on('flags.fetched', (payload) => {
+        callback(payload);
     });
 }
 ```
@@ -165,26 +157,26 @@ The following example illustrates the anti-pattern and its fix. Note the use of 
 ```typescript
 // FeatureFlags/presentations/hooks/useFlagSubscription.ts
 
-// ❌ Bad: inject will fail after minification
+// ❌ Bad: eventBus at module scope in a hook file
+import { eventBus } from '#/app/bootstrap';
+
 export const useFlagSubscription = (callback: () => void) => {
     useEffect(() => {
-        const subscribe = inject({ eventBus: EventBus }, ({ eventBus }) => {
-            return eventBus.on(FlagsFetchedEvent, callback);
-        });
-
-        return subscribe();
+        return eventBus.on('flags.fetched', callback);
     }, [callback]);
 };
 
-// ✅ Good: useEffectEvent + Container.getInstance()
+// ✅ Good: useEffectEvent + resolve inside useEffect
 import { useEffect, useEffectEvent } from 'react';
+import { Container } from '#/infra/di/Container';
+import { EventBus } from '#/infra/events/types';
 
 export const useFlagSubscription = (callback: () => void) => {
     const onFlagsFetched = useEffectEvent(callback);
 
     useEffect(() => {
         const eventBus = Container.getInstance().get(EventBus);
-        const unsubscribe = eventBus.on(FlagsFetchedEvent, () => {
+        const unsubscribe = eventBus.on('flags.fetched', () => {
             onFlagsFetched();
         });
 
@@ -199,30 +191,23 @@ export const useFlagSubscription = (callback: () => void) => {
 
 #### Event handler organization
 
-Structure event handlers for maintainability:
+Structure event handlers for maintainability. Each registration function returns an unsubscribe callback:
 
 ```typescript
 // AiRuntime/useCases/registerAiEventHandlers.ts
 
-export function registerAiEventHandlers(eventBus: EventBus): () => void {
-    // Track activity events
-    eventBus.on(TrackAddedEvent, syncAiTrackContext);
-    eventBus.on(TrackRemovedEvent, removeAiTrackContext);
+import { eventBus } from '#/app/bootstrap';
 
-    // Transport interaction events
-    eventBus.on(TransportStartedEvent, handleTransportPlay);
-    eventBus.on(TransportStoppedEvent, handleTransportStop);
+export function registerAiEventHandlers(): () => void {
+    const unsubs = [
+        eventBus.on('track.added', syncAiTrackContext),
+        eventBus.on('track.removed', removeAiTrackContext),
+        eventBus.on('transport.started', handleTransportPlay),
+        eventBus.on('transport.stopped', handleTransportStop),
+        eventBus.on('plugin.loaded', analyzeNewPluginParameters),
+    ];
 
-    // Audio engine events
-    eventBus.on(PluginLoadedEvent, analyzeNewPluginParameters);
-
-    return () => {
-        eventBus.off(TrackAddedEvent, syncAiTrackContext);
-        eventBus.off(TrackRemovedEvent, removeAiTrackContext);
-        eventBus.off(TransportStartedEvent, handleTransportPlay);
-        eventBus.off(TransportStoppedEvent, handleTransportStop);
-        eventBus.off(PluginLoadedEvent, analyzeNewPluginParameters);
-    };
+    return () => unsubs.forEach((unsub) => unsub());
 }
 ```
 
@@ -230,62 +215,52 @@ export function registerAiEventHandlers(eventBus: EventBus): () => void {
 
 For a complete guide on our testing philosophy and patterns, see the [testing](./06-testing.md) documentation. The following examples show patterns specific to event-driven architectures.
 
+The infra provides test helpers in `#/infra/events/testing/`:
+- `recordEvents(bus)` — records all events emitted on the bus; access `.entries` to inspect
+
 ### Event handler testing
 
-Test event handlers in isolation:
+Test event handlers in isolation using `createEventBus()`:
 
 ```typescript
 // Mixer/useCases/trackEventHandlers.spec.ts
+import { createEventBus } from '#/infra/events/createEventBus';
 
-vi.mock('@tanstack/react-query');
+describe('initMixerSubscribers', () => {
+    it('should update the mixer store when track.added fires', async () => {
+        const bus = createEventBus<AppEvents>();
+        // wire up the subscriber against the test bus
+        initMixerSubscribers(bus);
 
-describe('handleTrackAdded', () => {
-    it('invalidates mixer tracks query when a track is added', async () => {
-        // Arrange
-        const queryClientMock = { invalidateQueries: vi.fn() };
+        await bus.emit('track.added', { trackId: 'track-456', name: 'Bass', kind: 'audio' });
 
-        const event = new TrackAddedEvent({
-            projectId: 'proj-123',
-            trackId: 'track-456',
-            name: 'Bass',
-            kind: 'audio',
-        });
-
-        // Act
-        await handleTrackAdded(event);
-
-        // Assert
-        expect(queryClientMock.invalidateQueries).toHaveBeenCalledTimes(1);
-        expect(queryClientMock.invalidateQueries).toHaveBeenCalledWith({
-            queryKey: ['mixer-tracks', 'proj-123'],
-        });
+        expect(getMixerTracksStore().value).toContainEqual(
+            expect.objectContaining({ trackId: 'track-456' })
+        );
     });
 });
 ```
 
 ### Event publishing testing
 
-Test event publishing from use cases:
+Test event publishing from use cases using `recordEvents`:
 
 ```typescript
 // Track/useCases/addTrack.spec.ts
+import { createEventBus } from '#/infra/events/createEventBus';
+import { recordEvents } from '#/infra/events/testing/recordEvents';
 
 describe('addTrack', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-    });
+    it('should emit track.added after successful creation', async () => {
+        const bus = createEventBus<AppEvents>();
+        const recorder = recordEvents(bus);
 
-    it('publishes TrackAddedEvent after successful creation', async () => {
-        const track = TrackDummy.create({ id: 'track-123', name: 'Vocals', kind: 'audio' });
-        vi.mocked(createTrackApi).mockResolvedValue(track);
+        addTrack({ name: 'Vocals', kind: 'audio' });
 
-        await addTrack({
-            projectId: 'proj-123',
-            name: 'Vocals',
-            kind: 'audio',
-        });
-
-        expect(eventBus.emit).toHaveBeenCalledWith(expect.any(TrackAddedEvent));
+        expect(recorder.entries).toContainEqual(
+            expect.objectContaining({ event: 'track.added', payload: expect.objectContaining({ name: 'Vocals' }) })
+        );
+        recorder.stop();
     });
 });
 ```
@@ -295,20 +270,18 @@ describe('addTrack', () => {
 Include sufficient context for event handlers:
 
 ```typescript
-// Project/events/ProjectSettingsChangedEvent.ts
-
 // ✅ Event provides rich context, enabling subscribers to act without needing to perform additional lookups.
-export class ProjectSettingsChangedEvent extends DomainEvent<{
+export type ProjectSettingsChangedPayload = {
     readonly projectId: string;
     readonly previousBpm: number;
     readonly newBpm: number;
     readonly sampleRate: number;
     readonly changedBy: string;
-}> {}
+};
 
 // ❌ Minimal context requires additional lookups
-export class ProjectSettingsChangedEvent extends DomainEvent<{
+export type ProjectSettingsChangedPayload = {
     readonly projectId: string;
     readonly newBpm: number;
-}> {}
+};
 ```

@@ -1,8 +1,8 @@
-export type DependencyKey<T> = (new (...args: any[]) => T) | symbol | string | Function;
+export type DependencyKey<TValue> = (new (...args: any[]) => TValue) | symbol | string;
 
 export type ContainerApi = {
-    register<T>(token: DependencyKey<T>, value: T): void;
-    set<T>(token: DependencyKey<T>, value: T): void;
-    get<T>(token: DependencyKey<T>): T;
+    register<TValue>(token: DependencyKey<TValue>, value: TValue): void;
+    set<TValue>(token: DependencyKey<TValue>, value: TValue): void;
+    get<TValue>(token: DependencyKey<TValue>): TValue;
     clear(): void;
 };

@@ -185,8 +185,8 @@ In the legacy architecture, these contract folders are:
 
 ```text
 useCases/              → business operations + exported DTOs
-events/                → DomainEvent subclasses
-errors/                → AppError subclasses
+events/                → typed event payload types (plain objects in AppEvents map)
+errors/                → AppError values (created via createAppError from #/infra/errors)
 stores/                → Store<T> instances (business-layer, cross-module)
 presentations/views/   → composable UI entry points
 ```

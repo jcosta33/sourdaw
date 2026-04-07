@@ -4,18 +4,20 @@ export const createSubscriptionRegistry = <TEvents extends EventMap>() => {
     const handlers = new Map<keyof TEvents & string, Set<EventHandler<any>>>();
     const wildcardHandlers = new Set<WildcardHandler<TEvents>>();
 
-    const getHandlers = <K extends keyof TEvents & string>(event: K): Set<EventHandler<TEvents[K]>> => {
+    const getHandlers = <TEventName extends keyof TEvents & string>(
+        event: TEventName,
+    ): Set<EventHandler<TEvents[TEventName]>> => {
         let set = handlers.get(event);
         if (!set) {
             set = new Set();
             handlers.set(event, set);
         }
-        return set as Set<EventHandler<TEvents[K]>>;
+        return set as Set<EventHandler<TEvents[TEventName]>>;
     };
 
-    const off = <K extends keyof TEvents & string>(
-        event: K,
-        handler: EventHandler<TEvents[K]>
+    const off = <TEventName extends keyof TEvents & string>(
+        event: TEventName,
+        handler: EventHandler<TEvents[TEventName]>,
     ): void => {
         const set = handlers.get(event);
         if (set) {
@@ -23,19 +25,19 @@ export const createSubscriptionRegistry = <TEvents extends EventMap>() => {
         }
     };
 
-    const on = <K extends keyof TEvents & string>(
-        event: K,
-        handler: EventHandler<TEvents[K]>
+    const on = <TEventName extends keyof TEvents & string>(
+        event: TEventName,
+        handler: EventHandler<TEvents[TEventName]>,
     ): (() => void) => {
         getHandlers(event).add(handler);
         return () => off(event, handler);
     };
 
-    const once = <K extends keyof TEvents & string>(
-        event: K,
-        handler: EventHandler<TEvents[K]>
+    const once = <TEventName extends keyof TEvents & string>(
+        event: TEventName,
+        handler: EventHandler<TEvents[TEventName]>,
     ): (() => void) => {
-        const onceHandler: EventHandler<TEvents[K]> = (payload) => {
+        const onceHandler: EventHandler<TEvents[TEventName]> = (payload) => {
             off(event, onceHandler);
             return handler(payload);
         };
@@ -47,10 +49,10 @@ export const createSubscriptionRegistry = <TEvents extends EventMap>() => {
         return () => wildcardHandlers.delete(handler);
     };
 
-    const getSnapshot = <K extends keyof TEvents & string>(
-        event: K
+    const getSnapshot = <TEventName extends keyof TEvents & string>(
+        event: TEventName,
     ): {
-        eventHandlers: EventHandler<TEvents[K]>[];
+        eventHandlers: EventHandler<TEvents[TEventName]>[];
         anyHandlers: WildcardHandler<TEvents>[];
     } => {
         return {

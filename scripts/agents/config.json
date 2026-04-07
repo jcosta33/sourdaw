@@ -15,6 +15,10 @@
         "codex": {
             "command": "codex",
             "args": []
+        },
+        "kimi": {
+            "command": "kimi",
+            "args": []
         }
     },
     "reuseExistingByDefault": true,

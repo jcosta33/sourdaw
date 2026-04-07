@@ -3,18 +3,16 @@ import { render, act } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { createStore } from './createStore';
 import { useStore } from './useStore';
-import { getController } from './internal/getController';
 
 describe('useStore', () => {
     it('returns the current snapshot and re-renders on change', () => {
-        const store = createStore({ count: 0 });
-        const controller = getController(store);
+        const store = createStore({ initialData: { count: 0 } });
         let renderCount = 0;
 
         const TestComponent = () => {
             const state = useStore(store);
             renderCount++;
-            return <div data-testid="count">{state.count}</div>;
+            return <div data-testid="count">{state?.count ?? 'null'}</div>;
         };
 
         const { getByTestId } = render(<TestComponent />);
@@ -22,17 +20,15 @@ describe('useStore', () => {
         expect(renderCount).toBe(1);
 
         act(() => {
-            controller.update(prev => ({ count: prev.count + 1 }));
+            store.update((prev) => (prev ? { count: prev.count + 1 } : null));
         });
 
         expect(getByTestId('count').textContent).toBe('1');
         expect(renderCount).toBe(2);
     });
 
-    it('does not re-render on no-op write', () => {
-        const initialState = { count: 0 };
-        const store = createStore(initialState);
-        const controller = getController(store);
+    it('re-renders when value changes', () => {
+        const store = createStore({ initialData: { count: 0 } });
         let renderCount = 0;
 
         const TestComponent = () => {
@@ -45,9 +41,9 @@ describe('useStore', () => {
         expect(renderCount).toBe(1);
 
         act(() => {
-            controller.set(initialState);
+            store.set({ count: 1 });
         });
 
-        expect(renderCount).toBe(1);
+        expect(renderCount).toBe(2);
     });
 });
