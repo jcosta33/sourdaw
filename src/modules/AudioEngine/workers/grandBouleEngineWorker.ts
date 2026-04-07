@@ -34,6 +34,13 @@ const BLOCK_SIZE = 128;
  *  tries to stay this far ahead of the worklet's read position. */
 const TARGET_AHEAD = BLOCK_SIZE * 6; // ~16 ms at 48 kHz
 
+/** Zero-delay yield via MessageChannel. Posts a message to ourselves that
+ *  fires as a macrotask — after any pending onmessage handlers (MIDI events)
+ *  but without the artificial 1–4 ms floor that setTimeout imposes. */
+const yieldChannel = new MessageChannel();
+const scheduleRender = (): void => yieldChannel.port2.postMessage(null);
+yieldChannel.port1.onmessage = () => renderLoop();
+
 /** Map camelCase param names from TypeScript to snake_case for Rust. */
 const PARAM_MAP: Record<string, string> = {
     masterGain: 'master_gain',
@@ -77,7 +84,7 @@ function initEngine(
     instance = new GrandBouleInstance(sampleRate, 64);
     running = true;
     self.postMessage({ type: 'ready' });
-    renderLoop();
+    scheduleRender();
 }
 
 function renderLoop(): void {
@@ -118,9 +125,9 @@ function renderLoop(): void {
         Atomics.store(controlInts, WRITE_HEAD_IDX, writeHead + BLOCK_SIZE);
     }
 
-    // Yield to the event loop so we can process incoming MIDI messages,
-    // then resume rendering.
-    setTimeout(renderLoop, 1);
+    // Yield to the event loop so pending MIDI messages can be dispatched,
+    // then resume rendering via the MessageChannel macrotask.
+    scheduleRender();
 }
 
 function dispatch(msg: Record<string, unknown>): void {
