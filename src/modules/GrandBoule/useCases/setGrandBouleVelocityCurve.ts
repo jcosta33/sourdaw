@@ -7,9 +7,11 @@
  *   2.0 = expanded (requires stronger strikes for forte)
  */
 
+import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { grandBouleStore } from '../stores/grandBouleStore';
 
 type SetGrandBouleVelocityCurveInput = {
+    engine: GrandBouleEngineHandle;
     exponent: number;
 };
 
@@ -28,4 +30,6 @@ export const setGrandBouleVelocityCurve = (input: SetGrandBouleVelocityCurveInpu
             velocityCurve: clamped,
         },
     });
+
+    input.engine.setParam({ name: 'velocity_curve', value: clamped });
 };

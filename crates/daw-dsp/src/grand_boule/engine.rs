@@ -30,9 +30,30 @@ pub struct GrandBouleEngine {
     soundboard_send: f32,
     /// Send amount into the sympathetic bank (0..1).
     sympathetic_send: f32,
+    /// Hammer hardness offset from preset (-1..+1, 0 = neutral).
+    hammer_hardness_offset: f32,
+    /// Overall tone tilt from preset (-1..+1).
+    tone_tilt: f32,
+    /// Stereo width (0..1).
+    stereo_width: f32,
+    /// Velocity curve exponent (0.5 = compressed, 1.0 = linear, 2.0 = expanded).
+    velocity_curve: f32,
     sample_rate: f32,
     /// Active historical temperament.
     temperament: Temperament,
+    // --- Piano model parameters (morph system) ---
+    /// Hammer stiffness multiplier from piano model (0.5..2.0, 1.0 = neutral).
+    hammer_hardness_scale: f32,
+    /// Hammer mass multiplier from piano model (0.5..2.0, 1.0 = neutral).
+    hammer_mass_scale: f32,
+    /// Soundboard brightness: interpolates the soundboard drive amount (0..1).
+    soundboard_brightness: f32,
+    /// Sympathetic resonance level from piano model (0..1).
+    sympathetic_level: f32,
+    /// Soundboard body resonance strength from piano model (0..1).
+    body_resonance: f32,
+    /// Overall tone color offset from piano model (-1..+1).
+    tone_color: f32,
 }
 
 impl GrandBouleEngine {
@@ -49,11 +70,21 @@ impl GrandBouleEngine {
             sympathetic: Sympathetic::new(sample_rate),
             noise: MechanicalNoise::new(sample_rate),
             attack_samples: AttackSampleSet::new(),
-            master_gain: 0.5,
+            master_gain: 0.15,
             soundboard_send: 0.6,
             sympathetic_send: 0.25,
+            hammer_hardness_offset: 0.0,
+            tone_tilt: 0.0,
+            stereo_width: 0.6,
+            velocity_curve: 1.0,
             sample_rate,
             temperament: Temperament::Equal,
+            hammer_hardness_scale: 1.0,
+            hammer_mass_scale: 1.0,
+            soundboard_brightness: 0.55,
+            sympathetic_level: 0.5,
+            body_resonance: 0.6,
+            tone_color: 0.0,
         }
     }
 
@@ -84,19 +115,26 @@ impl GrandBouleEngine {
         let Some(key) = midi_to_key(midi_note) else {
             return;
         };
+        // Apply velocity curve shaping: v' = v^exponent.
+        let shaped_velocity = velocity.clamp(0.0, 1.0).powf(self.velocity_curve);
         // Apply historical temperament offset on top of the caller's pitch ratio.
         let temperament_cents = temperament_offset_cents(self.temperament, midi_note);
         let temperament_ratio = (2.0_f32).powf(temperament_cents / 1200.0);
         let combined_ratio = pitch_ratio * temperament_ratio;
-        let stiffness_scale = self.pedals.hammer_stiffness_scale();
+        // Combine una-corda pedal scale, preset hammer hardness offset, and
+        // piano model hammer scale. offset -1 → 0.5×, 0 → 1×, +1 → 2×.
+        let hardness_scale = (2.0_f32).powf(self.hammer_hardness_offset);
+        let stiffness_scale = self.pedals.hammer_stiffness_scale()
+            * hardness_scale
+            * self.hammer_hardness_scale;
         self.pedals.press_key(key);
-        self.noise.trigger(NoiseEvent::KeyDown, velocity);
-        self.noise.trigger(NoiseEvent::HammerLetoff, velocity);
+        self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
+        self.noise.trigger(NoiseEvent::HammerLetoff, shaped_velocity);
 
         // Retrigger the same voice if this note is already held.
         for voice in self.voices.iter_mut() {
             if !voice.is_idle() && voice.midi_note() == midi_note {
-                voice.note_on(midi_note, velocity, key, combined_ratio, stiffness_scale);
+                voice.note_on(midi_note, shaped_velocity, key, combined_ratio, stiffness_scale, self.hammer_mass_scale);
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
                 return;
             }
@@ -123,7 +161,7 @@ impl GrandBouleEngine {
                 .iter_mut()
                 .max_by_key(|voice| voice.age_samples());
             if let Some(voice) = oldest {
-                voice.note_on(midi_note, velocity, key, combined_ratio, stiffness_scale);
+                voice.note_on(midi_note, shaped_velocity, key, combined_ratio, stiffness_scale, self.hammer_mass_scale);
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
             }
             return;
@@ -132,7 +170,7 @@ impl GrandBouleEngine {
         if !voice.is_idle() {
             voice.begin_steal();
         }
-        voice.note_on(midi_note, velocity, key, combined_ratio, stiffness_scale);
+        voice.note_on(midi_note, shaped_velocity, key, combined_ratio, stiffness_scale, self.hammer_mass_scale);
         voice.arm_attack(key, self.attack_samples.length_for_key(key));
     }
 
@@ -214,7 +252,17 @@ impl GrandBouleEngine {
             "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
             "soundboard_send" => self.soundboard_send = value.clamp(0.0, 1.0),
             "sympathetic_send" => self.sympathetic_send = value.clamp(0.0, 1.0),
+            "hammer_hardness" => self.hammer_hardness_offset = value.clamp(-1.0, 1.0),
+            "tone_tilt" => self.tone_tilt = value.clamp(-1.0, 1.0),
+            "stereo_width" => self.stereo_width = value.clamp(0.0, 1.0),
+            "velocity_curve" => self.velocity_curve = value.clamp(0.5, 2.0),
             "temperament" => self.temperament = Temperament::from_u8(value as u8),
+            "hammer_hardness_scale" => self.hammer_hardness_scale = value.clamp(0.5, 2.0),
+            "hammer_mass_scale" => self.hammer_mass_scale = value.clamp(0.5, 2.0),
+            "soundboard_brightness" => self.soundboard_brightness = value.clamp(0.0, 1.0),
+            "sympathetic_level" => self.sympathetic_level = value.clamp(0.0, 1.0),
+            "body_resonance" => self.body_resonance = value.clamp(0.0, 1.0),
+            "tone_color" => self.tone_color = value.clamp(-1.0, 1.0),
             _ => {}
         }
     }
@@ -243,20 +291,39 @@ impl GrandBouleEngine {
                 bridge += mixed;
             }
 
-            // 2. Sympathetic bank lives on the bridge bus.
-            let sympathetic = self.sympathetic.tick(bridge) * self.sympathetic_send;
+            // 2. Sympathetic bank: combine preset send with model level.
+            let sym_amount = self.sympathetic_send * self.sympathetic_level * 2.0;
+            let sympathetic = self.sympathetic.tick(bridge) * sym_amount;
 
-            // 3. Soundboard receives bridge + sympathetic.
-            let (sb_l, sb_r) = self.soundboard.tick(bridge + sympathetic);
+            // 3. Soundboard receives bridge + sympathetic. Model body_resonance
+            //    scales the drive into the soundboard.
+            let sb_drive = bridge + sympathetic;
+            let (sb_l_raw, sb_r_raw) = self.soundboard.tick(sb_drive);
+            let body = self.body_resonance;
+            let sb_l = sb_l_raw * body;
+            let sb_r = sb_r_raw * body;
 
             // 4. Mechanical noise is summed at the output (noise-floor layer).
             let noise_sample = self.noise.tick();
 
             // 5. Dry voice signal + stereo soundboard + noise.
-            let dry = bridge * (1.0 - self.soundboard_send);
-            let sb_mix = self.soundboard_send;
-            let sample_l = (dry + sb_l * sb_mix + sympathetic + noise_sample) * self.master_gain;
-            let sample_r = (dry + sb_r * sb_mix + sympathetic + noise_sample) * self.master_gain;
+            // Combined tilt from preset tone_tilt and model tone_color.
+            // tone_tilt: -1..+1 from preset, tone_color: -1..+1 from model.
+            let combined_tilt = (self.tone_tilt + self.tone_color * 0.5).clamp(-1.0, 1.0);
+            let tilt_dry = (1.0 - self.soundboard_send) + combined_tilt * 0.5;
+            // soundboard_brightness scales how much the soundboard contributes.
+            let tilt_sb = self.soundboard_send * self.soundboard_brightness * 2.0
+                - combined_tilt * 0.5;
+            let mono = bridge * tilt_dry.clamp(0.0, 1.0)
+                + (sb_l + sb_r) * 0.5 * tilt_sb.clamp(0.0, 1.0)
+                + sympathetic
+                + noise_sample;
+            let side = (sb_l - sb_r) * 0.5 * tilt_sb.clamp(0.0, 1.0);
+
+            // Stereo width: 0 = mono, 1 = full stereo spread.
+            let w = self.stereo_width;
+            let sample_l = (mono + side * w) * self.master_gain;
+            let sample_r = (mono - side * w) * self.master_gain;
             left[frame] += sample_l;
             right[frame] += sample_r;
         }
@@ -362,5 +429,191 @@ mod tests {
         let mut engine = GrandBouleEngine::new(48_000.0, 2);
         engine.note_on_midi2(69, 0xFFFF, (50 << 24) / 100); // +0.5 semitone
         assert!(engine.voices.iter().any(|v| !v.is_idle()));
+    }
+
+    /// Verify that the full engine produces non-NaN audio for 5 seconds across
+    /// multiple notes and the sustain profile is reasonable.
+    #[test]
+    fn five_second_profile_is_nan_free() {
+        let sr = 48000.0_f32;
+        let mut engine = GrandBouleEngine::new(sr, 8);
+        // Play several notes across the range.
+        engine.note_on(36, 0.7); // C2
+        engine.note_on(60, 0.8); // C4
+        engine.note_on(69, 0.9); // A4
+        engine.note_on(84, 0.6); // C6
+
+        let block = 512;
+        let mut left = vec![0.0_f32; block];
+        let mut right = vec![0.0_f32; block];
+        let mut any_nan = false;
+        let mut peak_overall = 0.0_f32;
+        let mut peak_at_1s = 0.0_f32;
+
+        let total_blocks = (sr * 5.0 / block as f32) as usize;
+        for b in 0..total_blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            engine.process_block(&mut left, &mut right);
+            for &s in left.iter().chain(right.iter()) {
+                if s.is_nan() || s.is_infinite() {
+                    any_nan = true;
+                }
+            }
+            let peak = left.iter().fold(0.0_f32, |a, &v| a.max(v.abs()));
+            peak_overall = peak_overall.max(peak);
+            let time_ms = (b * block) as f32 / sr * 1000.0;
+            if (time_ms - 1000.0).abs() < 15.0 {
+                peak_at_1s = peak;
+            }
+        }
+        assert!(!any_nan, "output contains NaN or Inf");
+        assert!(peak_overall > 0.01, "no audio produced");
+        assert!(peak_overall < 2.0, "output is clipping: {peak_overall}");
+        assert!(peak_at_1s > 0.0001, "signal is dead at 1 second: {peak_at_1s}");
+    }
+
+    #[test]
+    fn model_params_produce_different_output() {
+        let block = 512;
+        let sr = 48000.0;
+        let measure = |hardness: f32, mass: f32, brightness: f32, body: f32, tone: f32| -> (f32, f32) {
+            let mut engine = GrandBouleEngine::new(sr, 4);
+            engine.set_param("hammer_hardness_scale", hardness);
+            engine.set_param("hammer_mass_scale", mass);
+            engine.set_param("soundboard_brightness", brightness);
+            engine.set_param("body_resonance", body);
+            engine.set_param("tone_color", tone);
+            engine.note_on(60, 0.8);
+            let mut left = vec![0.0_f32; block];
+            let mut right = vec![0.0_f32; block];
+            let mut peak = 0.0_f32;
+            let mut energy = 0.0_f32;
+            for _ in 0..(sr as usize / block) {
+                left.fill(0.0);
+                right.fill(0.0);
+                engine.process_block(&mut left, &mut right);
+                for &s in left.iter() {
+                    peak = peak.max(s.abs());
+                    energy += s * s;
+                }
+            }
+            (peak, energy)
+        };
+
+        // Steinway D defaults
+        let (peak_s, energy_s) = measure(1.0, 1.0, 0.55, 0.6, 0.0);
+        // Bösendorfer: softer, heavier, darker
+        let (peak_b, energy_b) = measure(0.6, 1.4, 0.25, 0.9, -0.7);
+        // Yamaha CFX: harder, lighter, brighter
+        let (peak_y, energy_y) = measure(1.5, 0.7, 0.85, 0.35, 0.7);
+
+        eprintln!("\n--- Model comparison (C4, v=0.8, 1s) ---");
+        eprintln!("  Steinway:    peak={peak_s:.6} energy={energy_s:.4}");
+        eprintln!("  Bösendorfer: peak={peak_b:.6} energy={energy_b:.4}");
+        eprintln!("  Yamaha CFX:  peak={peak_y:.6} energy={energy_y:.4}");
+
+        // The models must produce measurably different output.
+        let peak_range = (peak_s - peak_b).abs().max((peak_s - peak_y).abs());
+        let energy_range = (energy_s - energy_b).abs().max((energy_s - energy_y).abs());
+        assert!(
+            peak_range > 0.001 || energy_range > 0.01,
+            "model params should produce different peak/energy: peak_range={peak_range}, energy_range={energy_range}"
+        );
+    }
+
+    #[test]
+    fn higher_velocity_produces_louder_output() {
+        let block = 512;
+        let sr = 48000.0;
+        let measure = |velocity: f32, midi_note: u8| -> f32 {
+            let mut engine = GrandBouleEngine::new(sr, 4);
+            engine.note_on(midi_note, velocity);
+            let mut left = vec![0.0_f32; block];
+            let mut right = vec![0.0_f32; block];
+            let mut peak = 0.0_f32;
+            for _ in 0..(sr as usize / block / 2) {
+                left.fill(0.0);
+                right.fill(0.0);
+                engine.process_block(&mut left, &mut right);
+                for &s in left.iter() {
+                    peak = peak.max(s.abs());
+                }
+            }
+            peak
+        };
+
+        eprintln!("\n--- Velocity curve for Middle C (MIDI 60) ---");
+        for v in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] {
+            let peak = measure(v, 60);
+            eprintln!("  v={v:.1}  peak={peak:.6}");
+        }
+
+        eprintln!("\n--- Velocity curve for A4 (MIDI 69) ---");
+        for v in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] {
+            let peak = measure(v, 69);
+            eprintln!("  v={v:.1}  peak={peak:.6}");
+        }
+
+        let soft = measure(0.3, 60);
+        let loud = measure(0.8, 60);
+        assert!(loud > soft, "loud ({loud}) should exceed soft ({soft})");
+    }
+
+    /// Verify that bass and mid notes still have audible energy at 3 and 5
+    /// seconds (aftersound / slow polarization must be working).
+    #[test]
+    fn sustained_notes_ring_for_seconds() {
+        let sr = 48000.0;
+        let block = 512;
+        let measure_at = |midi: u8, seconds: f32| -> f32 {
+            let mut engine = GrandBouleEngine::new(sr, 4);
+            engine.note_on(midi, 0.8);
+            let mut left = vec![0.0_f32; block];
+            let mut right = vec![0.0_f32; block];
+            let target_block = (seconds * sr / block as f32) as usize;
+            for _ in 0..target_block {
+                left.fill(0.0);
+                right.fill(0.0);
+                engine.process_block(&mut left, &mut right);
+            }
+            // Measure energy over the next 100 ms.
+            let measure_blocks = (0.1 * sr / block as f32) as usize;
+            let mut energy = 0.0_f32;
+            for _ in 0..measure_blocks {
+                left.fill(0.0);
+                right.fill(0.0);
+                engine.process_block(&mut left, &mut right);
+                for &s in left.iter() {
+                    energy += s * s;
+                }
+            }
+            energy
+        };
+
+        // Bass C2 (MIDI 36) should still have energy at 3 seconds.
+        let bass_3s = measure_at(36, 3.0);
+        assert!(bass_3s > 1.0e-6, "bass C2 is dead at 3s: {bass_3s}");
+
+        // Mid C4 (MIDI 60) should still have energy at 3 seconds.
+        let mid_3s = measure_at(60, 3.0);
+        assert!(mid_3s > 1.0e-6, "mid C4 is dead at 3s: {mid_3s}");
+
+        // Mid A4 (MIDI 69) at 5 seconds — should still be ringing.
+        let a4_5s = measure_at(69, 5.0);
+        assert!(a4_5s > 1.0e-7, "A4 is dead at 5s: {a4_5s}");
+
+        // Decay profile for C4 to check prompt-to-aftersound ratio.
+        eprintln!("\n--- C4 decay profile (energy per 100ms window) ---");
+        for &t in &[0.0, 0.2, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0] {
+            let e = measure_at(60, t);
+            let db = if e > 0.0 { 10.0 * (e as f64).log10() } else { -100.0 };
+            eprintln!("  t={t:.1}s  energy={e:.8}  ({db:.1} dB)");
+        }
+
+        eprintln!("\n--- Sustain energy (held note, no pedal) ---");
+        eprintln!("  Bass C2 at 3s: {bass_3s:.8}");
+        eprintln!("  Mid  C4 at 3s: {mid_3s:.8}");
+        eprintln!("  A4 at 5s:      {a4_5s:.8}");
     }
 }

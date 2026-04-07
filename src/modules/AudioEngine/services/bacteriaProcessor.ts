@@ -8,6 +8,7 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, BacteriaInstance } from '../wasm/daw_dsp.js';
 
 /** Bacteria passes param names through as-is (Rust engine uses camelCase matching). */

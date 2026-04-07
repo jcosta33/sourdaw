@@ -14,6 +14,7 @@
  *   { type: 'bypass', bypassed }
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];

@@ -18,6 +18,7 @@
  *   { type: 'clearZones' }
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, LevainInstance } from '../wasm/daw_dsp.js';
 
 /**

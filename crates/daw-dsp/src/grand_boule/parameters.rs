@@ -84,10 +84,15 @@ pub fn midi_to_hz_equal_tempered(midi_note: u8) -> f32 {
     A4_HZ * (2.0_f32).powf(semitones / 12.0)
 }
 
-/// Hammer stiffness `K` per spec: `log10(K(key)) ≈ 8.3 + 0.048·(key-1)`.
-/// Returns `K` in SI units (N/m^p style coefficient of the power-law).
+/// Hammer stiffness `K` per Chaigne & Askenfelt (1994):
+/// `log10(K(key)) ≈ 8.0 + 0.020·(key-1)`.
+///
+/// Ranges from ~10⁸ (bass) to ~5.5×10⁹ (treble), consistent with measured
+/// data. The original spec slope of 0.048 was far too steep, producing K
+/// values 15–1000× larger than real pianos above the bass register, which
+/// caused chaotic velocity response and harpsichord-like contact pulses.
 pub fn hammer_stiffness_k(key: u32) -> f32 {
-    let exponent = 8.3_f32 + 0.048 * (key as f32 - 1.0);
+    let exponent = 8.0_f32 + 0.020 * (key as f32 - 1.0);
     (10.0_f32).powf(exponent)
 }
 

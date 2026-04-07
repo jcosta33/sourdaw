@@ -1,5 +1,6 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useState, useSyncExternalStore } from 'react';
 import { Cpu, Power } from 'lucide-react';
+import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -45,7 +46,6 @@ import {
 import { MidiCalibrationPanel } from '../components/MidiCalibrationPanel';
 import { MorphPanel } from '../components/MorphPanel';
 import { PerNoteEditor } from '../components/PerNoteEditor';
-import { PianoKeyboard } from '../components/PianoKeyboard';
 import { PianoModel3D } from '../components/PianoModel3D';
 import { SpectralWaterfall } from '../components/SpectralWaterfall';
 import { StringVibrationView } from '../components/StringVibrationView';
@@ -136,6 +136,89 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const [lidPosition, setLidPosition] = useState(1.0);
     const [lastVelocity, setLastVelocity] = useState(0);
 
+    // Subscribe to external MIDI note events so the visual keyboard reflects
+    // notes played on a physical controller (e.g. Akai).
+    useEffect(() => {
+        const onMidiNoteOn = (e: Event): void => {
+            const { midiNote, velocity } = (e as CustomEvent).detail;
+            setLastVelocity(Math.round(velocity * 127));
+            setActiveNotes((prev) => {
+                const next = new Map(prev);
+                next.set(midiNote as number, velocity as number);
+                return next;
+            });
+        };
+        const onMidiNoteOff = (e: Event): void => {
+            const { midiNote } = (e as CustomEvent).detail;
+            setActiveNotes((prev) => {
+                if (!prev.has(midiNote as number)) {
+                    return prev;
+                }
+                const next = new Map(prev);
+                next.delete(midiNote as number);
+                return next;
+            });
+        };
+        const onMidiPedalCC = (e: Event): void => {
+            const { cc, value } = (e as CustomEvent).detail;
+            const s = grandBouleStore.value;
+            if (s === null) return;
+            if (cc === 64) {
+                grandBouleStore.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
+            } else if (cc === 66) {
+                grandBouleStore.set({ ...s, pedals: { ...s.pedals, sostenuto: value as boolean } });
+            } else if (cc === 67) {
+                grandBouleStore.set({ ...s, pedals: { ...s.pedals, unaCorda: value as boolean } });
+            }
+        };
+        document.addEventListener(APP_EVENTS.MIDI_NOTE_ON, onMidiNoteOn);
+        document.addEventListener(APP_EVENTS.MIDI_NOTE_OFF, onMidiNoteOff);
+        document.addEventListener(APP_EVENTS.MIDI_PEDAL_CC, onMidiPedalCC);
+        return () => {
+            document.removeEventListener(APP_EVENTS.MIDI_NOTE_ON, onMidiNoteOn);
+            document.removeEventListener(APP_EVENTS.MIDI_NOTE_OFF, onMidiNoteOff);
+            document.removeEventListener(APP_EVENTS.MIDI_PEDAL_CC, onMidiPedalCC);
+        };
+    }, []);
+
+    // On mount (or when the engine becomes available), dispatch the active
+    // piano model's parameters so the DSP matches the UI from the start.
+    const engineReady = engine.isReady();
+    useEffect(() => {
+        if (!engineReady) {
+            return;
+        }
+        setGrandBouleMorphPosition({ engine, morphPosition: 0 });
+    }, [engineReady]);
+
+    // Read FFT data from the track's AnalyserNode for the spectral waterfall.
+    const [fftFrame, setFftFrame] = useState<Float32Array | null>(null);
+    useEffect(() => {
+        if (!engineReady) {
+            return;
+        }
+        const analyser = engine.getAnalyserNode();
+        if (analyser === null) {
+            return;
+        }
+        analyser.fftSize = 512;
+        const binCount = analyser.frequencyBinCount; // 256
+        const dbBuffer = new Float32Array(binCount);
+        const normBuffer = new Float32Array(binCount);
+        let raf = 0;
+        const read = (): void => {
+            analyser.getFloatFrequencyData(dbBuffer);
+            // Convert dB (-100..0) to normalised 0..1 magnitudes.
+            for (let i = 0; i < binCount; i += 1) {
+                normBuffer[i] = Math.max(0, Math.min(1, (dbBuffer[i]! + 100) / 100));
+            }
+            setFftFrame(new Float32Array(normBuffer));
+            raf = requestAnimationFrame(read);
+        };
+        raf = requestAnimationFrame(read);
+        return () => cancelAnimationFrame(raf);
+    }, [engineReady]);
+
     const liveState = state ?? grandBouleStore.value;
     if (liveState === null) {
         return <div className="h-full" />;
@@ -166,8 +249,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         });
     };
 
-    const highlightedNotes = new Set(activeNotes.keys());
-
     return (
         <div className="grand-boule-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] gap-3">
@@ -181,7 +262,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         key={preset.id}
                                         type="button"
                                         onClick={() =>
-                                            loadGrandBoulePreset({ presetId: preset.id })
+                                            loadGrandBoulePreset({ engine, presetId: preset.id })
                                         }
                                         className={`grand-boule-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
                                             active
@@ -217,12 +298,14 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 const s = grandBouleStore.value;
                                 if (s !== null) {
                                     grandBouleStore.set({ ...s, morph: { ...s.morph, modelA: modelId } });
+                                    setGrandBouleMorphPosition({ engine, morphPosition: s.morph.morphPosition });
                                 }
                             }}
                             onModelBChange={(modelId) => {
                                 const s = grandBouleStore.value;
                                 if (s !== null) {
                                     grandBouleStore.set({ ...s, morph: { ...s.morph, modelB: modelId } });
+                                    setGrandBouleMorphPosition({ engine, morphPosition: s.morph.morphPosition });
                                 }
                             }}
                             onEnabledChange={(enabled) => {
@@ -349,13 +432,15 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </div>
                     </div>
 
-                    <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 200 }}>
+                    <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 280 }}>
                         <PianoModel3D
                             activeNotes={activeNotes}
                             sustainPedal={pedals.sustain}
                             unaCorda={pedals.unaCorda}
                             sostenuto={pedals.sostenuto}
                             lidPosition={lidPosition}
+                            onNoteOn={handleNoteOn}
+                            onNoteOff={handleNoteOff}
                             className="h-full w-full"
                         />
                     </div>
@@ -369,16 +454,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
 
                     <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 160 }}>
                         <SpectralWaterfall
-                            fftFrame={null}
+                            fftFrame={fftFrame}
                             className="h-full w-full"
-                        />
-                    </div>
-
-                    <div className="grand-boule-window shrink-0 p-2">
-                        <PianoKeyboard
-                            onNoteOn={handleNoteOn}
-                            onNoteOff={handleNoteOff}
-                            highlightedNotes={highlightedNotes}
                         />
                     </div>
                 </section>
@@ -462,7 +539,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <Knob
                             value={parameters.velocityCurve}
                             onChange={(value) =>
-                                setGrandBouleVelocityCurve({ exponent: value })
+                                setGrandBouleVelocityCurve({ engine, exponent: value })
                             }
                             label="Curve"
                             min={0.5}

@@ -34,6 +34,8 @@ type PianoModel3DProps = {
     unaCorda: boolean;
     sostenuto: boolean;
     lidPosition: number;
+    onNoteOn?: (midiNote: number, velocity: number) => void;
+    onNoteOff?: (midiNote: number) => void;
     className?: string;
 };
 
@@ -159,15 +161,67 @@ function pushLine(
     pushQuad(buf, x1, y, x2 - x1, 1.2, r, g, b, a);
 }
 
+/** Hit-test a canvas coordinate against the key region. Returns MIDI note or null. */
+function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: number): number | null {
+    const margin = canvasW * 0.04;
+    const bodyX = margin;
+    const bodyW = canvasW - margin * 2;
+    const bodyH = canvasH * 0.82;
+    const bodyY = canvasH * 0.08;
+    const keyAreaY = bodyY + bodyH * 0.72;
+    const keyAreaH = bodyH * 0.22;
+    const strX = bodyX + bodyW * 0.06;
+    const whiteW = bodyW * 0.88 / NUM_WHITE_KEYS;
+
+    // Outside key area vertically?
+    if (canvasY < keyAreaY || canvasY > keyAreaY + keyAreaH) return null;
+
+    const relX = canvasX - strX;
+    if (relX < 0 || relX > whiteW * NUM_WHITE_KEYS) return null;
+
+    const blackKeyH = keyAreaH * 0.62;
+    const inBlackRegion = canvasY < keyAreaY + blackKeyH;
+
+    // Check black keys first (they overlap white keys in the upper region)
+    if (inBlackRegion) {
+        let whiteIdx = 0;
+        for (let i = 0; i < NUM_KEYS; i += 1) {
+            const midi = LOWEST_MIDI + i;
+            if (isBlackKey(midi)) {
+                const bkW = whiteW * 0.65;
+                const bkx = (whiteIdx - 0.5) * whiteW + (whiteW - bkW) * 0.5;
+                if (relX >= bkx && relX <= bkx + bkW) return midi;
+            } else {
+                whiteIdx += 1;
+            }
+        }
+    }
+
+    // White key: simple division
+    const whiteIdx = Math.floor(relX / whiteW);
+    let count = 0;
+    for (let i = 0; i < NUM_KEYS; i += 1) {
+        const midi = LOWEST_MIDI + i;
+        if (!isBlackKey(midi)) {
+            if (count === whiteIdx) return midi;
+            count += 1;
+        }
+    }
+    return null;
+}
+
 export const PianoModel3D = ({
     activeNotes,
     sustainPedal,
     unaCorda: _unaCorda,
     sostenuto: _sostenuto,
     lidPosition,
+    onNoteOn,
+    onNoteOff,
     className,
 }: PianoModel3DProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const pressedNoteRef = useRef<number | null>(null);
     const animRef = useRef<KeyAnim[]>(
         Array.from({ length: NUM_KEYS }, () => ({
             hammerT: 0,
@@ -406,13 +460,50 @@ export const PianoModel3D = ({
         };
     }, [activeNotes, sustainPedal]);
 
+    const canvasToPixel = (clientX: number, clientY: number): [number, number] => {
+        const canvas = canvasRef.current;
+        if (canvas === null) return [0, 0];
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return [(clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY];
+    };
+
+    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+        if (onNoteOn === undefined) return;
+        const canvas = canvasRef.current;
+        if (canvas === null) return;
+        (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+        const [px, py] = canvasToPixel(e.clientX, e.clientY);
+        const midi = hitTestKey(px, py, canvas.width, canvas.height);
+        if (midi !== null) {
+            pressedNoteRef.current = midi;
+            onNoteOn(midi, 0.8);
+        }
+    };
+
+    const handlePointerUp = (_e: React.PointerEvent<HTMLCanvasElement>): void => {
+        if (onNoteOff === undefined) return;
+        const note = pressedNoteRef.current;
+        if (note !== null) {
+            onNoteOff(note);
+            pressedNoteRef.current = null;
+        }
+    };
+
+    const handlePointerLeave = handlePointerUp;
+
     return (
         <canvas
             ref={canvasRef}
             width={800}
             height={480}
-            className={cn('rounded-lg', className)}
-            aria-label="Grand Boule 3D piano model"
+            className={cn('rounded-lg select-none touch-none', className)}
+            aria-label="Grand Boule interactive piano"
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
         />
     );
 };

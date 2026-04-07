@@ -202,8 +202,12 @@ export const MorphPanel = ({
                     modelBName={modelB?.name ?? 'B'}
                 />
 
-                {/* Knobs */}
-                <div className="grid grid-cols-2 gap-x-2">
+                {/* Knobs — disabled when morph engine is off */}
+                <div
+                    className={`grid grid-cols-2 gap-x-2 transition-opacity ${
+                        morph.enabled ? '' : 'pointer-events-none opacity-35'
+                    }`}
+                >
                     <MorphKnob
                         value={morph.morphPosition}
                         onChange={onMorphPositionChange}

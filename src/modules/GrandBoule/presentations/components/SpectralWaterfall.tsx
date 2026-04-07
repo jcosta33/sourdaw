@@ -152,6 +152,11 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
     const gpuRef = useRef<GpuState | null>(null);
     const [useGpu, setUseGpu] = useState<boolean | null>(null);
 
+    // Keep fftFrame in a ref so the render loops read fresh data without
+    // tearing down the GPU pipeline on every new frame.
+    const frameRef = useRef(fftFrame);
+    frameRef.current = fftFrame;
+
     // Canvas2D fallback refs
     const historyRef = useRef<Float32Array[]>(
         Array.from({ length: HISTORY_FRAMES }, () => new Float32Array(BIN_COUNT)),
@@ -179,10 +184,11 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
         if (gpu === null) return;
         let raf = 0;
         const render = (): void => {
-            if (fftFrame !== null) {
+            const frame = frameRef.current;
+            if (frame !== null) {
                 const staging = new Float32Array(BIN_COUNT);
-                const n = Math.min(BIN_COUNT, fftFrame.length);
-                for (let i = 0; i < n; i += 1) staging[i] = fftFrame[i] ?? 0;
+                const n = Math.min(BIN_COUNT, frame.length);
+                for (let i = 0; i < n; i += 1) staging[i] = frame[i] ?? 0;
                 gpu.device.queue.writeBuffer(gpu.frameBuf, 0, staging);
             }
             const encoder = gpu.device.createCommandEncoder();
@@ -213,7 +219,7 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
         };
         render();
         return () => cancelAnimationFrame(raf);
-    }, [useGpu, fftFrame]);
+    }, [useGpu]);
 
     // Canvas2D fallback render loop
     useEffect(() => {
@@ -228,15 +234,25 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
         const binWidth = width / BIN_COUNT;
         let raf = 0;
         const render = (): void => {
+            // Ingest new frame into history ring
+            const frame = frameRef.current;
+            if (frame !== null) {
+                const head = headRef.current;
+                const slot = historyRef.current[head]!;
+                const n = Math.min(BIN_COUNT, frame.length);
+                for (let i = 0; i < n; i += 1) slot[i] = frame[i] ?? 0;
+                headRef.current = (head + 1) % HISTORY_FRAMES;
+            }
+
             ctx.clearRect(0, 0, width, height);
             const history = historyRef.current;
             const head = headRef.current;
             for (let row = 0; row < HISTORY_FRAMES; row += 1) {
                 const frameIdx = (head - row - 1 + HISTORY_FRAMES) % HISTORY_FRAMES;
-                const frame = history[frameIdx]!;
+                const rowData = history[frameIdx]!;
                 const y = row * rowHeight;
                 for (let bin = 0; bin < BIN_COUNT; bin += 1) {
-                    const mag = Math.min(1, Math.max(0, frame[bin] ?? 0));
+                    const mag = Math.min(1, Math.max(0, rowData[bin] ?? 0));
                     if (mag <= 0.01) continue;
                     const hue = 260 - mag * 200;
                     ctx.fillStyle = `hsl(${hue}, 85%, ${20 + mag * 55}%)`;
@@ -248,16 +264,6 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
         render();
         return () => cancelAnimationFrame(raf);
     }, [useGpu]);
-
-    // Update Canvas2D history ring when not using GPU
-    useEffect(() => {
-        if (useGpu !== false || fftFrame === null) return;
-        const head = headRef.current;
-        const slot = historyRef.current[head]!;
-        const n = Math.min(BIN_COUNT, fftFrame.length);
-        for (let i = 0; i < n; i += 1) slot[i] = fftFrame[i] ?? 0;
-        headRef.current = (head + 1) % HISTORY_FRAMES;
-    }, [useGpu, fftFrame]);
 
     return (
         <canvas

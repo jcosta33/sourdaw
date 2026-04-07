@@ -17,6 +17,28 @@ use super::parameters::{
 /// for top-octave keys without being too expensive.
 const HAMMER_OVERSAMPLE: usize = 4;
 
+/// Scales the hammer's Newton-force output into the normalised signal range
+/// expected by the modal string bank. The modal resonators use narrow-bandwidth
+/// biquads with small C0, so a forte hammer pulse (~50–100 N peak) produces
+/// only ~0.005 signal amplitude without this boost. The factor is chosen so
+/// that a fortissimo hit (velocity = 1.0) peaks around 0.4–0.6 before master
+/// gain, leaving headroom for multi-note chords.
+const FORCE_NORMALIZATION: f32 = 80.0;
+
+/// Converts normalised modal-bank output back to approximate physical string
+/// displacement (metres) for the hammer feedback loop. During the ~2 ms hammer
+/// contact, the modal bank accumulates to signal amplitudes of order 1–10.
+/// Multiplied by this scale, the feedback displacement must stay well below the
+/// peak hammer compression (~2–4 mm) to avoid positive-feedback runaway.
+/// 5×10⁻⁵ yields ~0.1–0.5 mm feedback at forte — enough for audible
+/// velocity-dependent cushioning without destabilising the loop.
+const FEEDBACK_SCALE: f32 = 5.0e-5;
+
+/// Maximum physical string displacement (metres) fed back to the hammer.
+/// Piano strings never exceed ~3 mm at the strike point. Clamping here
+/// prevents numerical runaway even if the modal bank briefly overshoots.
+const MAX_STRING_DISPLACEMENT: f32 = 0.003;
+
 /// Coarse voice lifecycle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceStage {
@@ -49,6 +71,8 @@ pub struct PianoVoice {
     strings: CoupledStringAssembly,
     longitudinal: LongitudinalBank,
     duplex: DuplexBank,
+    /// Last string output — fed back to the hammer for closed-loop interaction.
+    last_string_displacement: f32,
     fundamental_hz: f32,
     key: u32,
     base_bandwidth: f32,
@@ -82,6 +106,7 @@ impl PianoVoice {
             strings: CoupledStringAssembly::new(),
             longitudinal: LongitudinalBank::new(),
             duplex: DuplexBank::new(),
+            last_string_displacement: 0.0,
             fundamental_hz: 0.0,
             key: 1,
             base_bandwidth: 0.0,
@@ -189,7 +214,8 @@ impl PianoVoice {
     ///
     /// `pitch_ratio` scales the fundamental (1.0 = standard Railsback
     /// tuning, `2^(cents/1200)` for microtuning offsets).
-    /// `stiffness_scale` multiplies the hammer stiffness (una-corda pedal).
+    /// `stiffness_scale` multiplies the hammer stiffness (pedal + preset + model).
+    /// `mass_scale` multiplies the hammer mass (piano model).
     pub fn note_on(
         &mut self,
         midi_note: u8,
@@ -197,12 +223,14 @@ impl PianoVoice {
         key: u32,
         pitch_ratio: f32,
         stiffness_scale: f32,
+        mass_scale: f32,
     ) {
         self.midi_note = midi_note;
         self.velocity = velocity.clamp(0.0, 1.0);
         self.age_samples = 0;
         self.amplitude = 1.0;
         self.release_coefficient = 1.0;
+        self.last_string_displacement = 0.0;
         self.stage = VoiceStage::Active;
 
         let fundamental = key_fundamental_hz(key) * pitch_ratio;
@@ -218,16 +246,18 @@ impl PianoVoice {
         self.hammer_params = HammerParams {
             stiffness_k: hammer_stiffness_k(key) * stiffness_scale,
             exponent_p: hammer_exponent_p(key),
-            mass_kg: hammer_mass_kg(key),
+            mass_kg: hammer_mass_kg(key) * mass_scale,
             hysteresis_epsilon: epsilon,
             hysteresis_alpha: 0.9,
         };
 
-        // Base partial bandwidth controls the T60 of the note. Bass notes are
-        // narrower (longer decay); treble notes wider. The interpolation is
-        // deliberately gentle — the frequency-dependent term inside the bank
-        // already provides most of the per-partial variation.
-        let base_bandwidth = 0.25 + 0.0015 * fundamental;
+        // Base partial bandwidth controls the T60 of the note (intrinsic
+        // string damping σ_string). The formula produces ~0.06 Hz for bass
+        // (T60 ≈ 23 s) ramping to ~0.9 Hz for treble (T60 ≈ 2.4 s). The
+        // bridge coupling constant SIGMA_BRIDGE_HZ (4 Hz) in CoupledStringAssembly
+        // separately drives the fast prompt-sound decay; this value only governs
+        // the slow aftersound tail.
+        let base_bandwidth = 0.05 + 0.0002 * fundamental;
         self.attack_key = 0;
         self.attack_position = 0;
         self.attack_length = 0;
@@ -261,8 +291,9 @@ impl PianoVoice {
             return;
         }
         self.stage = VoiceStage::Releasing;
-        // ~150 ms release tail (damper mute approximation).
-        let release_seconds = 0.15_f32;
+        // ~300 ms release tail — realistic felt-damper mute time for a grand
+        // piano (150 ms was too fast, giving a harpsichord-like cut-off).
+        let release_seconds = 0.30_f32;
         self.release_coefficient = (-1.0 / (release_seconds * self.sample_rate)).exp();
     }
 
@@ -271,6 +302,7 @@ impl PianoVoice {
         self.stage = VoiceStage::Idle;
         self.amplitude = 0.0;
         self.age_samples = 0;
+        self.last_string_displacement = 0.0;
         self.hammer = HammerState::idle();
         self.strings.reset();
         self.longitudinal.reset();
@@ -303,28 +335,40 @@ impl PianoVoice {
         let dt = 1.0 / (self.sample_rate * HAMMER_OVERSAMPLE as f32);
         let mut output = 0.0_f32;
 
-        // Four oversampled hammer ticks per output sample. Only the last
-        // hammer force is fed into the modal string — the intermediate steps
-        // exist to keep the integrator stable. (For the minimal slice this is
-        // accurate enough; a future revision can accumulate the substeps.)
-        let mut force = 0.0_f32;
+        // Closed-loop hammer-string interaction with impedance-matched feedback.
+        // The modal bank output (normalised signal) is scaled by FEEDBACK_SCALE
+        // to approximate physical string displacement in metres. This gives the
+        // hammer a realistic view of the string moving away during contact,
+        // which:
+        //   - Broadens the force pulse at high velocity (cushioning)
+        //   - Creates velocity-dependent timbre (the #1 perceptual priority)
+        //   - Produces a more natural, less "plucky" attack
+        //
+        // The oversampled sub-steps are averaged so the string sees the
+        // integrated impulse rather than a single force snapshot.
+        let disp = (self.last_string_displacement * FEEDBACK_SCALE)
+            .clamp(-MAX_STRING_DISPLACEMENT, MAX_STRING_DISPLACEMENT);
+        let mut force_sum = 0.0_f32;
         match self.quality {
             VoiceQuality::High => {
                 for _ in 0..HAMMER_OVERSAMPLE {
-                    force = self.hammer.tick_hysteresis(0.0, dt, &self.hammer_params);
+                    force_sum += self.hammer.tick_hysteresis(disp, dt, &self.hammer_params);
                 }
             }
             VoiceQuality::Standard | VoiceQuality::Simplified => {
                 for _ in 0..HAMMER_OVERSAMPLE {
-                    force = self.hammer.tick(0.0, dt, &self.hammer_params);
+                    force_sum += self.hammer.tick(disp, dt, &self.hammer_params);
                 }
             }
         }
+        let force = force_sum / HAMMER_OVERSAMPLE as f32 * FORCE_NORMALIZATION;
 
         let transverse = match self.quality {
             VoiceQuality::Simplified => self.strings.tick_simplified(force),
             _ => self.strings.tick(force),
         };
+        self.last_string_displacement = transverse;
+
         // Longitudinal (phantom) partials driven by squared transverse
         // amplitude; duplex resonance driven by the bridge signal.
         let longitudinal = if self.quality == VoiceQuality::Simplified {

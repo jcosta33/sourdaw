@@ -22,21 +22,35 @@ use super::string::ModalString;
 pub const MAX_UNISONS: usize = 3;
 
 /// Bridge-induced bandwidth added to the fast (vertical) polarization, in Hz.
-/// Controls the prompt-decay portion of the two-stage envelope.
-const SIGMA_BRIDGE_HZ: f32 = 4.0;
+/// Scales with frequency: bass strings couple more weakly through the bridge
+/// (longer prompt sound, T60 ≈ 2–3 s) while treble strings couple more
+/// strongly (shorter prompt, T60 ≈ 0.3–0.8 s). This matches measurements
+/// from Askenfelt & Jansson.
+fn sigma_bridge_hz(fundamental_hz: f32) -> f32 {
+    // Bass A0 (27.5): ~0.9 Hz → T60 ≈ 2.4 s
+    // Mid  C4 (261):  ~1.8 Hz → T60 ≈ 1.2 s
+    // High C7 (2093): ~9.2 Hz → T60 ≈ 0.24 s
+    0.8 + fundamental_hz * 0.004
+}
 
 /// Slow-polarization multiplier (`σ_bridge / 100`) from the spec.
 const SIGMA_SLOW_SCALE: f32 = 0.01;
 
-/// Relative amplitude of the horizontal polarization at the bridge pickup.
-/// The hammer drives vertical directly; horizontal picks up energy through
-/// the bridge, so it starts quieter but lingers.
-const HORIZONTAL_MIX: f32 = 0.35;
+/// Gain applied to the vertical output before feeding it into the horizontal
+/// (slow) polarization. With `configure_aftersound`, the horizontal C0 is
+/// computed from the fast bandwidth (matched impulse response). The gain
+/// controls how quickly the aftersound builds up to its steady-state level
+/// relative to the prompt. Weinreich (1977) measured the aftersound plateau
+/// at roughly 15–20 dB below the prompt peak on a Steinway D; 30× coupling
+/// with 0.7 mix achieves this ratio.
+const BRIDGE_COUPLING_GAIN: f32 = 30.0;
 
-/// Unison-pair cross mix injected into the slow polarization of neighbouring
-/// strings to simulate bridge coupling (§3.4). Small, but gives the chorusing
-/// beat-pattern of a detuned unison.
-const UNISON_CROSS_MIX: f32 = 0.08;
+/// Relative output mix for the horizontal (slow) polarization.
+///
+/// The horizontal polarization is driven by bridge coupling from the
+/// vertical output (Weinreich 1977). Combined with BRIDGE_COUPLING_GAIN,
+/// this sets the aftersound plateau at ~15–20 dB below the prompt peak.
+const HORIZONTAL_MIX: f32 = 0.7;
 
 /// One unison: a vertical + horizontal polarization pair.
 #[derive(Clone, Debug)]
@@ -115,8 +129,9 @@ impl CoupledStringAssembly {
         let count = unison_count(key).min(MAX_UNISONS as u32) as usize;
         self.active_unisons = count;
 
-        let fast_damp = SIGMA_BRIDGE_HZ + extra_damping_hz;
-        let slow_damp = SIGMA_BRIDGE_HZ * SIGMA_SLOW_SCALE + extra_damping_hz;
+        let bridge = sigma_bridge_hz(fundamental_hz);
+        let fast_damp = bridge + extra_damping_hz;
+        let slow_damp = bridge * SIGMA_SLOW_SCALE + extra_damping_hz;
 
         for unison_index in 0..count {
             let cents = unison_detune_cents(key, unison_index as u32);
@@ -131,12 +146,17 @@ impl CoupledStringAssembly {
                 base_bandwidth_hz,
                 fast_damp,
             );
-            unison.horizontal.configure(
+            // Horizontal (aftersound) polarization: C0 uses fast bandwidth
+            // for efficient energy pickup from bridge coupling, but C1/C2
+            // use slow bandwidth for the long-ringing aftersound tail
+            // (Weinreich 1977, §3.4).
+            unison.horizontal.configure_aftersound(
                 detuned,
                 key,
                 hammer_strike_ratio,
                 sample_rate,
                 base_bandwidth_hz,
+                fast_damp,
                 slow_damp,
             );
         }
@@ -153,8 +173,9 @@ impl CoupledStringAssembly {
         base_bandwidth_hz: f32,
         extra_damping_hz: f32,
     ) {
-        let fast_damp = SIGMA_BRIDGE_HZ + extra_damping_hz;
-        let slow_damp = SIGMA_BRIDGE_HZ * SIGMA_SLOW_SCALE + extra_damping_hz;
+        let bridge = sigma_bridge_hz(fundamental_hz);
+        let fast_damp = bridge + extra_damping_hz;
+        let slow_damp = bridge * SIGMA_SLOW_SCALE + extra_damping_hz;
         for unison_index in 0..self.active_unisons {
             let unison = &mut self.unisons[unison_index];
             let detuned = fundamental_hz * (2.0_f32).powf(unison.detune_cents / 1200.0);
@@ -167,20 +188,26 @@ impl CoupledStringAssembly {
         }
     }
 
-    /// Process one sample. Drives every active string with the hammer force
-    /// and returns the mixed bridge output.
+    /// Process one sample. The vertical polarization is driven by the hammer
+    /// force directly; the horizontal polarization receives energy through
+    /// bridge coupling from the vertical output (Weinreich 1977, §3.4).
+    ///
+    /// The `BRIDGE_COUPLING_GAIN` compensates for the horizontal resonators'
+    /// very small C0 (narrow decay bandwidth) so that energy transfers at a
+    /// realistic rate. No cross-unison feedback is applied to the horizontal
+    /// drive — each unison's horizontal is driven only by its own vertical
+    /// output, avoiding the positive-feedback instability that arises when
+    /// high-Q resonators are cross-coupled.
     #[inline]
     pub fn tick(&mut self, hammer_force: f32) -> f32 {
         let mut prompt = 0.0_f32;
         let mut aftersound = 0.0_f32;
-        // Cross-feed from previous sample's aftersound introduces beating.
-        let mut cross = 0.0_f32;
         let n = self.active_unisons;
         for unison_index in 0..n {
             let unison = &mut self.unisons[unison_index];
-            prompt += unison.vertical.tick(hammer_force);
-            aftersound += unison.horizontal.tick(hammer_force + cross * UNISON_CROSS_MIX);
-            cross = aftersound;
+            let v = unison.vertical.tick(hammer_force);
+            prompt += v;
+            aftersound += unison.horizontal.tick(v * BRIDGE_COUPLING_GAIN);
         }
         prompt + HORIZONTAL_MIX * aftersound
     }
@@ -249,14 +276,19 @@ mod tests {
         let mut quiet = CoupledStringAssembly::new();
         loud.configure(220.0, 25, 0.125, 48_000.0, 0.25, 0.0);
         quiet.configure(220.0, 25, 0.125, 48_000.0, 0.25, 50.0);
-        let total = |assembly: &mut CoupledStringAssembly| -> f32 {
+        // Measure late-tail energy so the faster decay dominates over the
+        // C0 gain increase from wider bandwidth.
+        let late_energy = |assembly: &mut CoupledStringAssembly| -> f32 {
             assembly.tick(1.0);
-            let mut sum = 0.0_f32;
             for _ in 0..4_000 {
+                let _ = assembly.tick(0.0);
+            }
+            let mut sum = 0.0_f32;
+            for _ in 0..8_000 {
                 sum += assembly.tick(0.0).abs();
             }
             sum
         };
-        assert!(total(&mut loud) > total(&mut quiet));
+        assert!(late_energy(&mut loud) > late_energy(&mut quiet));
     }
 }

@@ -54,69 +54,64 @@ struct V { @builtin(position) pos: vec4f, @location(0) intensity: f32 }
 
 type StringState = { amplitude: number; phase: number; frequency: number };
 
-function runCanvas2DFallback(
+/** Render a single Canvas2D frame. Called from the component's rAF loop
+ *  so activeNotes is always read fresh via ref. */
+function runCanvas2DFrame(
     canvas: HTMLCanvasElement,
     activeNotes: ReadonlyMap<number, number>,
     states: StringState[],
     frameRef: { current: number },
-): () => void {
+): void {
     const ctx = canvas.getContext('2d');
-    if (ctx === null) return () => {};
-    let cancelled = false;
+    if (ctx === null) return;
 
-    const render = (): void => {
-        if (cancelled) return;
-        const { width, height } = canvas;
-        ctx.clearRect(0, 0, width, height);
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
 
-        for (let i = 0; i < NUM_STRINGS; i += 1) states[i]!.amplitude *= DECAY;
-        for (const [midi, velocity] of activeNotes) {
-            const key = midi - 21;
-            if (key >= 0 && key < NUM_STRINGS) {
-                states[key]!.amplitude = Math.max(states[key]!.amplitude, velocity);
-                states[key]!.frequency = 4 + key * 0.25;
-                for (let d = -SYM_RANGE; d <= SYM_RANGE; d += 1) {
-                    const neighbor = key + d;
-                    if (d !== 0 && neighbor >= 0 && neighbor < NUM_STRINGS) {
-                        const boost = velocity * SYM_GAIN * (1 - Math.abs(d) / (SYM_RANGE + 1));
-                        states[neighbor]!.amplitude = Math.max(states[neighbor]!.amplitude, boost);
-                        states[neighbor]!.frequency = 4 + neighbor * 0.25;
-                    }
+    for (let i = 0; i < NUM_STRINGS; i += 1) states[i]!.amplitude *= DECAY;
+    for (const [midi, velocity] of activeNotes) {
+        const key = midi - 21;
+        if (key >= 0 && key < NUM_STRINGS) {
+            states[key]!.amplitude = Math.max(states[key]!.amplitude, velocity);
+            states[key]!.frequency = 4 + key * 0.25;
+            for (let d = -SYM_RANGE; d <= SYM_RANGE; d += 1) {
+                const neighbor = key + d;
+                if (d !== 0 && neighbor >= 0 && neighbor < NUM_STRINGS) {
+                    const boost = velocity * SYM_GAIN * (1 - Math.abs(d) / (SYM_RANGE + 1));
+                    states[neighbor]!.amplitude = Math.max(states[neighbor]!.amplitude, boost);
+                    states[neighbor]!.frequency = 4 + neighbor * 0.25;
                 }
             }
         }
+    }
 
-        const rowH = height / NUM_STRINGS;
-        const phaseAdv = frameRef.current * 0.08;
-        ctx.lineWidth = 1;
-        for (let i = 0; i < NUM_STRINGS; i += 1) {
-            const s = states[i]!;
-            const y0 = rowH * (NUM_STRINGS - i - 0.5);
-            const amp = s.amplitude * rowH * 3;
-            if (amp < 0.5) {
-                ctx.strokeStyle = 'rgba(200,200,200,0.15)';
-                ctx.beginPath();
-                ctx.moveTo(0, y0);
-                ctx.lineTo(width, y0);
-                ctx.stroke();
-                continue;
-            }
-            const intensity = Math.min(1, s.amplitude);
-            ctx.strokeStyle = `rgba(251,191,36,${0.3 + intensity * 0.7})`;
+    const rowH = height / NUM_STRINGS;
+    const phaseAdv = frameRef.current * 0.08;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < NUM_STRINGS; i += 1) {
+        const s = states[i]!;
+        const y0 = rowH * (NUM_STRINGS - i - 0.5);
+        const amp = s.amplitude * rowH * 3;
+        if (amp < 0.5) {
+            ctx.strokeStyle = 'rgba(200,200,200,0.15)';
             ctx.beginPath();
-            for (let x = 0; x <= width; x += 2) {
-                const t = x / width;
-                const y = y0 + Math.sin(t * s.frequency * Math.PI * 2 + phaseAdv) * amp * (1 - t * 0.4);
-                if (x === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
+            ctx.moveTo(0, y0);
+            ctx.lineTo(width, y0);
             ctx.stroke();
+            continue;
         }
-        frameRef.current += 1;
-        requestAnimationFrame(render);
-    };
-    render();
-    return () => { cancelled = true; };
+        const intensity = Math.min(1, s.amplitude);
+        ctx.strokeStyle = `rgba(251,191,36,${0.3 + intensity * 0.7})`;
+        ctx.beginPath();
+        for (let x = 0; x <= width; x += 2) {
+            const t = x / width;
+            const y = y0 + Math.sin(t * s.frequency * Math.PI * 2 + phaseAdv) * amp * (1 - t * 0.4);
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+    frameRef.current += 1;
 }
 
 // ── WebGPU path ───────────────────────────────────────────────────────
@@ -173,6 +168,10 @@ export const StringVibrationView = ({
         Array.from({ length: NUM_STRINGS }, () => ({ amplitude: 0, phase: 0, frequency: 0 })),
     );
     const frameRef = useRef(0);
+    // Keep activeNotes in a ref so the animation loop always reads fresh data
+    // without tearing down the GPU pipeline on every note change.
+    const notesRef = useRef(activeNotes);
+    notesRef.current = activeNotes;
 
     // WebGPU path
     useEffect(() => {
@@ -195,9 +194,8 @@ export const StringVibrationView = ({
                 t += 0.016;
                 for (let i = 0; i < NUM_STRINGS; i += 1) {
                     paramsData[i * 4]! *= DECAY;
-                    // keep existing frequency/phase
                 }
-                for (const [midi, velocity] of activeNotes) {
+                for (const [midi, velocity] of notesRef.current) {
                     const key = midi - 21;
                     if (key >= 0 && key < NUM_STRINGS) {
                         const off = key * 4;
@@ -248,15 +246,25 @@ export const StringVibrationView = ({
         };
         run();
         return () => { cancelled = true; device?.destroy(); };
-    }, [gpuSupported, activeNotes]);
+    }, [gpuSupported]);
 
     // Canvas2D fallback path
     useEffect(() => {
         if (gpuSupported !== false) return;
         const canvas = canvasRef.current;
         if (canvas === null) return;
-        return runCanvas2DFallback(canvas, activeNotes, statesRef.current, frameRef);
-    }, [gpuSupported, activeNotes]);
+        const states = statesRef.current;
+        const fRef = frameRef;
+        let cancelled = false;
+
+        const render = (): void => {
+            if (cancelled) return;
+            runCanvas2DFrame(canvas, notesRef.current, states, fRef);
+            requestAnimationFrame(render);
+        };
+        requestAnimationFrame(render);
+        return () => { cancelled = true; };
+    }, [gpuSupported]);
 
     // Feature-detect WebGPU at mount
     useEffect(() => {

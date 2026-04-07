@@ -16,18 +16,21 @@
 /// sits near the upper end of the spec's 100–200 range.
 pub const SOUNDBOARD_MODES: usize = 192;
 
-/// Lowest soundboard resonance (Hz). Roughly matches the lowest plate mode
-/// of a full-size grand piano.
-const MODE_MIN_HZ: f32 = 45.0;
+/// Lowest soundboard resonance (Hz). A full-size concert grand's
+/// soundboard fundamental sits around 30–40 Hz — low enough to radiate
+/// the second partial of A0 (55 Hz) and to add warmth to the bass register.
+const MODE_MIN_HZ: f32 = 30.0;
 
 /// Highest soundboard resonance (Hz). Modes above this frequency blend into
 /// the radiation HF hump and contribute little.
 const MODE_MAX_HZ: f32 = 7_800.0;
 
-/// Frequency-independent input-drive coefficient. The bank is normalised so
-/// that flat-noise excitation produces roughly unity RMS output at the
-/// reference sample rate.
-const DRIVE: f32 = 0.015;
+/// Frequency-independent input-drive coefficient. Scales the bridge signal
+/// feeding the soundboard modes. The soundboard is the primary sound radiator
+/// in a real piano — the direct string signal should be a minority component.
+/// 0.18 gives a soundboard-to-dry ratio of roughly 3:1, producing the warm,
+/// resonant body that distinguishes a grand piano from an electric.
+const DRIVE: f32 = 0.18;
 
 #[repr(C, align(64))]
 #[derive(Clone, Debug)]

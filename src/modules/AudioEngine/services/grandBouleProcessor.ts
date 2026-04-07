@@ -17,6 +17,7 @@
  *   { type: 'allNotesOff' }
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, GrandBouleInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase param names from TypeScript to snake_case for Rust. */

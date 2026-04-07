@@ -48,5 +48,6 @@ export const resolveGrandBouleEngine = (
         loadAttackClip: (i) => controls.loadAttackClip(i.key, i.samples),
         allNotesOff: () => controls.allNotesOff(),
         isReady: () => true,
+        getAnalyserNode: () => strip.analyserNode,
     };
 };

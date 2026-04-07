@@ -8,6 +8,7 @@
  * Effect processor: reads from inputs[0] (main) and inputs[1] (sidechain), writes to outputs[0].
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase param names from TypeScript to snake_case for Rust. */

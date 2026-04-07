@@ -38,6 +38,8 @@ export type GrandBouleEngineHandle = {
     allNotesOff: () => void;
     /** Whether this handle is connected to a live engine instance. */
     isReady: () => boolean;
+    /** The track's AnalyserNode for visualization (FFT, metering). */
+    getAnalyserNode: () => AnalyserNode | null;
 };
 
 /**
@@ -57,4 +59,5 @@ export const createDisconnectedGrandBouleEngineHandle = (): GrandBouleEngineHand
     loadAttackClip: () => {},
     allNotesOff: () => {},
     isReady: () => false,
+    getAnalyserNode: () => null,
 });

@@ -73,13 +73,31 @@ export const setGrandBouleMorphPosition = (
     const clamped = Math.max(0, Math.min(1, input.morphPosition));
 
     const morph = state.morph;
-    if (morph === undefined || !morph.enabled) {
+    if (morph === undefined) {
         return;
     }
 
     const modelA = findPianoModelById(morph.modelA);
+    if (modelA === undefined) {
+        return;
+    }
+
+    if (!morph.enabled) {
+        // Morph disabled — apply model A's parameters directly so that
+        // switching models in the UI always has an audible effect.
+        dispatchInterpolatedParams(input.engine, {
+            hammerHardnessScale: modelA.hammerHardnessScale,
+            hammerMassScale: modelA.hammerMassScale,
+            soundboardBrightness: modelA.soundboardBrightness,
+            sympatheticLevel: modelA.sympatheticLevel,
+            bodyResonance: modelA.bodyResonance,
+            toneColor: modelA.toneColor,
+        });
+        return;
+    }
+
     const modelB = findPianoModelById(morph.modelB);
-    if (modelA === undefined || modelB === undefined) {
+    if (modelB === undefined) {
         return;
     }
 

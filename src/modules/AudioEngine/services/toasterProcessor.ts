@@ -13,6 +13,7 @@
  *   { type: 'padParam', pad, name, value }
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */

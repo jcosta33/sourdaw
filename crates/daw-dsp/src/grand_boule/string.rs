@@ -20,13 +20,15 @@
 use super::parameters::inharmonicity_b;
 
 /// Maximum number of modal partials tracked per resonator bank.
-/// 48 covers all bass partials below 22 kHz at 96 kHz sample rates and
-/// aligns to 6 × f32x8 lanes.
-pub const MAX_PARTIALS: usize = 48;
+/// 80 covers partials up to ~20 kHz even for bass notes and aligns to
+/// 10 × f32x8 SIMD lanes. Research (Pianoteq analysis) indicates 60–130
+/// modes per note for best-in-class realism.
+pub const MAX_PARTIALS: usize = 80;
 
 /// Maximum number of low-frequency partials processed in f64 precision.
-/// Per spec §7.3: "Use f64 for resonators below 200 Hz." Typically 1-7
-/// partials for bass notes.
+/// Per spec §7.3: "Use f64 for resonators below 200 Hz." Bass notes at
+/// A0 (27.5 Hz) have up to 7 partials below 200 Hz; with 80 max partials
+/// we keep 8 slots which is sufficient.
 const MAX_F64_PARTIALS: usize = 8;
 
 /// Struct-of-Arrays modal resonator bank. One instance represents one
@@ -144,8 +146,11 @@ impl ModalString {
             let amp = (partial_number * PI * hammer_strike_ratio).sin().abs() / partial_number;
 
             // Partial bandwidth grows with frequency to approximate the b₂·ω²
-            // damping term from the full wave equation.
-            let bandwidth = base_bandwidth_hz + 0.0008 * freq * freq.sqrt() + extra_damping_hz;
+            // damping term from the full wave equation. The coefficient is kept
+            // small so that fundamentals ring for realistic durations (~10–20 s
+            // at A4) while upper partials decay progressively faster (natural
+            // brightness roll-off).
+            let bandwidth = base_bandwidth_hz + 0.000005 * freq * freq.sqrt() + extra_damping_hz;
 
             // §7.3: Use f64 for resonators below 200 Hz for numerical stability
             // with very narrow bandwidths.
@@ -178,6 +183,81 @@ impl ModalString {
         self.active_partials = active;
     }
 
+    /// Configure the bank as an aftersound (slow) polarization.
+    ///
+    /// Uses `c0_bandwidth_hz` for the input gain C0 (matching the fast
+    /// polarization so the impulse response starts at the same amplitude)
+    /// and `decay_bandwidth_hz` for C1/C2 (controlling the slow decay).
+    /// This correctly models the bridge-mediated energy transfer where the
+    /// horizontal polarization picks up energy at the resonant frequency
+    /// with the same efficiency as the vertical, but releases it far more
+    /// slowly (Weinreich 1977, §3.4).
+    pub fn configure_aftersound(
+        &mut self,
+        fundamental_hz: f32,
+        key: u32,
+        hammer_strike_ratio: f32,
+        sample_rate: f32,
+        base_bandwidth_hz: f32,
+        c0_bandwidth_hz: f32,
+        decay_bandwidth_hz: f32,
+    ) {
+        use core::f32::consts::{PI, TAU};
+
+        let b_coefficient = inharmonicity_b(key);
+        let nyquist = sample_rate * 0.5;
+        let mut active = 0;
+        let mut f64_count = 0_usize;
+
+        for index in 0..MAX_PARTIALS {
+            let partial_number = (index + 1) as f32;
+            let freq = fundamental_hz
+                * partial_number
+                * (1.0 + b_coefficient * partial_number * partial_number).sqrt();
+
+            if freq >= nyquist * 0.98 {
+                self.c0[index] = 0.0;
+                self.c1[index] = 0.0;
+                self.c2[index] = 0.0;
+                continue;
+            }
+
+            let amp = (partial_number * PI * hammer_strike_ratio).sin().abs() / partial_number;
+            let bw_freq = 0.000005 * freq * freq.sqrt();
+            // C0 uses the fast bandwidth for matched impulse response amplitude.
+            let bw_c0 = base_bandwidth_hz + bw_freq + c0_bandwidth_hz;
+            // C1/C2 use the slow bandwidth for long decay.
+            let bw_decay = base_bandwidth_hz + bw_freq + decay_bandwidth_hz;
+
+            if freq < 200.0 && f64_count < MAX_F64_PARTIALS {
+                let freq64 = freq as f64;
+                let sr64 = sample_rate as f64;
+                let amp64 = amp as f64;
+                let theta64 = core::f64::consts::TAU * freq64 / sr64;
+                let r_c0 = (-core::f64::consts::PI * bw_c0 as f64 / sr64).exp();
+                let r_decay = (-core::f64::consts::PI * bw_decay as f64 / sr64).exp();
+                self.c0_64[f64_count] = amp64 * (1.0 - r_c0 * r_c0) * theta64.sin() * 0.5;
+                self.c1_64[f64_count] = 2.0 * r_decay * theta64.cos();
+                self.c2_64[f64_count] = -(r_decay * r_decay);
+                self.c0[index] = 0.0;
+                self.c1[index] = 0.0;
+                self.c2[index] = 0.0;
+                f64_count += 1;
+            } else {
+                let theta = TAU * freq / sample_rate;
+                let r_c0 = (-PI * bw_c0 / sample_rate).exp();
+                let r_decay = (-PI * bw_decay / sample_rate).exp();
+                self.c0[index] = amp * (1.0 - r_c0 * r_c0) * theta.sin() * 0.5;
+                self.c1[index] = 2.0 * r_decay * theta.cos();
+                self.c2[index] = -(r_decay * r_decay);
+            }
+            active = index + 1;
+        }
+
+        self.f64_partials = f64_count;
+        self.active_partials = active;
+    }
+
     /// Update the decay coefficients (C1/C2) without touching amplitudes.
     /// Used when damper state changes mid-note.
     pub fn reset_decay(
@@ -201,7 +281,7 @@ impl ModalString {
             if freq >= nyquist * 0.98 {
                 continue;
             }
-            let bandwidth = base_bandwidth_hz + 0.0008 * freq * freq.sqrt() + extra_damping_hz;
+            let bandwidth = base_bandwidth_hz + 0.000005 * freq * freq.sqrt() + extra_damping_hz;
             if freq < 200.0 && f64_idx < self.f64_partials {
                 let freq64 = freq as f64;
                 let sr64 = sample_rate as f64;
@@ -329,14 +409,19 @@ mod tests {
         quiet_decay.configure(220.0, 25, 0.125, 48_000.0, 0.25, 0.0);
         fast_decay.configure(220.0, 25, 0.125, 48_000.0, 0.25, 30.0);
 
-        let energy = |string: &mut ModalString| -> f32 {
+        // Measure late-tail energy (skip the attack) so the faster decay
+        // dominates over the C0 gain increase from wider bandwidth.
+        let late_energy = |string: &mut ModalString| -> f32 {
             string.tick(1.0);
-            let mut total = 0.0;
             for _ in 0..4_000 {
+                let _ = string.tick(0.0);
+            }
+            let mut total = 0.0;
+            for _ in 0..8_000 {
                 total += string.tick(0.0).abs();
             }
             total
         };
-        assert!(energy(&mut quiet_decay) > energy(&mut fast_decay));
+        assert!(late_energy(&mut quiet_decay) > late_energy(&mut fast_decay));
     }
 }

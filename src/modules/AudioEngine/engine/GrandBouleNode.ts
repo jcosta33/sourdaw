@@ -25,7 +25,9 @@ async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
     if (cachedWasmBytes) {
         return cachedWasmBytes;
     }
-    const response = await fetch(url);
+    // Append a cache-buster in dev mode so rebuilt WASM is always picked up.
+    const fetchUrl = import.meta.env.DEV ? `${url}?t=${Date.now()}` : url;
+    const response = await fetch(fetchUrl);
     if (!response.ok) {
         throw new Error(`Failed to fetch Grand Boule WASM: ${response.status}`);
     }

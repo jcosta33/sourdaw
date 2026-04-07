@@ -1,14 +1,19 @@
 /**
  * Apply a built-in Grand Boule preset to the current instance.
  *
- * Pulls the preset parameters into the store. Returns `true` on success,
+ * Pushes preset parameters into the store AND dispatches them to the
+ * WASM engine so the sound actually changes. Returns `true` on success,
  * `false` if the preset id is unknown.
  */
 
+import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { findBuiltinGrandBoulePreset } from '../repositories/findBuiltinGrandBoulePreset';
 import { grandBouleStore } from '../stores/grandBouleStore';
 
-type LoadGrandBoulePresetInput = { presetId: string };
+type LoadGrandBoulePresetInput = {
+    engine: GrandBouleEngineHandle;
+    presetId: string;
+};
 
 export const loadGrandBoulePreset = (input: LoadGrandBoulePresetInput): boolean => {
     const preset = findBuiltinGrandBoulePreset(input.presetId);
@@ -19,10 +24,21 @@ export const loadGrandBoulePreset = (input: LoadGrandBoulePresetInput): boolean 
     if (state === null) {
         return false;
     }
+
+    // Update the store.
     grandBouleStore.set({
         ...state,
         parameters: { ...preset.parameters },
         config: { ...state.config, activePresetId: preset.id },
     });
+
+    // Dispatch every preset parameter to the WASM engine.
+    const { engine } = input;
+    const p = preset.parameters;
+    engine.setParam({ name: 'hammer_hardness', value: p.hammerHardness });
+    engine.setParam({ name: 'tone_tilt', value: p.toneTilt });
+    engine.setParam({ name: 'stereo_width', value: p.stereoWidth });
+    engine.setParam({ name: 'velocity_curve', value: p.velocityCurve });
+
     return true;
 };
