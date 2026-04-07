@@ -13,6 +13,7 @@ import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel/panelToggles';
 import { workspaceStore } from '../stores/workspaceStore';
+import { eventBus } from '#/app/registerDependencies';
 
 type ShortcutHandler = (e: KeyboardEvent) => void;
 
@@ -113,7 +114,7 @@ export function startShortcutEngine(): () => void {
                 const handler = actionHandlers[action as ShortcutAction];
                 if (handler) {
                     handler(e);
-                    document.dispatchEvent(new CustomEvent('sourdaw:shortcut', { detail: { action } }));
+                    void eventBus.emit('shortcut.fired', { action });
                     return; // Stop processing other keys
                 }
             }

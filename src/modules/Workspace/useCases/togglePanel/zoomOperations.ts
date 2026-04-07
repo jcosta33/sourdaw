@@ -1,13 +1,9 @@
 import { getWorkspaceState } from '../../repositories/workspace';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { eventBus } from '#/app/registerDependencies';
 
-/**
- * Note: DOM CustomEvent dispatch is part of the codebase-wide `sourdaw:*`
- * notification system. Deferred to the EventBus migration sprint
- * (see also goToItem.ts, scripting.ts).
- */
 export function zoomToFit(): void {
-    document.dispatchEvent(new CustomEvent('sourdaw:zoom-to-fit'));
+    void eventBus.emit('zoom.toFit', undefined);
 }
 
 export function zoomToSelection(): void {
@@ -43,13 +39,9 @@ export function zoomToSelection(): void {
         return;
     }
 
-    document.dispatchEvent(
-        new CustomEvent('sourdaw:zoom-to-selection', {
-            detail: { startBeat: minStart, endBeat: maxEnd },
-        })
-    );
+    void eventBus.emit('zoom.toSelection', { startBeat: minStart, endBeat: maxEnd });
 }
 
 export function cycleAutomationVisibility(): void {
-    document.dispatchEvent(new CustomEvent('sourdaw:show-automation-tab'));
+    void eventBus.emit('panel.showAutomation', undefined);
 }

@@ -26,7 +26,7 @@ import {
 } from '#/modules/AudioEngine/models/WebMidiTypes';
 import { activeNotes, channelToNote, mpeEnabled, targetTrackId } from './state';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases/yeastSchedulingBridge';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 
 function secondsToBeats(seconds: number, tempo: number): number {
     return (seconds * tempo) / 60;
@@ -137,9 +137,7 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
                 if (gbDev) {
                     const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
                     dn?.grandBouleControls?.noteOn(evtNote, evtVel / 127);
-                    document.dispatchEvent(new CustomEvent(APP_EVENTS.MIDI_NOTE_ON, {
-                        detail: { midiNote: evtNote, velocity: evtVel / 127 },
-                    }));
+                    void eventBus.emit('midi.noteOn', { midiNote: evtNote, velocity: evtVel / 127 });
                     continue;
                 }
                 // Try levain
@@ -166,9 +164,7 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
                 if (gbDev2) {
                     const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
                     dn?.grandBouleControls?.noteOff(evtNote);
-                    document.dispatchEvent(new CustomEvent(APP_EVENTS.MIDI_NOTE_OFF, {
-                        detail: { midiNote: evtNote },
-                    }));
+                    void eventBus.emit('midi.noteOff', { midiNote: evtNote });
                     continue;
                 }
                 const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
@@ -227,9 +223,7 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
         if (dn?.grandBouleControls?.ready) {
             dn.grandBouleControls.noteOn(note, velocity / 127);
             noteData.grandBouleDeviceId = grandBouleDev.id;
-            document.dispatchEvent(new CustomEvent(APP_EVENTS.MIDI_NOTE_ON, {
-                detail: { midiNote: note, velocity: velocity / 127 },
-            }));
+            void eventBus.emit('midi.noteOn', { midiNote: note, velocity: velocity / 127 });
         }
         return;
     }
@@ -352,9 +346,7 @@ export function handleNoteOff(_channel: number, note: number): void {
         if (dn?.grandBouleControls) {
             dn.grandBouleControls.noteOff(note);
         }
-        document.dispatchEvent(new CustomEvent(APP_EVENTS.MIDI_NOTE_OFF, {
-            detail: { midiNote: note },
-        }));
+        void eventBus.emit('midi.noteOff', { midiNote: note });
     }
 
     // Levain noteOff — send via worklet MessagePort
@@ -471,19 +463,13 @@ export function handleCC(channel: number, cc: number, value: number): void {
         if (dn?.grandBouleControls?.ready) {
             if (cc === 64) {
                 dn.grandBouleControls.setSustain(value / 127);
-                document.dispatchEvent(new CustomEvent(APP_EVENTS.MIDI_PEDAL_CC, {
-                    detail: { cc: 64, value: value / 127 },
-                }));
+                void eventBus.emit('midi.pedalCc', { cc: 64, value: value / 127 });
             } else if (cc === 66) {
                 dn.grandBouleControls.setSostenuto(value >= 64);
-                document.dispatchEvent(new CustomEvent(APP_EVENTS.MIDI_PEDAL_CC, {
-                    detail: { cc: 66, value: value >= 64 },
-                }));
+                void eventBus.emit('midi.pedalCc', { cc: 66, value: value >= 64 });
             } else if (cc === 67) {
                 dn.grandBouleControls.setUnaCorda(value >= 64);
-                document.dispatchEvent(new CustomEvent(APP_EVENTS.MIDI_PEDAL_CC, {
-                    detail: { cc: 67, value: value >= 64 },
-                }));
+                void eventBus.emit('midi.pedalCc', { cc: 67, value: value >= 64 });
             }
         }
     }

@@ -9,7 +9,7 @@ import {
     GLUTEN_THEME,
     CRUST_THEME,
 } from '../../components/Sidebar/InstrumentCard';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
@@ -249,9 +249,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'Proof');
-                            document.dispatchEvent(
-                                new CustomEvent(APP_EVENTS.SHOW_PROOF_TAB, { detail: { deviceId: device?.id } })
-                            );
+                            void eventBus.emit('panel.showProof', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={PROOF_THEME}
@@ -265,9 +263,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'gluten');
-                            document.dispatchEvent(
-                                new CustomEvent(APP_EVENTS.SHOW_GLUTEN_TAB, { detail: { deviceId: device?.id } })
-                            );
+                            void eventBus.emit('panel.showGluten', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={GLUTEN_THEME}
@@ -281,7 +277,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             addDevice(selectedTrackId, 'crust');
-                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_CRUST_TAB));
+                            void eventBus.emit('panel.showCrust', { deviceId: null });
                         }
                     }}
                     theme={CRUST_THEME}
@@ -295,7 +291,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             addDevice(selectedTrackId, 'native-proof-chamber');
-                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB));
+                            void eventBus.emit('panel.showDutchOven', { deviceId: null });
                         }
                     }}
                     theme={PROOF_CHAMBER_THEME}
@@ -309,9 +305,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'native-scoring');
-                            document.dispatchEvent(
-                                new CustomEvent(APP_EVENTS.SHOW_SCORING_TAB, { detail: { deviceId: device?.id } })
-                            );
+                            void eventBus.emit('panel.showScoring', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={SCORING_THEME}

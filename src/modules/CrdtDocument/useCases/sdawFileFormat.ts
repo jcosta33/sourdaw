@@ -1,4 +1,5 @@
 import { type DocumentBundle } from '../models/CrdtDocumentTypes';
+import { createSdawFormatError } from '../errors/SdawFormatError';
 
 /** Magic bytes identifying an .sdaw file. */
 const SDAW_MAGIC = new Uint8Array([0x53, 0x44, 0x41, 0x57]); // "SDAW"
@@ -79,12 +80,12 @@ export const decodeSdawFile = (bytes: Uint8Array): DocumentBundle => {
 
     // Verify magic
     if (bytes.length < 8) {
-        throw new Error('Invalid .sdaw file: too short');
+        throw createSdawFormatError('Invalid .sdaw file: too short');
     }
 
     for (let i = 0; i < 4; i++) {
         if (bytes[offset + i] !== SDAW_MAGIC[i]) {
-            throw new Error('Invalid .sdaw file: bad magic bytes');
+            throw createSdawFormatError('Invalid .sdaw file: bad magic bytes');
         }
     }
     offset += 4;
@@ -93,7 +94,7 @@ export const decodeSdawFile = (bytes: Uint8Array): DocumentBundle => {
     const version = view.getUint16(offset, true);
     offset += 2;
     if (version !== FORMAT_VERSION) {
-        throw new Error(`Unsupported .sdaw version: ${version} (expected ${FORMAT_VERSION})`);
+        throw createSdawFormatError(`Unsupported .sdaw version: ${version} (expected ${FORMAT_VERSION})`);
     }
 
     // Read document count
@@ -105,26 +106,26 @@ export const decodeSdawFile = (bytes: Uint8Array): DocumentBundle => {
     for (let i = 0; i < docCount; i++) {
         // Read DocId
         if (offset + 4 > bytes.length) {
-            throw new Error(`Truncated at document ${i} DocId length`);
+            throw createSdawFormatError(`Truncated at document ${i} DocId length`);
         }
         const idLen = view.getUint32(offset, true);
         offset += 4;
 
         if (offset + idLen > bytes.length) {
-            throw new Error(`Truncated at document ${i} DocId`);
+            throw createSdawFormatError(`Truncated at document ${i} DocId`);
         }
         const docId = decoder.decode(bytes.subarray(offset, offset + idLen));
         offset += idLen;
 
         // Read data
         if (offset + 4 > bytes.length) {
-            throw new Error(`Truncated at document ${i} data length`);
+            throw createSdawFormatError(`Truncated at document ${i} data length`);
         }
         const dataLen = view.getUint32(offset, true);
         offset += 4;
 
         if (offset + dataLen > bytes.length) {
-            throw new Error(`Truncated at document ${i} data`);
+            throw createSdawFormatError(`Truncated at document ${i} data`);
         }
         const data = bytes.slice(offset, offset + dataLen);
         offset += dataLen;

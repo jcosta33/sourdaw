@@ -1,4 +1,5 @@
 import { type PresetAction } from './types';
+import { eventBus } from '#/app/registerDependencies';
 
 export const filePresets: readonly PresetAction[] = [
     {
@@ -49,7 +50,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['undo', 'ctrl z', 'cmd z'],
         category: 'File',
         buildAction: () => {
-            document.dispatchEvent(new CustomEvent('sourdaw:undo'));
+            void eventBus.emit('command.undo', undefined);
             return [];
         },
     },
@@ -59,7 +60,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['redo', 'ctrl shift z', 'cmd shift z'],
         category: 'File',
         buildAction: () => {
-            document.dispatchEvent(new CustomEvent('sourdaw:redo'));
+            void eventBus.emit('command.redo', undefined);
             return [];
         },
     },

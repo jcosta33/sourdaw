@@ -18,6 +18,23 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { cn } from '#/helpers/Styles/cn';
 import { openPluginGui } from '#/modules/Plugin/useCases/pluginLifecycle';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
+import { eventBus, type AppEvents } from '#/app/registerDependencies';
+
+const DEVICE_TYPE_TO_PANEL_EVENT: Record<string, keyof AppEvents> = {
+    'fermenter': 'panel.showFermenter',
+    'toaster': 'panel.showToaster',
+    'levain': 'panel.showLevain',
+    'native-dutch-oven': 'panel.showDutchOven',
+    'gluten': 'panel.showGluten',
+    'bacteria': 'panel.showBacteria',
+    'grinder': 'panel.showGrinder',
+    'proof': 'panel.showProof',
+    'yeast': 'panel.showYeast',
+    'native-scoring': 'panel.showScoring',
+    'crust': 'panel.showCrust',
+    'builtin-crumbs': 'panel.showCrumbs',
+    'grand-boule': 'panel.showGrandBoule',
+};
 
 type TrackDevicesSectionProps = {
     track: Track;
@@ -190,12 +207,11 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             )}
                             onClick={() => {
                                 const descriptor = getPluginById(device.type);
-                                if (descriptor?.hasCustomUI) {
-                                    document.dispatchEvent(
-                                        new CustomEvent(`sourdaw:show-${device.type}-tab`, {
-                                            detail: { deviceId: device.id },
-                                        })
-                                    );
+                                if (descriptor?.hasCustomUI && DEVICE_TYPE_TO_PANEL_EVENT[device.type]) {
+                                    const panelEvent = DEVICE_TYPE_TO_PANEL_EVENT[device.type];
+                                    if (panelEvent) {
+                                        void eventBus.emit(panelEvent, { deviceId: device.id });
+                                    }
                                 } else {
                                     onSelectDevice(device.id);
                                 }

@@ -1,0 +1,47 @@
+/* Toaster - Heat & Fire Theme
+ * Primary: Red (heat, warning, intensity)
+ * Secondary: Orange (fire, energy)
+ */
+
+@utility toaster-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 14% 0%, rgba(196, 144, 144, 0.14), transparent 24%),
+        radial-gradient(circle at 82% 0%, rgba(241, 165, 75, 0.1), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility toaster-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(196, 144, 144, 0.06), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility toaster-step-label {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.01)),
+        linear-gradient(90deg, rgba(196, 144, 144, 0.06), transparent), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.42);
+}
+
+@utility toaster-tab-active {
+    color: var(--color-accent-red);
+    border-color: rgba(196, 144, 144, 0.44);
+    background: linear-gradient(180deg, rgba(196, 144, 144, 0.16), rgba(196, 144, 144, 0.08));
+    transform: translateY(-1px);
+}

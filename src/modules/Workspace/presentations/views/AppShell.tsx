@@ -7,7 +7,7 @@ import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 import { clamp } from '#/helpers/Math/clamp';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
@@ -177,14 +177,12 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for automation tab activation (from 'A' key)
     useEffect(() => {
-        const handler = (): void => {
+        return eventBus.on('panel.showAutomation', () => {
             setBottomTab('automation');
             if (!mixerOpen) {
                 openMixer();
             }
-        };
-        document.addEventListener(APP_EVENTS.SHOW_AUTOMATION_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_AUTOMATION_TAB, handler);
+        });
     }, [mixerOpen]);
 
     // ─── Shared state helpers ───
@@ -206,131 +204,105 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for fermenter panel open (from inspector device click)
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showFermenter', (payload) => {
             closeAllDevicePanels();
-            setFermenterDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
+            setFermenterDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for toaster panel open (from inspector device click)
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showToaster', (payload) => {
             closeAllDevicePanels();
-            setToasterDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_TOASTER_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_TOASTER_TAB, handler);
+            setToasterDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for levain panel open (from inspector device click)
     useEffect(() => {
-        const handler = (): void => {
+        return eventBus.on('panel.showLevain', () => {
             closeAllDevicePanels();
             setLevainOpen(true);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_LEVAIN_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_LEVAIN_TAB, handler);
+        });
     }, []);
 
     // Listen for Dutch Oven panel open (from inspector device click)
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showDutchOven', (payload) => {
             closeAllDevicePanels();
-            setProofChamberDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
+            setProofChamberDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for Gluten panel open (from inspector device click)
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showGluten', (payload) => {
             closeAllDevicePanels();
-            setGlutenDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
+            setGlutenDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for Bacteria panel open
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showBacteria', (payload) => {
             closeAllDevicePanels();
-            setBacteriaDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_BACTERIA_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_BACTERIA_TAB, handler);
+            setBacteriaDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for Grinder panel open
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showGrinder', (payload) => {
             closeAllDevicePanels();
-            setGrinderDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
+            setGrinderDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for Proof mastering suite panel open
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showProof', (payload) => {
             closeAllDevicePanels();
-            setProofDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
+            setProofDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for Yeast MIDI FX panel open
     useEffect(() => {
-        const handler = (): void => {
+        return eventBus.on('panel.showYeast', () => {
             closeAllDevicePanels();
             setYeastOpen(true);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_YEAST_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_YEAST_TAB, handler);
+        });
     }, []);
 
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showScoring', (payload) => {
             closeAllDevicePanels();
-            setScoringDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
+            setScoringDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for Crust limiter panel open
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showCrust', (payload) => {
             closeAllDevicePanels();
-            setCrustDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
+            setCrustDeviceId(payload.deviceId);
+        });
     }, []);
 
-    // Listen for Sampler panel open
+    // Listen for Crumbs panel open
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showCrumbs', (payload) => {
             closeAllDevicePanels();
-            setSamplerDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_SAMPLER_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_SAMPLER_TAB, handler);
+            setSamplerDeviceId(payload.deviceId);
+        });
     }, []);
 
     // Listen for Grand Boule panel open (from sidebar instrument click)
     useEffect(() => {
-        const handler = (e: Event): void => {
+        return eventBus.on('panel.showGrandBoule', (payload) => {
             closeAllDevicePanels();
-            setGrandBouleDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
-        };
-        document.addEventListener(APP_EVENTS.SHOW_GRAND_BOULE_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_GRAND_BOULE_TAB, handler);
+            setGrandBouleDeviceId(payload.deviceId);
+        });
     }, []);
 
     // ─── Panel dimension setters (persisted via workspace store) ───

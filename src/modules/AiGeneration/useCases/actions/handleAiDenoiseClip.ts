@@ -1,3 +1,5 @@
+import { createAiGenerationError } from '../../errors/AiGenerationError';
+import { isAppError } from '#/infra/errors/isAppError';
 import { denoiseAudio, isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { addTask } from './addTask';
@@ -9,7 +11,7 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
         const start = performance.now();
         const buffer = audioBufferCache.get(clipId);
         if (!buffer) {
-            throw new Error('Audio buffer not found for clip');
+            throw createAiGenerationError('Audio buffer not found for clip');
         }
 
         let outNoiseFloor = -60;
@@ -59,6 +61,6 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
             durationMs: Math.round(performance.now() - start),
         });
     } catch (error: unknown) {
-        updateTask(taskId, { status: 'error', error: error instanceof Error ? error.message : 'Denoise failed' });
+        updateTask(taskId, { status: 'error', error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Denoise failed' });
     }
 }

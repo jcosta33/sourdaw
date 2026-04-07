@@ -1,5 +1,5 @@
 import { type CommandEntry } from '../CommandRegistry';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 import { getSelectedClipId } from '../../useCases/selectionHelpers';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
@@ -16,7 +16,7 @@ export const miscCommands: CommandEntry[] = [
         category: 'App',
         shortcut: '⌘,',
         action: () => {
-            document.dispatchEvent(new CustomEvent(APP_EVENTS.OPEN_PREFERENCES));
+            void eventBus.emit('dialog.openPreferences', undefined);
         },
     },
 

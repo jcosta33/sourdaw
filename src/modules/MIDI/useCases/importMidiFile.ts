@@ -1,3 +1,4 @@
+import { createMidiError } from '../errors/MidiError';
 import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
 import { midiStore } from '../stores/midiStore';
@@ -75,7 +76,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
 
     const headerChunk = reader.readString(4);
     if (headerChunk !== 'MThd') {
-        throw new Error('Not a valid MIDI file');
+        throw createMidiError('Not a valid MIDI file');
     }
 
     reader.readUint32(); // header length
@@ -84,7 +85,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
     const ticksPerBeat = reader.readUint16();
 
     if (format > 1) {
-        throw new Error(`MIDI format ${format} not supported`);
+        throw createMidiError(`MIDI format ${format} not supported`);
     }
 
     let globalTempo = 120;

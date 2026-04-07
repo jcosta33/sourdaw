@@ -18,6 +18,8 @@ import {
     type IFaustCompiler,
     type IFaustMonoWebAudioNode,
 } from '@grame/faustwasm';
+import { createFaustError } from '#/modules/Plugin/errors/FaustError';
+import { isAppError } from '#/infra/errors/isAppError';
 import { registerWAMPlugin, type WAMDescriptor } from '../wamPluginHost/hostOperations';
 import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/models/FaustEngineTypes';
 
@@ -55,11 +57,11 @@ async function getCompiler(): Promise<IFaustCompiler> {
                 compilerReady = true;
                 return compiler;
             } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
+                const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
                 compilerError = msg;
                 console.error(`[Faust] Compiler initialization failed: ${msg}`);
                 // Re-throw so callers know compilation is impossible
-                throw new Error(`Faust compiler unavailable: ${msg}`);
+                throw createFaustError(`Faust compiler unavailable: ${msg}`);
             }
         })();
     }
@@ -142,7 +144,7 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
             modules.set(moduleId, mod);
             return true;
         } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
             console.error(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
             return false;
         } finally {
@@ -212,8 +214,8 @@ export async function createFaustNode(
         
         return node;
     } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        
+        const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
+
         // If the error is "already registered", it means we collided despite the cache
         // or faustwasm's internal state is out of sync. We can try to recover by 
         // assuming it's now registered and just trying again, but faustwasm's 

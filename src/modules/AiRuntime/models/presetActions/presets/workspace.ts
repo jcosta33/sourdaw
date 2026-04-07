@@ -1,4 +1,5 @@
 import { type PresetAction } from './types';
+import { eventBus } from '#/app/registerDependencies';
 
 export const workspacePresets: readonly PresetAction[] = [
     {
@@ -77,7 +78,7 @@ export const workspacePresets: readonly PresetAction[] = [
         keywords: ['preferences', 'settings', 'options', 'config'],
         category: 'Workspace',
         buildAction: () => {
-            document.dispatchEvent(new CustomEvent('sourdaw:open-preferences'));
+            void eventBus.emit('dialog.openPreferences', undefined);
             return [];
         },
     },

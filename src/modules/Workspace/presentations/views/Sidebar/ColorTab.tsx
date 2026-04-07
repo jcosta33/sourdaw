@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { GitBranch, Bug, Guitar, Sliders, Waves } from 'lucide-react';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { InstrumentCard, YEAST_THEME, BACTERIA_THEME, GRINDER_THEME } from '../../components/Sidebar/InstrumentCard';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
@@ -190,9 +190,7 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'grinder');
-                            document.dispatchEvent(
-                                new CustomEvent(APP_EVENTS.SHOW_GRINDER_TAB, { detail: { deviceId: device?.id } })
-                            );
+                            void eventBus.emit('panel.showGrinder', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={GRINDER_THEME}
@@ -206,9 +204,7 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'bacteria');
-                            document.dispatchEvent(
-                                new CustomEvent(APP_EVENTS.SHOW_BACTERIA_TAB, { detail: { deviceId: device?.id } })
-                            );
+                            void eventBus.emit('panel.showBacteria', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={BACTERIA_THEME}
@@ -222,7 +218,7 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             addDevice(selectedTrackId, 'Yeast');
-                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_YEAST_TAB));
+                            void eventBus.emit('panel.showYeast', { deviceId: null });
                         }
                     }}
                     theme={YEAST_THEME}

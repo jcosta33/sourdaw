@@ -11,6 +11,7 @@
  * 7. Classify safety (auto-apply / preview / confirmation)
  * 8. Execute with full undo support
  */
+import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
@@ -219,7 +220,7 @@ function parseEditPlan(responseText: string): EditPlan {
             }
         } catch (e) {
             const preview = clean.slice(0, 120).replace(/\n/g, ' ');
-            throw new Error(
+            throw createAiRuntimeError(
                 `LLM returned malformed JSON (${e instanceof Error ? e.message : String(e)}). ` +
                     `Response preview: "${preview}…" — ` +
                     `The model may have run out of tokens mid-response. Try a simpler request or increase max_tokens.`
@@ -228,7 +229,7 @@ function parseEditPlan(responseText: string): EditPlan {
     }
 
     const preview = clean.slice(0, 120).replace(/\n/g, ' ');
-    throw new Error(`LLM response is not a valid EditPlan. Preview: "${preview}…"`);
+    throw createAiRuntimeError(`LLM response is not a valid EditPlan. Preview: "${preview}…"`);
 }
 
 async function commitDsos(
@@ -325,7 +326,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
     if (backend === 'webllm') {
         const engine = getLlmEngine();
         if (!engine) {
-            throw new Error('WebLLM engine not initialized');
+            throw createAiRuntimeError('WebLLM engine not initialized');
         }
         updateChatMessage(chatMsgId, { content: 'Generating edit plan...' });
 
@@ -359,7 +360,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
             return result;
         } catch (constraintError) {
             const activeModel = (await import('../../repositories/webLlm/engineLifecycle')).getActiveModelId();
-            throw new Error(
+            throw createAiRuntimeError(
                 `This edit is too complex for the current model. ` +
                     `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +
                     `(Grammar constraint failed on ${activeModel})`
@@ -367,7 +368,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
         }
     }
 
-    throw new Error(`No available backend for DSO generation`);
+    throw createAiRuntimeError(`No available backend for DSO generation`);
 }
 
 /**
@@ -406,7 +407,7 @@ async function invokeNativeSchemaConstrained(system: string, user: string, onPro
     });
 
     if (streamError) {
-        throw new Error(streamError);
+        throw createAiRuntimeError(streamError);
     }
 
     return result;

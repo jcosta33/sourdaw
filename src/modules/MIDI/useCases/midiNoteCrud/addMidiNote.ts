@@ -1,5 +1,6 @@
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { createMidiNote, type MidiNote } from '#/modules/MIDI/models/MidiNote';
+import { createMidiError } from '#/modules/MIDI/errors/MidiError';
 
 export function addMidiNote(
     clipId: string,
@@ -10,7 +11,7 @@ export function addMidiNote(
 ): MidiNote {
     const state = midiStore.value;
     if (!state) {
-        throw new Error('MIDI store not initialized');
+        throw createMidiError('MIDI store not initialized');
     }
 
     const safePitch = Math.round(Math.max(0, Math.min(127, pitch)));

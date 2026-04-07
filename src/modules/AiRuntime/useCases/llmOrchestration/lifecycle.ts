@@ -1,3 +1,4 @@
+import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
 
 import { llmStatusStore } from '../../stores/llmStatusStore';
@@ -14,7 +15,7 @@ export async function initEngine(modelId?: string): Promise<void> {
 
     if (backend === 'none') {
         llmStatusStore.set({ state: 'error', message: 'No AI backend available' });
-        throw new Error('No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.');
+        throw createAiRuntimeError('No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.');
     }
 
     llmStatusStore.set({ state: 'loading', progress: 0, text: `Starting ${backend} engine...` });
@@ -46,7 +47,7 @@ export async function initEngine(modelId?: string): Promise<void> {
             }
 
             llmStatusStore.set({ state: 'error', message: 'Native AI engine failed to load. Check logs for details.' });
-            throw new Error(`Native AI engine failed: ${msg}. No fallback available.`);
+            throw createAiRuntimeError(`Native AI engine failed: ${msg}. No fallback available.`);
         }
     }
 

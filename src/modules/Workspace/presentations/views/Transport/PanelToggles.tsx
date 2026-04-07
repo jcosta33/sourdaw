@@ -25,6 +25,7 @@ import { subscribeAiStore, getAiSnapshot } from '#/modules/AiGeneration/stores/a
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
 import { subscribeToLinkStatus, getLinkStatusSnapshot } from '#/modules/AudioEngine/stores/linkStatusStore';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
+import { eventBus } from '#/app/registerDependencies';
 
 type PanelTogglesProps = {
     sidebarOpen: boolean;
@@ -181,7 +182,7 @@ export const PanelToggles = ({
                         variant="ghost"
                         size="icon-sm"
                         aria-label="Open Preferences"
-                        onClick={() => document.dispatchEvent(new Event('sourdaw:open-preferences'))}
+                        onClick={() => void eventBus.emit('dialog.openPreferences', undefined)}
                     >
                         <Settings2 className="size-3.5" aria-hidden="true" />
                     </Button>

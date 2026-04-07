@@ -1,0 +1,37 @@
+/* Scoring - Blade Precision Theme
+ * Primary: Sage (earthy, blade-like, natural)
+ * Secondary: Cyan (precise, sharp, technical)
+ */
+
+@utility scoring-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 14% 0%, rgba(138, 168, 138, 0.14), transparent 24%),
+        radial-gradient(circle at 84% 0%, rgba(127, 184, 196, 0.08), transparent 18%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility scoring-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(138, 168, 138, 0.06), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility scoring-tab-active {
+    color: var(--color-accent-sage);
+    border-color: rgba(138, 168, 138, 0.44);
+    background: linear-gradient(180deg, rgba(138, 168, 138, 0.16), rgba(138, 168, 138, 0.08));
+    transform: translateY(-1px);
+}

@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { eventBus } from '#/app/registerDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri as isTauriAvailable } from '#/helpers/tauriBridge';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
@@ -290,21 +291,17 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     // ── External toggle event ───────────────────────────────────────────
 
     useEffect(() => {
-        const handleToggle = (e: Event): void => {
-            const detail = (e as CustomEvent<{ active?: boolean }>).detail;
-            if (detail && typeof detail.active === 'boolean') {
-                if (detail.active && !isListeningRef.current) {
+        return eventBus.on('voice.toggle', (payload) => {
+            if (payload && typeof payload.active === 'boolean') {
+                if (payload.active && !isListeningRef.current) {
                     startListening();
-                } else if (!detail.active && isListeningRef.current) {
+                } else if (!payload.active && isListeningRef.current) {
                     stopListening();
                 }
             } else {
                 toggleListening();
             }
-        };
-
-        document.addEventListener('sourdaw:toggle-voice-command', handleToggle);
-        return () => document.removeEventListener('sourdaw:toggle-voice-command', handleToggle);
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps -- stable refs, intentional
     }, []);
 

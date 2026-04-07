@@ -1,3 +1,4 @@
+import { createSampleDatabaseError } from '#/modules/SoundLibrary/errors/SampleDatabaseError';
 import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
 import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
 import {
@@ -18,7 +19,7 @@ export function addSample(
 ): SampleEntry {
     const state = sampleDatabaseStore.value;
     if (!state) {
-        throw new Error('Sample database not initialized');
+        throw createSampleDatabaseError('Sample database not initialized');
     }
 
     const { tags } = autoTagSample(name, path);

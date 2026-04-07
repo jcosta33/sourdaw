@@ -1,3 +1,5 @@
+import { createAiGenerationError } from '../../errors/AiGenerationError';
+import { isAppError } from '#/infra/errors/isAppError';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { addTask } from './addTask';
@@ -62,7 +64,7 @@ export async function handleStemSeparationPreview(clipId: string) {
             const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
             const buffer = audioBufferCache.get(clipId);
             if (!buffer) {
-                throw new Error('Audio buffer not found for clip');
+                throw createAiGenerationError('Audio buffer not found for clip');
             }
 
             const wavData = audioBufferToWav(buffer);
@@ -82,7 +84,7 @@ export async function handleStemSeparationPreview(clipId: string) {
             const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
             const buffer = audioBufferCache.get(clipId);
             if (!buffer) {
-                throw new Error('Audio buffer not found for clip');
+                throw createAiGenerationError('Audio buffer not found for clip');
             }
 
             const wavData = audioBufferToWav(buffer);
@@ -102,7 +104,7 @@ export async function handleStemSeparationPreview(clipId: string) {
     } catch (error: unknown) {
         updateTask(taskId, {
             status: 'error',
-            error: error instanceof Error ? error.message : 'Stem separation failed',
+            error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Stem separation failed',
         });
     }
 }

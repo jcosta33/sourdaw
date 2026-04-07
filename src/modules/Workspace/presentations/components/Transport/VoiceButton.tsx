@@ -6,6 +6,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores/voiceStatusStore';
 import { isSpeechRecognitionAvailable } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
 import { isTauri } from '#/helpers/tauriBridge';
+import { eventBus } from '#/app/registerDependencies';
 
 const subscribeVoice = (cb: () => void): (() => void) => voiceStatusStore.subscribe(() => cb());
 const getVoiceSnapshot = () => voiceStatusStore.value ?? { isListening: false, transcribing: false };
@@ -22,7 +23,7 @@ export const VoiceButton = (): ReactElement | null => {
     const active = voice.isListening || voice.transcribing;
 
     const handleClick = () => {
-        document.dispatchEvent(new CustomEvent('sourdaw:toggle-voice-command'));
+        void eventBus.emit('voice.toggle', { active: undefined });
     };
 
     return (

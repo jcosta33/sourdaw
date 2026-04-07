@@ -1,5 +1,6 @@
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { createMidiNote, type MidiNote } from '#/modules/MIDI/models/MidiNote';
+import { createMidiError } from '#/modules/MIDI/errors/MidiError';
 
 type NoteInput = {
     pitch: number;
@@ -18,7 +19,7 @@ type NoteInput = {
 export function batchAddMidiNotes(clipId: string, notes: NoteInput[]): MidiNote[] {
     const state = midiStore.value;
     if (!state) {
-        throw new Error('MIDI store not initialized');
+        throw createMidiError('MIDI store not initialized');
     }
 
     if (notes.length === 0) {

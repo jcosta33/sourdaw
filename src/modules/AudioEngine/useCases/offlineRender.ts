@@ -1,3 +1,4 @@
+import { createExportError } from '../errors/ExportError';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
 import { getAutomationLanes } from '#/modules/Automation/useCases/getAutomationLanes';
@@ -32,7 +33,7 @@ export function cancelExport(): void {
 /** Throws if a cancel was requested. */
 function checkCancel(): void {
     if (cancelFlag) {
-        throw new Error('Export cancelled');
+        throw createExportError('Export cancelled');
     }
 }
 
@@ -42,7 +43,7 @@ function checkCancel(): void {
  */
 function acquireRenderLock(): () => void {
     if (isRenderingActive) {
-        throw new Error('An export is already in progress. Cancel the current export before starting a new one.');
+        throw createExportError('An export is already in progress. Cancel the current export before starting a new one.');
     }
     isRenderingActive = true;
     return () => {
@@ -601,7 +602,7 @@ export async function renderOffline(
 
         // Validate durationBeats before creating the OfflineAudioContext
         if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
-            throw new Error(
+            throw createExportError(
                 `Invalid export duration: ${durationBeats} beats. Project may have no clips or corrupt clip data.`
             );
         }
@@ -769,7 +770,7 @@ export async function exportStems(
         const onWarning = typeof optsOrBeats === 'object' ? optsOrBeats.onWarning : undefined;
 
         if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
-            throw new Error(`Invalid export duration: ${durationBeats} beats.`);
+            throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
         const tracks = getTrackStoreState();

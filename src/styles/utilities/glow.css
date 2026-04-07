@@ -1,0 +1,5 @@
+@utility glow-active {
+    box-shadow:
+        0 0 4px var(--glow-color),
+        0 0 12px color-mix(in oklch, var(--glow-color), transparent 60%);
+}

@@ -1,3 +1,4 @@
+import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 
@@ -26,7 +27,7 @@ export async function generateToolCalls(systemPrompt: string, userMessage: strin
     const chain = getBackendChain();
 
     if (chain.length === 0) {
-        throw new Error('No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.');
+        throw createAiRuntimeError('No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.');
     }
 
     llmStatusStore.set({ state: 'generating' });
@@ -51,7 +52,7 @@ export async function generateToolCalls(systemPrompt: string, userMessage: strin
             } else {
                 // Native backend: prefer structured tool calling via mistral.rs
                 if (!isNativeEngineReady()) {
-                    throw new Error('Native AI engine not running');
+                    throw createAiRuntimeError('Native AI engine not running');
                 }
                 results = await generateNativeToolCalls(systemPrompt, userMessage);
             }

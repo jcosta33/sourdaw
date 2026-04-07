@@ -17,7 +17,7 @@ import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
 import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases/createGrandBouleTrack';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';
 import {
@@ -187,21 +187,21 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'fermenter');
-        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_FERMENTER_TAB, { detail: { deviceId: device?.id } }));
+        void eventBus.emit('panel.showFermenter', { deviceId: device?.id ?? null });
     };
 
     const handleAddToasterTrack = () => {
         const trackId = createDrumTrackStack();
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'toaster');
-        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_TOASTER_TAB, { detail: { deviceId: device?.id } }));
+        void eventBus.emit('panel.showToaster', { deviceId: device?.id ?? null });
     };
 
     const handleAddGrandBouleTrack = () => {
         const trackId = createGrandBouleTrack();
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'grand-boule');
-        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_GRAND_BOULE_TAB, { detail: { deviceId: device?.id } }));
+        void eventBus.emit('panel.showGrandBoule', { deviceId: device?.id ?? null });
     };
 
     const handleAddLevainTrack = () => {
@@ -217,7 +217,7 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         createTrackFromPreset(preset);
-        document.dispatchEvent(new Event(APP_EVENTS.SHOW_LEVAIN_TAB));
+        void eventBus.emit('panel.showLevain', { deviceId: null });
     };
 
     const handleAddSamplerTrack = () => {
@@ -235,7 +235,7 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'builtin-sampler');
-        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_SAMPLER_TAB, { detail: { deviceId: device?.id } }));
+        void eventBus.emit('panel.showCrumbs', { deviceId: device?.id ?? null });
     };
 
     void userPresetsVersion;

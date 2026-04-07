@@ -6,6 +6,7 @@ import {
     type SignalingMessage,
     PEER_COLORS,
 } from '../../models/CollaborationTypes';
+import { createCollaborationError } from '../../errors/CollaborationError';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
@@ -264,7 +265,7 @@ export const createSession = (name: string): string => {
  */
 export const generateInvite = async (): Promise<string> => {
     if (!peerManager) {
-        throw new Error('No active session');
+        throw createCollaborationError('No active session');
     }
 
     // Clean up any previously generated invite that was never answered.
@@ -299,7 +300,7 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
     cleanupSubsystems();
 
     if (!inviteString.trim()) {
-        throw new Error('Invite string is empty');
+        throw createCollaborationError('Invite string is empty');
     }
 
     let invite: SignalingMessage;
@@ -307,11 +308,11 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
         const json = await decompressInvite(inviteString.trim());
         invite = JSON.parse(json) as SignalingMessage;
     } catch {
-        throw new Error('Invalid invite — must be a valid invite string');
+        throw createCollaborationError('Invalid invite — must be a valid invite string');
     }
 
     if (invite.type !== 'offer') {
-        throw new Error('Invalid invite: expected offer');
+        throw createCollaborationError('Invalid invite: expected offer');
     }
 
     const peerId = generatePeerId();
@@ -382,16 +383,16 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
     const json = await decompressInvite(answerString);
     const answer = JSON.parse(json) as SignalingMessage;
     if (answer.type !== 'answer') {
-        throw new Error('Invalid answer');
+        throw createCollaborationError('Invalid answer');
     }
 
     if (!peerManager) {
-        throw new Error('No active session');
+        throw createCollaborationError('No active session');
     }
 
     const peer = peerManager.getPeer(answer.pendingPeerId);
     if (!peer) {
-        throw new Error('No pending peer connection matches this answer — the invite may have expired');
+        throw createCollaborationError('No pending peer connection matches this answer — the invite may have expired');
     }
 
     await peer.acceptAnswer(answer.sdp);

@@ -1,3 +1,4 @@
+import { createDecodeError } from '../errors/DecodeError';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../stores/audioBufferCache';
 import { decodeAudioFile as nativeDecodeAudioFile } from '../repositories/audioDecoding/tauriDecoding';
@@ -62,7 +63,7 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
     const wasmBytes = await file.arrayBuffer();
     const wasmDecoded = await decodeAudioBytesWasm(wasmBytes);
     if (!wasmDecoded) {
-        throw new Error(`Unable to decode "${file.name}" — format not supported.`);
+        throw createDecodeError(`Unable to decode "${file.name}" — format not supported.`);
     }
     const buffer = wasmDecodedToAudioBuffer(wasmDecoded, ctx);
     const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

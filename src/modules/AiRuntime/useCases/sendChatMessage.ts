@@ -1,3 +1,5 @@
+import { createAiRuntimeError } from '../errors/AiRuntimeError';
+import { isAppError } from '#/infra/errors/isAppError';
 import { getLlmEngine } from '../repositories/webLlm/engineLifecycle';
 import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
 import { isNativeEngineReady } from '../repositories/nativeEngine/lifecycle';
@@ -95,16 +97,16 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
     // Verify the appropriate engine is available
     if (backend === 'none') {
-        throw new Error('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
+        throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
     }
     if (backend === 'native' && !isNativeEngineReady()) {
-        throw new Error('Native AI engine is not running. Load the AI engine first.');
+        throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
     }
     if (backend === 'webllm' && !getLlmEngine()) {
-        throw new Error('AI Engine is not initialized or not supported on this device.');
+        throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
     }
     if (backend === 'cloud' && !isCloudAvailable()) {
-        throw new Error('Cloud AI not configured. Set API key in settings.');
+        throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
     }
 
     const state = chatStore.value;
@@ -258,7 +260,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
             await streamNativeCompletion(
                 completionMessages,
                 (token) => {
-                    if (aborter.signal.aborted) throw new Error('AbortedByUser');
+                    if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
                     fullContent += token;
                     const parsed = extractThinkBlock(fullContent);
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
@@ -270,7 +272,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
             await streamCloudChatCompletion(
                 completionMessages,
                 (token) => {
-                    if (aborter.signal.aborted) throw new Error('AbortedByUser');
+                    if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
                     fullContent += token;
                     const parsed = extractThinkBlock(fullContent);
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
@@ -311,7 +313,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
         const { reasoning, content: cleanContent } = extractThinkBlock(fullContent);
         updateChatMessage(assistantMsgId, { isStreaming: false, content: cleanContent, reasoning });
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred during generation.';
+        const errorMessage = isAppError(error) ? error.message : error instanceof Error ? error.message : 'An unknown error occurred during generation.';
         if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = extractThinkBlock(fullContent);

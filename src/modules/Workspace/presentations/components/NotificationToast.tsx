@@ -2,12 +2,13 @@ import { type ReactElement, useState, useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
+import { eventBus } from '#/app/registerDependencies';
 export { notifyUser } from '#/helpers/Notification/notifyUser';
 
 export type AppNotification = {
     id: string;
     message: string;
-    level: 'warning' | 'error' | 'info';
+    level: 'warning' | 'error' | 'info' | 'success';
     timestamp: number;
 };
 
@@ -15,8 +16,7 @@ export const NotificationToast = (): ReactElement | null => {
     const [items, setItems] = useState<AppNotification[]>([]);
 
     useEffect(() => {
-        const handler = (e: Event) => {
-            const { message, level } = (e as CustomEvent<{ message: string; level: AppNotification['level'] }>).detail;
+        return eventBus.on('ui.notify', ({ message, level }) => {
             const notification: AppNotification = {
                 id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 message,
@@ -29,11 +29,7 @@ export const NotificationToast = (): ReactElement | null => {
                 }
                 return [...prev, notification];
             });
-        };
-        document.addEventListener('sourdaw:notify', handler);
-        return () => {
-            document.removeEventListener('sourdaw:notify', handler);
-        };
+        });
     }, []);
 
     useEffect(() => {

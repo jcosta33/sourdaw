@@ -22,6 +22,7 @@ import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
+import { eventBus } from '#/app/registerDependencies';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 
@@ -90,12 +91,11 @@ export const TimelineSurface = (): ReactElement => {
             });
         };
 
-        const handleZoomToSelection = (e: Event) => {
+        const handleZoomToSelection = ({ startBeat, endBeat }: { startBeat: number; endBeat: number }) => {
             const container = containerRef.current;
             if (!container) {
                 return;
             }
-            const { startBeat, endBeat } = (e as CustomEvent<{ startBeat: number; endBeat: number }>).detail;
             const range = endBeat - startBeat;
             if (range <= 0) {
                 return;
@@ -132,14 +132,12 @@ export const TimelineSurface = (): ReactElement => {
             timelineViewStore.set({ ...viewState, scrollX: targetScrollX });
         };
 
-        document.addEventListener('sourdaw:zoom-to-fit', handleZoomToFit);
-        document.addEventListener('sourdaw:zoom-to-selection', handleZoomToSelection);
-        document.addEventListener('sourdaw:scroll-to-playhead', handleScrollToPlayhead);
-        return () => {
-            document.removeEventListener('sourdaw:zoom-to-fit', handleZoomToFit);
-            document.removeEventListener('sourdaw:zoom-to-selection', handleZoomToSelection);
-            document.removeEventListener('sourdaw:scroll-to-playhead', handleScrollToPlayhead);
-        };
+        const unsubs = [
+            eventBus.on('zoom.toFit', handleZoomToFit),
+            eventBus.on('zoom.toSelection', handleZoomToSelection),
+            eventBus.on('zoom.scrollToPlayhead', handleScrollToPlayhead),
+        ];
+        return () => unsubs.forEach((unsub) => unsub());
     }, []);
 
     useEffect(() => {

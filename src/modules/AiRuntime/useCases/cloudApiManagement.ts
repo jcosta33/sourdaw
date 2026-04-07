@@ -6,6 +6,7 @@
  * and optionally persisted via the preferences store.
  */
 
+import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { setCloudApiKey, clearCloudApiKey } from '../repositories/cloudLlm/keyManagement';
 
 // Re-export for UI consumers
@@ -17,7 +18,7 @@ export { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
  */
 export function configureCloudApi(apiKey: string): void {
     if (!apiKey.trim()) {
-        throw new Error('API key cannot be empty');
+        throw createAiRuntimeError('API key cannot be empty');
     }
     setCloudApiKey(apiKey.trim());
 }

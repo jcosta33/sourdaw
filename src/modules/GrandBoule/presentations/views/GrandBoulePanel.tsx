@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useState, useSyncExternalStore } from 'react';
 import { Cpu, Power } from 'lucide-react';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -139,46 +139,38 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     // Subscribe to external MIDI note events so the visual keyboard reflects
     // notes played on a physical controller (e.g. Akai).
     useEffect(() => {
-        const onMidiNoteOn = (e: Event): void => {
-            const { midiNote, velocity } = (e as CustomEvent).detail;
-            setLastVelocity(Math.round(velocity * 127));
-            setActiveNotes((prev) => {
-                const next = new Map(prev);
-                next.set(midiNote as number, velocity as number);
-                return next;
-            });
-        };
-        const onMidiNoteOff = (e: Event): void => {
-            const { midiNote } = (e as CustomEvent).detail;
-            setActiveNotes((prev) => {
-                if (!prev.has(midiNote as number)) {
-                    return prev;
+        const unsubs = [
+            eventBus.on('midi.noteOn', ({ midiNote, velocity }) => {
+                setLastVelocity(Math.round(velocity * 127));
+                setActiveNotes((prev) => {
+                    const next = new Map(prev);
+                    next.set(midiNote, velocity);
+                    return next;
+                });
+            }),
+            eventBus.on('midi.noteOff', ({ midiNote }) => {
+                setActiveNotes((prev) => {
+                    if (!prev.has(midiNote)) {
+                        return prev;
+                    }
+                    const next = new Map(prev);
+                    next.delete(midiNote);
+                    return next;
+                });
+            }),
+            eventBus.on('midi.pedalCc', ({ cc, value }) => {
+                const s = grandBouleStore.value;
+                if (s === null) return;
+                if (cc === 64) {
+                    grandBouleStore.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
+                } else if (cc === 66) {
+                    grandBouleStore.set({ ...s, pedals: { ...s.pedals, sostenuto: value as boolean } });
+                } else if (cc === 67) {
+                    grandBouleStore.set({ ...s, pedals: { ...s.pedals, unaCorda: value as boolean } });
                 }
-                const next = new Map(prev);
-                next.delete(midiNote as number);
-                return next;
-            });
-        };
-        const onMidiPedalCC = (e: Event): void => {
-            const { cc, value } = (e as CustomEvent).detail;
-            const s = grandBouleStore.value;
-            if (s === null) return;
-            if (cc === 64) {
-                grandBouleStore.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
-            } else if (cc === 66) {
-                grandBouleStore.set({ ...s, pedals: { ...s.pedals, sostenuto: value as boolean } });
-            } else if (cc === 67) {
-                grandBouleStore.set({ ...s, pedals: { ...s.pedals, unaCorda: value as boolean } });
-            }
-        };
-        document.addEventListener(APP_EVENTS.MIDI_NOTE_ON, onMidiNoteOn);
-        document.addEventListener(APP_EVENTS.MIDI_NOTE_OFF, onMidiNoteOff);
-        document.addEventListener(APP_EVENTS.MIDI_PEDAL_CC, onMidiPedalCC);
-        return () => {
-            document.removeEventListener(APP_EVENTS.MIDI_NOTE_ON, onMidiNoteOn);
-            document.removeEventListener(APP_EVENTS.MIDI_NOTE_OFF, onMidiNoteOff);
-            document.removeEventListener(APP_EVENTS.MIDI_PEDAL_CC, onMidiPedalCC);
-        };
+            }),
+        ];
+        return () => unsubs.forEach((unsub) => unsub());
     }, []);
 
     // On mount (or when the engine becomes available), dispatch the active

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { eventBus } from '#/app/registerDependencies';
 import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
 import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
@@ -45,7 +46,7 @@ export const useAppKeyboardShortcuts = ({ onOpenExport, onOpenPreferences }: Sho
             }
             if (mod && e.shiftKey && e.key === 'a') {
                 e.preventDefault();
-                document.dispatchEvent(new Event('sourdaw:show-automation-tab'));
+                void eventBus.emit('panel.showAutomation', undefined);
             }
             if (mod && e.key === 'j') {
                 e.preventDefault();

@@ -1,0 +1,38 @@
+/* Grand Boule - Classic French Theme
+ * Primary: Light Gray (classic, neutral, refined)
+ * Secondary: White (pure, simple, elegant)
+ * Note: Brighter highlights for the "grand" appearance
+ */
+
+@utility grand-boule-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01)),
+        radial-gradient(circle at 14% 0%, rgba(200, 200, 200, 0.1), transparent 24%),
+        radial-gradient(circle at 82% 0%, rgba(255, 255, 255, 0.06), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.50),
+        var(--shadow-elevation-raised);
+}
+
+@utility grand-boule-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(200, 200, 200, 0.05), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top-color: rgba(255, 255, 255, 0.16);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.50),
+        var(--shadow-elevation-inset);
+}
+
+@utility grand-boule-tab-active {
+    color: #c0c0c0;
+    border-color: rgba(200, 200, 200, 0.5);
+    background: linear-gradient(180deg, rgba(200, 200, 200, 0.2), rgba(200, 200, 200, 0.1));
+    transform: translateY(-1px);
+}

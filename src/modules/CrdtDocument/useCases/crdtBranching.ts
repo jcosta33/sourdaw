@@ -1,5 +1,6 @@
 import * as Automerge from '@automerge/automerge';
 
+import { createBranchError } from '../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { type BranchRecord, MAIN_BRANCH_ID } from '../models/BranchTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
@@ -14,12 +15,12 @@ import { projectCrdtToStores } from './projection/projectProjection';
 export const forkProjectBranch = async (name: string, note = ''): Promise<string> => {
     const state = branchStore.value;
     if (!state) {
-        throw new Error('Branch store not initialized');
+        throw createBranchError('Branch store not initialized');
     }
 
     const sourceDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
     if (!sourceDoc) {
-        throw new Error('No root document to fork');
+        throw createBranchError('No root document to fork');
     }
 
     const branchId = crypto.randomUUID();
@@ -66,7 +67,7 @@ export const switchBranch = (branchId: string): void => {
 
     const branch = state.branches.find((b) => b.branchId === branchId);
     if (!branch) {
-        throw new Error(`Branch not found: ${branchId}`);
+        throw createBranchError(`Branch not found: ${branchId}`);
     }
 
     // The branch's doc is already in the repository (loaded at startup or fork time).
@@ -74,7 +75,7 @@ export const switchBranch = (branchId: string): void => {
     // For now, we swap the root doc reference.
     const branchDoc = automergeRepository.getDoc(branch.rootDocId);
     if (!branchDoc) {
-        throw new Error(`Branch document not found: ${branch.rootDocId}`);
+        throw createBranchError(`Branch document not found: ${branch.rootDocId}`);
     }
 
     // Swap root doc to point to the branch
@@ -95,14 +96,14 @@ export const mergeBranch = async (sourceBranchId: string): Promise<void> => {
 
     const sourceBranch = state.branches.find((b) => b.branchId === sourceBranchId);
     if (!sourceBranch) {
-        throw new Error(`Source branch not found: ${sourceBranchId}`);
+        throw createBranchError(`Source branch not found: ${sourceBranchId}`);
     }
 
     const sourceDoc = automergeRepository.getDoc(sourceBranch.rootDocId);
     const targetDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
 
     if (!sourceDoc || !targetDoc) {
-        throw new Error('Cannot merge: missing documents');
+        throw createBranchError('Cannot merge: missing documents');
     }
 
     const merged = Automerge.merge(targetDoc, sourceDoc);
@@ -120,7 +121,7 @@ export const mergeBranch = async (sourceBranchId: string): Promise<void> => {
  */
 export const deleteBranch = (branchId: string): void => {
     if (branchId === MAIN_BRANCH_ID) {
-        throw new Error('Cannot delete the main branch');
+        throw createBranchError('Cannot delete the main branch');
     }
 
     const state = branchStore.value;
@@ -129,7 +130,7 @@ export const deleteBranch = (branchId: string): void => {
     }
 
     if (state.activeBranchId === branchId) {
-        throw new Error('Cannot delete the active branch — switch to another branch first');
+        throw createBranchError('Cannot delete the active branch — switch to another branch first');
     }
 
     const branch = state.branches.find((b) => b.branchId === branchId);

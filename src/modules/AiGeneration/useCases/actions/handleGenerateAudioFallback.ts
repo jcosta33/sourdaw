@@ -1,3 +1,5 @@
+import { createAiGenerationError } from '../../errors/AiGenerationError';
+import { isAppError } from '#/infra/errors/isAppError';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
@@ -9,7 +11,7 @@ export async function handleGenerateAudioFallback(prompt: string, durationStr: s
 
         const { generateAudio, isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis/useCases/audioAi');
         if (!isAudioGenerationAvailable()) {
-            throw new Error(
+            throw createAiGenerationError(
                 'Audio generation requires the Sourdaw desktop app (uses Stable Audio Open via Python sidecar)'
             );
         }
@@ -24,6 +26,6 @@ export async function handleGenerateAudioFallback(prompt: string, durationStr: s
             durationMs: Math.round(performance.now() - start),
         });
     } catch (error: unknown) {
-        updateTask(taskId, { status: 'error', error: error instanceof Error ? error.message : 'Generation failed' });
+        updateTask(taskId, { status: 'error', error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Generation failed' });
     }
 }

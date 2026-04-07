@@ -1,5 +1,5 @@
 import { type CommandEntry } from '../CommandRegistry';
-import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { eventBus } from '#/app/registerDependencies';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
 
@@ -31,7 +31,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘⇧E',
         action: () => {
-            document.dispatchEvent(new CustomEvent(APP_EVENTS.OPEN_EXPORT));
+            void eventBus.emit('dialog.openExport', undefined);
         },
     },
     {

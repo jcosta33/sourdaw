@@ -1,3 +1,4 @@
+import { createAiGenerationError } from '../errors/AiGenerationError';
 import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
@@ -22,12 +23,12 @@ export async function generateMidiVariations(clipId: string): Promise<void> {
     }
 
     if (!targetClip || targetClip.type !== 'midi') {
-        throw new Error('Target clip must be a MIDI clip.');
+        throw createAiGenerationError('Target clip must be a MIDI clip.');
     }
 
     const notes = getNotesForClip(targetClip.id);
     if (!notes || notes.length === 0) {
-        throw new Error('MIDI clip has no notes to vary.');
+        throw createAiGenerationError('MIDI clip has no notes to vary.');
     }
 
     const startBeat = targetClip.startBeat;
@@ -68,7 +69,7 @@ ONLY output raw JSON, no markdown blocks.`;
         // Extract JSON object from potentially markdown-wrapped response
         const jsonMatch = responseStr.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-            throw new Error('No JSON object found in AI response');
+            throw createAiGenerationError('No JSON object found in AI response');
         }
         const data = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
         if (data && Array.isArray(data.variations)) {
@@ -76,7 +77,7 @@ ONLY output raw JSON, no markdown blocks.`;
             createAlternativeClips(targetClip.id, data.variations as any);
         }
     } catch (error) {
-        throw new Error(
+        throw createAiGenerationError(
             `Failed to parse variations from AI: ${error instanceof Error ? error.message : String(error)}`
         );
     }

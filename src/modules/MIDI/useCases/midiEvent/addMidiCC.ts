@@ -1,10 +1,11 @@
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { createMidiCC, type MidiCC } from '#/modules/MIDI/models/MidiNote';
+import { createMidiError } from '#/modules/MIDI/errors/MidiError';
 
 export function addMidiCC(clipId: string, controller: number, value: number, beat: number, channel = 0): MidiCC {
     const state = midiStore.value;
     if (!state) {
-        throw new Error('MIDI store not initialized');
+        throw createMidiError('MIDI store not initialized');
     }
 
     const cc = createMidiCC(controller, value, beat, channel);
