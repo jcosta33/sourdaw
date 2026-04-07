@@ -117,6 +117,15 @@ export const YEAST_THEME: InstrumentCardTheme = {
     glow: 'bg-[var(--color-accent-peach)]/8',
 };
 
+export const SAMPLER_THEME: InstrumentCardTheme = {
+    button: 'border-[var(--color-accent-lavender)]/30 bg-gradient-to-br from-[var(--color-accent-lavender)]/10 via-surface-raised to-[var(--color-accent-lavender)]/5 hover:border-[var(--color-accent-lavender)]/50 hover:from-[var(--color-accent-lavender)]/15',
+    iconBox:
+        'bg-[var(--color-accent-lavender)]/20 border-[var(--color-accent-lavender)]/20 shadow-[0_0_12px_var(--color-accent-lavender)/15]',
+    iconColor: 'text-[var(--color-accent-lavender)]',
+    badgeColor: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
+    glow: 'bg-[var(--color-accent-lavender)]/8',
+};
+
 export const CRUST_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-peach)]/30 bg-gradient-to-br from-[var(--color-accent-peach)]/10 via-surface-raised to-[var(--color-accent-peach)]/5 hover:border-[var(--color-accent-peach)]/50 hover:from-[var(--color-accent-peach)]/15',
     iconBox:

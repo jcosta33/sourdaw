@@ -3,7 +3,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide-react';
+import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Disc3 } from 'lucide-react';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
@@ -19,7 +19,7 @@ import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrack
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';
-import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME } from '../../components/Sidebar/InstrumentCard';
+import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME, SAMPLER_THEME } from '../../components/Sidebar/InstrumentCard';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
@@ -49,7 +49,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 ];
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
-const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain']);
+const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-sampler']);
 
 // Categories that belong in the Effects tab, not here
 const EFFECTS_CATEGORIES = new Set<SoundPresetCategory>(['fx', 'vocal']);
@@ -205,6 +205,24 @@ export const InstrumentsTab = ({
         document.dispatchEvent(new Event(APP_EVENTS.SHOW_LEVAIN_TAB));
     };
 
+    const handleAddSamplerTrack = () => {
+        const preset: SoundPreset = {
+            id: 'sampler-default',
+            name: 'Sampler',
+            category: 'keys',
+            description: 'Unified Sampler Suite',
+            trackKind: 'midi',
+            devices: [{ type: 'builtin-sampler', name: 'Sampler', parameterValues: {} }],
+            tags: ['sampler', 'sample', 'playback'],
+            author: 'Sourdaw',
+            isFactory: true,
+        };
+        const trackId = createTrackFromPreset(preset);
+        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
+        const device = track?.devices.find((d) => d.type === 'builtin-sampler');
+        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_SAMPLER_TAB, { detail: { deviceId: device?.id } }));
+    };
+
     void userPresetsVersion;
 
     // ── Route: root category picker ─────────────────────────────────────
@@ -314,6 +332,14 @@ export const InstrumentsTab = ({
                     description="Sample playback · Legato · Expression · Multi-mic"
                     onClick={handleAddLevainTrack}
                     theme={LEVAIN_THEME}
+                />
+                <InstrumentCard
+                    icon={Disc3}
+                    label="Sampler"
+                    badge="Sample"
+                    description="Quick · Drum · Slice · Warp — drag & drop any audio"
+                    onClick={handleAddSamplerTrack}
+                    theme={SAMPLER_THEME}
                 />
             </div>
 

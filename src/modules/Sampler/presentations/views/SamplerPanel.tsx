@@ -28,6 +28,7 @@ import { handleSamplerFileDrop } from '../../useCases/handleFileDrop';
 import { subscribeToPosition } from '../../useCases/positionTracking';
 import { debouncedUpdateMarkerPosition, detectAndSetSlices } from '../../useCases/updateSliceMarker';
 import { armSamplerRecording, stopSamplerRecording } from '../../useCases/recording';
+import { initSamplerEngine, teardownSamplerEngine } from '../../useCases/samplerLifecycle';
 import { detectAndApplyLoopPoints } from '../../useCases/smartLoopPoints';
 import { updateVoiceStack } from '../../useCases/voiceStacking';
 import { PadGrid } from '../components/PadGrid';
@@ -67,6 +68,18 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         (cb) => sliceStore.subscribe(cb),
         () => sliceStore.value
     );
+
+    // Create / destroy sampler engine instance on mount/unmount.
+    useEffect(() => {
+        initSamplerEngine(deviceId, 44100).catch((err) => {
+            console.error('Failed to create sampler instance:', err);
+        });
+        return () => {
+            teardownSamplerEngine(deviceId).catch((err) => {
+                console.error('Failed to destroy sampler instance:', err);
+            });
+        };
+    }, [deviceId]);
 
     if (!state || !pads) {
         return <div className="h-full" />;

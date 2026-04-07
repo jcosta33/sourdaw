@@ -28,6 +28,7 @@ import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/Pr
 import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views/BacteriaPanel';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views/GrinderPanel';
+import { SamplerPanel } from '#/modules/Sampler/presentations/views/SamplerPanel';
 
 import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
@@ -107,6 +108,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         virtualKeyboardOpen,
         virtualKeyboardHeight,
         crustHeight,
+        samplerHeight,
     } = workspaceState;
 
     const project = useProjectState();
@@ -133,6 +135,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [proofDeviceId, setProofDeviceId] = useState<string | null>(null);
     const [yeastOpen, setYeastOpen] = useState(false);
     const [crustDeviceId, setCrustDeviceId] = useState<string | null>(null);
+    const [samplerDeviceId, setSamplerDeviceId] = useState<string | null>(null);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -194,6 +197,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setProofDeviceId(null);
         setYeastOpen(false);
         setCrustDeviceId(null);
+        setSamplerDeviceId(null);
     };
 
     // Listen for fermenter panel open (from inspector device click)
@@ -305,6 +309,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
     }, []);
 
+    // Listen for Sampler panel open
+    useEffect(() => {
+        const handler = (e: Event): void => {
+            closeAllDevicePanels();
+            setSamplerDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_SAMPLER_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_SAMPLER_TAB, handler);
+    }, []);
+
     // ─── Panel dimension setters (persisted via workspace store) ───
     const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
     const setInspectorWidth = (fn: (prev: number) => number) =>
@@ -329,6 +343,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         updateWorkspaceState({ scoringHeight: fn(scoringHeight) });
     const setYeastHeight = (fn: (prev: number) => number) => updateWorkspaceState({ yeastHeight: fn(yeastHeight) });
     const setCrustHeight = (fn: (prev: number) => number) => updateWorkspaceState({ crustHeight: fn(crustHeight) });
+    const setSamplerHeight = (fn: (prev: number) => number) =>
+        updateWorkspaceState({ samplerHeight: fn(samplerHeight) });
 
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). Two effects manage transitions:
@@ -560,6 +576,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onClose={() => setCrustDeviceId(null)}
                             >
                                 <CrustPanel deviceId={crustDeviceId} />
+                            </InstrumentBottomPanel>
+                        ) : null}
+
+                        {samplerDeviceId !== null ? (
+                            <InstrumentBottomPanel
+                                label="Sampler"
+                                labelColor="text-[var(--color-accent-peach)]"
+                                borderColor="border-[var(--color-accent-peach)]/20"
+                                height={samplerHeight}
+                                onResize={setSamplerHeight}
+                                onClose={() => setSamplerDeviceId(null)}
+                            >
+                                <SamplerPanel deviceId={samplerDeviceId} />
                             </InstrumentBottomPanel>
                         ) : null}
 
