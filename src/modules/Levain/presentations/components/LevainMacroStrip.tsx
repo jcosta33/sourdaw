@@ -25,6 +25,7 @@ export const LevainMacroStrip = ({ macros, labels, onMacroChange, compact }: Lev
                 defaultValue={0.5}
                 size={compact ? 'sm' : 'md'}
                 label={label}
+                tone="amber"
             />
         ))}
     </div>

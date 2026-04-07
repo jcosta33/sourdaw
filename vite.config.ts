@@ -35,6 +35,19 @@ export default defineConfig({
         environment: 'jsdom',
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
+        coverage: {
+            provider: 'v8',
+            reportsDirectory: './coverage',
+            reporter: ['text', 'json', 'html', 'lcov'],
+            exclude: [
+                '**/node_modules/**',
+                'dist/**',
+                'src-tauri/**',
+                '**/*.spec.ts',
+                '**/*.spec.tsx',
+                '**/routeTree.gen.ts',
+            ],
+        },
     },
     resolve: {
         alias: {

@@ -30,6 +30,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                     step={0.01}
                     defaultValue={0.5}
                     size="xl"
+                    tone="amber"
                 />
                 <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Humanize</span>
                 <span className="text-[7px] text-muted-foreground/40 tabular-nums">
@@ -48,6 +49,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         step={0.5}
                         defaultValue={15}
                         size="md"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Timing</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
@@ -64,6 +66,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         step={0.5}
                         defaultValue={5}
                         size="md"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Tuning</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
@@ -80,6 +83,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         step={0.5}
                         defaultValue={8}
                         size="md"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Dynamic</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
@@ -96,6 +100,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                         step={1}
                         defaultValue={15}
                         size="md"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Vib Var</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">

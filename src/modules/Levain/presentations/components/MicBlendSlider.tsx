@@ -73,6 +73,7 @@ export const MicBlendSlider = ({
                                 defaultValue={0}
                                 bipolar
                                 size="sm"
+                                tone="amber"
                             />
                             <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
                                 {mic.name}
@@ -106,6 +107,7 @@ export const MicBlendSlider = ({
                             onSendMicParam(2, 'enabled', newRoomVol > 0.05 ? 1.0 : 0.0);
                         }
                     }}
+                    tone="amber"
                     min={0}
                     max={1}
                     step={0.01}

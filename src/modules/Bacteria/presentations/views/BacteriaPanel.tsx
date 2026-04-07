@@ -178,6 +178,7 @@ const K = ({
             step={step}
             defaultValue={def}
             size="sm"
+            tone="mint"
         />
         <span className="text-[8px] leading-none text-muted-foreground">{label}</span>
         {unit ? <span className="font-mono text-[7px] text-muted-foreground/45">{formatValue(v, unit)}</span> : null}

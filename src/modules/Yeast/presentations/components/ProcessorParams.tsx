@@ -44,6 +44,7 @@ const K = ({
             step={step}
             defaultValue={value}
             size="sm"
+            tone="rose"
         />
         <span className="text-[6px] text-muted-foreground leading-none">{label}</span>
         {unit ? (

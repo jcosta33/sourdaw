@@ -763,10 +763,11 @@ Commands in `src-tauri/src/commands/` are not currently tested. When we add test
 | ------------------------ | --------------------------------------------- |
 | `pnpm test`              | Vitest in watch mode — use during development |
 | `pnpm test:run`          | Vitest single run — use in CI                 |
+| `pnpm test:coverage`     | Vitest with **v8** coverage; HTML + `lcov` in `./coverage/` |
 | `cargo test --workspace` | Run all Rust crate tests                      |
 | `cargo test -p daw-dsp`  | Run tests for a single Rust crate             |
 
-Vitest config is in `vite.config.ts` (`test` block). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`.
+Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
 ---
 

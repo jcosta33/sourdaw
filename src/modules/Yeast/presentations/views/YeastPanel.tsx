@@ -73,6 +73,10 @@ const YeastLed = ({ tone = 'rose', ...props }: ComponentProps<typeof DawPluginLe
     <DawPluginLed tone={tone} {...props} />
 );
 
+const YeastKnob = ({ tone = 'rose', ...props }: ComponentProps<typeof RotaryKnob>): ReactElement => (
+    <RotaryKnob tone={tone} {...props} />
+);
+
 function getLevelMeta(level: YeastState['uiLevel']): { title: string; description: string } {
     if (level === 1) {
         return {
@@ -345,7 +349,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             {/* Rate */}
             <div className="flex flex-col items-center gap-1">
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Rate</span>
-                <RotaryKnob
+                <YeastKnob
                     value={8}
                     onChange={(v) => {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
@@ -747,7 +751,7 @@ const KnobCol = ({
 }): ReactElement => (
     <div className="flex flex-col items-center gap-1">
         <span className="text-[8px] text-muted-foreground uppercase tracking-widest">{label}</span>
-        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={0.01} defaultValue={value} size="md" />
+        <YeastKnob value={value} onChange={onChange} min={min} max={max} step={0.01} defaultValue={value} size="md" />
         <span className="text-[7px] text-muted-foreground font-mono">
             {value.toFixed(unit === '%' ? 0 : 1)}
             {unit}

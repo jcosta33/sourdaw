@@ -252,6 +252,7 @@ function KnobControl({
                 step={step}
                 defaultValue={value}
                 size="sm"
+                tone="amber"
             />
             <span className="text-[8px] font-medium uppercase tracking-[0.22em] text-white/54">{label}</span>
             <span className="font-mono text-[9px] text-white/42">{displayValue}</span>

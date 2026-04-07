@@ -367,6 +367,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     step={0.1}
                                     defaultValue={-1}
                                     size="md"
+                                    tone="cyan"
                                 />
                                 <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
                                     Ceiling
@@ -460,6 +461,7 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                     step={0.1}
                     defaultValue={-1}
                     size="lg"
+                    tone="cyan"
                 />
                 <span className="text-[8px] text-muted-foreground font-mono">{patch.limCeiling.toFixed(1)} dBTP</span>
             </div>
@@ -760,6 +762,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                         step={0.5}
                         defaultValue={0}
                         size="md"
+                        tone="cyan"
                     />
                     <span className="text-[7px] text-muted-foreground font-mono">
                         {patch.inputGain > 0 ? '+' : ''}
@@ -776,6 +779,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                         step={0.5}
                         defaultValue={0}
                         size="md"
+                        tone="cyan"
                     />
                     <span className="text-[7px] text-muted-foreground font-mono">
                         {patch.outputGain > 0 ? '+' : ''}
@@ -982,7 +986,7 @@ const KnobColumn = ({
         <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color }}>
             {label}
         </span>
-        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={0.1} defaultValue={value} size="md" />
+        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={0.1} defaultValue={value} size="md" tone="cyan" />
         <span className="text-[7px] text-muted-foreground">{sublabel}</span>
         <span className="text-[7px] text-muted-foreground/50 font-mono">
             {value.toFixed(1)}

@@ -307,6 +307,7 @@ export const LevainPanel = (): ReactElement => {
                                             step={0.01}
                                             defaultValue={0.8}
                                             size="md"
+                                            tone="amber"
                                         />
                                         <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
                                             Master

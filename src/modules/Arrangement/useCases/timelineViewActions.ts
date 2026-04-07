@@ -63,7 +63,7 @@ import { importMidiFile as _importMidiFile } from '#/modules/MIDI/useCases/impor
 import { stripSilence as _stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
 
 export const selectTrack: typeof _selectTrack = (...args) => _selectTrack(...args);
-export const addTrack: typeof _addTrack = (...args) => _addTrack(...args);
+export const addTrack = (...args: Parameters<typeof _addTrack>) => _addTrack(...args);
 export const addDevice: typeof _addDevice = (...args) => _addDevice(...args);
 export const exportMidiClip: typeof _exportMidiClip = (...args) => _exportMidiClip(...args);
 export const importMidiFile: typeof _importMidiFile = (...args) => _importMidiFile(...args);
@@ -98,7 +98,7 @@ import { pushUndoEntry as _pushUndoEntry } from '#/modules/Command/useCases/push
 import { executeAppAction as _executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 export const pushUndoEntry: typeof _pushUndoEntry = (...args) => _pushUndoEntry(...args);
-export const executeAppAction: typeof _executeAppAction = (...args) => _executeAppAction(...args);
+export const executeAppAction = (...args: Parameters<typeof _executeAppAction>) => _executeAppAction(...args);
 
 // ── Workspace ─────────────────────────────────────────────────────
 import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';

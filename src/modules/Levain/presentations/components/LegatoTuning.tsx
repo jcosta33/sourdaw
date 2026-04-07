@@ -142,6 +142,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         step={10}
                         defaultValue={300}
                         size="lg"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Slow</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.slowThresholdMs}ms</span>
@@ -156,6 +157,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         step={5}
                         defaultValue={100}
                         size="lg"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Fast</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.fastThresholdMs}ms</span>
@@ -170,6 +172,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         step={1}
                         defaultValue={64}
                         size="md"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Porto Vel</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">

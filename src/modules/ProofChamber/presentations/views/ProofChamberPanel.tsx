@@ -151,6 +151,7 @@ function KnobCell({
                 defaultValue={defaultValue}
                 size={size}
                 bipolar={bipolar}
+                tone="amber"
             />
             <div className="text-[8px] uppercase tracking-[0.2em] text-white/58">{label}</div>
             {readout ? <div className="font-mono text-[9px] text-white/42">{readout}</div> : null}

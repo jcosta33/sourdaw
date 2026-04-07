@@ -166,6 +166,7 @@ export const ExpressionPanel = ({
                         step={0.005}
                         defaultValue={0.1}
                         size="lg"
+                        tone="amber"
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Xfade</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
@@ -183,6 +184,7 @@ export const ExpressionPanel = ({
                             step={1}
                             defaultValue={20}
                             size="lg"
+                            tone="amber"
                         />
                         <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Vib Depth</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
@@ -199,6 +201,7 @@ export const ExpressionPanel = ({
                             step={0.1}
                             defaultValue={7}
                             size="md"
+                            tone="amber"
                         />
                         <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
@@ -215,6 +218,7 @@ export const ExpressionPanel = ({
                             step={0.01}
                             defaultValue={0.2}
                             size="md"
+                            tone="amber"
                         />
                         <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Onset</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">

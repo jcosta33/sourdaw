@@ -107,6 +107,7 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             step={1}
                             defaultValue={440}
                             size="md"
+                            tone="indigo"
                         />
                     </div>
                     <div className="text-center">
@@ -119,7 +120,7 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
             <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
                 <header className="scoring-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
                     <div className="space-y-1">
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-mint)]/72">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-indigo)]/72">
                             Tuning deck
                         </div>
                         <div className="text-[14px] font-semibold text-white/92">

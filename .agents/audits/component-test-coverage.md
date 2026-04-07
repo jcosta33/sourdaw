@@ -10,12 +10,12 @@ updated: 2026-04-07
 
 Every React component under `src/components/` and every `**/presentations/components/**` module has a co-located unit test file (`*.spec.tsx` for components, `*.spec.ts` for non-TSX presentation helpers such as constants). Tests assert user-visible behavior and interactions; **incorrect behavior is fixed in source before a test locks it in.**
 
-Target: **100% coverage** of those files (enable `@vitest/coverage-v8` or equivalent when project owners add the dependency — not added in this session).
+Target: **100% file-level coverage** of those files (checklist). **Measured** line/branch coverage: `pnpm test:coverage`.
 
 ## Current state
 
 - **Inventory:** 204 files (see checklist below).
-- **Coverage tooling:** not configured in `package.json` / Vitest yet; use `pnpm test --run` for green builds until coverage is wired.
+- **Coverage tooling:** `pnpm test:coverage` (v8 via `@vitest/coverage-v8`); reports in `./coverage/` (HTML, `lcov`, JSON). Config: `vite.config.ts` → `test.coverage`.
 
 ## Progress summary
 
@@ -28,7 +28,7 @@ Target: **100% coverage** of those files (enable `@vitest/coverage-v8` or equiva
 
 ## Findings
 
-1. **Inventory:** All 204 checklist files have co-located specs (see checkboxes below). Measured line coverage is still optional via `@vitest/coverage-v8`.
+1. **Inventory:** All 204 checklist files have co-located specs (see checkboxes below). Measured line/branch coverage: `pnpm test:coverage`.
 2. **Radix / canvas / WebGL:** Some components need providers, resize observers, or canvas mocks — keep tests shallow; mock only module boundaries per `docs/06-testing.md`.
 3. **jsdom gaps:** Radix Slider/Tooltip use `ResizeObserver` — polyfilled in `src/setupTests.ts` for all tests.
 4. **Radix Tooltip + disabled UX:** Putting `aria-disabled` on `TooltipTrigger` prevented tooltips from opening; `DisabledFeatureWrapper` now uses native `disabled` on the child (via `cloneElement`) and wraps with `TooltipProvider` so Radix contract is satisfied.
@@ -46,7 +46,7 @@ Target: **100% coverage** of those files (enable `@vitest/coverage-v8` or equiva
 
 ## Priorities
 
-1. Wire Vitest coverage (`@vitest/coverage-v8`) when approved, then drive toward 100% measured line/branch coverage.
+1. Raise measured line/branch coverage where it matters (use `./coverage/index.html` after `pnpm test:coverage`).
 
 ## Inventory (checkbox = co-located spec exists)
 
