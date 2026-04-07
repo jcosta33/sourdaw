@@ -15,6 +15,10 @@ export default defineConfig({
     base: './',
     server: {
         hmr: process.env.NO_HMR !== '1',
+        headers: {
+            'Cross-Origin-Opener-Policy': 'same-origin',
+            'Cross-Origin-Embedder-Policy': 'require-corp',
+        },
     },
     define: {
         __APP_VERSION__: JSON.stringify(version),
@@ -51,6 +55,12 @@ export default defineConfig({
             // not support. The base64 entrypoint is functionally identical but
             // inlines the .wasm as a base64 string, sidestepping the issue entirely.
             '@automerge/automerge': resolve('node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js'),
+        },
+    },
+    preview: {
+        headers: {
+            'Cross-Origin-Opener-Policy': 'same-origin',
+            'Cross-Origin-Embedder-Policy': 'require-corp',
         },
     },
     build: {

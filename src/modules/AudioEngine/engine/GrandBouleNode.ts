@@ -88,6 +88,14 @@ export async function createGrandBouleNode(
     });
 
     // Create SAB ring buffer shared between Worker and AudioWorklet.
+    // Requires cross-origin isolation (COOP + COEP headers).
+    if (typeof SharedArrayBuffer === 'undefined') {
+        throw new Error(
+            'SharedArrayBuffer is not available. The server must send ' +
+            'Cross-Origin-Opener-Policy: same-origin and ' +
+            'Cross-Origin-Embedder-Policy: require-corp headers.',
+        );
+    }
     const sab = new SharedArrayBuffer(SAB_BYTES);
 
     // Create the engine Worker.
