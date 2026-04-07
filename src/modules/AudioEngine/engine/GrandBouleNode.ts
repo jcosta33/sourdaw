@@ -1,8 +1,15 @@
 /**
- * GrandBouleNode — AudioWorkletNode wrapper for the Grand Boule piano.
+ * GrandBouleNode — double-buffered AudioWorkletNode for the Grand Boule piano.
  *
- * Same pattern as ToasterNode/FermenterNode: caches WASM binary, resumes
- * AudioContext, provides noteOn/noteOff/setParam/pedals via MessagePort.
+ * Architecture:
+ *   Main thread  →  Web Worker (WASM engine)  →  SAB ring buffer  →  AudioWorklet (consumer)
+ *
+ * The WASM physical-modeling engine runs on a dedicated Web Worker that
+ * renders ahead into a SharedArrayBuffer. The AudioWorklet process() just
+ * copies from the ring buffer — microseconds of work, zero risk of
+ * real-time underrun from DSP load.
+ *
+ * MIDI and control messages are routed to the Worker, not the worklet.
  */
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
@@ -11,6 +18,11 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 let cachedWasmBytes: ArrayBuffer | null = null;
+
+/** Ring buffer: 8192 stereo frames ≈ 170 ms at 48 kHz. */
+const RING_FRAMES = 8192;
+const HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT; // writeHead + readHead
+const SAB_BYTES = HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
 
 async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
     let promise = workletRegistrations.get(ctx);
@@ -25,7 +37,6 @@ async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
     if (cachedWasmBytes) {
         return cachedWasmBytes;
     }
-    // Append a cache-buster in dev mode so rebuilt WASM is always picked up.
     const fetchUrl = import.meta.env.DEV ? `${url}?t=${Date.now()}` : url;
     const response = await fetch(fetchUrl);
     if (!response.ok) {
@@ -76,6 +87,15 @@ export async function createGrandBouleNode(
         channelCountMode: 'explicit',
     });
 
+    // Create SAB ring buffer shared between Worker and AudioWorklet.
+    const sab = new SharedArrayBuffer(SAB_BYTES);
+
+    // Create the engine Worker.
+    const engineWorker = new Worker(
+        new URL('../workers/grandBouleEngineWorker.ts', import.meta.url),
+        { type: 'module' },
+    );
+
     let bypassed = false;
     let settled = false;
 
@@ -86,13 +106,14 @@ export async function createGrandBouleNode(
                 reject(new Error('GrandBouleNode init timeout (10s)'));
             }
         }, 10_000);
-        node.port.onmessage = (e: MessageEvent) => {
-            if (settled) {
-                return;
-            }
+
+        engineWorker.onmessage = (e: MessageEvent) => {
+            if (settled) return;
             if (e.data.type === 'ready') {
                 settled = true;
                 clearTimeout(timeout);
+                // Now init the worklet side with the same SAB.
+                node.port.postMessage({ type: 'init', sab });
                 resolve();
             } else if (e.data.type === 'error') {
                 settled = true;
@@ -102,48 +123,57 @@ export async function createGrandBouleNode(
         };
     });
 
+    // Send WASM bytes + SAB to the engine worker.
     const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    engineWorker.postMessage(
+        { type: 'init', wasmBytes: copy, sab, sampleRate: ctx.sampleRate },
+        [copy],
+    );
+
+    /** Post a message to the engine worker (not the AudioWorklet). */
+    const post = (msg: Record<string, unknown>): void => {
+        engineWorker.postMessage(msg);
+    };
 
     return {
         workletNode: node,
-        noteOn(midiNote: number, velocity: number, sampleFrame?: number) {
+        noteOn(midiNote: number, velocity: number, _sampleFrame?: number) {
             if (!bypassed) {
-                node.port.postMessage({ type: 'noteOn', midiNote, velocity, sampleFrame });
+                post({ type: 'noteOn', midiNote, velocity });
             }
         },
-        noteOff(midiNote: number, sampleFrame?: number) {
-            node.port.postMessage({ type: 'noteOff', midiNote, sampleFrame });
+        noteOff(midiNote: number, _sampleFrame?: number) {
+            post({ type: 'noteOff', midiNote });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
+                post({ type: 'param', name, value });
             }
         },
         setSustain(position: number) {
-            node.port.postMessage({ type: 'sustain', position });
+            post({ type: 'sustain', position });
         },
         setUnaCorda(engaged: boolean) {
-            node.port.postMessage({ type: 'unaCorda', engaged });
+            post({ type: 'unaCorda', engaged });
         },
         setSostenuto(engaged: boolean) {
-            node.port.postMessage({ type: 'sostenuto', engaged });
+            post({ type: 'sostenuto', engaged });
         },
         noteOnMidi2(midiNote: number, velocity16bit: number, pitchOffsetQ24: number) {
             if (!bypassed) {
-                node.port.postMessage({ type: 'noteOnMidi2', midiNote, velocity16bit, pitchOffsetQ24 });
+                post({ type: 'noteOnMidi2', midiNote, velocity16bit, pitchOffsetQ24 });
             }
         },
         setTemperament(index: number) {
-            node.port.postMessage({ type: 'temperament', index });
+            post({ type: 'temperament', index });
         },
         loadAttackClip(key: number, samples: Float32Array) {
-            const copy = new Float32Array(samples);
-            node.port.postMessage({ type: 'loadAttackClip', key, samples: copy }, [copy.buffer]);
+            const buf = new Float32Array(samples);
+            post({ type: 'loadAttackClip', key, samples: buf });
         },
         allNotesOff() {
-            node.port.postMessage({ type: 'allNotesOff' });
+            post({ type: 'allNotesOff' });
         },
         setBypass(state: boolean) {
             bypassed = state;
@@ -161,6 +191,8 @@ export async function createGrandBouleNode(
                 node.disconnect();
             } catch {}
             node.port.close();
+            engineWorker.postMessage({ type: 'stop' });
+            engineWorker.terminate();
         },
         ready: readyPromise,
     };
