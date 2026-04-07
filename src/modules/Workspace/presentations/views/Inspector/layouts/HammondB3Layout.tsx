@@ -3,6 +3,7 @@ import { Slider } from '#/components/ui/slider';
 import { registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 export const HammondB3Layout = ({ device, trackId }: any): ReactElement | null => {
     if (!device) return null;
@@ -67,7 +68,9 @@ export const HammondB3Layout = ({ device, trackId }: any): ReactElement | null =
                     <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Controls</h3>
                     <div className="grid grid-cols-2 gap-4">
                         {otherParams.map((p: any) => (
-                            <DeviceParameterControl key={p.id} param={p} device={device} trackId={trackId} />
+                            <SurfaceCard key={p.id} className="p-2">
+                                <DeviceParameterControl param={p} device={device} trackId={trackId} />
+                            </SurfaceCard>
                         ))}
                     </div>
                 </div>

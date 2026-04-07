@@ -1,6 +1,6 @@
 import { type ReactElement, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { DawMenuButton, DawMenuMutedRow } from '#/components/daw/DawMenuParts';
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
+import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { addClip, addTrack, decodeAudioFile, importMidiFile, pasteClip } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
@@ -10,7 +10,6 @@ import { isTauri } from '#/helpers/tauriBridge';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { menuSepClass, menuShortcutClass } from '#/helpers/UI/contextMenuStyles';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 // ── Marker color presets ──────────────────────────────────────────────
@@ -50,7 +49,7 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
         <>
             {nearby.map((marker) => (
                 <div key={marker.id}>
-                    <div className={menuSepClass} />
+                    <DawMenuSeparator className="border-border/50" />
                     <DawMenuMutedRow>Marker: {marker.name}</DawMenuMutedRow>
                     <div className="flex gap-1 px-3 py-1">
                         {MARKER_COLOR_PRESETS.map((c) => (
@@ -139,14 +138,14 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
         onClose();
     };
 
-    return createPortal(
-        <div
+    return (
+        <DawContextMenuSurface
             ref={menuRef}
-            className="daw-floating-surface fixed z-50 min-w-[180px] rounded-md py-1"
-            style={{
-                left: Math.min(x, window.innerWidth - 200),
-                top: Math.min(y, window.innerHeight - 400),
-            }}
+            x={x}
+            y={y}
+            xClampOffset={200}
+            yClampOffset={400}
+            className="min-w-[180px]"
             role="menu"
         >
             <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'Audio', kind: 'audio' }))}>
@@ -158,7 +157,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'Bus', kind: 'bus' }))}>
                 Add Bus Track
             </DawMenuButton>
-            <div className={menuSepClass} />
+            <DawMenuSeparator className="border-border/50" />
             {trackId ? (
                 <DawMenuButton
                     role="menuitem"
@@ -177,15 +176,15 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     Add Clip Here
                 </DawMenuButton>
             ) : null}
-            <DawMenuButton role="menuitem" onClick={act(() => pasteClip())}>
-                Paste <span className={menuShortcutClass}>⌘V</span>
+            <DawMenuButton role="menuitem" shortcut="⌘V" onClick={act(() => pasteClip())}>
+                Paste
             </DawMenuButton>
-            <div className={menuSepClass} />
+            <DawMenuSeparator className="border-border/50" />
             <DawMenuButton role="menuitem" onClick={act(() => addMarker(beat, `Marker at ${beat}`))}>
                 Add Marker Here
             </DawMenuButton>
             <NearbyMarkerColorMenu beat={beat} onClose={onClose} />
-            <div className={menuSepClass} />
+            <DawMenuSeparator className="border-border/50" />
             <DawMenuMutedRow className="flex items-center gap-1 font-medium text-muted-foreground/70">
                 <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
                 AI Generate
@@ -236,14 +235,13 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
                 Generate Chord Progression
             </DawMenuButton>
-            <div className={menuSepClass} />
+            <DawMenuSeparator className="border-border/50" />
             <DawMenuButton role="menuitem" onClick={handleImportAudio}>
                 Import Audio…
             </DawMenuButton>
             <DawMenuButton role="menuitem" onClick={handleImportMidi}>
                 Import MIDI…
             </DawMenuButton>
-        </div>,
-        document.body
+        </DawContextMenuSurface>
     );
 };

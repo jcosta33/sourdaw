@@ -1,8 +1,8 @@
 import { type ReactElement } from 'react';
-import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { DawUtilityMetric } from '#/components/daw/DawUtilityMetric';
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
@@ -60,15 +60,12 @@ type FrequencyBarProps = { label: string; range: string; db: number };
 export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElement => {
     const normalizedWidth = Math.max(0, Math.min(100, ((db + 100) / 100) * 100));
     return (
-        <div className="space-y-0.5">
-            <DawReadoutRow label={<span title={range}>{label}</span>} value={`${db.toFixed(1)} dB`} />
-            <DawMeterBar
-                size="sm"
-                className="w-full bg-surface-overlay shadow-none"
-                fillClassName={`h-full rounded-full transition-all ${levelColor(db)}`}
-                value={normalizedWidth}
-            />
-        </div>
+        <DawUtilityMetric
+            label={<span title={range}>{label}</span>}
+            value={`${db.toFixed(1)} dB`}
+            meterValue={normalizedWidth}
+            meterFillClassName={levelColor(db)}
+        />
     );
 };
 
@@ -78,17 +75,14 @@ type OverallLevelProps = { level: MixAnalysis['overallLevel'] };
 
 export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
     <DawUtilitySection title="Master Level" detail="Peak and RMS at the current master output.">
-        <div className="flex items-center gap-3">
-            <DawStatusDot className={`size-2.5 ${levelColor(level.peakDb)}`} />
-            <div className="flex-1 space-y-0.5">
-                <DawReadoutRow
-                    label="Peak"
-                    value={`${level.peakDb.toFixed(1)} dB`}
-                    valueClassName={`text-xs font-medium ${levelTextColor(level.peakDb)}`}
-                />
-                <DawReadoutRow label="RMS" value={`${level.rmsDb.toFixed(1)} dB`} valueClassName="text-xs" />
-            </div>
-        </div>
+        <DawUtilityMetric
+            label="Peak"
+            value={`${level.peakDb.toFixed(1)} dB`}
+            startSlot={<DawStatusDot className={`mt-0.5 size-2.5 ${levelColor(level.peakDb)}`} />}
+            valueClassName={`text-xs font-medium ${levelTextColor(level.peakDb)}`}
+        >
+            <DawReadoutRow label="RMS" value={`${level.rmsDb.toFixed(1)} dB`} valueClassName="text-xs" />
+        </DawUtilityMetric>
     </DawUtilitySection>
 );
 

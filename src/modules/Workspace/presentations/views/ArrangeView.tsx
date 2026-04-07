@@ -31,6 +31,7 @@ import { ResizeHandle } from '#/modules/Workspace/presentations/components/Resiz
 import { Piano, Upload, Headphones } from 'lucide-react';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
+import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
 import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
 import { clamp } from '#/helpers/Math/clamp';
 
@@ -265,13 +266,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
             }}
             onDrop={handleDrop}
         >
-            <div
-                className={`flex flex-col items-center gap-4 p-7 rounded-2xl border shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)] max-w-xs w-full mx-4 transition-all duration-300 ${
-                    isDragOver
-                        ? 'border-[var(--color-accent-orange)] border-2 bg-[var(--color-accent-orange)]/5 scale-[1.02]'
-                        : 'border-border-soft/40 bg-surface-overlay/70 backdrop-blur-xl'
-                }`}
-            >
+            <ArrangeEmptyStateShell active={isDragOver}>
                 <p className="text-xs font-medium text-muted-foreground/60">Add your first track</p>
 
                 {/* Track type buttons */}
@@ -316,7 +311,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     <Upload className="size-3" aria-hidden="true" />
                     <span className="text-[10px]">Drop audio or MIDI files here</span>
                 </div>
-            </div>
+            </ArrangeEmptyStateShell>
         </div>
     );
 };

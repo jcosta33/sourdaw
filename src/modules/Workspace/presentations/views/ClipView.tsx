@@ -15,6 +15,7 @@ import { PianoRoll } from './ClipView/PianoRoll';
 import { WaveformEditor } from './ClipView/WaveformEditor';
 import { AutomationLane } from './ClipView/AutomationLane';
 import { KneadEditor } from './ClipView/KneadEditor';
+import { ClipEditorTray } from './ClipEditorTray';
 
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
@@ -132,7 +133,7 @@ export const ClipView = (): ReactElement => {
                 )}
             </div>
 
-            <div className="h-28" style={{ borderTop: '1px solid rgba(40,40,40,0.3)' }}>
+            <ClipEditorTray className="h-28">
                 <AutomationLane
                     clipId={selectedClip?.id ?? null}
                     trackId={selectedTrack.id}
@@ -141,7 +142,7 @@ export const ClipView = (): ReactElement => {
                     contentWidth={contentWidth}
                     scrollRef={automationScrollRef}
                 />
-            </div>
+            </ClipEditorTray>
         </DawPanelSurface>
     );
 };

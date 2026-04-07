@@ -2,8 +2,9 @@
  * PianoRoll context menu — right-click actions for note editing,
  * quantize, transpose, humanize, strum, AI, and groove operations.
  */
-import { type ReactElement, useEffect, useRef } from 'react';
-import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { type ReactElement, useRef } from 'react';
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
+import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
@@ -24,8 +25,8 @@ import {
 } from '#/modules/MIDI/useCases/grooveExtraction';
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
-const menuItemClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent';
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
 
 type PianoRollContextMenuProps = {
@@ -48,25 +49,7 @@ export const PianoRollContextMenu = ({
     onClearSelection,
 }: PianoRollContextMenuProps): ReactElement => {
     const ref = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const dismiss = (e: globalThis.MouseEvent): void => {
-            if (ref.current && !ref.current.contains(e.target as Node)) {
-                onClose();
-            }
-        };
-        const esc = (e: globalThis.KeyboardEvent): void => {
-            if (e.key === 'Escape') {
-                onClose();
-            }
-        };
-        document.addEventListener('mousedown', dismiss);
-        document.addEventListener('keydown', esc);
-        return () => {
-            document.removeEventListener('mousedown', dismiss);
-            document.removeEventListener('keydown', esc);
-        };
-    }, [onClose]);
+    useContextMenuDismiss(ref, onClose);
 
     const act = (fn: () => void) => () => {
         fn();
@@ -94,30 +77,30 @@ export const PianoRollContextMenu = ({
     };
 
     return (
-        <div
+        <DawContextMenuSurface
             ref={ref}
-            className="daw-floating-surface fixed z-50 min-w-[170px] rounded-md py-1"
-            style={{ left: menu.x, top: menu.y }}
+            x={menu.x}
+            y={menu.y}
+            portal={false}
+            className="min-w-[170px]"
             role="menu"
         >
             {/* Select/Clipboard */}
-            <button type="button" className={menuItemClass} role="menuitem" onClick={act(onSelectAll)}>
-                Select All <span className="ml-auto pl-4 text-muted-foreground">⌘A</span>
-            </button>
+            <DawMenuButton role="menuitem" shortcut="⌘A" onClick={act(onSelectAll)}>
+                Select All
+            </DawMenuButton>
             <DawMenuSeparator className="border-border/50" />
-            <button
-                type="button"
-                className={menuItemClass}
+            <DawMenuButton
                 role="menuitem"
+                shortcut="⌘C"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => copySelectedNotes(clipId, [...selectedNoteIds]))}
             >
-                Copy <span className="ml-auto pl-4 text-muted-foreground">⌘C</span>
-            </button>
-            <button
-                type="button"
-                className={menuItemClass}
+                Copy
+            </DawMenuButton>
+            <DawMenuButton
                 role="menuitem"
+                shortcut="⌘X"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
                     const cutNotes = notes.filter((n) => selectedNoteIds.has(n.id)).map((n) => ({ ...n }));
@@ -143,16 +126,11 @@ export const PianoRollContextMenu = ({
                     onClearSelection();
                 })}
             >
-                Cut <span className="ml-auto pl-4 text-muted-foreground">⌘X</span>
-            </button>
-            <button
-                type="button"
-                className={menuItemClass}
-                role="menuitem"
-                onClick={act(() => pasteNotes(clipId, menu.beat))}
-            >
-                Paste <span className="ml-auto pl-4 text-muted-foreground">⌘V</span>
-            </button>
+                Cut
+            </DawMenuButton>
+            <DawMenuButton role="menuitem" shortcut="⌘V" onClick={act(() => pasteNotes(clipId, menu.beat))}>
+                Paste
+            </DawMenuButton>
 
             {/* Quantize */}
             <DawMenuSeparator className="border-border/50" />
@@ -218,10 +196,8 @@ export const PianoRollContextMenu = ({
                     { amount: 0.05, label: 'medium' },
                 ] as const
             ).map(({ amount, label }) => (
-                <button
-                    type="button"
+                <DawMenuButton
                     key={label}
-                    className={menuItemClass}
                     role="menuitem"
                     onClick={act(() => {
                         const before = getNotesForClip(clipId).map((n) => ({
@@ -263,7 +239,7 @@ export const PianoRollContextMenu = ({
                     })}
                 >
                     Humanize ({label})
-                </button>
+                </DawMenuButton>
             ))}
 
             {/* Strum */}
@@ -297,26 +273,25 @@ export const PianoRollContextMenu = ({
 
             {/* AI */}
             <DawMenuSeparator className="border-border/50" />
-            <button
-                type="button"
-                className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] font-medium hover:bg-accent"
+            <DawMenuButton
                 role="menuitem"
+                className="font-medium text-[var(--color-accent-lavender)]"
+                trailingContent={
+                    <span className="rounded border border-current px-1 text-[9px] opacity-60">
+                        {isTauri() ? 'Desktop' : 'Web'}
+                    </span>
+                }
                 onClick={act(handleAIGenerate)}
             >
-                <span>AI Auto-Complete</span>
-                <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
-                    {isTauri() ? 'Desktop' : 'Web'}
-                </span>
-            </button>
+                AI Auto-Complete
+            </DawMenuButton>
 
             {/* Groove */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
                 Groove
             </DawMenuSectionLabel>
-            <button
-                type="button"
-                className={menuItemClass}
+            <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
                     const groove = extractGrooveFromClip(clipId);
@@ -326,10 +301,8 @@ export const PianoRollContextMenu = ({
                 })}
             >
                 Extract Groove
-            </button>
-            <button
-                type="button"
-                className={`${menuItemClass} disabled:opacity-40`}
+            </DawMenuButton>
+            <DawMenuButton
                 role="menuitem"
                 disabled={!(window as unknown as Record<string, unknown>).__lastGrooveTemplate}
                 onClick={act(() => {
@@ -351,14 +324,14 @@ export const PianoRollContextMenu = ({
                 })}
             >
                 Apply Groove (50%)
-            </button>
+            </DawMenuButton>
 
             {/* Delete */}
             <DawMenuSeparator className="border-border/50" />
-            <button
-                type="button"
-                className="flex w-full items-center px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+            <DawMenuButton
                 role="menuitem"
+                tone="danger"
+                shortcut="⌫"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
                     const deletedNotes = notes.filter((n) => selectedNoteIds.has(n.id)).map((n) => ({ ...n }));
@@ -380,8 +353,8 @@ export const PianoRollContextMenu = ({
                     onClearSelection();
                 })}
             >
-                Delete Selected <span className="ml-auto pl-4 text-muted-foreground">⌫</span>
-            </button>
-        </div>
+                Delete Selected
+            </DawMenuButton>
+        </DawContextMenuSurface>
     );
 };

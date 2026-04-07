@@ -5,8 +5,6 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
-import { Button } from '#/components/ui/button';
-import { ChevronRight } from 'lucide-react';
 import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
 import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
 import { setClipFade } from '#/modules/Arrangement/useCases/clipEditing/setClipFade';
@@ -18,6 +16,7 @@ import { type Clip } from '../../../models/TrackViewTypes';
 import { CLIP_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
+import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
 import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
 import { ClipAudioAiSection } from './ClipAudioAiSection';
 import { ClipMidiAiSection } from './ClipMidiAiSection';
@@ -45,54 +44,43 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
 
     return (
         <div className="space-y-4 p-3">
-            <div
-                className="flex items-center gap-1.5 -mx-3 -mt-3 mb-1 px-3 py-2 border-b border-black/40"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.005) 100%)',
-                    borderTop: '1px solid rgba(255,255,255,0.04)',
-                }}
-            >
-                <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="hover:bg-surface-raised"
-                    onClick={onBack}
-                    aria-label="Back to track"
-                >
-                    <ChevronRight className="size-3 rotate-180" />
-                </Button>
-                {editingName ? (
-                    <DawCompactInput
-                        value={nameValue}
-                        onChange={(e) => setNameValue(e.target.value)}
-                        onBlur={commitClipName}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                commitClipName();
-                            }
-                            if (e.key === 'Escape') {
+            <InspectorDetailHeader
+                title={
+                    editingName ? (
+                        <DawCompactInput
+                            value={nameValue}
+                            onChange={(e) => setNameValue(e.target.value)}
+                            onBlur={commitClipName}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    commitClipName();
+                                }
+                                if (e.key === 'Escape') {
+                                    setNameValue(clip.name);
+                                    setEditingName(false);
+                                }
+                            }}
+                            size="micro"
+                            className="w-full"
+                            aria-label={`Rename clip ${clip.name}`}
+                            autoFocus
+                        />
+                    ) : (
+                        <h3
+                            className="cursor-pointer truncate text-xs font-medium text-foreground hover:underline"
+                            onDoubleClick={() => {
                                 setNameValue(clip.name);
-                                setEditingName(false);
-                            }
-                        }}
-                        size="micro"
-                        className="flex-1"
-                        aria-label={`Rename clip ${clip.name}`}
-                        autoFocus
-                    />
-                ) : (
-                    <h3
-                        className="text-xs font-medium text-foreground cursor-pointer hover:underline"
-                        onDoubleClick={() => {
-                            setNameValue(clip.name);
-                            setEditingName(true);
-                        }}
-                        title="Double-click to rename"
-                    >
-                        {clip.name}
-                    </h3>
-                )}
-            </div>
+                                setEditingName(true);
+                            }}
+                            title="Double-click to rename"
+                        >
+                            {clip.name}
+                        </h3>
+                    )
+                }
+                onBack={onBack}
+                backLabel="Back to track"
+            />
 
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Position" />

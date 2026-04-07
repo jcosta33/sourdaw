@@ -12,7 +12,7 @@
 import { type ReactElement, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
+import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, SectionHeader } from './deviceLayoutRegistry';
 import { DeviceParameterControl } from './DeviceParameterControl';
 
@@ -131,12 +131,12 @@ const ParamRow = ({
     return (
         <div className={`grid grid-cols-1 @md:grid-cols-${String(cols)} gap-2`}>
             {params.map((param) => (
-                <Card
+                <SurfaceCard
                     key={param.id}
                     className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4"
                 >
                     <DeviceParameterControl param={param} device={device} trackId={trackId} />
-                </Card>
+                </SurfaceCard>
             ))}
         </div>
     );

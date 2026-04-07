@@ -3,7 +3,6 @@
  * semantic parameter grouping, and collapsible advanced sections.
  */
 import { type ReactElement } from 'react';
-import { Card } from '#/components/ui/card';
 import { Music, Guitar, Piano, Mic2, Waves, Zap } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
 import { type DeviceLayoutProps, SectionHeader, registerPrefixLayout } from '../deviceLayoutRegistry';
@@ -13,6 +12,7 @@ import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 type P = DeviceLayoutProps['parameters'][number];
 
@@ -84,9 +84,9 @@ const Param = ({
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
-    <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
+    <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
         <DeviceParameterControl param={p} device={device} trackId={trackId} />
-    </Card>
+    </SurfaceCard>
 );
 
 const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {

@@ -1,6 +1,4 @@
 import { type ReactElement } from 'react';
-import { ChevronRight } from 'lucide-react';
-import { Button } from '#/components/ui/button';
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases/getBuiltinPlugins';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
@@ -9,6 +7,7 @@ import { type Device } from '../../../models/TrackViewTypes';
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
 import { MetaText } from '../../components/Inspector/MetaText';
+import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
 import './layouts';
 
 type DeviceInspectorProps = {
@@ -91,28 +90,14 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
 
     return (
         <div className="space-y-4 p-3">
-            {/* ── Header: back button + bypass switch ── */}
-            <div
-                className="flex flex-row items-center justify-between -mx-3 -mt-3 mb-4 px-3 py-2 border-b border-black/40"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.005) 100%)',
-                    borderTop: '1px solid rgba(255,255,255,0.04)',
-                }}
-            >
-                <div className="flex items-center gap-1.5">
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className="hover:bg-surface-raised"
-                        onClick={onBack}
-                        aria-label="Back to track"
-                    >
-                        <ChevronRight className="size-3 rotate-180" />
-                    </Button>
-                    <h3 className="text-xs font-medium text-foreground">{device.name}</h3>
-                </div>
-                <MechanicalSwitch checked={!device.bypassed} onChange={(c) => bypassDevice(device.id, !c)} size="sm" />
-            </div>
+            <InspectorDetailHeader
+                title={<h3 className="truncate text-xs font-medium text-foreground">{device.name}</h3>}
+                onBack={onBack}
+                backLabel="Back to track"
+                actions={
+                    <MechanicalSwitch checked={!device.bypassed} onChange={(c) => bypassDevice(device.id, !c)} size="sm" />
+                }
+            />
 
             {/* ── Registry-based layout ── */}
             {LayoutComponent ? (

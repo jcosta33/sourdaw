@@ -7,13 +7,13 @@
 import { type ReactElement, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 const WAVE_NAMES = ['sine', 'triangle', 'sawtooth', 'square'] as const;
 
@@ -28,9 +28,9 @@ const Param = ({
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
-    <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
+    <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
         <DeviceParameterControl param={p} device={device} trackId={trackId} />
-    </Card>
+    </SurfaceCard>
 );
 
 const Row2 = ({

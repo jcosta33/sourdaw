@@ -44,11 +44,17 @@ export const DawMenuDisabledRow = ({ icon, className, children, ...props }: DawM
 type DawMenuButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
     tone?: 'default' | 'danger';
     active?: boolean;
+    leadingContent?: ReactNode;
+    trailingContent?: ReactNode;
+    shortcut?: ReactNode;
 };
 
 export const DawMenuButton = ({
     tone = 'default',
     active = false,
+    leadingContent,
+    trailingContent,
+    shortcut,
     className,
     children,
     type = 'button',
@@ -57,7 +63,7 @@ export const DawMenuButton = ({
     <button
         type={type}
         className={cn(
-            'flex w-full items-center rounded-sm px-2 py-1.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-30',
+            'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors disabled:pointer-events-none disabled:opacity-30',
             tone === 'danger'
                 ? 'text-destructive hover:bg-destructive/10'
                 : 'text-popover-foreground hover:bg-accent hover:text-accent-foreground',
@@ -66,6 +72,12 @@ export const DawMenuButton = ({
         )}
         {...props}
     >
-        {children}
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+            {leadingContent}
+            <span className="truncate">{children}</span>
+        </span>
+        {trailingContent ?? shortcut ? (
+            <span className="pl-4 text-[10px] text-muted-foreground">{trailingContent ?? shortcut}</span>
+        ) : null}
     </button>
 );
