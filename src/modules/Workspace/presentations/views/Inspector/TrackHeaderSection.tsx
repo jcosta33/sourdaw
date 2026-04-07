@@ -31,15 +31,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
     return (
         <div className="flex flex-col">
-            <InsetPanel
-                className="rounded-md bg-surface-well shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-3"
-                style={{
-                    borderTop: '1px solid rgba(255,255,255,0.05)',
-                    borderLeft: '1px solid rgba(255,255,255,0.04)',
-                    borderBottom: '1px solid rgba(0,0,0,0.3)',
-                    borderRight: '1px solid rgba(0,0,0,0.2)',
-                }}
-            >
+            <InsetPanel tone="framed" className="space-y-3">
                 <div>
                     <MetaText className="mb-1 block">Name</MetaText>
                     {editingName ? (

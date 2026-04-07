@@ -2,7 +2,7 @@
  * Reverb Layout — Decay visualization, all controls visible.
  */
 import { type ReactElement } from 'react';
-import { Card } from '#/components/ui/card';
+import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
@@ -17,9 +17,9 @@ const Param = ({
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
-    <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
+    <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
         <DeviceParameterControl param={p} device={device} trackId={trackId} />
-    </Card>
+    </SurfaceCard>
 );
 
 const ReverbLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {

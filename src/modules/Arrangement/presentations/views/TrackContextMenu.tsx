@@ -1,5 +1,6 @@
 import { type ReactElement, type MouseEvent, type ReactNode, useState, useRef } from 'react';
-import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
+import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { cn } from '#/helpers/Styles/cn';
@@ -45,6 +46,8 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const close = () => {
         setPosition(null);
         setRenaming(false);
+        setShowColorPicker(false);
+        setShowInputMon(false);
     };
 
     const menuRef = useRef<HTMLDivElement>(null);
@@ -198,91 +201,79 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
             {children}
 
             {position ? (
-                <>
-                    <div className="fixed inset-0 z-40" onClick={close} />
-                    <div
-                        ref={menuRef}
-                        className="daw-floating-surface fixed z-50 min-w-[200px] rounded-md py-1 animate-in fade-in zoom-in-95"
-                        style={{
-                            left: Math.min(position.x, window.innerWidth - 220),
-                            top: Math.min(position.y, window.innerHeight - 300),
-                        }}
-                        role="menu"
-                    >
-                        {renaming ? (
-                            <div className="px-2 py-1">
-                                <DawCompactInput
-                                    size="micro"
-                                    className="w-full text-xs"
-                                    value={renameValue}
-                                    onChange={(e) => setRenameValue(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            handleRenameCommit();
-                                        }
-                                        if (e.key === 'Escape') {
-                                            close();
-                                        }
-                                    }}
-                                    onBlur={handleRenameCommit}
-                                    autoFocus
-                                />
-                            </div>
-                        ) : showColorPicker ? (
-                            <div className="p-2">
-                                <DawMenuMutedRow className="mb-1.5 px-0 py-0">Track Color</DawMenuMutedRow>
-                                <div className="grid grid-cols-5 gap-1">
-                                    {TRACK_COLOR_PRESETS.map((color) => (
-                                        <DawSwatchButton
-                                            key={color}
-                                            color={color}
-                                            active={track.color === color}
-                                            className={cn('size-5 transition-transform hover:scale-110')}
-                                            onClick={() => {
-                                                setTrackColor(track.id, color);
-                                                close();
-                                            }}
-                                            aria-label={`Set color`}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        ) : showInputMon ? (
-                            <div className="p-1">
-                                <DawMenuMutedRow className="mb-1 px-2 py-0">Input Monitoring</DawMenuMutedRow>
-                                {INPUT_MON_OPTIONS.map((opt) => (
-                                    <DawMenuButton
-                                        key={opt.value}
-                                        role="menuitem"
-                                        className={cn(track.inputMonitoring === opt.value && 'bg-accent/50')}
-                                        active={track.inputMonitoring === opt.value}
+                <DawContextMenuSurface
+                    ref={menuRef}
+                    x={position.x}
+                    y={position.y}
+                    xClampOffset={220}
+                    yClampOffset={300}
+                    backdrop
+                    onClose={close}
+                    className="min-w-[200px] animate-in fade-in zoom-in-95"
+                    role="menu"
+                >
+                    {renaming ? (
+                        <DawMenuInlineEditor
+                            label="Rename Track"
+                            value={renameValue}
+                            onChange={setRenameValue}
+                            onSubmit={handleRenameCommit}
+                            onCancel={close}
+                        />
+                    ) : showColorPicker ? (
+                        <div className="p-2">
+                            <DawMenuMutedRow className="mb-1.5 px-0 py-0">Track Color</DawMenuMutedRow>
+                            <div className="grid grid-cols-5 gap-1">
+                                {TRACK_COLOR_PRESETS.map((color) => (
+                                    <DawSwatchButton
+                                        key={color}
+                                        color={color}
+                                        active={track.color === color}
+                                        className={cn('size-5 transition-transform hover:scale-110')}
                                         onClick={() => {
-                                            setInputMonitoring(track.id, opt.value);
+                                            setTrackColor(track.id, color);
                                             close();
                                         }}
-                                    >
-                                        {opt.label}
-                                    </DawMenuButton>
+                                        aria-label={`Set color`}
+                                    />
                                 ))}
                             </div>
-                        ) : (
-                            actions.map((item, i) =>
-                                item.label === '---' ? (
-                                    <DawMenuSeparator key={i} className="border-border/50" />
-                                ) : (
-                                    <DawMenuButton
-                                        key={i}
-                                        role="menuitem"
-                                        tone={'destructive' in item && item.destructive ? 'danger' : 'default'}
-                                        onClick={(item as MenuItem).action}
-                                    >
-                                        {item.label}
-                                    </DawMenuButton>
-                                )
+                        </div>
+                    ) : showInputMon ? (
+                        <div className="p-1">
+                            <DawMenuMutedRow className="mb-1 px-2 py-0">Input Monitoring</DawMenuMutedRow>
+                            {INPUT_MON_OPTIONS.map((opt) => (
+                                <DawMenuButton
+                                    key={opt.value}
+                                    role="menuitem"
+                                    className={cn(track.inputMonitoring === opt.value && 'bg-accent/50')}
+                                    active={track.inputMonitoring === opt.value}
+                                    onClick={() => {
+                                        setInputMonitoring(track.id, opt.value);
+                                        close();
+                                    }}
+                                >
+                                    {opt.label}
+                                </DawMenuButton>
+                            ))}
+                        </div>
+                    ) : (
+                        actions.map((item, i) =>
+                            item.label === '---' ? (
+                                <DawMenuSeparator key={i} className="border-border/50" />
+                            ) : (
+                                <DawMenuButton
+                                    key={i}
+                                    role="menuitem"
+                                    tone={'destructive' in item && item.destructive ? 'danger' : 'default'}
+                                    onClick={(item as MenuItem).action}
+                                >
+                                    {item.label}
+                                </DawMenuButton>
                             )
-                        )}
-                    </div>
-                </>
+                        )
+                    )}
+                </DawContextMenuSurface>
             ) : null}
         </div>
     );

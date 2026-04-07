@@ -1,7 +1,6 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
-import { DawMenuMutedRow } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { Fader } from '#/components/daw/Fader';
@@ -11,9 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { Circle, Ear, ShieldCheck } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
-import { menuBtnClass, menuSepClass } from '#/helpers/UI/contextMenuStyles';
 
-import { LevelMeter } from '../Metering/LevelMeter';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
@@ -21,6 +18,8 @@ import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 import { type Track } from '../../../models/TrackViewTypes';
 import { getAllVCAGroups } from '#/modules/Arrangement/useCases/vcaFader';
 import { useChannelStripActions } from '../../hooks/useChannelStripActions';
+import { MixerLevelReadout } from './MixerLevelReadout';
+import { MixerPopupLabel, MixerPopupMenu, MixerPopupOption, MixerPopupSeparator } from './MixerPopupMenu';
 
 type MixerMenu = { x: number; y: number } | null;
 
@@ -193,27 +192,29 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 {track.soloSafe ? <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" /> : null}
             </div>
 
-            {/* Meter */}
-            <div className="flex gap-1 items-end justify-center shrink-0 mt-2">
-                <LevelMeter trackId={track.id} width="w-1.5" />
-            </div>
-
-            {/* Fader */}
-            <div className="shrink-0" onPointerUp={actions.releaseGainAutomation}>
-                <Fader
-                    value={track.gain}
-                    onChange={actions.setGain}
-                    min={0}
-                    max={1.5}
-                    step={0.01}
-                    fineStep={0.001}
-                    defaultValue={0.8}
-                    height={100}
-                    aria-label={`${track.name} gain`}
-                />
-            </div>
-
-            <MixerStripValue>{track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB</MixerStripValue>
+            <MixerLevelReadout
+                trackId={track.id}
+                control={
+                    <div className="shrink-0" onPointerUp={actions.releaseGainAutomation}>
+                        <Fader
+                            value={track.gain}
+                            onChange={actions.setGain}
+                            min={0}
+                            max={1.5}
+                            step={0.01}
+                            fineStep={0.001}
+                            defaultValue={0.8}
+                            height={100}
+                            aria-label={`${track.name} gain`}
+                        />
+                    </div>
+                }
+                value={
+                    <>
+                        {track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB
+                    </>
+                }
+            />
 
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
@@ -248,45 +249,31 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
 
             {/* Context menu */}
             {ctxMenu ? (
-                <div
+                <MixerPopupMenu
                     ref={ctxRef}
-                    className="daw-floating-surface fixed z-50 max-h-[70vh] min-w-[160px] overflow-y-auto rounded-md py-1"
+                    position="fixed"
+                    className="max-h-[70vh] overflow-y-auto"
                     style={{ left: ctxMenu.x, top: ctxMenu.y }}
                     role="menu"
                 >
-                    <button type="button" className={menuBtnClass} role="menuitem" onClick={act(actions.toggleMute)}>
+                    <MixerPopupOption role="menuitem" onClick={act(actions.toggleMute)}>
                         {track.muted ? 'Unmute' : 'Mute'}
-                    </button>
-                    <button
-                        type="button"
-                        className={menuBtnClass}
-                        role="menuitem"
-                        onClick={act(() => actions.toggleSolo(true))}
-                    >
+                    </MixerPopupOption>
+                    <MixerPopupOption role="menuitem" onClick={act(() => actions.toggleSolo(true))}>
                         {track.soloed ? 'Unsolo' : 'Solo'}
-                    </button>
-                    <button
-                        type="button"
-                        className={menuBtnClass}
-                        role="menuitem"
-                        onClick={act(actions.toggleSoloSafeFlag)}
-                    >
+                    </MixerPopupOption>
+                    <MixerPopupOption role="menuitem" onClick={act(actions.toggleSoloSafeFlag)}>
                         {track.soloSafe ? 'Disable Solo Safe' : 'Solo Safe'}
-                    </button>
-                    <button type="button" className={menuBtnClass} role="menuitem" onClick={act(actions.toggleArm)}>
+                    </MixerPopupOption>
+                    <MixerPopupOption role="menuitem" onClick={act(actions.toggleArm)}>
                         {track.armed ? 'Disarm' : 'Arm for Recording'}
-                    </button>
-                    <div className={menuSepClass} />
-                    <button
-                        type="button"
-                        className={menuBtnClass}
-                        role="menuitem"
-                        onClick={act(() => setIsRenaming(true))}
-                    >
+                    </MixerPopupOption>
+                    <MixerPopupSeparator />
+                    <MixerPopupOption role="menuitem" onClick={act(() => setIsRenaming(true))}>
                         Rename…
-                    </button>
-                    <div className={menuSepClass} />
-                    <DawMenuMutedRow>Color</DawMenuMutedRow>
+                    </MixerPopupOption>
+                    <MixerPopupSeparator />
+                    <MixerPopupLabel>Color</MixerPopupLabel>
                     <div className="flex gap-1 px-3 py-1">
                         {TRACK_COLOR_PRESETS.map((c) => (
                             <DawSwatchButton
@@ -298,47 +285,31 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             />
                         ))}
                     </div>
-                    <div className={menuSepClass} />
-                    <DawMenuMutedRow>VCA Group</DawMenuMutedRow>
+                    <MixerPopupSeparator />
+                    <MixerPopupLabel>VCA Group</MixerPopupLabel>
                     {getAllVCAGroups().map((g) => (
-                        <button
-                            type="button"
+                        <MixerPopupOption
                             key={g.id}
-                            className={`${menuBtnClass} ${track.vcaGroupId === g.id ? 'text-[var(--color-accent-cyan)]' : ''}`}
+                            active={track.vcaGroupId === g.id}
                             role="menuitem"
                             onClick={act(() => actions.toggleVca(g.id))}
                         >
                             {track.vcaGroupId === g.id ? `✓ ${g.name}` : g.name}
-                        </button>
+                        </MixerPopupOption>
                     ))}
-                    <button
-                        type="button"
-                        className={menuBtnClass}
-                        role="menuitem"
-                        onClick={act(actions.createVcaAndAssign)}
-                    >
+                    <MixerPopupOption role="menuitem" onClick={act(actions.createVcaAndAssign)}>
                         + New VCA Group
-                    </button>
+                    </MixerPopupOption>
                     {track.vcaGroupId && (
-                        <button
-                            type="button"
-                            className={`${menuBtnClass} text-muted-foreground`}
-                            role="menuitem"
-                            onClick={act(actions.removeFromVca)}
-                        >
+                        <MixerPopupOption role="menuitem" className="text-muted-foreground" onClick={act(actions.removeFromVca)}>
                             Remove from VCA
-                        </button>
+                        </MixerPopupOption>
                     )}
-                    <div className={menuSepClass} />
-                    <button
-                        type="button"
-                        className={`${menuBtnClass} text-destructive hover:bg-destructive/10`}
-                        role="menuitem"
-                        onClick={act(actions.removeWithConfirm)}
-                    >
+                    <MixerPopupSeparator />
+                    <MixerPopupOption role="menuitem" tone="danger" onClick={act(actions.removeWithConfirm)}>
                         Remove Channel
-                    </button>
-                </div>
+                    </MixerPopupOption>
+                </MixerPopupMenu>
             ) : null}
         </div>
     );

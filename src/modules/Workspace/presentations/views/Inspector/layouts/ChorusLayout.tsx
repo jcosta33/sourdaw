@@ -2,10 +2,10 @@
  * Chorus/Phaser/Flanger Layout — LFO visualization, all controls visible.
  */
 import { type ReactElement } from 'react';
-import { Card } from '#/components/ui/card';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ModulationLFO } from '../../../components/ModulationLFO';
+import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({
@@ -17,9 +17,9 @@ const Param = ({
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
-    <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
+    <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
         <DeviceParameterControl param={p} device={device} trackId={trackId} />
-    </Card>
+    </SurfaceCard>
 );
 
 const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {

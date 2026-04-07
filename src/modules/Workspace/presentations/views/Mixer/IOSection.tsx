@@ -1,12 +1,13 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { useTracks } from '../../hooks/useTracks';
 import { setTrackOutput } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackOutput';
 import { type Track } from '../../../models/TrackViewTypes';
 import { MixerMicroReadout } from '../../components/Mixer/MixerMicroReadout';
 import { MixerSection } from '../../components/Mixer/MixerSection';
+import { MixerPopupMenu, MixerPopupOption } from './MixerPopupMenu';
 
 type IOSectionProps = {
     track: Track;
@@ -14,8 +15,10 @@ type IOSectionProps = {
 
 export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     const [outputOpen, setOutputOpen] = useState(false);
+    const outputRef = useRef<HTMLDivElement>(null);
     const { tracks } = useTracks();
     const buses = tracks.filter((t) => t.kind === 'bus');
+    useContextMenuDismiss(outputRef, () => setOutputOpen(false));
 
     const inputLabel = track.kind === 'midi' ? 'MIDI In' : 'Default';
     const outputLabel =
@@ -52,21 +55,18 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                 />
 
                 {outputOpen ? (
-                    <div
-                        className="daw-floating-surface absolute bottom-full right-0 z-50 mb-1 min-w-20 rounded-md py-1"
+                    <MixerPopupMenu
+                        ref={outputRef}
+                        className="bottom-full right-0 mb-1 min-w-20"
                         role="listbox"
                         aria-label="Output routing"
                     >
                         {outputTargets.map((target) => (
-                            <button
-                                type="button"
+                            <MixerPopupOption
                                 key={target.id}
                                 role="option"
+                                active={track.outputId === target.id}
                                 aria-selected={track.outputId === target.id}
-                                className={cn(
-                                    'w-full px-2 py-1 text-left text-[10px] transition-colors hover:bg-white/[0.06]',
-                                    track.outputId === target.id && 'font-medium text-primary'
-                                )}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setTrackOutput(track.id, target.id);
@@ -74,9 +74,9 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                                 }}
                             >
                                 {target.label}
-                            </button>
+                            </MixerPopupOption>
                         ))}
-                    </div>
+                    </MixerPopupMenu>
                 ) : null}
             </div>
         </MixerSection>

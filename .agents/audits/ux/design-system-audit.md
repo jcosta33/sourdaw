@@ -2,124 +2,24 @@
 
 ## Scope
 
-This file now tracks only unresolved presentation-layer issues.
+This file tracks the previously unresolved presentation-layer drift called out during the design-system cleanup pass.
 
-Addressed families and landed primitives were intentionally removed to keep the audit actionable. Dynamic geometry can still stay inline; the remaining issues are repeated material, chrome, layout, and interaction patterns that still need better shared structure.
-
-The unresolved work still needs to respect `.agents/specs/look-and-feel.md`:
+The work in this branch stays aligned with `.agents/specs/look-and-feel.md`:
 
 - understated DAW shell
 - tactile, premium, vector-first surfaces
 - calm hierarchy
 - stronger plugin flair where appropriate
 
-## Current Priorities
+## Current Status
 
-1. DAW readout, meter, and utility-surface cleanup
-2. Remaining plugin rail and quick-read specialization
-3. Browser, chooser, and row/card grammar
-4. Form/control families still using raw HTML or one-off styling
+No unresolved issues remain in this audit's tracked scope.
 
-## Open Issues
+## Resolution Summary
 
-### 1. DAW header and shell stragglers still exist
-
-Open issue:
-
-- Shared panel surfaces now cover the main base, dock, and tray shells. Timeline-specific chrome is now routed through `src/modules/Arrangement/presentations/views/TimelineChromeSurface.tsx`, and the automation split-panel left rail now uses `src/modules/Workspace/presentations/views/AutomationView/AutomationSidebarCell.tsx`. The remaining drift is concentrated in view-local onboarding/editor shell hybrids rather than the timeline bars themselves.
-
-Representative files:
-
-- `src/modules/Workspace/presentations/views/ArrangeView.tsx`
-- `src/modules/Workspace/presentations/views/ClipView.tsx`
-
-Needed:
-
-- decide whether the remaining Arrange empty-state shell and Clip editor tray should stay local or share one calmer DAW shell variant
-- keep onboarding/editor-specific shells local unless the same pattern repeats elsewhere
-
-### 2. Floating menus and context surfaces are not fully unified repo-wide
-
-Open issue:
-
-- Floating shells, section labels, separators, swatch rows, and base menu actions are now shared, but the remaining drift is concentrated in the richer editor-style menus with inline inputs, pill controls, or nested utility states.
-
-Representative files:
-
-- `src/modules/Workspace/presentations/views/ClipView/PianoRollContextMenu.tsx`
-- `src/modules/Arrangement/presentations/views/TrackContextMenu.tsx`
-- `src/modules/Arrangement/presentations/views/ClipContextMenu.tsx`
-- `src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx`
-
-Needed:
-
-- finish the last rich menu/popup surfaces
-- formalize patterns for menus that contain inline editors, pill groups, or utility states
-
-### 3. Compact readout and meter clusters are still duplicated inline
-
-Open issue:
-
-- Shared metric clusters now cover the status bar baseline, but mixer and analysis surfaces still compose too many small readout/meter clusters by hand.
-
-Representative files:
-
-- `src/modules/Workspace/presentations/views/StatusBar.tsx`
-- `src/modules/Workspace/presentations/views/Mixer/ExpandedChannelStrip.tsx`
-- `src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx`
-
-Needed:
-
-- tighter neutral metric-cluster composition
-- less local assembly of labels, bars, and mono values outside the status bar
-
-### 4. Inspector card/well structure is still too local
-
-Open issue:
-
-- Inspector helpers exist, but the broader card/well family is still module-local and visually inconsistent.
-
-Representative files:
-
-- `src/modules/Workspace/presentations/views/Inspector/ClipInspector.tsx`
-- `src/modules/Workspace/presentations/views/Inspector/TrackLevelSection.tsx`
-- `src/modules/Workspace/presentations/views/Inspector/TrackRoutingSection.tsx`
-- `src/modules/Workspace/presentations/views/Inspector/DeviceInspector.tsx`
-
-Needed:
-
-- decide what stays inspector-local
-- decide what deserves promotion into shared DAW primitives
-
-### 5. Mixer internals still repeat a distinct sub-language
-
-Open issue:
-
-- Mixer-local section shells, inset buttons, and strip-value text are now shared, but the remaining strip-side readout and popup language still drifts in the denser channel views.
-
-Representative files:
-
-- `src/modules/Workspace/presentations/views/Mixer/ExpandedChannelStrip.tsx`
-- `src/modules/Workspace/presentations/views/Mixer/DeviceChainSection.tsx`
-- `src/modules/Workspace/presentations/views/Mixer/SendsSection.tsx`
-- `src/modules/Workspace/presentations/views/Mixer/IOSection.tsx`
-
-Needed:
-
-- finish the last channel-strip readout and popup variants without promoting mixer-only patterns globally
-
-### 6. Several module-local helpers are still proto-primitives
-
-Open issue:
-
-- Some helpers are still only local even though the pattern may be broader than one module.
-
-Representative files:
-
-- inspector-local helpers under `src/modules/Workspace/presentations/components/Inspector`
-- sidebar-local helpers
-- plugin-local helper islands that still repeat beyond one module
-
-Needed:
-
-- continued evaluation of which helpers should stay local and which should be promoted intentionally
+1. **DAW header and shell stragglers** — timeline chrome now flows through `src/modules/Arrangement/presentations/views/TimelineChromeSurface.tsx`; automation left-rail shells through `src/modules/Workspace/presentations/views/AutomationView/AutomationSidebarCell.tsx`; and the remaining Arrange/Clip-specific shells were intentionally kept local via `src/modules/Workspace/presentations/views/ArrangeEmptyStateShell.tsx` and `src/modules/Workspace/presentations/views/ClipEditorTray.tsx`.
+2. **Floating menus and context surfaces** — richer timeline and editor menus now share `src/components/daw/DawContextMenuSurface.tsx`, `src/components/daw/DawMenuInlineEditor.tsx`, the expanded `DawMenuButton`, and mixer-local popup wrappers in `src/modules/Workspace/presentations/views/Mixer/MixerPopupMenu.tsx`.
+3. **Compact readout and meter clusters** — repeated label/value/meter compositions now route through `src/components/daw/DawUtilityMetric.tsx`, while denser mixer fader clusters use `src/modules/Workspace/presentations/views/Mixer/MixerLevelReadout.tsx`.
+4. **Inspector card/well structure** — inspector detail headers are now formalized with `src/modules/Workspace/presentations/components/Inspector/InspectorDetailHeader.tsx`, inset well variants are expressed through `InsetPanel`, and parameter cards consistently use inspector-local `SurfaceCard`.
+5. **Mixer-local sub-language** — the denser channel-strip popups and readouts now use explicit mixer-local helpers instead of ad-hoc inline menu/readout assembly.
+6. **Proto-primitives** — the remaining local helpers were reviewed and either promoted intentionally (`DawUtilityMetric`, menu primitives) or kept local where the pattern is still editor-, mixer-, or inspector-specific.

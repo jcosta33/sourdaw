@@ -4,9 +4,7 @@ import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
 import { setMasterGain } from '#/modules/Transport/useCases/setMasterGain';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
-
-import { LevelMeter } from '../Metering/LevelMeter';
+import { MixerLevelReadout } from './MixerLevelReadout';
 
 type MasterChannelStripProps = {
     widthClass: string;
@@ -23,24 +21,23 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <div className="h-1 w-full rounded-full bg-border-active" />
             <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
 
-            <div className="flex gap-1 items-end justify-center shrink-0 mt-1">
-                <LevelMeter trackId={null} width="w-1.5" />
-            </div>
-
-            <div className="shrink-0">
-                <Fader
-                    value={masterGain / 100}
-                    onChange={(v) => {
-                        setMasterGain(v * 100);
-                    }}
-                    height={100}
-                    aria-label="Master gain"
-                />
-            </div>
-
-            <MixerStripValue>
-                {masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
-            </MixerStripValue>
+            <MixerLevelReadout
+                trackId={null}
+                clusterClassName="mt-1"
+                control={
+                    <div className="shrink-0">
+                        <Fader
+                            value={masterGain / 100}
+                            onChange={(v) => {
+                                setMasterGain(v * 100);
+                            }}
+                            height={100}
+                            aria-label="Master gain"
+                        />
+                    </div>
+                }
+                value={masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
+            />
         </DawChannelStripShell>
     );
 };
