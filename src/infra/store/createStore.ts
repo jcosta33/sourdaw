@@ -1,34 +1,41 @@
-import type { Store } from './types';
+import { Store, StoreController } from './types';
 import { storeRegistry } from './internal/storeRegistry';
 
 export const createStore = <TSnapshot>(initialState: TSnapshot): Store<TSnapshot> => {
     let snapshot = initialState;
     const listeners = new Set<() => void>();
 
-    const store: Store<TSnapshot> = {
-        subscribe(listener) {
-            listeners.add(listener);
-            return () => {
-                listeners.delete(listener);
-            };
-        },
-        get() {
-            return snapshot;
-        },
+    const get = () => snapshot;
+
+    const subscribe = (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+            listeners.delete(listener);
+        };
     };
 
-    storeRegistry.set(store, {
-        set(next) {
-            if (Object.is(snapshot, next)) return;
+    const store: Store<TSnapshot> = {
+        get,
+        subscribe,
+    };
+
+    const set = (next: TSnapshot) => {
+        if (!Object.is(snapshot, next)) {
             snapshot = next;
-            for (const listener of Array.from(listeners)) {
-                listener();
-            }
-        },
-        update(updater) {
-            this.set(updater(snapshot));
-        },
-    });
+            listeners.forEach((listener) => listener());
+        }
+    };
+
+    const update = (updater: (prev: TSnapshot) => TSnapshot) => {
+        set(updater(snapshot));
+    };
+
+    const controller: StoreController<TSnapshot> = {
+        set,
+        update,
+    };
+
+    storeRegistry.set(store, controller);
 
     return store;
 };
