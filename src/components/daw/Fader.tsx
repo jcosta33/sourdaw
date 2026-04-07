@@ -1,6 +1,22 @@
 import { type ReactElement, type PointerEvent, useState, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
+type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage';
+
+const TONE_CLASS_NAMES: Record<Tone, string> = {
+    neutral: 'bg-white/50',
+    amber: 'bg-[var(--color-accent-amber)]',
+    cyan: 'bg-[var(--color-accent-cyan)]',
+    peach: 'bg-[var(--color-accent-peach)]',
+    lavender: 'bg-[var(--color-accent-lavender)]',
+    mint: 'bg-[var(--color-accent-mint)]',
+    steel: 'bg-[var(--color-accent-steel)]',
+    danger: 'bg-[var(--color-state-danger)]',
+    rose: 'bg-[var(--color-accent-rose)]',
+    indigo: 'bg-[var(--color-accent-indigo)]',
+    sage: 'bg-[var(--color-accent-sage)]',
+};
+
 type FaderProps = {
     value: number;
     onChange: (val: number) => void;
@@ -13,6 +29,8 @@ type FaderProps = {
     height?: number;
     showScale?: boolean;
     className?: string;
+    /** Color tone for the active cap indicator */
+    tone?: Tone;
 };
 
 /** dB marks for the fader scale */
@@ -35,6 +53,7 @@ export const Fader = ({
     height = 150,
     showScale = false,
     className,
+    tone = 'cyan',
 }: FaderProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
     const draggingRef = useRef(false);
@@ -197,9 +216,9 @@ export const Fader = ({
                 }}
             >
                 {/* Center groove marks */}
-                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-white/10')} />
+                <div className={cn('w-4 h-px', isDragging ? TONE_CLASS_NAMES[tone] : 'bg-white/10')} />
                 <div className="w-5 h-px bg-white/15" />
-                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-white/10')} />
+                <div className={cn('w-4 h-px', isDragging ? TONE_CLASS_NAMES[tone] : 'bg-white/10')} />
             </div>
         </div>
     );

@@ -10,6 +10,22 @@ const defaultMidiLearnState: MidiLearnState = {
     learningTarget: null,
 };
 
+type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage';
+
+const TONE_COLORS: Record<Tone, string> = {
+    neutral: 'rgba(255, 255, 255, 0.5)',
+    amber: 'rgba(196, 170, 95, 0.62)',
+    cyan: 'rgba(127, 184, 196, 0.62)',
+    peach: 'rgba(201, 160, 122, 0.62)',
+    lavender: 'rgba(168, 155, 196, 0.62)',
+    mint: 'rgba(125, 184, 160, 0.62)',
+    steel: 'rgba(106, 138, 168, 0.62)',
+    danger: 'rgba(192, 96, 96, 0.62)',
+    rose: 'rgba(192, 96, 112, 0.62)',
+    indigo: 'rgba(74, 96, 160, 0.62)',
+    sage: 'rgba(138, 168, 138, 0.62)',
+};
+
 type RotaryKnobProps = {
     value: number;
     onChange: (val: number) => void;
@@ -27,6 +43,8 @@ type RotaryKnobProps = {
     targetType?: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
     trackId?: string;
     deviceId?: string;
+    /** Color tone for the value arc */
+    tone?: Tone;
 };
 
 const SIZES = { sm: 24, md: 32, lg: 40, xl: 72 } as const;
@@ -55,6 +73,7 @@ export const RotaryKnob = ({
     targetType = 'fermenterGlobalParam', // Default to fermenterGlobalParam for now
     trackId,
     deviceId,
+    tone = 'cyan',
 }: RotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
     const isLearningThis = Boolean(
@@ -140,7 +159,7 @@ export const RotaryKnob = ({
 
     // Conic arc gradient for the value ring
     const arcAngleDeg = normalized * 270;
-    const arcColor = 'rgba(127, 184, 196, 0.62)';
+    const arcColor = TONE_COLORS[tone];
     const arcBg = bipolar
         ? buildBipolarArc(normalized, arcColor)
         : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;
