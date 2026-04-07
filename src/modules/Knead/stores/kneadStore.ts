@@ -1,9 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type KneadTrackState } from '../models/KneadBlob';
-
-const logger = Container.getInstance().get(Logger);
 
 interface KneadStoreState {
     activeTrackId: string | null;
@@ -12,7 +8,7 @@ interface KneadStoreState {
     analysisProgress: number;
 }
 
-export const kneadStore = new Store<KneadStoreState>(logger, {
+export const kneadStore = createStore<KneadStoreState>({
     initialData: {
         activeTrackId: null,
         tracks: {},

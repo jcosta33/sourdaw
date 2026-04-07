@@ -4,9 +4,7 @@
  * Reactive — UI subscribes via useSyncExternalStore.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import type {
     EnvelopeParams,
     FilterType,
@@ -17,8 +15,6 @@ import type {
     SliceMarker,
     VoiceStackParams,
 } from '../models/SamplerTypes';
-
-const logger = Container.getInstance().get(Logger);
 
 export type SamplerState = {
     instanceId: string | null;
@@ -76,7 +72,7 @@ const INITIAL_STATE: SamplerState = {
     modXY: { deckASample: null, deckBSample: null, crossfade: 0 },
 };
 
-export const samplerStore = new Store<SamplerState>(logger, {
+export const samplerStore = createStore<SamplerState>({
     initialData: INITIAL_STATE,
 });
 

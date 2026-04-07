@@ -1,8 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { type AppAction, type AppActionType } from '#/modules/Command/useCases/commandQueries';
-
-const logger = Container.getInstance().get(Logger);
 
 const KNOWN_ACTION_TYPES: ReadonlySet<AppActionType> = new Set<AppActionType>([
     'addTrack',

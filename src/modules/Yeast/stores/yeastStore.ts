@@ -12,14 +12,10 @@
  *   - internal sync and registration helpers used by the use cases
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { MidiRack } from '../useCases/MidiRack';
 import { type ProcessorType } from '../useCases/processorFactory';
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
-
-const logger = Container.getInstance().get(Logger);
 
 export type YeastProcessorInfo = {
     id: string;
@@ -38,7 +34,7 @@ const defaultState: YeastState = {
     uiLevel: 1,
 };
 
-export const yeastStore = new Store<YeastState>(logger, { initialData: defaultState });
+export const yeastStore = createStore<YeastState>({ initialData: defaultState });
 
 // The actual MIDI rack instance (main thread — used for live MIDI and UI state tracking)
 let rackInstance: MidiRack | null = null;

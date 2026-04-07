@@ -1,5 +1,4 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 
 import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
@@ -13,8 +12,6 @@ import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference';
 import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
 import { getBackendChain } from './backendResolution';
-
-const logger = Container.getInstance().get(Logger);
 
 /**
  * Send a prompt to the model and get parsed tool calls.

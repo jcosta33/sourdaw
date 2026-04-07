@@ -1,8 +1,4 @@
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type LinkStatus = {
     enabled: boolean;
@@ -22,7 +18,7 @@ export const defaultLinkStatus: LinkStatus = {
     num_peers: 0,
 };
 
-export const linkStatusStore = new Store<LinkStatus>(logger, {
+export const linkStatusStore = createStore<LinkStatus>({
     initialData: defaultLinkStatus,
 });
 

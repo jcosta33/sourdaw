@@ -5,11 +5,7 @@
  * not inside use case files.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type PunchRegion = {
     id: string;
@@ -56,7 +52,7 @@ export type PunchRecordingState = {
     enabled: boolean;
 };
 
-export const punchRecordingStore = new Store<PunchRecordingState>(logger, {
+export const punchRecordingStore = createStore<PunchRecordingState>({
     initialData: {
         captures: [],
         defaultPreRoll: 4,

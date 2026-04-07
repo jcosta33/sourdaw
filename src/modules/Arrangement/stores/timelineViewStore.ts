@@ -1,9 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { trackStore } from './trackStore';
-
-const logger = Container.getInstance().get(Logger);
 
 export type TimelineViewState = {
     scrollX: number;
@@ -12,7 +8,7 @@ export type TimelineViewState = {
     autoScrollEnabled: boolean;
 };
 
-export const timelineViewStore = new Store<TimelineViewState>(logger, {
+export const timelineViewStore = createStore<TimelineViewState>({
     initialData: {
         scrollX: 0,
         scrollY: 0,

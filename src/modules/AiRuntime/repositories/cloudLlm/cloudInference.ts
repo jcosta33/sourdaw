@@ -1,13 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 
 import { mcpToOpenAiTools } from '../../repositories/mcpToolAdapter';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { getCloudClient } from './keyManagement';
-
-const logger = Container.getInstance().get(Logger);
 
 const CLOUD_MODEL = 'claude-sonnet-4-20250514';
 

@@ -1,13 +1,10 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { initNativeEngine, isNativeEngineReady, stopNativeEngine } from '../../repositories/nativeEngine/lifecycle';
 import { initWebLlmEngine, unloadWebLlmEngine } from '../../repositories/webLlm/engineLifecycle';
 import { isCloudAvailable } from '../../repositories/cloudLlm/keyManagement';
 import { resolveBackend } from './backendResolution';
-
-const logger = Container.getInstance().get(Logger);
 
 /**
  * Initialize the auto-detected backend. Throws on failure.

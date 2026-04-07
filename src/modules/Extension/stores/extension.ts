@@ -9,11 +9,7 @@
  * See .agents/audits/dead-code-audit.md Section 10 for full analysis.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type ExtensionManifest = {
     id: string;
@@ -99,7 +95,7 @@ export type ExtensionMarketplaceState = {
     editorContent: string;
 };
 
-export const extensionStore = new Store<ExtensionMarketplaceState>(logger, {
+export const extensionStore = createStore<ExtensionMarketplaceState>({
     initialData: {
         installed: [],
         commands: [],

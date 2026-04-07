@@ -4,12 +4,9 @@
  * Note: setSinkId cast is needed until lib.dom.d.ts ships the type.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { logger } from '#/infra/logger/appLogger';
+import { createStore } from '#/infra/store/createStore';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-
-const logger = Container.getInstance().get(Logger);
 
 export type AudioDeviceInfo = {
     id: string;
@@ -22,7 +19,7 @@ type AudioDeviceState = {
     selectedInputId: string | null;
 };
 
-export const audioDeviceStore = new Store<AudioDeviceState>(logger, {
+export const audioDeviceStore = createStore<AudioDeviceState>({
     initialData: {
         selectedOutputId: null,
         selectedInputId: null,

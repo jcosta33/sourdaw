@@ -1,5 +1,4 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { type IntentResult } from '../models/IntentResult';
 import { type ProjectContext } from '../models/ProjectContext';
 import { validateActions } from './validateActions';
@@ -14,8 +13,6 @@ import {
 
 // Re-export for consumers
 export { isComplexPrompt } from '../transformers/promptParser/parsing';
-
-const logger = Container.getInstance().get(Logger);
 
 /**
  * Two-tier prompt parsing:

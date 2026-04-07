@@ -1,10 +1,6 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
+import { createStore } from '#/infra/store/createStore';
+import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
-
-const logger = Container.getInstance().get(Logger);
 
 export type AiActionEntry =
     | { kind: 'appAction'; action: AppAction; label: string }
@@ -24,9 +20,9 @@ export type AiActionHistoryState = {
     panelOpen: boolean;
 };
 
-export const aiActionHistoryStore = new Store<AiActionHistoryState>(logger, {
+export const aiActionHistoryStore = createStore<AiActionHistoryState>({
     initialData: { groups: [], panelOpen: false },
-    storage: new LocalStorageStorage('sourdaw-ai-history'),
+    storage: createLocalStorage('sourdaw-ai-history'),
 });
 
 const MAX_HISTORY = 50;

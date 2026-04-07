@@ -1,5 +1,4 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import {
     midiLearnStore,
     type LearningTarget,
@@ -17,8 +16,6 @@ import { recordAutomationValue } from '#/modules/Automation/useCases/automationR
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
-
-const logger = Container.getInstance().get(Logger);
 
 let nextMappingId = 1;
 

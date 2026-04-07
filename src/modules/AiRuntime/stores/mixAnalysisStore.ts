@@ -1,9 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type MixAnalysis } from '../models/MixAnalysis';
-
-const logger = Container.getInstance().get(Logger);
 
 export type MixAnalysisStoreState = {
     result: MixAnalysis | null;
@@ -11,7 +7,7 @@ export type MixAnalysisStoreState = {
     panelOpen: boolean;
 };
 
-export const mixAnalysisStore = new Store<MixAnalysisStoreState>(logger, {
+export const mixAnalysisStore = createStore<MixAnalysisStoreState>({
     initialData: {
         result: null,
         isAnalyzing: false,

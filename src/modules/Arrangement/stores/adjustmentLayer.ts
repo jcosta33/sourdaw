@@ -4,11 +4,7 @@
  * Extracted from adjustmentLayerUseCases.ts.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type AdjustmentEffectType =
     | 'eq'
@@ -64,7 +60,7 @@ export type AdjustmentLayerState = {
     layers: AdjustmentLayer[];
 };
 
-export const adjustmentLayerStore = new Store<AdjustmentLayerState>(logger, {
+export const adjustmentLayerStore = createStore<AdjustmentLayerState>({
     initialData: { layers: [] },
 });
 

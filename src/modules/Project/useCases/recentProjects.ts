@@ -1,6 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
+import { logger } from '#/infra/logger/appLogger';
+import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { type ProjectData, RECENT_PROJECTS_KEY } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
@@ -14,11 +13,9 @@ import {
     verifyAudioBufferReferences,
 } from './projectPersistence/helpers';
 
-const logger = Container.getInstance().get(Logger);
-
 const MAX_RECENT = 10;
 
-const recentProjectsStorage = new LocalStorageStorage<RecentProjectEntry[]>(
+const recentProjectsStorage = createLocalStorage<RecentProjectEntry[]>(
     RECENT_PROJECTS_KEY as 'sourdaw:recent-projects'
 );
 

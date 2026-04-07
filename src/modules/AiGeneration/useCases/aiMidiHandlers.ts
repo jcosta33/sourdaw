@@ -22,10 +22,7 @@ import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCa
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration/inference';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-
-const logger = Container.getInstance().get(Logger);
+import { logger } from '#/infra/logger/appLogger';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

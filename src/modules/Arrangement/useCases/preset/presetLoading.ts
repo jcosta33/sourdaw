@@ -2,8 +2,7 @@
  * Load preset devices into a track.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { type Device } from '../../models/Track';
@@ -17,8 +16,6 @@ import {
     updateDeviceParam,
     removeDeviceFromStrip,
 } from '#/modules/AudioEngine/useCases/deviceControls';
-
-const logger = Container.getInstance().get(Logger);
 
 let nextPresetDeviceId = 1;
 

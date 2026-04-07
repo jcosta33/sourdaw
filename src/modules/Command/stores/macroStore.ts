@@ -1,12 +1,8 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type Macro } from '../models/Macro';
 import { type AppAction } from '../models/AppAction';
 
 const STORAGE_KEY = 'sourdaw:macros';
-
-const logger = Container.getInstance().get(Logger);
 
 export type MacroStoreState = {
     macros: Macro[];
@@ -26,7 +22,7 @@ const loadPersistedMacros = (): Macro[] => {
     return [];
 };
 
-export const macroStore = new Store<MacroStoreState>(logger, {
+export const macroStore = createStore<MacroStoreState>({
     initialData: { macros: loadPersistedMacros(), recording: false, currentRecording: [] },
 });
 

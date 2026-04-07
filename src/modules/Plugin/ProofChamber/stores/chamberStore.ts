@@ -1,20 +1,16 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import {
     type ProofChamberPluginState,
     type ProofChamberEngineState,
     createDefaultChamberState,
 } from '../models/ProofChamberState';
 
-const logger = Container.getInstance().get(Logger);
-
 export interface ChamberStoreState {
     activeInstanceId: string | null;
     instances: Record<string, ProofChamberPluginState>;
 }
 
-export const chamberStore = new Store<ChamberStoreState>(logger, {
+export const chamberStore = createStore<ChamberStoreState>({
     initialData: {
         activeInstanceId: null,
         instances: {},

@@ -1,7 +1,7 @@
-import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
+import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { type TrackTemplate } from '../models/TrackTemplate';
 
-const storage = new LocalStorageStorage<TrackTemplate[]>('sourdaw:track-templates');
+const storage = createLocalStorage<TrackTemplate[]>('sourdaw:track-templates');
 
 export function loadTrackTemplates(): TrackTemplate[] {
     return storage.get() ?? [];

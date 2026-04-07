@@ -1,7 +1,6 @@
 import { type ReactElement, useState, useRef } from 'react';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
@@ -23,8 +22,6 @@ import { isTauri } from '#/helpers/tauriBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { zipSync } from 'fflate';
-
-const logger = Container.getInstance().get(Logger);
 
 type ExportFormat = 'wav' | 'mp3' | 'flac';
 type ExportMode = 'mixdown' | 'stems';

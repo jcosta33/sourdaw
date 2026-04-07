@@ -1,6 +1,4 @@
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 
 export type ShortcutAction =
     | 'PLAY_PAUSE'
@@ -51,8 +49,6 @@ export type ShortcutState = {
     bindings: ShortcutMap;
 };
 
-const logger = Container.getInstance().get(Logger);
-
 const loadFromLocalStorage = (): ShortcutMap => {
     try {
         const stored = localStorage.getItem('sourdaw_shortcuts');
@@ -65,7 +61,7 @@ const loadFromLocalStorage = (): ShortcutMap => {
     return DEFAULT_SHORTCUTS;
 };
 
-export const shortcutStore = new Store<ShortcutState>(logger, {
+export const shortcutStore = createStore<ShortcutState>({
     initialData: {
         bindings: loadFromLocalStorage(),
     },

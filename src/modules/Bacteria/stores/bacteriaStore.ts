@@ -2,12 +2,8 @@
  * Reactive state for the Bacteria creative multi-effects processor.
  * Keyed by deviceId to support multiple simultaneous instances.
  */
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 import { type BacteriaPatch, DEFAULT_PATCH } from '../models/BacteriaPatch';
-
-const logger = Container.getInstance().get(Logger);
 
 export type BacteriaUiLevel = 1 | 2 | 3 | 4 | 5;
 
@@ -39,7 +35,7 @@ export const DEFAULT_BACTERIA_STATE: BacteriaState = {
 
 type BacteriaInstances = Record<string, BacteriaState>;
 
-export const bacteriaStore = new Store<BacteriaInstances>(logger, { initialData: {} });
+export const bacteriaStore = createStore<BacteriaInstances>({ initialData: {} });
 
 export function getBacteriaState(deviceId: string): BacteriaState {
     return bacteriaStore.value?.[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };

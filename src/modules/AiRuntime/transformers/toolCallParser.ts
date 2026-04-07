@@ -8,10 +8,7 @@
  * - Llama format:   <function>{"name":"...","parameters":{...}}</function>
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-
-const logger = Container.getInstance().get(Logger);
+import { logger } from '#/infra/logger/appLogger';
 
 export type ToolCallResult = {
     name: string;

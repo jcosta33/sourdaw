@@ -2,12 +2,8 @@
  * Library store — manages connected folder roots, sample records,
  * folder tree state, search, and filter state.
  */
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 import { type LibraryRoot, type SampleRecord, type FolderNode } from '../models/LibraryTypes';
-
-const logger = Container.getInstance().get(Logger);
 
 export type LibrarySortField = 'name' | 'date' | 'duration' | 'size' | 'path';
 export type LibrarySortDirection = 'asc' | 'desc';
@@ -38,7 +34,7 @@ export type LibraryState = {
     scanProgress: number;
 };
 
-export const libraryStore = new Store<LibraryState>(logger, {
+export const libraryStore = createStore<LibraryState>({
     initialData: {
         roots: [],
         samples: [],

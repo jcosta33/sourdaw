@@ -4,13 +4,9 @@
  * Extracted from cvGateUseCases.ts
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-import { AutomergeStorage } from '#/helpers/Store/Storage/AutomergeStorage';
+import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 const DOC_PREFIX_ROOT = 'root';
-
-const logger = Container.getInstance().get(Logger);
 
 export type VoltageStandard = '1v-per-octave' | 'hz-per-volt';
 
@@ -33,8 +29,8 @@ export type CvGateState = {
     gateThreshold: number;
 };
 
-export const cvGateStore = new Store<CvGateState>(logger, {
-    storage: new AutomergeStorage(DOC_PREFIX_ROOT, 'cvGate'),
+export const cvGateStore = createStore<CvGateState>({
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'cvGate'),
     initialData: {
         outputs: [],
         voltageStandard: '1v-per-octave',

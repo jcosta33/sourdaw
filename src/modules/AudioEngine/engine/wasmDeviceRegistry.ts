@@ -8,8 +8,7 @@
  */
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { eventBus } from '#/app/bootstrap';
 
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
@@ -35,7 +34,6 @@ import {
 } from '#/modules/Levain/useCases/levainParamBridge';
 import { setEngineReady } from '#/modules/Levain/stores/levainStore';
 
-const logger = Container.getInstance().get(Logger);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -480,7 +478,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit(new AudioDeviceLoadedEvent({ deviceId, deviceType }));
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
             .catch((err) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${err}`));
         return { placeholder, loadPromise };

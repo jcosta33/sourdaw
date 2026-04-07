@@ -9,16 +9,12 @@
  *     backward compat with AudioEngine/engine/wasmDeviceRegistry which imports from this path)
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type TunerState, DEFAULT_TUNER_STATE } from '../models/ScoringState';
-
-const logger = Container.getInstance().get(Logger);
 
 type ScoringInstances = Record<string, TunerState>;
 
-export const scoringStore = new Store<ScoringInstances>(logger, { initialData: {} });
+export const scoringStore = createStore<ScoringInstances>({ initialData: {} });
 
 export function getScoringState(deviceId: string): TunerState {
     return scoringStore.value?.[deviceId] ?? { ...DEFAULT_TUNER_STATE };

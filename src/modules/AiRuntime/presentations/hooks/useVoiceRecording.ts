@@ -7,8 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri as isTauriAvailable } from '#/helpers/tauriBridge';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores/voiceStatusStore';
@@ -18,8 +17,6 @@ import {
     stopDictation,
     onDictationResult,
 } from '#/modules/AiRuntime/useCases/voiceDictation';
-
-const logger = Container.getInstance().get(Logger);
 
 // ── Types ───────────────────────────────────────────────────────────────
 

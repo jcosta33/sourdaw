@@ -3,9 +3,7 @@
  * Holds per-pad configuration and selection.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import {
     type PadChannelStrip,
     type PadConfig,
@@ -14,15 +12,13 @@ import {
     DEFAULT_PAD_COUNT,
 } from '../models/SamplerTypes';
 
-const logger = Container.getInstance().get(Logger);
-
 export type PadState = {
     pads: PadConfig[];
     channelStrips: PadChannelStrip[];
     selectedPadIndex: number;
 };
 
-export const padStore = new Store<PadState>(logger, {
+export const padStore = createStore<PadState>({
     initialData: {
         pads: Array.from({ length: DEFAULT_PAD_COUNT }, (_, i) => createDefaultPad(i)),
         channelStrips: Array.from({ length: DEFAULT_PAD_COUNT }, () => createDefaultChannelStrip()),

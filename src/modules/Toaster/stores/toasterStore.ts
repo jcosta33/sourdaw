@@ -4,12 +4,8 @@
  * Reactive — UI subscribes via useSyncExternalStore.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type ToasterKit, type PadState, createDefaultKit } from '../models/ToasterKit';
-
-const logger = Container.getInstance().get(Logger);
 
 export type MorphState = {
     enabled: boolean;
@@ -28,7 +24,7 @@ export type ToasterState = {
     morph: MorphState;
 };
 
-export const toasterStore = new Store<ToasterState>(logger, {
+export const toasterStore = createStore<ToasterState>({
     initialData: {
         kit: createDefaultKit(),
         selectedPadIndex: 0,

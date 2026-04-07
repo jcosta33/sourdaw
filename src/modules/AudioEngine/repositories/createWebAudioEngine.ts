@@ -1,12 +1,9 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 import { TrackNode } from '../engine/TrackNode';
 import { BusNode } from '../engine/BusNode';
-
-const logger = Container.getInstance().get(Logger);
 
 class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;

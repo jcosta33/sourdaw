@@ -1,10 +1,7 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
 import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores/actionHistoryStore';
 import { type AppAction } from '../models/AppAction';
-
-const logger = Container.getInstance().get(Logger);
 import { type ActionHandler } from '../models/ActionHandler';
 import { createUndoEntry } from '../models/UndoEntry';
 import { pushUndo } from '../stores/undoStore';

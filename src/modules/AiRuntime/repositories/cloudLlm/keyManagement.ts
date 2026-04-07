@@ -1,9 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-
-const logger = Container.getInstance().get(Logger);
+import { logger } from '#/infra/logger/appLogger';
 
 let apiKey: string | null = null;
 let client: Anthropic | null = null;

@@ -4,12 +4,8 @@
  * Keyed by deviceId to support multiple simultaneous instances.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type FermenterPatch, DEFAULT_PATCH } from '../models/FermenterPatch';
-
-const logger = Container.getInstance().get(Logger);
 
 export type FermenterState = {
     patch: FermenterPatch;
@@ -35,7 +31,7 @@ export const DEFAULT_FERMENTER_STATE: FermenterState = {
 
 type FermenterInstances = Record<string, FermenterState>;
 
-export const fermenterStore = new Store<FermenterInstances>(logger, { initialData: {} });
+export const fermenterStore = createStore<FermenterInstances>({ initialData: {} });
 
 export function getFermenterState(deviceId: string): FermenterState {
     return (fermenterStore.value ?? {})[deviceId] ?? DEFAULT_FERMENTER_STATE;

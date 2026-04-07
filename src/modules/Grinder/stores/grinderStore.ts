@@ -2,12 +2,8 @@
  * Reactive state for the Grinder amp simulator.
  * Keyed by deviceId to support multiple simultaneous instances.
  */
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 import { type GrinderPatch, DEFAULT_PATCH, migrateGrinderPatch } from '../models/GrinderPatch';
-
-const logger = Container.getInstance().get(Logger);
 
 export type GrinderState = {
     patch: GrinderPatch;
@@ -39,7 +35,7 @@ export const DEFAULT_GRINDER_STATE: GrinderState = {
 
 type GrinderInstances = Record<string, GrinderState>;
 
-export const grinderStore = new Store<GrinderInstances>(logger, { initialData: {} });
+export const grinderStore = createStore<GrinderInstances>({ initialData: {} });
 
 export function getGrinderState(deviceId: string): GrinderState {
     return grinderStore.value?.[deviceId] ?? { ...DEFAULT_GRINDER_STATE, patch: { ...DEFAULT_PATCH } };

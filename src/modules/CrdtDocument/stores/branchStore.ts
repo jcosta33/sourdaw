@@ -1,14 +1,10 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
+import { createStore } from '#/infra/store/createStore';
+import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
 import { type BranchStoreState, MAIN_BRANCH_ID } from '../models/BranchTypes';
 
-const logger = Container.getInstance().get(Logger);
-
-export const branchStore = new Store<BranchStoreState>(logger, {
-    storage: new LocalStorageStorage('sourdaw-branches'),
+export const branchStore = createStore<BranchStoreState>({
+    storage: createLocalStorage('sourdaw-branches'),
     initialData: {
         branches: [
             {

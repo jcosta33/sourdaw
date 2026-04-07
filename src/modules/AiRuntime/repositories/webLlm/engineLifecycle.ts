@@ -1,10 +1,7 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 
 import { DEFAULT_WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-
-const logger = Container.getInstance().get(Logger);
 
 /**
  * WebLLM engine type — resolved dynamically to avoid loading the 6.2MB

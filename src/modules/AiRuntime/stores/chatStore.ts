@@ -1,9 +1,5 @@
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 import { type ChatMessage, type ChatState } from '../models/Chat';
-
-const logger = Container.getInstance().get(Logger);
 
 let activeAborter: AbortController | null = null;
 
@@ -14,7 +10,7 @@ const initialChatState: ChatState = {
     chatMode: 'chat',
 };
 
-export const chatStore = new Store<ChatState>(logger, {
+export const chatStore = createStore<ChatState>({
     initialData: initialChatState,
 });
 

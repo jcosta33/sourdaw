@@ -2,12 +2,8 @@
  * Reactive state for the Gluten compressor.
  * Keyed by deviceId to support multiple simultaneous instances.
  */
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 import { type GlutenPatch, DEFAULT_PATCH } from '../models/GlutenPatch';
-
-const logger = Container.getInstance().get(Logger);
 
 export type GlutenState = {
     patch: GlutenPatch;
@@ -33,7 +29,7 @@ export const DEFAULT_GLUTEN_STATE: GlutenState = {
 
 type GlutenInstances = Record<string, GlutenState>;
 
-export const glutenStore = new Store<GlutenInstances>(logger, { initialData: {} });
+export const glutenStore = createStore<GlutenInstances>({ initialData: {} });
 
 export function getGlutenState(deviceId: string): GlutenState {
     return glutenStore.value?.[deviceId] ?? { ...DEFAULT_GLUTEN_STATE, patch: { ...DEFAULT_PATCH } };

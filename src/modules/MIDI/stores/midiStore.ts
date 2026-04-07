@@ -1,13 +1,9 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-import { AutomergeStorage } from '#/helpers/Store/Storage/AutomergeStorage';
+import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
 const DOC_PREFIX_ROOT = 'root';
 
 import { type MidiNote, type MidiCC, type MidiPitchBend } from '../models/MidiNote';
-
-const logger = Container.getInstance().get(Logger);
 
 export type MidiStoreState = {
     notesByClipId: Record<string, MidiNote[]>;
@@ -15,8 +11,8 @@ export type MidiStoreState = {
     pitchBendByClipId: Record<string, MidiPitchBend[]>;
 };
 
-export const midiStore = new Store<MidiStoreState>(logger, {
-    storage: new AutomergeStorage(DOC_PREFIX_ROOT, 'midi'),
+export const midiStore = createStore<MidiStoreState>({
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'midi'),
     initialData: {
         notesByClipId: {},
         ccByClipId: {},

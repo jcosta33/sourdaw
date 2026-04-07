@@ -12,12 +12,9 @@
 import { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } from '@spotify/basic-pitch';
 import { type NoteEventTime } from '@spotify/basic-pitch';
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
-
-const logger = Container.getInstance().get(Logger);
 
 // ── Types ───────────────────────────────────────────────────────────────
 

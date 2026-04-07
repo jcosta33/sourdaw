@@ -1,14 +1,10 @@
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
 
 export type ChordTrackState = {
     enabled: boolean;
     events: ChordEvent[];
 };
-
-const logger = Container.getInstance().get(Logger);
 
 const loadFromStorage = (): ChordTrackState => {
     try {
@@ -22,7 +18,7 @@ const loadFromStorage = (): ChordTrackState => {
     return { enabled: false, events: [] };
 };
 
-export const chordTrackStore = new Store<ChordTrackState>(logger, {
+export const chordTrackStore = createStore<ChordTrackState>({
     initialData: loadFromStorage(),
 });
 

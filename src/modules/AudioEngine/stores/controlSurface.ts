@@ -4,11 +4,7 @@
  * Extracted from controlSurfaceUseCases.ts.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type ControlSurfaceProtocol = 'mcu' | 'osc' | 'hui';
 
@@ -65,7 +61,7 @@ export type ControlSurfaceState = {
     connected: boolean;
 };
 
-export const controlSurfaceStore = new Store<ControlSurfaceState>(logger, {
+export const controlSurfaceStore = createStore<ControlSurfaceState>({
     initialData: {
         protocol: null,
         mcu: {

@@ -11,8 +11,7 @@
  * 7. Classify safety (auto-apply / preview / confirmation)
  * 8. Execute with full undo support
  */
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
 import { serializeLogicalState, buildProjectSummary, logEdit } from './serializeLogicalState';
@@ -28,8 +27,6 @@ import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
 import { createUndoEntry, generateGroupId } from '#/modules/Command/useCases/commandQueries';
 import { saveSnapshot } from '#/modules/CrdtDocument/useCases/saveSnapshot';
-
-const logger = Container.getInstance().get(Logger);
 
 export type DsoEditResult = {
     success: boolean;

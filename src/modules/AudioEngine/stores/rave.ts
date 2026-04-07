@@ -8,11 +8,8 @@
  * - `randomizeLatent` uses Math.random() — non-deterministic
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
+import { logger as raveLogger } from '#/infra/logger/appLogger';
 
 export type RaveModel = {
     id: string;
@@ -39,7 +36,7 @@ export type RaveState = {
     latentCache: LatentVector[];
 };
 
-export const raveStore = new Store<RaveState>(logger, {
+export const raveStore = createStore<RaveState>({
     initialData: {
         models: [],
         activeModelId: null,
@@ -50,7 +47,7 @@ export const raveStore = new Store<RaveState>(logger, {
     },
 });
 
-export { logger as raveLogger };
+export { raveLogger };
 
 export const FACTORY_MODELS: Omit<RaveModel, 'loaded'>[] = [
     {

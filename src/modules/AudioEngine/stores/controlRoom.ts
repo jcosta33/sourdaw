@@ -4,11 +4,7 @@
  * Extracted from controlRoomUseCases.ts.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type MonitorOutput = {
     id: string;
@@ -101,6 +97,6 @@ function createDefaultState(): ControlRoomState {
     };
 }
 
-export const controlRoomStore = new Store<ControlRoomState>(logger, {
+export const controlRoomStore = createStore<ControlRoomState>({
     initialData: createDefaultState(),
 });

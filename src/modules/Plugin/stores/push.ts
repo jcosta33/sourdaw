@@ -10,11 +10,7 @@
  * instead of O(n) full-array mapping.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type PushPadMode = 'session' | 'note' | 'drum' | 'chromatic' | 'scale' | 'user';
 
@@ -76,7 +72,7 @@ export const PAD_MODE_COLORS: Record<PushPadMode, PushPadColor> = {
     user: { r: 64, g: 64, b: 64 },
 };
 
-export const pushStore = new Store<PushState>(logger, {
+export const pushStore = createStore<PushState>({
     initialData: {
         connected: false,
         model: null,

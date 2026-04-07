@@ -2,11 +2,7 @@
  * Group comping store — multi-track comp groups.
  * Extracted from groupCompingUseCases.ts.
  */
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type CompGroupEntry = {
     id: string;
@@ -40,7 +36,7 @@ export type GroupCompingState = {
     defaultCrossfade: number;
 };
 
-export const groupCompingStore = new Store<GroupCompingState>(logger, {
+export const groupCompingStore = createStore<GroupCompingState>({
     initialData: { groups: [], activeGroupId: null, defaultCrossfade: 0.125 },
 });
 

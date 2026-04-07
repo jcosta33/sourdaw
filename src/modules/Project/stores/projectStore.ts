@@ -1,10 +1,6 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-import { AutomergeStorage } from '#/helpers/Store/Storage/AutomergeStorage';
+import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { DOC_PREFIX_ROOT } from '#/modules/CrdtDocument/useCases/crdtDocumentTypes';
-
-const logger = Container.getInstance().get(Logger);
 
 export type ProjectStoreState = {
     name: string;
@@ -18,8 +14,8 @@ export type ProjectStoreState = {
     initialized: boolean;
 };
 
-export const projectStore = new Store<ProjectStoreState>(logger, {
-    storage: new AutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
+export const projectStore = createStore<ProjectStoreState>({
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
         toCrdt: ({ name, createdAt, updatedAt }) => ({ name, createdAt, updatedAt }),
     }),
     initialData: {

@@ -4,11 +4,7 @@
  * Extracted from audioWarpingUseCases.ts.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type WarpAlgorithm =
     | 'elastique-pro' // zplane élastique Pro — best overall quality
@@ -56,7 +52,7 @@ export type ClipWarpSettings = {
     enabled: boolean;
 };
 
-export const audioWarpStore = new Store<WarpState>(logger, {
+export const audioWarpStore = createStore<WarpState>({
     initialData: {
         clipSettings: new Map(),
         defaultAlgorithm: 'complex-pro',

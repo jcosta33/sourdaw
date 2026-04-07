@@ -1,12 +1,8 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
+import { createStore } from '#/infra/store/createStore';
+import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { defaultPreferences, type Preferences } from '../models/Preferences';
 
-const logger = Container.getInstance().get(Logger);
-
-const storage = new LocalStorageStorage<Preferences>('sourdaw-preferences');
+const storage = createLocalStorage<Preferences>('sourdaw-preferences');
 
 // Merge stored data with defaults so new preference keys are always present
 function mergeWithDefaults(): Preferences {
@@ -17,7 +13,7 @@ function mergeWithDefaults(): Preferences {
     return defaultPreferences;
 }
 
-export const preferencesStore = new Store<Preferences>(logger, {
+export const preferencesStore = createStore<Preferences>({
     storage,
     initialData: mergeWithDefaults(),
 });

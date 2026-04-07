@@ -1,9 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type AppAction } from '#/modules/Command/models/AppAction';
-
-const logger = Container.getInstance().get(Logger);
 
 export type ActionHistoryEntry = {
     id: string;
@@ -24,7 +20,7 @@ export type ActionHistoryState = {
 
 const MAX_HISTORY = 200;
 
-export const actionHistoryStore = new Store<ActionHistoryState>(logger, {
+export const actionHistoryStore = createStore<ActionHistoryState>({
     initialData: { entries: [] },
 });
 

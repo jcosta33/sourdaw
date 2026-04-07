@@ -605,6 +605,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onClose={() => setSamplerDeviceId(null)}
                             >
                                 <SamplerPanel deviceId={samplerDeviceId} />
+                            </InstrumentBottomPanel>
+                        ) : null}
+
                         {grandBouleDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Grand Boule"

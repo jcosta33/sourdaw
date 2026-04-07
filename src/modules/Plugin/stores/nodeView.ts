@@ -4,11 +4,7 @@
  * Extracted from nodeViewUseCases.ts.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type ProcessingNodeType =
     | 'input'
@@ -53,7 +49,7 @@ export type NodeViewState = {
     visible: boolean;
 };
 
-export const nodeViewStore = new Store<NodeViewState>(logger, {
+export const nodeViewStore = createStore<NodeViewState>({
     initialData: {
         nodes: [],
         connections: [],

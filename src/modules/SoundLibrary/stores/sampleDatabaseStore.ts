@@ -5,16 +5,12 @@
  * Extracted from sampleDatabaseUseCases.ts — stores should live in stores/.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type SampleTag, type SampleEntry, type SampleCategory, type SampleDatabaseState } from '../models/SampleEntry';
 
 export type { SampleTag, SampleEntry, SampleCategory, SampleDatabaseState };
 
-const logger = Container.getInstance().get(Logger);
-
-export const sampleDatabaseStore = new Store<SampleDatabaseState>(logger, {
+export const sampleDatabaseStore = createStore<SampleDatabaseState>({
     initialData: {
         samples: [],
         searchQuery: '',

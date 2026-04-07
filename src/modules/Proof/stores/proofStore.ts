@@ -3,12 +3,8 @@
  * Keyed by deviceId to support multiple simultaneous instances.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type ProofPatch, DEFAULT_PATCH } from '../models/ProofPatch';
-
-const logger = Container.getInstance().get(Logger);
 
 /**
  * Real-time metering data shape pushed from the WASM audio engine.
@@ -68,7 +64,7 @@ export const DEFAULT_PROOF_STATE: ProofState = {
 
 type ProofInstances = Record<string, ProofState>;
 
-export const proofStore = new Store<ProofInstances>(logger, { initialData: {} });
+export const proofStore = createStore<ProofInstances>({ initialData: {} });
 
 export function getProofState(deviceId: string): ProofState {
     return proofStore.value?.[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };

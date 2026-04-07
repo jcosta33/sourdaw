@@ -5,11 +5,7 @@
  * of stores living in the stores/ folder, not inside use case files.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type SetlistItem = {
     id: string;
@@ -49,7 +45,7 @@ export type SetlistState = {
     totalDuration: number;
 };
 
-export const setlistStore = new Store<SetlistState>(logger, {
+export const setlistStore = createStore<SetlistState>({
     initialData: {
         name: 'Untitled Setlist',
         items: [],

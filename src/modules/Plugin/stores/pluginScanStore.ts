@@ -3,12 +3,8 @@
  * Owned by the Plugin module — scan state is a Plugin concern, not an AudioEngine concern.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import type { ScannedPlugin } from '../repositories/pluginBridge/types';
-
-const logger = Container.getInstance().get(Logger);
 
 export type PluginScanState = {
     scannedPlugins: ScannedPlugin[];
@@ -26,6 +22,6 @@ export const defaultPluginScanState: PluginScanState = {
     errors: [],
 };
 
-export const pluginScanStore = new Store<PluginScanState>(logger, {
+export const pluginScanStore = createStore<PluginScanState>({
     initialData: defaultPluginScanState,
 });

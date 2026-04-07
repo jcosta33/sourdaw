@@ -8,12 +8,9 @@
  * the wrapper simply uses the same node for inputNode and outputNode.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { type OfflineDeviceNode } from './deviceNodeFactory';
 import { createFaustNode, compileFaustDSP, isFaustModule } from '#/modules/Plugin/useCases/faustEngine/compilerEngine';
-
-const logger = Container.getInstance().get(Logger);
 
 export { isFaustModule };
 

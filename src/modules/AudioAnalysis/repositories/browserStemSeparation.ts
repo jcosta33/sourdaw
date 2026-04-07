@@ -7,10 +7,7 @@
  * Model: ~235MB, downloaded from HuggingFace on first use and cached via Cache API.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-
-const logger = Container.getInstance().get(Logger);
+import { logger } from '#/infra/logger/appLogger';
 
 const DEMUCS_MODEL_URL = 'https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/main/demucsv4.onnx';
 const DEMUCS_SAMPLE_RATE = 44100;

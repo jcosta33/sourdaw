@@ -10,11 +10,8 @@
  *   - Browser: desktop-only feature (requires PyTorch)
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
-
-const logger = Container.getInstance().get(Logger);
 
 /**
  * Check if stem separation is available.

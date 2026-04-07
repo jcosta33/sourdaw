@@ -8,17 +8,13 @@
  * dependency with levainParamBridge — that has been removed.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import {
     type LevainPatch,
     type ArticulationType,
     type MicPositionState,
     createDefaultPatch,
 } from '../models/LevainPatch';
-
-const logger = Container.getInstance().get(Logger);
 
 export type LevainUiLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -33,7 +29,7 @@ export type LevainState = {
     currentArticulationDisplay: string;
 };
 
-export const levainStore = new Store<LevainState>(logger, {
+export const levainStore = createStore<LevainState>({
     initialData: {
         patch: createDefaultPatch('violin-1'),
         uiLevel: 1,

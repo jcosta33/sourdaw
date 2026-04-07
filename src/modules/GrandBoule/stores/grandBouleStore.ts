@@ -5,9 +5,7 @@
  * that have been applied, and a runtime-ready flag. Project-persistable.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import {
     type GrandBouleConfig,
     createDefaultGrandBouleConfig,
@@ -27,8 +25,6 @@ import {
     type GrandBoulePresetParameters,
     createNeutralPresetParameters,
 } from '../models/GrandBoulePreset';
-
-const logger = Container.getInstance().get(Logger);
 
 export type GrandBoulePedalState = {
     /** Sustain pedal (CC64) — continuous, 0..1. */
@@ -64,7 +60,7 @@ export type GrandBouleState = {
     activeVoices: number;
 };
 
-export const grandBouleStore = new Store<GrandBouleState>(logger, {
+export const grandBouleStore = createStore<GrandBouleState>({
     initialData: {
         config: createDefaultGrandBouleConfig(),
         parameters: createNeutralPresetParameters(),

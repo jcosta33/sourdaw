@@ -4,10 +4,7 @@ import { unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBri
 import { DEVICE_FACTORIES, applyParams, createFaustDeviceNode } from '../useCases/deviceResolvers';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-
-const logger = Container.getInstance().get(Logger);
+import { logger } from '#/infra/logger/appLogger';
 
 export interface TrackNodeDeps {
     context: AudioContext;

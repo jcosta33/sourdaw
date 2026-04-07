@@ -1,12 +1,8 @@
 /**
  * Crust store — reactive state for the limiter plugin.
  */
-import { Store } from '#/helpers/Store/Store';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { createStore } from '#/infra/store/createStore';
 import { type CrustPatch, DEFAULT_CRUST_PATCH } from '../models/CrustPatch';
-
-const logger = Container.getInstance().get(Logger);
 
 export type CrustMeterState = {
     grDb: number;
@@ -36,7 +32,7 @@ const INITIAL_METERS: CrustMeterState = {
     truepeakExceeded: false,
 };
 
-export const crustStore = new Store<CrustState>(logger, {
+export const crustStore = createStore<CrustState>({
     initialData: {
         patch: DEFAULT_CRUST_PATCH,
         ...INITIAL_METERS,

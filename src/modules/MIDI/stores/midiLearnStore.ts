@@ -1,8 +1,4 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type MidiMappingTargetType = 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
 
@@ -31,7 +27,7 @@ export type MidiLearnState = {
     learningTarget: LearningTarget | null;
 };
 
-export const midiLearnStore = new Store<MidiLearnState>(logger, {
+export const midiLearnStore = createStore<MidiLearnState>({
     initialData: {
         mappings: [],
         isLearning: false,

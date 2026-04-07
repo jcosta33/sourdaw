@@ -5,11 +5,7 @@
  * not inside use case files.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
-
-const logger = Container.getInstance().get(Logger);
+import { createStore } from '#/infra/store/createStore';
 
 export type LoopSlotState = 'empty' | 'recording' | 'playing' | 'overdubbing' | 'stopped';
 
@@ -63,7 +59,7 @@ export type LoopStationState = {
     fixedLoopLength: number;
 };
 
-export const loopStationStore = new Store<LoopStationState>(logger, {
+export const loopStationStore = createStore<LoopStationState>({
     initialData: {
         slots: [],
         sceneCount: 8,

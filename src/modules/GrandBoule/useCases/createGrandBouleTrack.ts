@@ -10,7 +10,6 @@ import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStore
 import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { eventBus } from '#/app/bootstrap';
-import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
 
 export const createGrandBouleTrack = (): string | null => {
     const state = getTrackStoreState();
@@ -38,9 +37,7 @@ export const createGrandBouleTrack = (): string | null => {
 
     addDeviceToStrip(track.id, deviceId, 'grand-boule');
 
-    eventBus.emit(
-        new TrackAddedEvent({ trackId: track.id, name: track.name, kind: track.kind }),
-    );
+    void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
 
     return track.id;
 };

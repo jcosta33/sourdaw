@@ -1,11 +1,8 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { type ProjectSnapshot } from '../../models/ProjectVersion';
-
-const logger = Container.getInstance().get(Logger);
 
 /**
  * Capture the current project state as a JSON snapshot.

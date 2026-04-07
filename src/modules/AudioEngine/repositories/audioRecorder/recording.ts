@@ -16,16 +16,13 @@
  * the first call to startAudioRecording.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '../createWebAudioEngine';
 import { getSelectedInputId } from '../../useCases/audioDeviceSelection';
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
 
 export { audioRecordingStore };
 export type { AudioRecordingState } from '../../stores/audioRecordingStore';
-
-const logger = Container.getInstance().get(Logger);
 
 // ── Ring buffer sizing ────────────────────────────────────────────────────────
 // 2^19 floats = 524 288 samples ≈ 10.9 s @ 48 kHz.

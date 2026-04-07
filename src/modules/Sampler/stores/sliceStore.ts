@@ -3,12 +3,8 @@
  * Holds onset-detected and user-defined slice markers.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import type { SliceMarker } from '../models/SamplerTypes';
-
-const logger = Container.getInstance().get(Logger);
 
 export type SliceState = {
     markers: SliceMarker[];
@@ -16,7 +12,7 @@ export type SliceState = {
     autoDetected: boolean;
 };
 
-export const sliceStore = new Store<SliceState>(logger, {
+export const sliceStore = createStore<SliceState>({
     initialData: {
         markers: [],
         activeSliceIndex: 0,

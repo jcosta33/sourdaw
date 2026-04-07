@@ -1,9 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type VersionControlState, createDefaultState } from '../models/ProjectVersion';
-
-const logger = Container.getInstance().get(Logger);
 
 const VC_STORAGE_KEY = 'sourdaw-version-control';
 
@@ -19,7 +15,7 @@ function loadFromStorage(): VersionControlState {
     return createDefaultState();
 }
 
-export const versionControlStore = new Store<VersionControlState>(logger, {
+export const versionControlStore = createStore<VersionControlState>({
     initialData: loadFromStorage(),
 });
 

@@ -7,8 +7,7 @@ import {
     useEffect,
     useSyncExternalStore,
 } from 'react';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { parsePromptToActions } from '#/modules/AiRuntime/useCases/parsePromptToActions';
 import { isComplexPrompt } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { getProjectContext } from '#/modules/AiRuntime/useCases/getProjectContext';
@@ -28,8 +27,6 @@ import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { describeAction } from '#/modules/Command/useCases/actionLabels';
 import { type IntentResult } from '#/modules/AiRuntime/models/IntentResult';
 import { type PresetContext } from '#/modules/AiRuntime/models/presetActions/registry';
-
-const logger = Container.getInstance().get(Logger);
 
 // ── Store subscription helpers ──────────────────────────────────────────
 

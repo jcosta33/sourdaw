@@ -5,12 +5,9 @@
  * In browser dev mode: connects to a manually-started llama-server on localhost.
  */
 
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-
-const logger = Container.getInstance().get(Logger);
 
 export const SIDECAR_PORT = parseInt((import.meta.env.VITE_LLM_SIDECAR_PORT as string | undefined) ?? '8847', 10);
 export const BASE_URL = `http://127.0.0.1:${String(SIDECAR_PORT)}`;

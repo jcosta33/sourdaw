@@ -1,9 +1,5 @@
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { Store } from '#/helpers/Store/Store';
+import { createStore } from '#/infra/store/createStore';
 import { type UndoEntry, isActionEntry } from '../models/UndoEntry';
-
-const logger = Container.getInstance().get(Logger);
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
@@ -32,7 +28,7 @@ function loadFromSession(): UndoStoreState {
     return { past: [], future: [] };
 }
 
-export const undoStore = new Store<UndoStoreState>(logger, {
+export const undoStore = createStore<UndoStoreState>({
     initialData: loadFromSession(),
 });
 
