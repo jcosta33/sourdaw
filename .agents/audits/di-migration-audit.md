@@ -3,19 +3,20 @@
 ## Overview
 
 This audit tracks the migration of use cases and repositories to the `inject()` pattern as defined in:
+
 - `docs/01-dependency-injection.md`
 - `docs/architecture/03-typescript-module.md` (Section 4.10)
 
 ## Current State
 
-| Metric | Count |
-|--------|-------|
-| **Total Use Cases** | 681 |
-| **Total Repositories** | 100 |
-| **Use Cases Using `inject()`** | 0 |
-| **Repositories Using `inject()`** | 0 |
-| **Use Cases Missing Input/Output Types** | 649 |
-| **Migration Progress** | 0% |
+| Metric                                   | Count |
+| ---------------------------------------- | ----- |
+| **Total Use Cases**                      | 681   |
+| **Total Repositories**                   | 100   |
+| **Use Cases Using `inject()`**           | 0     |
+| **Repositories Using `inject()`**        | 0     |
+| **Use Cases Missing Input/Output Types** | 649   |
+| **Migration Progress**                   | 0%    |
 
 ## Target Pattern
 
@@ -29,12 +30,11 @@ import { TrackRepo } from '../repositories/TrackRepo';
 type AddTrackInput = { name: string; kind: TrackKind };
 type AddTrackOutput = Track | null;
 
-export const addTrack = inject(
-    { logger: Logger, trackRepo: TrackRepo },
-)(({ logger, trackRepo }) =>
-    (input: AddTrackInput): AddTrackOutput => {
-        // implementation
-    }
+export const addTrack = inject({ logger: Logger, trackRepo: TrackRepo })(
+    ({ logger, trackRepo }) =>
+        (input: AddTrackInput): AddTrackOutput => {
+            // implementation
+        }
 );
 ```
 
@@ -45,6 +45,7 @@ export const addTrack = inject(
 These modules are foundational and should be migrated first.
 
 #### Arrangement Module
+
 - [ ] `useCases/addTrack.ts` - Missing Input/Output types, needs inject()
 - [ ] `useCases/removeTrack.ts` - Missing Input/Output types, needs inject()
 - [ ] `useCases/createTrack.ts` - Missing Input/Output types, needs inject()
@@ -61,15 +62,18 @@ These modules are foundational and should be migrated first.
 - [ ] `repositories/track/mapAllTracks.ts` - needs inject()
 
 #### Transport Module
+
 - [ ] `repositories/transport.ts` - needs inject()
 
 #### Project Module
+
 - [ ] `repositories/project/storageOperations.ts` - needs inject()
 - [ ] `repositories/project/downloadProjectFile.ts` - needs inject()
 - [ ] `repositories/nativeProjectFiles.ts` - needs inject()
 - [ ] `repositories/nativeFileDialog.ts` - needs inject()
 
 #### AudioEngine Module
+
 - [ ] `repositories/createWebAudioEngine.ts` - needs inject()
 - [ ] `repositories/deviceNodeFactory.ts` - needs inject()
 - [ ] `repositories/audioRecorder/recording.ts` - needs inject()
@@ -79,9 +83,11 @@ These modules are foundational and should be migrated first.
 ### Priority 2: Instrument Modules
 
 #### Fermenter Module
+
 - [ ] `repositories/fermenterPresets.ts` - needs inject()
 
 #### Toaster Module
+
 - [ ] `useCases/createDrumTrackStack.ts` - Missing Input/Output types, needs inject()
 - [ ] `useCases/toasterParamBridge.ts` - needs inject()
 - [ ] `useCases/loadToasterKit.ts` - Missing Input type, needs inject()
@@ -91,6 +97,7 @@ These modules are foundational and should be migrated first.
 - [ ] `repositories/toasterPresets.ts` - needs inject()
 
 #### GrandBoule Module
+
 - [ ] `useCases/createGrandBouleTrack.ts` - Missing Output type, needs inject()
 - [ ] `useCases/triggerGrandBouleNote.ts` - Missing Input type, needs inject()
 - [ ] `useCases/releaseGrandBouleNote.ts` - Missing Input type, needs inject()
@@ -107,14 +114,17 @@ These modules are foundational and should be migrated first.
 - [ ] `repositories/findBuiltinGrandBoulePreset.ts` - needs inject()
 
 #### Grinder Module
+
 - [ ] `useCases/grinderParamBridge.ts` - needs inject()
 - [ ] `useCases/grinderPresets.ts` - Missing Output types, needs inject()
 
 #### Levain Module
+
 - [ ] `repositories/levainPresets.ts` - needs inject()
 - [ ] `repositories/sampleLoader.ts` - needs inject()
 
 #### Sampler Module (Crumbs)
+
 - [ ] `useCases/samplerParamBridge.ts` - needs inject()
 - [ ] `useCases/loadSample.ts` - Missing Input type, needs inject()
 - [ ] `useCases/samplerLifecycle.ts` - needs inject()
@@ -124,32 +134,39 @@ These modules are foundational and should be migrated first.
 ### Priority 3: Effect Modules
 
 #### Proof Module
+
 - [ ] All use cases - needs inject() pattern
 - [ ] All repositories - needs inject() pattern
 
 #### DutchOven Module
+
 - [ ] All use cases - needs inject() pattern
 - [ ] All repositories - needs inject() pattern
 
 #### Gluten Module
+
 - [ ] `useCases/glutenParamBridge.ts` - needs inject()
 - [ ] `useCases/glutenPresets.ts` - needs inject()
 
 #### Crust Module
+
 - [ ] `useCases/crustParamBridge.ts` - needs inject()
 - [ ] `useCases/crustPresets.ts` - needs inject()
 
 #### Bacteria Module
+
 - [ ] `useCases/bacteriaParamBridge.ts` - needs inject()
 - [ ] `useCases/bacteriaPresets.ts` - needs inject()
 
 #### Scoring Module
+
 - [ ] `useCases/setA4Reference.ts` - Missing Input type, needs inject()
 - [ ] `useCases/setDisplayMode.ts` - Missing Input type, needs inject()
 
 ### Priority 4: Automation & MIDI
 
 #### Automation Module
+
 - [ ] `useCases/getAutomationStoreState.ts` - needs inject()
 - [ ] `useCases/automationRecording/startAutomationRecording.ts` - needs inject()
 - [ ] `useCases/automationRecording/stopAutomationRecording.ts` - needs inject()
@@ -163,6 +180,7 @@ These modules are foundational and should be migrated first.
 - [ ] `useCases/automation/toggleLaneCollapsed.ts` - Missing Input type, needs inject()
 
 #### Yeast Module (MIDI FX)
+
 - [ ] `useCases/addYeastProcessor.ts` - Missing Input type, needs inject()
 - [ ] `useCases/removeYeastProcessor.ts` - Missing Input type, needs inject()
 - [ ] `useCases/setYeastProcessorParam.ts` - Missing Input type, needs inject()
@@ -176,6 +194,7 @@ These modules are foundational and should be migrated first.
 ### Priority 5: Command & Collaboration
 
 #### Command Module
+
 - [ ] `useCases/executeAppAction.ts` - Missing Input type, needs inject()
 - [ ] `useCases/undoRedo.ts` - Missing Input type, needs inject()
 - [ ] `useCases/pushUndoEntry.ts` - Missing Input type, needs inject()
@@ -186,6 +205,7 @@ These modules are foundational and should be migrated first.
 - [ ] `useCases/undoTree/branchOperations.ts` - needs inject()
 
 #### Collaboration Module
+
 - [ ] `useCases/collaborationHandlers.ts` - needs inject()
 - [ ] `useCases/collaboration/sessionManagement.ts` - needs inject()
 - [ ] `useCases/automergeSync.ts` - needs inject()
@@ -195,6 +215,7 @@ These modules are foundational and should be migrated first.
 ### Priority 6: AI & Analysis
 
 #### AiRuntime Module
+
 - [ ] `repositories/llmWorker.ts` - needs inject()
 - [ ] `repositories/mcpToolAdapter.ts` - needs inject()
 - [ ] `repositories/webLlm/engineLifecycle.ts` - needs inject()
@@ -207,22 +228,26 @@ These modules are foundational and should be migrated first.
 - [ ] `repositories/voiceTauriAdapter.ts` - needs inject()
 
 #### AudioAnalysis Module
+
 - [ ] `repositories/audioAiEngine.ts` - needs inject()
 - [ ] `repositories/browserStemSeparation.ts` - needs inject()
 
 ### Priority 7: Data & Persistence
 
 #### CrdtDocument Module
+
 - [ ] `repositories/crdtPersistence.ts` - needs inject()
 - [ ] `repositories/nativeCrdtPersistence.ts` - needs inject()
 - [ ] `repositories/automergeRepository.ts` - needs inject()
 
 #### SampleLibrary Module
+
 - [ ] `useCases/connectFolder.ts` - Missing Input type, needs inject()
 - [ ] `useCases/restoreLibrary.ts` - needs inject()
 - [ ] `repositories/libraryPersistence.ts` - needs inject()
 
 #### MIDI Module
+
 - [ ] `repositories/downloadFile.ts` - needs inject()
 
 ## Migration Guidelines
@@ -230,21 +255,22 @@ These modules are foundational and should be migrated first.
 ### For Use Cases
 
 1. Add proper Input/Output type definitions above the function:
-   ```typescript
-   type FunctionNameInput = { ... };
-   type FunctionNameOutput = ReturnType; // or explicit type
-   ```
+
+    ```typescript
+    type FunctionNameInput = { ... };
+    type FunctionNameOutput = ReturnType; // or explicit type
+    ```
 
 2. Wrap with `inject()`:
-   ```typescript
-   export const functionName = inject(
-       { logger: Logger, repo: Repo },
-   )(({ logger, repo }) =>
-       (input: FunctionNameInput): FunctionNameOutput => {
-           // existing implementation
-       }
-   );
-   ```
+
+    ```typescript
+    export const functionName = inject({ logger: Logger, repo: Repo })(
+        ({ logger, repo }) =>
+            (input: FunctionNameInput): FunctionNameOutput => {
+                // existing implementation
+            }
+    );
+    ```
 
 3. Update direct imports of dependencies to use inject map instead
 
