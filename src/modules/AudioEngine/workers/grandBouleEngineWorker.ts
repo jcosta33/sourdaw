@@ -123,6 +123,7 @@ function renderLoop(): void {
         }
 
         Atomics.store(controlInts, WRITE_HEAD_IDX, writeHead + BLOCK_SIZE);
+        Atomics.pause?.();
     }
 
     // Yield to the event loop so pending MIDI messages can be dispatched,

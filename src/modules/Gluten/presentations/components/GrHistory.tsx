@@ -5,6 +5,7 @@
  * showing the last ~5 seconds of gain reduction over time.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { createCompactFloatBuffer } from '#/helpers/createCompactFloatBuffer';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type GrHistoryProps = {
@@ -19,7 +20,7 @@ const DB_RANGE = 30; // 0 to -30 dB
 
 export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHistoryProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const historyRef = useRef<Float32Array>(new Float32Array(HISTORY_LENGTH));
+    const historyRef = useRef<Float32Array>(createCompactFloatBuffer({ length: HISTORY_LENGTH }));
     const posRef = useRef(0);
 
     useEffect(() => {

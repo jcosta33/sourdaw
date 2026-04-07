@@ -12,7 +12,7 @@
  *   telemetryAllocator.releaseSlot(slot.byteOffset); // on device removal
  */
 
-/** Floats reserved per plugin slot — sized for the largest telemetry set (Proof: 25 fields). */
+/** Scalars reserved per plugin slot — sized for the largest telemetry set (Proof: 25 fields). */
 export const FLOATS_PER_SLOT = 32;
 
 const MAX_SLOTS = 64;

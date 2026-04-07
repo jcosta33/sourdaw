@@ -9,25 +9,65 @@ use std::f32::consts::PI;
 
 const MAX_FFT_SIZE: usize = 4096;
 const HOP_DIVISOR: usize = 4; // 75% overlap
+const DEFAULT_FFT_SIZE: usize = 2048;
+const DEFAULT_BIT_REVERSE: [usize; DEFAULT_FFT_SIZE] = build_bit_reverse_indices::<DEFAULT_FFT_SIZE>();
+
+const fn build_bit_reverse_indices<const SIZE: usize>() -> [usize; SIZE] {
+    let mut indices = [0usize; SIZE];
+    let mut index = 0;
+    let bits = SIZE.trailing_zeros() as usize;
+
+    while index < SIZE {
+        let mut value = index;
+        let mut reversed = 0usize;
+        let mut shift = 0;
+
+        while shift < bits {
+            reversed = (reversed << 1) | (value & 1);
+            value >>= 1;
+            shift += 1;
+        }
+
+        indices[index] = reversed;
+        index += 1;
+    }
+
+    indices
+}
+
+fn generate_bit_reverse_indices(size: usize) -> Vec<usize> {
+    let bits = size.trailing_zeros() as usize;
+    let mut indices = vec![0usize; size];
+
+    for (index, slot) in indices.iter_mut().enumerate() {
+        let mut value = index;
+        let mut reversed = 0usize;
+
+        for _ in 0..bits {
+            reversed = (reversed << 1) | (value & 1);
+            value >>= 1;
+        }
+
+        *slot = reversed;
+    }
+
+    indices
+}
 
 /// In-place radix-2 Cooley-Tukey FFT.
-fn fft(real: &mut [f32], imag: &mut [f32], inverse: bool) {
+fn fft(real: &mut [f32], imag: &mut [f32], bit_reverse: &[usize], inverse: bool) {
     let n = real.len();
     assert!(n.is_power_of_two());
+    assert_eq!(imag.len(), n);
+    assert_eq!(bit_reverse.len(), n);
 
     // Bit-reversal permutation
-    let mut j = 0;
     for i in 0..n {
+        let j = bit_reverse[i];
         if i < j {
             real.swap(i, j);
             imag.swap(i, j);
         }
-        let mut m = n >> 1;
-        while m >= 1 && j >= m {
-            j -= m;
-            m >>= 1;
-        }
-        j += m;
     }
 
     // Butterfly stages
@@ -72,6 +112,7 @@ pub struct StftProcessor {
     fft_size: usize,
     hop_size: usize,
     window: Vec<f32>,
+    bit_reverse: Vec<usize>,
 
     // Input accumulation
     input_buffer: Vec<f32>,
@@ -111,11 +152,17 @@ impl StftProcessor {
         let window: Vec<f32> = (0..fft_size)
             .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / fft_size as f32).cos()))
             .collect();
+        let bit_reverse = if fft_size == DEFAULT_FFT_SIZE {
+            Vec::from(const { DEFAULT_BIT_REVERSE })
+        } else {
+            generate_bit_reverse_indices(fft_size)
+        };
 
         Self {
             fft_size,
             hop_size,
             window,
+            bit_reverse,
             input_buffer: vec![0.0; fft_size * 2],
             input_write_pos: 0,
             samples_since_last_hop: 0,
@@ -191,7 +238,7 @@ impl StftProcessor {
         }
 
         // Forward FFT
-        fft(&mut self.fft_real, &mut self.fft_imag, false);
+        fft(&mut self.fft_real, &mut self.fft_imag, &self.bit_reverse, false);
 
         // Extract magnitudes and phases
         for k in 0..half {
@@ -231,7 +278,7 @@ impl StftProcessor {
         }
 
         // Inverse FFT
-        fft(&mut self.fft_real, &mut self.fft_imag, true);
+        fft(&mut self.fft_real, &mut self.fft_imag, &self.bit_reverse, true);
 
         // Window and overlap-add into output buffer
         let out_start = self.output_read_pos;

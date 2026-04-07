@@ -7,7 +7,7 @@
  *
  * Effect processor: reads inputs[0], writes outputs[0].
  * Handles the full mastering chain via WASM (EQ → Dynamics → Imager → Exciter → Limiter).
- * Sends metering data (LUFS, GR, correlation, tap levels) back to main thread.
+ * Writes metering data (LUFS, GR, correlation, tap levels) into a shared telemetry slot.
  */
 
 import '../wasm/workletPolyfill.js';
@@ -19,6 +19,7 @@ class ProofProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
+    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();
@@ -28,6 +29,8 @@ class ProofProcessor extends AudioWorkletProcessor {
                 if (msg.type === 'init') {
                     if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
+                } else if (msg.type === 'init-sab') {
+                    this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
                 }
@@ -97,34 +100,33 @@ class ProofProcessor extends AudioWorkletProcessor {
             this._meterCounter++;
             if (this._meterCounter >= 8) {
                 this._meterCounter = 0;
-                this.port.postMessage({
-                    type: 'meters',
-                    inputLufs: inst.get_input_lufs(),
-                    outputLufs: inst.get_output_lufs(),
-                    outputStLufs: inst.get_output_st_lufs(),
-                    integratedLufs: inst.get_integrated_lufs(),
-                    truePeakDb: inst.get_true_peak_db(),
-                    lra: inst.get_lra(),
-                    correlation: inst.get_correlation(),
-                    limiterGrDb: inst.get_limiter_gr_db(),
-                    dynGr0: inst.get_dynamics_gr(0),
-                    dynGr1: inst.get_dynamics_gr(1),
-                    dynGr2: inst.get_dynamics_gr(2),
-                    dynGr3: inst.get_dynamics_gr(3),
-                    tap0PeakL: inst.get_tap_peak_l(0),
-                    tap0PeakR: inst.get_tap_peak_r(0),
-                    tap1PeakL: inst.get_tap_peak_l(1),
-                    tap1PeakR: inst.get_tap_peak_r(1),
-                    tap2PeakL: inst.get_tap_peak_l(2),
-                    tap2PeakR: inst.get_tap_peak_r(2),
-                    tap3PeakL: inst.get_tap_peak_l(3),
-                    tap3PeakR: inst.get_tap_peak_r(3),
-                    tap4PeakL: inst.get_tap_peak_l(4),
-                    tap4PeakR: inst.get_tap_peak_r(4),
-                    tap5PeakL: inst.get_tap_peak_l(5),
-                    tap5PeakR: inst.get_tap_peak_r(5),
-                    latency: inst.get_latency_samples(),
-                });
+                if (this._sabView) {
+                    this._sabView[0] = inst.get_input_lufs();
+                    this._sabView[1] = inst.get_output_lufs();
+                    this._sabView[2] = inst.get_output_st_lufs();
+                    this._sabView[3] = inst.get_integrated_lufs();
+                    this._sabView[4] = inst.get_true_peak_db();
+                    this._sabView[5] = inst.get_lra();
+                    this._sabView[6] = inst.get_correlation();
+                    this._sabView[7] = inst.get_limiter_gr_db();
+                    this._sabView[8] = inst.get_dynamics_gr(0);
+                    this._sabView[9] = inst.get_dynamics_gr(1);
+                    this._sabView[10] = inst.get_dynamics_gr(2);
+                    this._sabView[11] = inst.get_dynamics_gr(3);
+                    this._sabView[12] = inst.get_tap_peak_l(0);
+                    this._sabView[13] = inst.get_tap_peak_r(0);
+                    this._sabView[14] = inst.get_tap_peak_l(1);
+                    this._sabView[15] = inst.get_tap_peak_r(1);
+                    this._sabView[16] = inst.get_tap_peak_l(2);
+                    this._sabView[17] = inst.get_tap_peak_r(2);
+                    this._sabView[18] = inst.get_tap_peak_l(3);
+                    this._sabView[19] = inst.get_tap_peak_r(3);
+                    this._sabView[20] = inst.get_tap_peak_l(4);
+                    this._sabView[21] = inst.get_tap_peak_r(4);
+                    this._sabView[22] = inst.get_tap_peak_l(5);
+                    this._sabView[23] = inst.get_tap_peak_r(5);
+                    this._sabView[24] = inst.get_latency_samples();
+                }
             }
         } catch (err) {
             this._faulted = true;

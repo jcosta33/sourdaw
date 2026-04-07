@@ -17,6 +17,7 @@
  * Delta mode: bg → #1A0805, GR signal shown in red + banner
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { createCompactFloatBuffer } from '#/helpers/createCompactFloatBuffer';
 
 const HISTORY = 200;
 
@@ -64,10 +65,10 @@ export const CrustWaveformDisplay = ({
     latestRef.current = { grDb, inputDb, outputDb, lufsShortTerm, lufsTarget, deltaListen, scrollSpeed };
 
     // Ring buffers (pre-allocated, never reallocated)
-    const inputBuf = useRef(new Float32Array(HISTORY));
-    const outputBuf = useRef(new Float32Array(HISTORY));
-    const grBuf = useRef(new Float32Array(HISTORY));
-    const lufsBuf = useRef(new Float32Array(HISTORY).fill(-100));
+    const inputBuf = useRef(createCompactFloatBuffer({ length: HISTORY }));
+    const outputBuf = useRef(createCompactFloatBuffer({ length: HISTORY }));
+    const grBuf = useRef(createCompactFloatBuffer({ length: HISTORY }));
+    const lufsBuf = useRef(createCompactFloatBuffer({ length: HISTORY, fill: -100 }));
     const writePos = useRef(0);
     const tickRef = useRef(0);
 
