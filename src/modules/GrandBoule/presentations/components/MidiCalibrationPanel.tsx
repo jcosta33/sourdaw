@@ -13,10 +13,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import {
-    type GrandBouleMidiCalibration,
-    MIDI_CALIBRATION_RANGES,
-} from '../../models/GrandBouleMidiCalibration';
+import { type GrandBouleMidiCalibration, MIDI_CALIBRATION_RANGES } from '../../models/GrandBouleMidiCalibration';
 
 // ---------------------------------------------------------------------------
 // Velocity histogram constants
@@ -59,9 +56,7 @@ const Knob = ({
             size="sm"
         />
         <div className="text-center">
-            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                {label}
-            </div>
+            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
     </div>
@@ -71,11 +66,7 @@ const Knob = ({
 // Velocity Histogram (canvas bar chart)
 // ---------------------------------------------------------------------------
 
-const VelocityHistogram = ({
-    samples,
-}: {
-    samples: ReadonlyArray<number>;
-}): ReactElement => {
+const VelocityHistogram = ({ samples }: { samples: ReadonlyArray<number> }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
@@ -134,13 +125,7 @@ const VelocityHistogram = ({
         ctx.stroke();
     }, [samples]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            className="h-full w-full"
-            style={{ display: 'block' }}
-        />
-    );
+    return <canvas ref={canvasRef} className="h-full w-full" style={{ display: 'block' }} />;
 };
 
 // ---------------------------------------------------------------------------
@@ -185,9 +170,7 @@ export const MidiCalibrationPanel = ({
         }
         setVelocitySamples((prev) => {
             const next = [...prev, lastVelocity];
-            return next.length > HISTOGRAM_MAX_SAMPLES
-                ? next.slice(next.length - HISTOGRAM_MAX_SAMPLES)
-                : next;
+            return next.length > HISTOGRAM_MAX_SAMPLES ? next.slice(next.length - HISTOGRAM_MAX_SAMPLES) : next;
         });
     }, [lastVelocity]);
 
@@ -210,9 +193,7 @@ export const MidiCalibrationPanel = ({
                         <VelocityHistogram samples={velocitySamples} />
                     ) : (
                         <div className="flex h-full items-center justify-center">
-                            <span className="text-[9px] italic text-muted-foreground/50">
-                                Play notes to calibrate
-                            </span>
+                            <span className="text-[9px] italic text-muted-foreground/50">Play notes to calibrate</span>
                         </div>
                     )}
                 </div>
@@ -222,11 +203,7 @@ export const MidiCalibrationPanel = ({
                     className="grand-boule-window"
                     label="Last Velocity"
                     value={lastVelocity !== null ? `${lastVelocity}` : '--'}
-                    detail={
-                        lastVelocity !== null
-                            ? `${Math.round((lastVelocity / 127) * 100)}% of range`
-                            : 'No input'
-                    }
+                    detail={lastVelocity !== null ? `${Math.round((lastVelocity / 127) * 100)}% of range` : 'No input'}
                 />
 
                 {/* Calibration knobs — row 1: velocity shaping */}

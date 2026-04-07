@@ -38,9 +38,7 @@ const ModelSelector = ({
     onSelect: (id: string) => void;
 }): ReactElement => (
     <div className="flex flex-col gap-1">
-        <div className="text-[8px] uppercase tracking-[0.2em] text-neutral-400/50">
-            {label}
-        </div>
+        <div className="text-[8px] uppercase tracking-[0.2em] text-neutral-400/50">{label}</div>
         <div className="flex flex-col gap-0.5">
             {BUILTIN_PIANO_MODELS.map((model: GrandBoulePianoModel) => {
                 const active = model.id === selectedId;
@@ -93,9 +91,7 @@ const MorphKnob = ({
             size="sm"
         />
         <div className="text-center">
-            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                {label}
-            </div>
+            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
     </div>
@@ -124,8 +120,7 @@ const BlendIndicator = ({
             <div
                 className="absolute inset-0 rounded-full"
                 style={{
-                    background:
-                        'linear-gradient(to right, rgb(217 119 6 / 0.6), rgb(56 189 248 / 0.6))',
+                    background: 'linear-gradient(to right, rgb(217 119 6 / 0.6), rgb(56 189 248 / 0.6))',
                 }}
             />
             <div
@@ -183,16 +178,8 @@ export const MorphPanel = ({
 
                 {/* Model selectors */}
                 <div className="grid grid-cols-2 gap-2">
-                    <ModelSelector
-                        label="Model A"
-                        selectedId={morph.modelA}
-                        onSelect={onModelAChange}
-                    />
-                    <ModelSelector
-                        label="Model B"
-                        selectedId={morph.modelB}
-                        onSelect={onModelBChange}
-                    />
+                    <ModelSelector label="Model A" selectedId={morph.modelA} onSelect={onModelAChange} />
+                    <ModelSelector label="Model B" selectedId={morph.modelB} onSelect={onModelBChange} />
                 </div>
 
                 {/* Blend indicator */}

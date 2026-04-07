@@ -15,11 +15,7 @@ export type GrandBouleEngineHandle = {
      * Trigger a note with MIDI 2.0 fidelity: 16-bit velocity and a signed
      * microtuning pitch offset in semitones × 2^24 (Q24).
      */
-    noteOnMidi2: (input: {
-        midiNote: number;
-        velocity16bit: number;
-        pitchOffsetQ24: number;
-    }) => void;
+    noteOnMidi2: (input: { midiNote: number; velocity16bit: number; pitchOffsetQ24: number }) => void;
     /** Release any voice(s) currently playing `midiNote`. */
     noteOff: (input: { midiNote: number }) => void;
     /** Set a global parameter by name (`master_gain`, `soundboard_send`, …). */

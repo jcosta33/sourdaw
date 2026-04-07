@@ -34,7 +34,7 @@ type AutomergeStorageOptions<TData> = {
 export const createAutomergeStorage = <TData>(
     docId: DocId,
     key: string,
-    options?: AutomergeStorageOptions<TData>,
+    options?: AutomergeStorageOptions<TData>
 ): StorageAdapter<TData> => {
     const toCrdt = options?.toCrdt;
     let cachedValue: TData | null = null;
@@ -60,7 +60,7 @@ export const createAutomergeStorage = <TData>(
                     doc[key] = toDocSafe(crdtValue);
                 }
             },
-            message,
+            message
         );
     };
 

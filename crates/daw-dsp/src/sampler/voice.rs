@@ -7,7 +7,6 @@
 ///   - Loop handling (Forward, PingPong, Reverse) with equal-power crossfade
 ///   - One-pole parameter smoothing on gain and pan
 ///   - Linear fade-out on voice steal (1–5ms)
-
 use super::allocator::StealPriority;
 use super::envelope::{AhdsrEnvelope, EnvelopeState};
 use super::filter::TptSvf;
@@ -153,8 +152,7 @@ impl SamplerVoice {
         self.filter
             .set_params(params.filter_cutoff, params.filter_resonance);
         self.filter_type = params.filter_type;
-        self.filter_enabled =
-            params.filter_cutoff < 19999.0 || params.filter_resonance > 0.01;
+        self.filter_enabled = params.filter_cutoff < 19999.0 || params.filter_resonance > 0.01;
 
         // Set envelope
         self.amp_envelope.set_attack(params.attack);
@@ -345,8 +343,7 @@ impl SamplerVoice {
 
     pub fn set_tune(&mut self, cents: f32) {
         self.tune_cents = cents;
-        let semitone_diff =
-            (self.note as f32 - self.root_note as f32) + self.tune_cents / 100.0;
+        let semitone_diff = (self.note as f32 - self.root_note as f32) + self.tune_cents / 100.0;
         self.speed = 2.0_f64.powf(semitone_diff as f64 / 12.0);
     }
 

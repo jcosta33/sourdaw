@@ -6,7 +6,6 @@
 /// The `target_ratio` parameter controls curve shape:
 ///   - 0.0001 → steep exponential (natural amp/filter envelopes)
 ///   - 1.0+   → nearly linear (useful for pitch envelopes)
-
 use super::types::ENV_TARGET_EXP;
 
 // ── Envelope State ─────────────────────────────────────────────────────
@@ -245,8 +244,7 @@ impl AhdsrEnvelope {
     fn recalculate_release(&mut self) {
         // Release goes current → 0, undershooting toward -target_ratio.
         let samples = (self.release_time * self.sample_rate).max(1.0);
-        let rate =
-            ((1.0 + self.release_target_ratio) / self.release_target_ratio).ln() / samples;
+        let rate = ((1.0 + self.release_target_ratio) / self.release_target_ratio).ln() / samples;
         self.release_coeff = (-rate).exp();
         let target = -self.release_target_ratio;
         self.release_offset = target * (1.0 - self.release_coeff);

@@ -61,6 +61,9 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
             durationMs: Math.round(performance.now() - start),
         });
     } catch (error: unknown) {
-        updateTask(taskId, { status: 'error', error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Denoise failed' });
+        updateTask(taskId, {
+            status: 'error',
+            error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Denoise failed',
+        });
     }
 }

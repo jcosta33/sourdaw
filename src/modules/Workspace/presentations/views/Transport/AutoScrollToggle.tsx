@@ -6,7 +6,12 @@ import { timelineViewStore, toggleAutoScroll } from '#/modules/Arrangement/store
 import { useStore } from '#/infra/store/useStore';
 
 export const AutoScrollToggle = (): ReactElement => {
-    const timelineViewState = useStore(timelineViewStore, { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true });
+    const timelineViewState = useStore(timelineViewStore, {
+        scrollX: 0,
+        scrollY: 0,
+        pixelsPerBeat: 12,
+        autoScrollEnabled: true,
+    });
     const autoScrollEnabled = timelineViewState.autoScrollEnabled;
 
     return (

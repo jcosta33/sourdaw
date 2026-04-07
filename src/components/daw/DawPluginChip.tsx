@@ -3,7 +3,7 @@ import { cn } from '#/helpers/Styles/cn';
 
 type DawPluginChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
     active?: boolean;
-    tone?: 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger';
+    tone?: 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage';
     size?: 'xs' | 'sm';
     shape?: 'pill' | 'soft';
     caps?: boolean;
@@ -17,8 +17,11 @@ const ACTIVE_TONE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['tone']>, s
     lavender:
         'border-[var(--color-accent-lavender)]/60 bg-[var(--color-accent-lavender)]/12 text-[var(--color-accent-lavender)]',
     mint: 'border-[var(--color-accent-mint)]/60 bg-[var(--color-accent-mint)]/12 text-[var(--color-accent-mint)]',
-    steel: 'border-[#5B8FC4]/60 bg-[#5B8FC4]/14 text-[#9fc6ef]',
+    steel: 'border-[var(--color-accent-steel)]/60 bg-[var(--color-accent-steel)]/14 text-[var(--color-accent-steel)]',
     danger: 'border-[var(--color-state-danger)]/60 bg-[var(--color-state-danger)]/12 text-[var(--color-state-danger)]',
+    rose: 'border-[var(--color-accent-rose)]/60 bg-[var(--color-accent-rose)]/14 text-[var(--color-accent-rose)]',
+    indigo: 'border-[var(--color-accent-indigo)]/60 bg-[var(--color-accent-indigo)]/12 text-[var(--color-accent-indigo)]',
+    sage: 'border-[var(--color-accent-sage)]/60 bg-[var(--color-accent-sage)]/12 text-[var(--color-accent-sage)]',
 };
 
 const SIZE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['size']>, string> = {

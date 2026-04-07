@@ -2,7 +2,6 @@
 ///
 /// Prevents zipper noise when parameters change during playback.
 /// Includes denormal prevention via a tiny DC offset (1e-18).
-
 use super::types::DENORMAL_DC;
 
 #[derive(Debug, Clone)]

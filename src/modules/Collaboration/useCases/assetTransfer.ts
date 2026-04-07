@@ -181,7 +181,7 @@ export class AssetTransfer {
 
         // Check if all chunks received
         if (transfer.receivedBitmap.size === transfer.manifest.chunkCount) {
-            void this.assembleAsset(hash, transfer);
+            this.assembleAsset(hash, transfer);
         }
     }
 

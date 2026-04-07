@@ -426,7 +426,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tDarkMist.pan = nextPan();
     tGrainHaze.pan = nextPan();
     tEtherealVeil.pan = nextPan();
-    void nextPan(); // keep widePans rotation aligned; Sweep uses automation extremes
+    nextPan(); // keep widePans rotation aligned; Sweep uses automation extremes
     tSweepHorizon.pan = -50;
     tWarmHalo.pan = nextPan();
     tRisingMist.pan = nextPan();

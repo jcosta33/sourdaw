@@ -4,7 +4,6 @@
 /// fundamental frequency of a sample. Returns the detected root MIDI note
 /// and frequency. Analyzes multiple windows across the sample and takes
 /// the median result for robustness.
-
 use crate::knead::yin::{yin_frame, YinConfig, YinResult};
 
 // ── Configuration ──────────────────────────────────────────────────────

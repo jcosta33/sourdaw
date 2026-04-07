@@ -29,6 +29,7 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 ## Scope
 
 **In scope:**
+
 - Monophonic vocal and instrument pitch correction.
 - pYIN-based offline pitch analysis.
 - TD-PSOLA (Time-Domain Pitch Synchronous Overlap and Add) based real-time pitch synthesis in the Rust audio thread.
@@ -39,6 +40,7 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 - Undo/redo of pitch edits using the Command pattern.
 
 **Non-goals (explicitly out of scope):**
+
 - Polyphonic pitch editing (e.g., Melodyne DNA style).
 - ARA 2 host implementation (deferred to a future Phase 2).
 - Phase vocoder based time-stretching (PSOLA is used exclusively).
@@ -92,6 +94,7 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 ### Decision: Threading Model
 
 **Chosen:** Four-thread architecture with lock-free bridges.
+
 1. **Analysis Thread (Tokio):** Offline pYIN/CREPE processing.
 2. **Edit Thread (IPC/Main):** UI interactions and delta-map compilation.
 3. **Audio Thread (RT):** Live TD-PSOLA synthesis (lock-free).
@@ -118,8 +121,8 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 ## Implementation notes
 
 - **Pattern Survey Findings:**
-  - **Similar implementations:** `src/modules/AudioAnalysis/useCases/pitchDetection.ts` uses McLeod Pitch Method (MPM). We depart to pYIN/CREPE for monophonic precision.
-  - **Helpers to reuse:** `src/helpers/Store/` for state. `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` for Canvas rendering. `src/modules/Command/useCases/pushUndoEntry.ts` for Command pattern.
+    - **Similar implementations:** `src/modules/AudioAnalysis/useCases/pitchDetection.ts` uses McLeod Pitch Method (MPM). We depart to pYIN/CREPE for monophonic precision.
+    - **Helpers to reuse:** `src/helpers/Store/` for state. `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` for Canvas rendering. `src/modules/Command/useCases/pushUndoEntry.ts` for Command pattern.
 - **PSOLA Mechanics:** The algorithm (~500-1000 lines of Rust) will live in `daw-dsp` and utilize `rustfft` and `rtrb` for ring buffering pre-buffered PCM.
 - **Data Volume:** 30s of pitch data is only ~41-82 KB, making JSON serialization over Tauri IPC efficient.
 

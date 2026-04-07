@@ -10,13 +10,7 @@ import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { type PadState } from '../../models/ToasterKit';
-import {
-    selectPad,
-    setStepVelocity,
-    toasterStore,
-    toggleStep,
-    updatePad,
-} from '../../stores/toasterStore';
+import { selectPad, setStepVelocity, toasterStore, toggleStep, updatePad } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';

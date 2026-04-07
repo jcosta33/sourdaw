@@ -346,7 +346,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </div>
                             <div className="text-[15px] font-semibold text-foreground">Gluten</div>
                         </div>
-                        <DawPluginLed tone="peach">{filteredPresets.length} ready</DawPluginLed>
+                        <DawPluginLed tone="lavender">{filteredPresets.length} ready</DawPluginLed>
                     </div>
 
                     <label className="gluten-window flex items-center gap-2 px-3 py-2">
@@ -367,7 +367,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 <DawPluginChip
                                     key={entry}
                                     active={active}
-                                    tone="peach"
+                                    tone="lavender"
                                     size="sm"
                                     onClick={() => setCategory(entry)}
                                 >
@@ -472,7 +472,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 </div>
                                             </div>
                                         </div>
-                                        {active ? <DawPluginLed tone="peach">Live</DawPluginLed> : null}
+                                        {active ? <DawPluginLed tone="lavender">Live</DawPluginLed> : null}
                                     </div>
                                 </button>
                             );
@@ -497,7 +497,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         <DawPluginChip
                                             key={style}
                                             active={active}
-                                            tone="peach"
+                                            tone="lavender"
                                             size="sm"
                                             onClick={() => applyStyle(style)}
                                         >
@@ -576,7 +576,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         className="gluten-window"
                                         title="Quick read"
                                         titleClassName="text-foreground"
-                                        actions={<DawPluginLed tone="peach">{topologyMeta.detail}</DawPluginLed>}
+                                        actions={<DawPluginLed tone="lavender">{topologyMeta.detail}</DawPluginLed>}
                                     >
                                         <DawPluginReadoutList density="tight">
                                             <DawReadoutRow
@@ -896,7 +896,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         <DawPluginChip
                                             key={mode}
                                             active={active}
-                                            tone="peach"
+                                            tone="lavender"
                                             size="sm"
                                             onClick={() => setGlutenParamWithAudio(deviceId, 'detection', mode)}
                                         >
@@ -910,7 +910,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         <DawPluginChip
                                             key={mode}
                                             active={active}
-                                            tone="peach"
+                                            tone="lavender"
                                             size="sm"
                                             onClick={() => setGlutenParamWithAudio(deviceId, 'stereoMode', mode)}
                                         >
@@ -927,7 +927,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         <DawPluginChip
                                             key={thrust}
                                             active={active}
-                                            tone="peach"
+                                            tone="lavender"
                                             size="sm"
                                             onClick={() => setGlutenParamWithAudio(deviceId, 'thrust', thrust)}
                                         >

@@ -190,7 +190,7 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'grinder');
-                            void eventBus.emit('panel.showGrinder', { deviceId: device?.id ?? null });
+                            eventBus.emit('panel.showGrinder', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={GRINDER_THEME}
@@ -204,7 +204,7 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'bacteria');
-                            void eventBus.emit('panel.showBacteria', { deviceId: device?.id ?? null });
+                            eventBus.emit('panel.showBacteria', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={BACTERIA_THEME}
@@ -218,7 +218,7 @@ export const ColorTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             addDevice(selectedTrackId, 'Yeast');
-                            void eventBus.emit('panel.showYeast', { deviceId: null });
+                            eventBus.emit('panel.showYeast', { deviceId: null });
                         }
                     }}
                     theme={YEAST_THEME}

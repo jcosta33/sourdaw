@@ -5,7 +5,6 @@
 ///   2. Apply generalized autocorrelation (GAC)
 ///   3. Find the dominant periodicity in the BPM range
 ///   4. Refine with parabolic interpolation
-
 use super::onset::{detect_superflux, OnsetConfig};
 
 // ── Constants ──────────────────────────────────────────────────────────

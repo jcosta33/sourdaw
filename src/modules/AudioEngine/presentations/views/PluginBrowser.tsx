@@ -105,7 +105,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
     };
 
     const handleScan = () => {
-        void startPluginScan();
+        startPluginScan();
     };
 
     return (

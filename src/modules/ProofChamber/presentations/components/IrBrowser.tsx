@@ -136,7 +136,7 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={(e) => {
-                    void handleDrop(e);
+                    handleDrop(e);
                 }}
             >
                 {waveform ? (

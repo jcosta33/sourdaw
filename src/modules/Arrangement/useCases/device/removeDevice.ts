@@ -14,7 +14,7 @@ export function removeDevice(deviceId: string): void {
         if (device) {
             removeDeviceFromStrip(track.id, deviceId);
             if (device.type === 'external-plugin' && device.externalInstanceId) {
-                void unloadPlugin(device.externalInstanceId);
+                unloadPlugin(device.externalInstanceId);
             }
             break;
         }

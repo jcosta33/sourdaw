@@ -142,15 +142,12 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() =>
-                    runAiActionWithToast(
-                        () => executeAppAction({ type: 'stemSeparate', payload: { clipId } }),
-                        {
-                            startMsg: 'Separating stems… this may take a moment',
-                            successMsg: 'Stem separation complete',
-                            successDetails: ['Created separate tracks for each stem'],
-                            failMsg: 'Stem separation failed',
-                        }
-                    )
+                    runAiActionWithToast(() => executeAppAction({ type: 'stemSeparate', payload: { clipId } }), {
+                        startMsg: 'Separating stems… this may take a moment',
+                        successMsg: 'Stem separation complete',
+                        successDetails: ['Created separate tracks for each stem'],
+                        failMsg: 'Stem separation failed',
+                    })
                 )}
             >
                 Separate Stems
@@ -195,7 +192,10 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
 
     const renderMidiActions = (): ReactElement => (
         <>
-            <DawMenuButton role="menuitem" onClick={act(() => executeAppAction({ type: 'arpeggiate', payload: { clipId } }))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => executeAppAction({ type: 'arpeggiate', payload: { clipId } }))}
+            >
                 Arpeggiate
             </DawMenuButton>
             <DawMenuButton role="menuitem" onClick={act(() => exportMidiClip(clipId))}>

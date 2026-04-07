@@ -435,14 +435,16 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
         }
 
         function resize(w: number, h: number): void {
-            if (w <= 0 || h <= 0) {
+            const dpr = window.devicePixelRatio || 1;
+            const pw = Math.round(w * dpr);
+            const ph = Math.round(h * dpr);
+            if (pw <= 0 || ph <= 0) {
                 return;
             }
-            const dpr = window.devicePixelRatio || 1;
-            canvasW = w * dpr;
-            canvasH = h * dpr;
-            canvas.width = canvasW;
-            canvas.height = canvasH;
+            canvasW = pw;
+            canvasH = ph;
+            canvas.width = pw;
+            canvas.height = ph;
             canvas.style.width = `${w}px`;
             canvas.style.height = `${h}px`;
             gpuContext!.configure({ device, format, alphaMode: 'premultiplied' });

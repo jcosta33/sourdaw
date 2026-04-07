@@ -36,7 +36,7 @@ function sampleBin(frame: Float32Array, bin: number): number {
     const lo = Math.floor(bin);
     const hi = Math.min(lo + 1, frame.length - 1);
     const frac = bin - lo;
-    return (frame[lo]! * (1 - frac) + frame[hi]! * frac);
+    return frame[lo]! * (1 - frac) + frame[hi]! * frac;
 }
 
 /** HSL-like colour map: dark purple → amber → bright white. */
@@ -67,7 +67,7 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
 
     // Log-frequency history ring: each row has DISPLAY_COLS values.
     const historyRef = useRef<Float32Array[]>(
-        Array.from({ length: HISTORY_FRAMES }, () => new Float32Array(DISPLAY_COLS)),
+        Array.from({ length: HISTORY_FRAMES }, () => new Float32Array(DISPLAY_COLS))
     );
     const headRef = useRef(0);
     // Precomputed bin lookup table (rebuilt when sampleRate is known).
@@ -145,16 +145,15 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
             raf = requestAnimationFrame(render);
         };
         raf = requestAnimationFrame(render);
-        return () => { cancelAnimationFrame(raf); observer.disconnect(); };
+        return () => {
+            cancelAnimationFrame(raf);
+            observer.disconnect();
+        };
     }, []);
 
     return (
         <div ref={containerRef} className={className}>
-            <canvas
-                ref={canvasRef}
-                className="h-full w-full"
-                aria-label="Grand Boule spectral waterfall"
-            />
+            <canvas ref={canvasRef} className="h-full w-full" aria-label="Grand Boule spectral waterfall" />
         </div>
     );
 };

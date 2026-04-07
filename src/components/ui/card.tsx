@@ -18,7 +18,7 @@ export const CardHeader = ({ className, ref, ...props }: CardHeaderProps): React
 );
 
 type CardTitleProps = HTMLAttributes<HTMLHeadingElement> & {
-    ref?: Ref<HTMLParagraphElement>;
+    ref?: Ref<HTMLHeadingElement>;
 };
 
 export const CardTitle = ({ className, ref, ...props }: CardTitleProps): ReactElement => (

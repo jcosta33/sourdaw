@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
@@ -23,19 +24,22 @@ export function captureSnapshot(): ProjectSnapshot {
 /**
  * Restore a snapshot into the project stores.
  */
-export function restoreSnapshot(snapshot: ProjectSnapshot): void {
-    try {
-        const parsed = JSON.parse(snapshot.data);
-        if (parsed.tracks) {
-            trackStore.set(parsed.tracks);
+export const restoreSnapshot = inject({ logger })(
+    ({ logger }) =>
+        function restoreSnapshot(snapshot: ProjectSnapshot): void {
+            try {
+                const parsed = JSON.parse(snapshot.data);
+                if (parsed.tracks) {
+                    trackStore.set(parsed.tracks);
+                }
+                if (parsed.markers) {
+                    markerStore.set(parsed.markers);
+                }
+                if (parsed.transport) {
+                    transportStore.set(parsed.transport);
+                }
+            } catch (error) {
+                logger.error(new Error('Corrupt snapshot — failed to parse', { cause: error }));
+            }
         }
-        if (parsed.markers) {
-            markerStore.set(parsed.markers);
-        }
-        if (parsed.transport) {
-            transportStore.set(parsed.transport);
-        }
-    } catch (error) {
-        logger.error(new Error('Corrupt snapshot — failed to parse', { cause: error }));
-    }
-}
+);

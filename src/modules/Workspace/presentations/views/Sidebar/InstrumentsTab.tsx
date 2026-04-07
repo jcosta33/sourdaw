@@ -17,7 +17,6 @@ import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
 import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases/createGrandBouleTrack';
-import { eventBus } from '#/app/registerDependencies';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';
 import {
@@ -25,7 +24,7 @@ import {
     FERMENTER_THEME,
     TOASTER_THEME,
     LEVAIN_THEME,
-    SAMPLER_THEME,
+    CRUMBS_THEME,
     GRAND_BOULE_THEME,
 } from '../../components/Sidebar/InstrumentCard';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
@@ -34,6 +33,7 @@ import { NavCard } from '../Sidebar/effectsTabHelpers';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
+import { eventBus } from '#/app/registerDependencies';
 
 // ── Instrument Family Groups ────────────────────────────────────────────────
 
@@ -187,21 +187,21 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'fermenter');
-        void eventBus.emit('panel.showFermenter', { deviceId: device?.id ?? null });
+        eventBus.emit('panel.showFermenter', { deviceId: device?.id ?? null });
     };
 
     const handleAddToasterTrack = () => {
         const trackId = createDrumTrackStack();
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'toaster');
-        void eventBus.emit('panel.showToaster', { deviceId: device?.id ?? null });
+        eventBus.emit('panel.showToaster', { deviceId: device?.id ?? null });
     };
 
     const handleAddGrandBouleTrack = () => {
         const trackId = createGrandBouleTrack();
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'grand-boule');
-        void eventBus.emit('panel.showGrandBoule', { deviceId: device?.id ?? null });
+        eventBus.emit('panel.showGrandBoule', { deviceId: device?.id ?? null });
     };
 
     const handleAddLevainTrack = () => {
@@ -217,10 +217,10 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         createTrackFromPreset(preset);
-        void eventBus.emit('panel.showLevain', { deviceId: null });
+        eventBus.emit('panel.showLevain', { deviceId: null });
     };
 
-    const handleAddSamplerTrack = () => {
+    const handleAddCrumbsTrack = () => {
         const preset: SoundPreset = {
             id: 'sampler-default',
             name: 'Sampler',
@@ -235,10 +235,10 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'builtin-sampler');
-        void eventBus.emit('panel.showCrumbs', { deviceId: device?.id ?? null });
+        eventBus.emit('panel.showCrumbs', { deviceId: device?.id ?? null });
     };
 
-    void userPresetsVersion;
+    userPresetsVersion;
 
     // ── Route: root category picker ─────────────────────────────────────
     const isCategoryRoot = currentRoute.id === 'instruments';
@@ -350,11 +350,11 @@ export const InstrumentsTab = ({
                 />
                 <InstrumentCard
                     icon={Disc3}
-                    label="Sampler"
+                    label="Crumbs"
                     badge="Sample"
                     description="Quick · Drum · Slice · Warp — drag & drop any audio"
-                    onClick={handleAddSamplerTrack}
-                    theme={SAMPLER_THEME}
+                    onClick={handleAddCrumbsTrack}
+                    theme={CRUMBS_THEME}
                 />
                 <InstrumentCard
                     icon={Piano}

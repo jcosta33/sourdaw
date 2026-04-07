@@ -22,7 +22,7 @@ function runCanvas2DFrame(
     canvas: HTMLCanvasElement,
     activeNotes: ReadonlyMap<number, number>,
     states: StringState[],
-    frameRef: { current: number },
+    frameRef: { current: number }
 ): void {
     const ctx = canvas.getContext('2d');
     if (ctx === null) return;
@@ -78,14 +78,11 @@ function runCanvas2DFrame(
 
 // ── Component ─────────────────────────────────────────────────────────
 
-export const StringVibrationView = ({
-    activeNotes,
-    className,
-}: StringVibrationViewProps): ReactElement => {
+export const StringVibrationView = ({ activeNotes, className }: StringVibrationViewProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const statesRef = useRef<StringState[]>(
-        Array.from({ length: NUM_STRINGS }, () => ({ amplitude: 0, phase: 0, frequency: 0 })),
+        Array.from({ length: NUM_STRINGS }, () => ({ amplitude: 0, phase: 0, frequency: 0 }))
     );
     const frameRef = useRef(0);
     const notesRef = useRef(activeNotes);
@@ -119,16 +116,15 @@ export const StringVibrationView = ({
             requestAnimationFrame(render);
         };
         requestAnimationFrame(render);
-        return () => { cancelled = true; observer.disconnect(); };
+        return () => {
+            cancelled = true;
+            observer.disconnect();
+        };
     }, []);
 
     return (
         <div ref={containerRef} className={className}>
-            <canvas
-                ref={canvasRef}
-                className="h-full w-full"
-                aria-label="Grand Boule string vibration visualisation"
-            />
+            <canvas ref={canvasRef} className="h-full w-full" aria-label="Grand Boule string vibration visualisation" />
         </div>
     );
 };

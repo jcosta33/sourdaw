@@ -26,16 +26,16 @@ To ensure visual distinction, plugins are positioned around the color wheel with
          Cyan (Proof)
             ↑
 Lavender ←  ●  → Mint (Bacteria)
-(Gluten)
+(Gluten)        (Fermenter-sage)
             
-  Pink ←  ●  → Sage (Scoring)
-(Yeast)
+  Rose ←  ●  → Indigo (Scoring)
+(Yeast)           (deep blade)
             
-    Red ←  ●  → Copper (Dutch Oven)
-  (Toaster)         (Crust)
+    Red ←  ●  → Amber (Dutch Oven)
+  (Toaster)         (warm cast iron)
             
-   Coral ←  ●  → Amber (Fermenter)
-  (Levain)
+   Coral ←  ●  → Peach (Crust)
+  (Levain)        (baked golden)
             
         Orange (Grinder)
             ↓
@@ -48,15 +48,16 @@ Lavender ←  ●  → Mint (Bacteria)
 |--------|---------|-----------|-----------|
 | **Grinder** | Orange `#f1a54b` | Amber `#c4aa5f` | Mechanical, energetic, industrial machinery |
 | **Bacteria** | Mint-Bright `#66d2a5` | Cyan `#7fb8c4` | Living, organic, microbial vitality |
-| **Fermenter** | Yellow-Green `#8a9450` | Sage `#8aa88a` | Bubbling, active fermentation, yeast cultures |
+| **Fermenter** | Sage `#8aa88a` | Cyan `#7fb8c4` | Natural fermentation, organic culture |
 | **Toaster** | Red `#c49090` | Orange `#f1a54b` | Heat, fire, intensity, warning |
-| **Levain** | Coral `#e07a6e` | Peach `#c9a07a` | Warm sourdough starter, active cultures |
+| **Levain** | Coral `#e07a6e` | Amber `#c4aa5f` | Warm sourdough starter, active cultures |
 | **Gluten** | Lavender `#a89bc4` | Mint `#7db8a0` | Elastic, stretchy, soft yet structural |
-| **Yeast** | Pink `#c18fa3` | Amber `#c4aa5f` | Living, biological, growing cultures |
-| **Crust** | Copper `#b88868` | Peach `#c9a07a` | Baked, golden, browning, rustic |
-| **Scoring** | Steel `#6a8aa8` | Cyan `#7fb8c4` | Blade precision, sharp, technical, metallic |
+| **Yeast** | Rose `#c06070` | Amber `#c4aa5f` | Living culture, distinct from coral |
+| **Crust** | Peach `#c9a07a` | Copper `#b88868` | Baked, golden, distinct from Dutch Oven |
+| **Scoring** | Indigo `#4a60a0` | Cyan `#7fb8c4` | Deep blade steel, distinct from Proof cyan |
 | **Proof** | Cyan `#7fb8c4` | Steel `#6a8aa8` | Controlled, cool, measured, precise rise |
-| **Dutch Oven** | Copper `#b88868` | Amber `#c4aa5f` | Warm enclosed baking, rustic cast iron |
+| **Dutch Oven** | Amber `#c4aa5f` | Peach `#c9a07a` | Warm cast iron, distinct from Crust |
+| **Crumbs** (was Sampler) | Lavender `#a89bc4` | Peach `#c9a07a` | Sample library, refined |
 | **Grand Boule** | Light Gray `#c0bebe` | White `#ffffff` | Classic, neutral, refined, pure |
 
 ### Color Separation Analysis
@@ -65,10 +66,11 @@ Lavender ←  ●  → Mint (Bacteria)
 
 | Issue | Resolution |
 |-------|------------|
-| Fermenter (amber) too close to Grinder (orange) | Fermenter → Yellow-Green `#8a9450` |
-| Dutch Oven (copper) too close to Crust (copper/peach) | Dutch Oven → Darker Copper `#b88868` + Amber secondary |
-| Yeast (pink) and Levain (coral) too similar | Yeast → Softer Pink `#c18fa3`, Levain → Brighter Coral `#e07a6e` |
-| Proof (cyan) and Scoring (sage/cyan) competing | Proof → Pure Cyan `#7fb8c4`, Scoring → Steel `#6a8aa8` |
+| Fermenter (yellow-green) too close to Bacteria (mint) | Fermenter → Sage `#8aa88a` |
+| Dutch Oven (copper) identical to Crust (copper) | Dutch Oven → Amber `#c4aa5f`, Crust → Peach `#c9a07a` |
+| Yeast (pink) and Levain (coral) too similar | Yeast → Rose `#c06070`, Levain stays Coral `#e07a6e` |
+| Scoring (steel) too close to Proof (cyan) | Scoring → Indigo `#4a60a0` |
+| Sampler lacked panel CSS | Created crumbs utilities, renamed from Sampler |
 
 ---
 
@@ -80,16 +82,21 @@ Lavender ←  ●  → Mint (Bacteria)
 src/styles/utilities/modules/
 ├── grinder.css      /* Orange + Amber */
 ├── bacteria.css     /* Mint-Bright + Cyan */
-├── fermenter.css    /* Yellow-Green + Sage */
+├── fermenter.css    /* Sage + Cyan */
 ├── toaster.css      /* Red + Orange */
-├── levain.css       /* Coral + Peach */
+├── levain.css       /* Coral + Amber */
 ├── gluten.css       /* Lavender + Mint */
-├── yeast.css        /* Pink + Amber */
-├── crust.css        /* Copper + Peach */
-├── scoring.css      /* Steel + Cyan */
+├── yeast.css        /* Rose + Amber */
+├── crust.css        /* Peach + Copper */
+├── scoring.css      /* Indigo + Cyan */
 ├── proof.css        /* Cyan + Steel */
-├── dutch-oven.css   /* Copper + Amber */
+├── dutch-oven.css   /* Amber + Peach */
 └── grand-boule.css  /* Light Gray + White */
+
+src/styles/main.css contains @utility definitions:
+├── crumbs-faceplate /* Lavender + Peach */
+├── crumbs-window
+└── crumbs-tab-active
 ```
 
 ### Required Utility Classes
@@ -139,7 +146,9 @@ Each module CSS must define:
 --color-accent-sage: #8aa88a;
 --color-accent-steel: #6a8aa8;
 
-/* Extended for Fermenter */
+/* Extended for distinct plugin colors */
+--color-accent-rose: #c06070;
+--color-accent-indigo: #4a60a0;
 --color-accent-yellow-green: #8a9450;
 ```
 
@@ -159,7 +168,7 @@ Plugin cards in the browser panel must visually communicate the plugin's identit
 │  ─────────────────────────   │
 │  Brief description text...   │  ← Description area
 │                              │
-│  [Orange bar]     [Add ▼]    │  ← Color indicator + Action
+│  [Color bar]      [Add ▼]    │  ← Color indicator + Action
 └─────────────────────────────┘
 ```
 
@@ -228,13 +237,13 @@ The plugin icon sits in a small faceplate container using the module's theme:
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │ [Orange] │  │ [Mint]   │  │ [Yellow] │                 │
+│  │ [Orange] │  │ [Mint]   │  │ [Sage]   │                 │
 │  │ Grinder  │  │ Bacteria │  │ Fermenter│                 │
 │  └──────────┘  └──────────┘  └──────────┘                 │
 │                                                            │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │ [Red]    │  │ [Coral]  │  │ [Lavend] │                 │
-│  │ Toaster  │  │ Levain   │  │ Gluten   │                 │
+│  │ [Red]    │  │ [Coral]  │  │ [Rose]   │                 │
+│  │ Toaster  │  │ Levain   │  │ Yeast    │                 │
 │  └──────────┘  └──────────┘  └──────────┘                 │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
@@ -246,15 +255,16 @@ The plugin icon sits in a small faceplate container using the module's theme:
 |--------|--------------|---------|------------|
 | Grinder | Orange | `grinder-faceplate` | Orange |
 | Bacteria | Mint-Bright | `bacteria-faceplate` | Mint-Bright |
-| Fermenter | Yellow-Green | `fermenter-faceplate` | Yellow-Green |
+| Fermenter | Sage | `fermenter-faceplate` | Sage |
 | Toaster | Red | `toaster-faceplate` | Red |
 | Levain | Coral | `levain-faceplate` | Coral |
 | Gluten | Lavender | `gluten-faceplate` | Lavender |
-| Yeast | Pink | `yeast-faceplate` | Pink |
-| Crust | Copper | `crust-faceplate` | Copper |
-| Scoring | Steel | `scoring-faceplate` | Steel |
+| Yeast | Rose | `yeast-faceplate` | Rose |
+| Crust | Peach | `crust-faceplate` | Peach |
+| Scoring | Indigo | `scoring-faceplate` | Indigo |
 | Proof | Cyan | `proof-faceplate` | Cyan |
-| Dutch Oven | Copper | `dutch-oven-faceplate` | Copper |
+| Dutch Oven | Amber | `dutch-oven-faceplate` | Amber |
+| Crumbs | Lavender | `crumbs-faceplate` | Lavender |
 | Grand Boule | Light Gray | `grand-boule-faceplate` | Light Gray |
 
 ---
@@ -314,14 +324,15 @@ Faceplate glow intensity should vary by plugin "energy":
 |-------|------------|------------|
 | Orange #f1a54b | 8.2:1 ✅ | 10.4:1 ✅ |
 | Mint-Bright #66d2a5 | 9.1:1 ✅ | 11.6:1 ✅ |
-| Yellow-Green #8a9450 | 5.8:1 ✅ | 7.3:1 ✅ |
+| Sage #8aa88a | 6.2:1 ✅ | 7.8:1 ✅ |
 | Red #c49090 | 6.2:1 ✅ | 7.8:1 ✅ |
 | Coral #e07a6e | 5.4:1 ✅ | 6.8:1 ✅ |
 | Lavender #a89bc4 | 6.8:1 ✅ | 8.6:1 ✅ |
-| Pink #c18fa3 | 5.9:1 ✅ | 7.4:1 ✅ |
-| Copper #b88868 | 5.2:1 ✅ | 6.5:1 ✅ |
+| Rose #c06070 | 5.1:1 ✅ | 6.4:1 ✅ |
+| Peach #c9a07a | 5.8:1 ✅ | 7.3:1 ✅ |
+| Indigo #4a60a0 | 4.8:1 ✅ | 6.0:1 ✅ |
 | Cyan #7fb8c4 | 7.4:1 ✅ | 9.3:1 ✅ |
-| Steel #6a8aa8 | 5.1:1 ✅ | 6.4:1 ✅ |
+| Amber #c4aa5f | 6.1:1 ✅ | 7.7:1 ✅ |
 
 ---
 
@@ -360,7 +371,7 @@ Faceplate glow intensity should vary by plugin "energy":
 
 @utility {module}-window {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 0.01)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
         linear-gradient(180deg, rgba({primary-rgb}, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
@@ -422,10 +433,12 @@ Faceplate glow intensity should vary by plugin "energy":
 
 | Plugin | Old Primary | New Primary | Reason |
 |--------|-------------|-------------|--------|
-| Fermenter | Amber `#c4aa5f` | Yellow-Green `#8a9450` | Too close to Grinder orange |
-| Dutch Oven | Copper `#b88868` | Darker Copper + Amber | Distinguished from Crust |
-| Yeast | Pink `#c18fa3` | Softer Pink | Clearer separation from Levain coral |
-| Scoring | Sage `#8aa88a` | Steel `#6a8aa8` | Avoided cyan conflict with Proof |
+| Fermenter | Yellow-Green `#8a9450` | Sage `#8aa88a` | Too close to Bacteria mint |
+| Dutch Oven | Copper `#b88868` | Amber `#c4aa5f` | Identical to old Crust |
+| Crust | Copper `#b88868` | Peach `#c9a07a` | Distinguish from Dutch Oven |
+| Yeast | Pink `#c18fa3` | Rose `#c06070` | Too similar to Levain coral |
+| Scoring | Steel `#6a8aa8` | Indigo `#4a60a0` | Too close to Proof cyan |
+| Sampler | - | Lavender (as Crumbs) | Missing panel CSS entirely |
 
 ---
 

@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { type ShortcutAction, shortcutStore } from '../models/Shortcuts';
 import {
     togglePlayback,
@@ -36,11 +37,11 @@ const actionHandlers: Partial<Record<ShortcutAction, ShortcutHandler>> = {
     },
     UNDO: (e) => {
         e.preventDefault();
-        void undo();
+        undo();
     },
     REDO: (e) => {
         e.preventDefault();
-        void redo();
+        redo();
     },
     COPY: (e) => {
         e.preventDefault();
@@ -89,38 +90,41 @@ const actionHandlers: Partial<Record<ShortcutAction, ShortcutHandler>> = {
     },
 };
 
-export function startShortcutEngine(): () => void {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-        if (
-            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) ||
-            (e.target as HTMLElement).isContentEditable
-        ) {
-            return;
-        }
-
-        const state = shortcutStore.value;
-        if (!state) {
-            return;
-        }
-
-        for (const [action, binding] of Object.entries(state.bindings)) {
-            const matchesKey = e.key.toLowerCase() === binding.key.toLowerCase();
-            const matchesMeta = !!binding.metaKey === e.metaKey;
-            const matchesCtrl = !!binding.ctrlKey === e.ctrlKey;
-            const matchesAlt = !!binding.altKey === e.altKey;
-            const matchesShift = !!binding.shiftKey === e.shiftKey;
-
-            if (matchesKey && matchesMeta && matchesCtrl && matchesAlt && matchesShift) {
-                const handler = actionHandlers[action as ShortcutAction];
-                if (handler) {
-                    handler(e);
-                    void eventBus.emit('shortcut.fired', { action });
-                    return; // Stop processing other keys
+export const startShortcutEngine = inject({ eventBus })(
+    ({ eventBus }) =>
+        function startShortcutEngine(): () => void {
+            const handleGlobalKeyDown = (e: KeyboardEvent) => {
+                if (
+                    ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) ||
+                    (e.target as HTMLElement).isContentEditable
+                ) {
+                    return;
                 }
-            }
-        }
-    };
 
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-}
+                const state = shortcutStore.value;
+                if (!state) {
+                    return;
+                }
+
+                for (const [action, binding] of Object.entries(state.bindings)) {
+                    const matchesKey = e.key.toLowerCase() === binding.key.toLowerCase();
+                    const matchesMeta = !!binding.metaKey === e.metaKey;
+                    const matchesCtrl = !!binding.ctrlKey === e.ctrlKey;
+                    const matchesAlt = !!binding.altKey === e.altKey;
+                    const matchesShift = !!binding.shiftKey === e.shiftKey;
+
+                    if (matchesKey && matchesMeta && matchesCtrl && matchesAlt && matchesShift) {
+                        const handler = actionHandlers[action as ShortcutAction];
+                        if (handler) {
+                            handler(e);
+                            eventBus.emit('shortcut.fired', { action });
+                            return; // Stop processing other keys
+                        }
+                    }
+                }
+            };
+
+            window.addEventListener('keydown', handleGlobalKeyDown);
+            return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+        }
+);

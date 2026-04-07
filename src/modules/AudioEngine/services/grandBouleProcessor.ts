@@ -46,7 +46,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         this._rightRing = new Float32Array(
             sab,
             headerBytes + this._ringFrames * Float32Array.BYTES_PER_ELEMENT,
-            this._ringFrames,
+            this._ringFrames
         );
         this._ready = true;
         this.port.postMessage({ type: 'ready' });

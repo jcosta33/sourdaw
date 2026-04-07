@@ -5,7 +5,6 @@
 /// artifacts from high-resonance self-oscillation.
 ///
 /// Reference: Zavalishin, "The Art of VA Filter Design" (2018), Chapter 4.
-
 use std::f32::consts::PI;
 
 use super::types::DENORMAL_DC;

@@ -6,7 +6,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { createCompactFloatBuffer } from '#/helpers/createCompactFloatBuffer';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveCanvasColor } from '#/helpers/UI/resolveToken';
 
 type GrHistoryProps = {
     grDb: number;
@@ -38,7 +38,7 @@ export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHis
         canvas.height = height * dpr;
         ctx.scale(dpr, dpr);
 
-        const accent = accentColor ?? resolveToken('--color-accent-peach', '#c4987b');
+        const accent = resolveCanvasColor(accentColor ?? 'var(--color-accent-peach)', '#c4987b');
 
         ctx.clearRect(0, 0, width, height);
 
@@ -69,12 +69,9 @@ export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHis
 
         // Gradient fill
         const grad = ctx.createLinearGradient(0, 0, 0, height);
-        // Canvas requires actual color values, not CSS variables.
-        // Ensure we have a valid hex color before appending alpha.
-        const safeAccent = accent.startsWith('#') ? accent : '#c9a07a';
-        grad.addColorStop(0, `${safeAccent}90`);
-        grad.addColorStop(0.4, `${safeAccent}50`);
-        grad.addColorStop(1, `${safeAccent}08`);
+        grad.addColorStop(0, `${accent}90`);
+        grad.addColorStop(0.4, `${accent}50`);
+        grad.addColorStop(1, `${accent}08`);
 
         ctx.beginPath();
         ctx.moveTo(0, 0);

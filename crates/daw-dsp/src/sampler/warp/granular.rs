@@ -14,7 +14,6 @@
 ///
 /// RT safety: window buffers are pre-allocated at construction and when
 /// grain size or window shape changes. No allocations occur during `tick()`.
-
 use std::f32::consts::PI;
 
 // ── Constants ──────────────────────────────────────────────────────────

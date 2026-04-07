@@ -10,7 +10,7 @@ export function startPlayback(): void {
         return;
     }
 
-    void resumeEngine();
+    resumeEngine();
     ensureTrackStrips();
 
     let startPosition = state.playheadPosition;

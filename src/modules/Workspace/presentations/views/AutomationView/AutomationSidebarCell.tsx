@@ -5,11 +5,7 @@ type AutomationSidebarCellProps = HTMLAttributes<HTMLDivElement> & {
     children: ReactNode;
 };
 
-export const AutomationSidebarCell = ({
-    className,
-    children,
-    ...props
-}: AutomationSidebarCellProps): ReactElement => (
+export const AutomationSidebarCell = ({ className, children, ...props }: AutomationSidebarCellProps): ReactElement => (
     <div className={cn('min-w-0 border-r border-border/30 bg-surface-well', className)} {...props}>
         {children}
     </div>

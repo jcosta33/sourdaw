@@ -80,17 +80,13 @@ export const SliceOverlay = ({
                             className="absolute left-1/2 top-0 w-px"
                             style={{
                                 height,
-                                backgroundColor: isActive
-                                    ? 'rgba(96, 200, 224, 0.9)'
-                                    : 'rgba(96, 200, 224, 0.4)',
+                                backgroundColor: isActive ? 'rgba(96, 200, 224, 0.9)' : 'rgba(96, 200, 224, 0.4)',
                             }}
                         />
                         <div
                             className="absolute left-1/2 top-0 -translate-x-1/2 rounded-b px-1 text-[7px] font-bold"
                             style={{
-                                backgroundColor: isActive
-                                    ? 'rgba(96, 200, 224, 0.6)'
-                                    : 'rgba(96, 200, 224, 0.25)',
+                                backgroundColor: isActive ? 'rgba(96, 200, 224, 0.6)' : 'rgba(96, 200, 224, 0.25)',
                                 color: 'white',
                             }}
                         >

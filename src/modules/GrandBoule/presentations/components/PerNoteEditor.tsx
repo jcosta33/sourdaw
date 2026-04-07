@@ -31,13 +31,10 @@ type PerNoteEditorProps = {
 };
 
 /** Build the option list for keys 1–88 (A0 through C8). */
-const NOTE_OPTIONS: readonly { value: number; label: string }[] = Array.from(
-    { length: 88 },
-    (_, i) => {
-        const key = i + 1;
-        return { value: key, label: `${key} — ${keyToNoteName(key)}` };
-    },
-);
+const NOTE_OPTIONS: readonly { value: number; label: string }[] = Array.from({ length: 88 }, (_, i) => {
+    const key = i + 1;
+    return { value: key, label: `${key} — ${keyToNoteName(key)}` };
+});
 
 export const PerNoteEditor = ({
     onParamChange,
@@ -88,9 +85,7 @@ export const PerNoteEditor = ({
                         <div key={descriptor.key} className="flex flex-col items-center gap-1">
                             <RotaryKnob
                                 value={value}
-                                onChange={(next) =>
-                                    onParamChange(selectedKey, descriptor.key, next)
-                                }
+                                onChange={(next) => onParamChange(selectedKey, descriptor.key, next)}
                                 min={descriptor.min}
                                 max={descriptor.max}
                                 step={descriptor.step}
@@ -103,12 +98,11 @@ export const PerNoteEditor = ({
                                 </div>
                                 <div
                                     className={`font-mono text-[9px] ${
-                                        isDefault
-                                            ? 'text-foreground/85'
-                                            : 'text-neutral-200/90'
+                                        isDefault ? 'text-foreground/85' : 'text-neutral-200/90'
                                     }`}
                                 >
-                                    {value.toFixed(2)}{descriptor.unit}
+                                    {value.toFixed(2)}
+                                    {descriptor.unit}
                                 </div>
                             </div>
                         </div>

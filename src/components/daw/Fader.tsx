@@ -37,6 +37,7 @@ export const Fader = ({
     className,
 }: FaderProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
+    const draggingRef = useRef(false);
     const trackRef = useRef<HTMLDivElement>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
@@ -55,7 +56,10 @@ export const Fader = ({
         if (event.button !== 0 || !trackRef.current) {
             return;
         }
-        event.currentTarget.setPointerCapture(event.pointerId);
+        if (typeof event.currentTarget.setPointerCapture === 'function') {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+        draggingRef.current = true;
         setIsDragging(true);
 
         const capEl = event.currentTarget.querySelector('[data-role="fader-cap"]');
@@ -75,7 +79,7 @@ export const Fader = ({
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-        if (!isDragging) {
+        if (!draggingRef.current) {
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -91,8 +95,11 @@ export const Fader = ({
     };
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+        draggingRef.current = false;
         setIsDragging(false);
-        event.currentTarget.releasePointerCapture(event.pointerId);
+        if (typeof event.currentTarget.releasePointerCapture === 'function') {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
     };
 
     const handleDoubleClick = () => {

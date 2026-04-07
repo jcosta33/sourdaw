@@ -68,7 +68,7 @@ export function useProofAnalyser(): {
         };
     }, []);
 
-    void tick; // trigger re-render when FFT data updates
+    tick; // trigger re-render when FFT data updates
     return {
         fftData: dataRef.current,
         sampleRate: getAudioSampleRate(),

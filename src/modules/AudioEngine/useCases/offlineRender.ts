@@ -43,7 +43,9 @@ function checkCancel(): void {
  */
 function acquireRenderLock(): () => void {
     if (isRenderingActive) {
-        throw createExportError('An export is already in progress. Cancel the current export before starting a new one.');
+        throw createExportError(
+            'An export is already in progress. Cancel the current export before starting a new one.'
+        );
     }
     isRenderingActive = true;
     return () => {

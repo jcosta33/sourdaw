@@ -104,7 +104,11 @@ export async function handleStemSeparationPreview(clipId: string) {
     } catch (error: unknown) {
         updateTask(taskId, {
             status: 'error',
-            error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Stem separation failed',
+            error: isAppError(error)
+                ? error.message
+                : error instanceof Error
+                  ? error.message
+                  : 'Stem separation failed',
         });
     }
 }

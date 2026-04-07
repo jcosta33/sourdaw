@@ -22,17 +22,17 @@ import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { eventBus, type AppEvents } from '#/app/registerDependencies';
 
 const DEVICE_TYPE_TO_PANEL_EVENT: Record<string, keyof AppEvents> = {
-    'fermenter': 'panel.showFermenter',
-    'toaster': 'panel.showToaster',
-    'levain': 'panel.showLevain',
+    fermenter: 'panel.showFermenter',
+    toaster: 'panel.showToaster',
+    levain: 'panel.showLevain',
     'dutch-oven': 'panel.showDutchOven',
-    'gluten': 'panel.showGluten',
-    'bacteria': 'panel.showBacteria',
-    'grinder': 'panel.showGrinder',
-    'proof': 'panel.showProof',
-    'yeast': 'panel.showYeast',
+    gluten: 'panel.showGluten',
+    bacteria: 'panel.showBacteria',
+    grinder: 'panel.showGrinder',
+    proof: 'panel.showProof',
+    yeast: 'panel.showYeast',
     'native-scoring': 'panel.showScoring',
-    'crust': 'panel.showCrust',
+    crust: 'panel.showCrust',
     'builtin-crumbs': 'panel.showCrumbs',
     'grand-boule': 'panel.showGrandBoule',
 };
@@ -208,7 +208,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 if (descriptor?.hasCustomUI && DEVICE_TYPE_TO_PANEL_EVENT[device.type]) {
                                     const panelEvent = DEVICE_TYPE_TO_PANEL_EVENT[device.type];
                                     if (panelEvent) {
-                                        void eventBus.emit(panelEvent, { deviceId: device.id });
+                                        eventBus.emit(panelEvent, { deviceId: device.id });
                                     }
                                 } else {
                                     onSelectDevice(device.id);
@@ -270,7 +270,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 aria-label={`Open editor for ${device.name}`}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    void openPluginGui(device.externalInstanceId!);
+                                                    openPluginGui(device.externalInstanceId!);
                                                 }}
                                             >
                                                 <LayoutGrid className="size-3 text-primary" />

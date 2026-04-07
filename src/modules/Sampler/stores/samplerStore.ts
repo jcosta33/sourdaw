@@ -106,9 +106,7 @@ export function setSliceMarkers(markers: SliceMarker[]): void {
 }
 
 export function updateEnvelope(updates: Partial<EnvelopeParams>): void {
-    samplerStore.update((s) =>
-        s ? { ...s, envelope: { ...s.envelope, ...updates } } : s
-    );
+    samplerStore.update((s) => (s ? { ...s, envelope: { ...s.envelope, ...updates } } : s));
 }
 
 export function setFilterParams(cutoff?: number, resonance?: number, type?: FilterType): void {
@@ -160,13 +158,9 @@ export function setMetering(peakLeft: number, peakRight: number, activeVoices: n
 }
 
 export function setVoiceStack(updates: Partial<VoiceStackParams>): void {
-    samplerStore.update((s) =>
-        s ? { ...s, voiceStack: { ...s.voiceStack, ...updates } } : s
-    );
+    samplerStore.update((s) => (s ? { ...s, voiceStack: { ...s.voiceStack, ...updates } } : s));
 }
 
 export function setModXY(updates: Partial<ModXYState>): void {
-    samplerStore.update((s) =>
-        s ? { ...s, modXY: { ...s.modXY, ...updates } } : s
-    );
+    samplerStore.update((s) => (s ? { ...s, modXY: { ...s.modXY, ...updates } } : s));
 }

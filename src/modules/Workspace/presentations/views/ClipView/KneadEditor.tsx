@@ -17,7 +17,12 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
     const track = tracks.find((t) => t.id === trackId);
     const hasKnead = track?.devices.some((d) => d.type.toLowerCase() === 'knead') ?? false;
 
-    const kneadStoreState = useStore(kneadStore, { activeTrackId: null, tracks: {}, isAnalyzing: false, analysisProgress: 0 });
+    const kneadStoreState = useStore(kneadStore, {
+        activeTrackId: null,
+        tracks: {},
+        isAnalyzing: false,
+        analysisProgress: 0,
+    });
     const kneadState = kneadStoreState.tracks[trackId];
 
     // Auto-analyze mock hook when enabled

@@ -8,8 +8,8 @@ export function togglePlayback(): void {
 
     if (state.isPlaying) {
         // Dynamic import to avoid circular dependency
-        void import('./pausePlayback').then(({ pausePlayback }) => pausePlayback());
+        import('./pausePlayback').then(({ pausePlayback }) => pausePlayback());
     } else {
-        void import('./startPlayback').then(({ startPlayback }) => startPlayback());
+        import('./startPlayback').then(({ startPlayback }) => startPlayback());
     }
 }

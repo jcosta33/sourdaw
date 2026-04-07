@@ -22,7 +22,7 @@ function beginActualRecording(): void {
     for (const track of armedTracks) {
         if (track.kind === 'audio') {
             const recClip = clips.find((c) => c.trackId === track.id);
-            void startAudioRecording(track.id, (buffer) => {
+            startAudioRecording(track.id, (buffer) => {
                 const bufferId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 audioBufferCache.set(bufferId, buffer);
 
@@ -37,7 +37,7 @@ function beginActualRecording(): void {
                     const bpm = transport?.tempo ?? 120;
                     const durationBeats = buffer.duration * (bpm / 60);
                     const exactEndBeat = recClip.startBeat + durationBeats;
-                    void Promise.resolve().then(() => {
+                    Promise.resolve().then(() => {
                         updateClip(recClip.id, (c) => ({ ...c, endBeat: exactEndBeat }));
                     });
                 }
@@ -77,7 +77,7 @@ export function toggleRecording(): void {
         const countInBeats = state.countInBars * beatsPerBar;
         const countInDurationSec = countInBeats / (state.tempo / 60);
 
-        void resumeEngine();
+        resumeEngine();
         ensureTrackStrips();
 
         const ctx = getAudioContext();

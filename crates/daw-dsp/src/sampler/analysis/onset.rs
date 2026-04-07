@@ -14,7 +14,6 @@
 /// Complex Domain (Duxbury et al., 2003): Combines magnitude and phase
 /// deviation, making it sensitive to both tonal and transient onsets.
 /// Best for melodic content.
-
 use std::f32::consts::PI;
 
 // ── Constants ──────────────────────────────────────────────────────────

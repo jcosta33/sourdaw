@@ -224,8 +224,8 @@ export function scheduleAudioClips(
                 };
             }
 
-            void clipDurationSeconds;
-            void loopLenSeconds;
+            clipDurationSeconds;
+            loopLenSeconds;
         }
     }
 }

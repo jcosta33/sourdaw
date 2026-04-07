@@ -86,13 +86,7 @@ export const SamplerControls = ({
             {/* Mode switcher */}
             <div className="flex items-center gap-1.5">
                 {MODES.map((m) => (
-                    <DawPluginChip
-                        key={m}
-                        active={mode === m}
-                        tone="peach"
-                        size="sm"
-                        onClick={() => onModeChange(m)}
-                    >
+                    <DawPluginChip key={m} active={mode === m} tone="peach" size="sm" onClick={() => onModeChange(m)}>
                         {m.charAt(0).toUpperCase() + m.slice(1)}
                     </DawPluginChip>
                 ))}
@@ -100,9 +94,7 @@ export const SamplerControls = ({
 
             {/* Envelope */}
             <div>
-                <div className="mb-2 text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
-                    Envelope
-                </div>
+                <div className="mb-2 text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">Envelope</div>
                 <div className="grid grid-cols-5 gap-x-2 gap-y-3">
                     <Knob
                         value={envelope.attack}
@@ -112,7 +104,11 @@ export const SamplerControls = ({
                         max={2}
                         step={0.001}
                         defaultValue={0.001}
-                        readout={envelope.attack < 0.01 ? `${(envelope.attack * 1000).toFixed(0)}ms` : `${envelope.attack.toFixed(2)}s`}
+                        readout={
+                            envelope.attack < 0.01
+                                ? `${(envelope.attack * 1000).toFixed(0)}ms`
+                                : `${envelope.attack.toFixed(2)}s`
+                        }
                     />
                     <Knob
                         value={envelope.hold}
@@ -171,7 +167,9 @@ export const SamplerControls = ({
                         max={20000}
                         step={10}
                         defaultValue={20000}
-                        readout={filterCutoff >= 1000 ? `${(filterCutoff / 1000).toFixed(1)}k` : `${filterCutoff.toFixed(0)}`}
+                        readout={
+                            filterCutoff >= 1000 ? `${(filterCutoff / 1000).toFixed(1)}k` : `${filterCutoff.toFixed(0)}`
+                        }
                     />
                     <Knob
                         value={filterResonance}
@@ -211,7 +209,13 @@ export const SamplerControls = ({
                         max={1}
                         step={0.01}
                         defaultValue={0}
-                        readout={pan === 0 ? 'C' : pan < 0 ? `L${Math.abs(Math.round(pan * 100))}` : `R${Math.round(pan * 100)}`}
+                        readout={
+                            pan === 0
+                                ? 'C'
+                                : pan < 0
+                                  ? `L${Math.abs(Math.round(pan * 100))}`
+                                  : `R${Math.round(pan * 100)}`
+                        }
                     />
                 </div>
             </div>

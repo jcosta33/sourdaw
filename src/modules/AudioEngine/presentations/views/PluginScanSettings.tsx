@@ -52,7 +52,7 @@ export const PluginScanSettings = (): ReactElement | null => {
     };
 
     const handleScan = () => {
-        void startPluginScan();
+        startPluginScan();
     };
 
     const lastScanLabel = state.lastScanTime ? new Date(state.lastScanTime).toLocaleString() : 'Never';

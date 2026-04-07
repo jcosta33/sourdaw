@@ -16,6 +16,8 @@ function Slider({
     min = 0,
     max = 100,
     step = 1,
+    'aria-label': ariaLabel,
+    'aria-labelledby': ariaLabelledBy,
     ...props
 }: ComponentProps<typeof SliderPrimitive.Root> & {
     trackClassName?: string;
@@ -75,6 +77,8 @@ function Slider({
                     defaultValue={defaultValue}
                     onValueChange={onValueChange}
                     thumbClassName={thumbClassName}
+                    ariaLabel={ariaLabel}
+                    ariaLabelledBy={ariaLabelledBy}
                 />
             ))}
         </SliderPrimitive.Root>
@@ -89,6 +93,8 @@ function SliderThumbNode({
     defaultValue,
     onValueChange,
     thumbClassName,
+    ariaLabel,
+    ariaLabelledBy,
 }: {
     index: number;
     values: number[];
@@ -97,6 +103,8 @@ function SliderThumbNode({
     defaultValue?: number[];
     onValueChange?: (value: number[]) => void;
     thumbClassName?: string;
+    ariaLabel?: string;
+    ariaLabelledBy?: string;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editVal, setEditVal] = useState(String(values[index] ?? 0));
@@ -104,6 +112,8 @@ function SliderThumbNode({
     return (
         <SliderPrimitive.Thumb
             data-slot="slider-thumb"
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             className={cn(
                 'block size-4 shrink-0 rounded-[4px] border cursor-pointer outline-none transition-[color,box-shadow,filter,transform] hover:ring-2 hover:ring-accent-cyan/25 hover:brightness-105 focus-visible:ring-4 focus-visible:ring-accent-cyan/35 disabled:pointer-events-none disabled:opacity-50',
                 thumbClassName

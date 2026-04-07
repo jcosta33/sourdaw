@@ -58,7 +58,7 @@ export const AiChangeToast = (): ReactElement | null => {
                             variant="ghost"
                             size="xs"
                             onClick={() => {
-                                void undoLastAction();
+                                undoLastAction();
                                 setChanges((prev) => prev.slice(1));
                             }}
                         >

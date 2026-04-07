@@ -4,8 +4,7 @@
 /// sample are kept in RAM to guarantee instant playback start without
 /// waiting for disk I/O. The preload covers the critical attack transient
 /// that must be available immediately when a note is triggered.
-
-use super::super::types::{PRELOAD_SIZE, SampleId};
+use super::super::types::{SampleId, PRELOAD_SIZE};
 
 /// Number of f32 samples that fit in the preload buffer.
 const PRELOAD_FRAMES: usize = PRELOAD_SIZE / core::mem::size_of::<f32>();
@@ -22,11 +21,7 @@ pub struct PreloadBuffer {
 
 impl PreloadBuffer {
     /// Create a preload buffer from the beginning of a sample's channel data.
-    pub fn from_channels(
-        sample_id: SampleId,
-        left: &[f32],
-        right: &[f32],
-    ) -> Self {
+    pub fn from_channels(sample_id: SampleId, left: &[f32], right: &[f32]) -> Self {
         let frames = left.len().min(PRELOAD_FRAMES);
         let is_stereo = !right.is_empty();
 

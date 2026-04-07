@@ -137,14 +137,14 @@ const SectionHeader = ({
 }): ReactElement => (
     <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70">
                 {eyebrow}
             </div>
             <div className="text-[13px] font-semibold text-foreground">{title}</div>
             <span className="sr-only">{description}</span>
         </div>
         {detail ? (
-            <DawPluginLed tone="cyan" className="shrink-0">
+            <DawPluginLed tone="sage" className="shrink-0">
                 {detail}
             </DawPluginLed>
         ) : null}
@@ -447,7 +447,8 @@ function renderSectionContent(
 }
 
 export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useStore(fermenterStore, {} as Record<string, FermenterState>)[deviceId] ?? getFermenterState(deviceId);
+    const state =
+        useStore(fermenterStore, {} as Record<string, FermenterState>)[deviceId] ?? getFermenterState(deviceId);
     const patch = state.patch;
     const activeVoices = state.activeVoices;
     const scopeBuffer = state.scopeBuffer;
@@ -459,7 +460,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
     const [version, setVersion] = useState(0);
-    void version;
+    version;
 
     const userPatches = loadUserPatches();
     const sectionMeta = getSectionMeta(section);
@@ -517,7 +518,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                         <DawPluginChip
                             key={level.id}
                             active={uiLevel === level.id}
-                            tone="cyan"
+                            tone="sage"
                             size="sm"
                             onClick={() => setFermenterUiLevel(deviceId, level.id)}
                         >
@@ -600,7 +601,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     </div>
 
                     <div className="ml-auto flex items-center gap-2">
-                        <DawPluginLed tone="cyan">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
+                        <DawPluginLed tone="sage">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                             <Cpu className="size-3" />
                             <span>{activeVoices} voices</span>

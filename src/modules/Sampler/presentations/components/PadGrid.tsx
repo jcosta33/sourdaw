@@ -129,16 +129,12 @@ export const PadGrid = ({
                             <div
                                 className="mb-1 size-2 rounded-full"
                                 style={{
-                                    backgroundColor: hasSample
-                                        ? pad.color
-                                        : 'rgba(255,255,255,0.1)',
+                                    backgroundColor: hasSample ? pad.color : 'rgba(255,255,255,0.1)',
                                 }}
                             />
                         )}
 
-                        <span className="relative text-[9px] font-medium text-foreground/70">
-                            {pad.name}
-                        </span>
+                        <span className="relative text-[9px] font-medium text-foreground/70">{pad.name}</span>
                     </button>
                 );
             })}
@@ -147,13 +143,7 @@ export const PadGrid = ({
 };
 
 /** Tiny inline waveform rendered as CSS background for each pad. */
-const MiniWaveform = ({
-    peaks,
-    color,
-}: {
-    peaks: number[];
-    color: string;
-}): ReactElement => {
+const MiniWaveform = ({ peaks, color }: { peaks: number[]; color: string }): ReactElement => {
     const numBins = Math.floor(peaks.length / 2);
     if (numBins === 0) return <div className="mb-1 size-2 rounded-full" />;
 
@@ -174,12 +164,7 @@ const MiniWaveform = ({
     }
 
     return (
-        <svg
-            width={w}
-            height={h}
-            viewBox={`0 0 ${w} ${h}`}
-            className="mb-0.5 opacity-60"
-        >
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="mb-0.5 opacity-60">
             <path d={pathD} stroke={color} strokeWidth="1" fill="none" />
         </svg>
     );

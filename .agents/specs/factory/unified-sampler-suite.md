@@ -20,7 +20,7 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - **In-place slicing:** Visual waveform with draggable slice markers (absolute `<div>` overlays). Slices map directly to playable pads without leaving the sampler or creating new tracks.
 - **MPC/SP-404-style recording:** Support for threshold-triggered recording directly to pads, enabling seamless capture into the instrument.
 - **Independent time-stretch:** Time-stretching algorithms that act as playable/modulatable parameters decoupled from project BPM. **Flex Speed** (Logic-style) MUST be a first-class modulation target.
-- **Deep modulation and FX:** 
+- **Deep modulation and FX:**
     - **8 Articulator Groups** (FL Studio style): Each slice/pad has independent envelopes, filters, and LFOs.
     - **Mod X/Y Crossfading**: Dual decks with morphing capabilities between sample states.
     - **Bitwig-level Modulation**: A unified modulation system where any parameter is a target.
@@ -55,66 +55,66 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 ## Requirements
 
 1. **Strict RT Thread Separation**
-   - The RT audio thread MUST only interact with pre-allocated memory and wait-free atomic operations.
-   - The `assert_no_alloc` crate MUST pass in debug builds during playback.
-   - Any parameter change from the UI must be delivered via an `rtrb` SPSC command queue or `AtomicU32` (using bit patterns for floats).
+    - The RT audio thread MUST only interact with pre-allocated memory and wait-free atomic operations.
+    - The `assert_no_alloc` crate MUST pass in debug builds during playback.
+    - Any parameter change from the UI must be delivered via an `rtrb` SPSC command queue or `AtomicU32` (using bit patterns for floats).
 
 2. **Lock-Free Voice Allocation & Stealing**
-   - Voice pool MUST be pre-allocated to 128 voices.
-   - Allocation MUST use two `AtomicU64` values as a bitfield. Finding a free voice MUST use `trailing_zeros()` and `compare_exchange_weak` with `AcqRel` ordering.
-   - Voice stealing MUST follow this priority: Same-note retrigger -> Choke group -> Releasing voices -> Oldest active -> Quietest. 
-   - Stolen voices MUST receive a 1-5ms linear fade-out before reassignment.
+    - Voice pool MUST be pre-allocated to 128 voices.
+    - Allocation MUST use two `AtomicU64` values as a bitfield. Finding a free voice MUST use `trailing_zeros()` and `compare_exchange_weak` with `AcqRel` ordering.
+    - Voice stealing MUST follow this priority: Same-note retrigger -> Choke group -> Releasing voices -> Oldest active -> Quietest.
+    - Stolen voices MUST receive a 1-5ms linear fade-out before reassignment.
 
 3. **Wait-Free Disk Streaming (DFD)**
-   - Each voice MUST own a dedicated pair of `rtrb::RingBuffer<f32>` (ping-pong) filled by the background I/O thread.
-   - **Budgets:** 12KB preload (~68ms) per sample in RAM, 64KB (~186ms) ring buffer per voice. 
-   - **I/O Thread:** MUST use a priority queue sorted by `buffered_samples_remaining`. 
-   - **Underrun:** MUST apply an inverse ramp (64 samples) to fade to silence.
+    - Each voice MUST own a dedicated pair of `rtrb::RingBuffer<f32>` (ping-pong) filled by the background I/O thread.
+    - **Budgets:** 12KB preload (~68ms) per sample in RAM, 64KB (~186ms) ring buffer per voice.
+    - **I/O Thread:** MUST use a priority queue sorted by `buffered_samples_remaining`.
+    - **Underrun:** MUST apply an inverse ramp (64 samples) to fade to silence.
 
 4. **Background Auto-Analysis**
-   - **Onset Detection:** MUST implement SuperFlux (universal), HFC (percussive), and Complex Domain (melodic). Peak picking MUST use adaptive thresholding (pre_avg=12, post_avg=6 frames) and snap to nearest zero-crossing (5-50 sample window).
-   - **Pitch Detection:** YIN algorithm (via `pitch-detection` crate) using a 0.15 threshold over multiple 2048-sample windows. MUST use parabolic interpolation for sub-bin refinement.
-   - **BPM Estimation:** Percival-Tzanetakis autocorrelation method (GAC autocorrelation of onset strength signal).
-   - **Waveform Peaks:** Hierarchical mipmap reduction (Min/Max pairs). Level 0 base block size: 32 or 64 samples. Subsequent levels MUST be powers of 2.
+    - **Onset Detection:** MUST implement SuperFlux (universal), HFC (percussive), and Complex Domain (melodic). Peak picking MUST use adaptive thresholding (pre_avg=12, post_avg=6 frames) and snap to nearest zero-crossing (5-50 sample window).
+    - **Pitch Detection:** YIN algorithm (via `pitch-detection` crate) using a 0.15 threshold over multiple 2048-sample windows. MUST use parabolic interpolation for sub-bin refinement.
+    - **BPM Estimation:** Percival-Tzanetakis autocorrelation method (GAC autocorrelation of onset strength signal).
+    - **Waveform Peaks:** Hierarchical mipmap reduction (Min/Max pairs). Level 0 base block size: 32 or 64 samples. Subsequent levels MUST be powers of 2.
 
 5. **Precision DSP Implementation**
-   - **Interpolation:** Pitched playback MUST use 4-point Cubic Hermite interpolation. Offline sample rate conversion (at load time) MUST use `rubato` windowed sinc.
-   - **AHDSR Envelope:** 6-state machine (Idle, Attack, Hold, Decay, Sustain, Release). MUST use 1-multiply iterative exponential curve (`level = (level - offset) * multiplier + offset`). `target_ratio` MUST be adjustable (0.0001 for exponential, 1.0+ for linear).
-   - **Filter:** MUST implement Cytomic/Zavalishin TPT SVF. MUST provide simultaneous LP, HP, BP, and Notch outputs. MUST use 2x oversampling for resonance $Q > 10$.
-   - **Parameter Smoothing:** One-pole exponential smoother (5-20ms time constant). MUST include denormal prevention (tiny DC offset $1e^{-18}$ or flush-to-zero).
-   - **Looping:** Equal-power crossfade (sin/cos gains) at loop boundaries (Forward, PingPong, Reverse). Default length: 50-500 samples.
+    - **Interpolation:** Pitched playback MUST use 4-point Cubic Hermite interpolation. Offline sample rate conversion (at load time) MUST use `rubato` windowed sinc.
+    - **AHDSR Envelope:** 6-state machine (Idle, Attack, Hold, Decay, Sustain, Release). MUST use 1-multiply iterative exponential curve (`level = (level - offset) * multiplier + offset`). `target_ratio` MUST be adjustable (0.0001 for exponential, 1.0+ for linear).
+    - **Filter:** MUST implement Cytomic/Zavalishin TPT SVF. MUST provide simultaneous LP, HP, BP, and Notch outputs. MUST use 2x oversampling for resonance $Q > 10$.
+    - **Parameter Smoothing:** One-pole exponential smoother (5-20ms time constant). MUST include denormal prevention (tiny DC offset $1e^{-18}$ or flush-to-zero).
+    - **Looping:** Equal-power crossfade (sin/cos gains) at loop boundaries (Forward, PingPong, Reverse). Default length: 50-500 samples.
 
 6. **Warp Engine Mechanics**
-   - **Phase Vocoder:** Identity Phase Locking (IPL) MUST identify spectral peaks and lock surrounding bin phases. FFT size: 2048. Overlap: 75% (hop = N/4). Pre-allocate all buffers via `realfft`.
-   - **WSOLA:** Frame length: 1024. Overlap: 512. Tolerance window ($\Delta_{max}$): 256. Cross-correlation MUST be optimized via FFT or 4x downsampling.
-   - **Granular:** MUST support Hann, Triangle, Tukey, and Gaussian grain window shapes. Inter-onset time (IOT) MUST allow randomization (jitter) up to 30%.
+    - **Phase Vocoder:** Identity Phase Locking (IPL) MUST identify spectral peaks and lock surrounding bin phases. FFT size: 2048. Overlap: 75% (hop = N/4). Pre-allocate all buffers via `realfft`.
+    - **WSOLA:** Frame length: 1024. Overlap: 512. Tolerance window ($\Delta_{max}$): 256. Cross-correlation MUST be optimized via FFT or 4x downsampling.
+    - **Granular:** MUST support Hann, Triangle, Tukey, and Gaussian grain window shapes. Inter-onset time (IOT) MUST allow randomization (jitter) up to 30%.
 
 7. **Tauri v2 IPC & UI Performance**
-   - **Binary IPC:** Waveform mipmaps MUST be transferred via raw `ArrayBuffer` using `tauri::ipc::Response`.
-   - **Position Tracking:** UI MUST update from the `playback_position` channel (emitted at 30Hz). Management thread MUST sample an `AtomicU64` written by the audio thread.
-   - **Metering:** Audio thread MUST write `peak_level` and `active_voice_count` to atomics with `Relaxed` ordering.
-   - **Responsiveness:** The playback cursor MUST use `requestAnimationFrame` for 60fps visual interpolation between 30Hz position updates. Waveform rendering MUST use mipmap levels to enable smooth, lag-free zoom.
+    - **Binary IPC:** Waveform mipmaps MUST be transferred via raw `ArrayBuffer` using `tauri::ipc::Response`.
+    - **Position Tracking:** UI MUST update from the `playback_position` channel (emitted at 30Hz). Management thread MUST sample an `AtomicU64` written by the audio thread.
+    - **Metering:** Audio thread MUST write `peak_level` and `active_voice_count` to atomics with `Relaxed` ordering.
+    - **Responsiveness:** The playback cursor MUST use `requestAnimationFrame` for 60fps visual interpolation between 30Hz position updates. Waveform rendering MUST use mipmap levels to enable smooth, lag-free zoom.
 
 8. **State Management & Interaction**
-   - **Stores:** Frontend state MUST use lightweight stores (Zustand) to manage mode, sample metadata, and pad/slice configurations. 
-   - **Markers:** Interaction with draggable slice markers MUST be debounced (50ms) to prevent IPC flooding.
-   - **Direct Recording:** The engine MUST support a "Recorder" mode with SP-404 style threshold triggering to capture audio directly into memory buffers.
+    - **Stores:** Frontend state MUST use lightweight stores (Zustand) to manage mode, sample metadata, and pad/slice configurations.
+    - **Markers:** Interaction with draggable slice markers MUST be debounced (50ms) to prevent IPC flooding.
+    - **Direct Recording:** The engine MUST support a "Recorder" mode with SP-404 style threshold triggering to capture audio directly into memory buffers.
 
 ---
 
 ## Critical DSP Constants
 
-| Constant | Value | Description |
-| :--- | :--- | :--- |
-| `MAX_VOICES` | 128 | Pre-allocated voice pool size |
-| `PRELOAD_SIZE` | 12KB | RAM-cached attack per sample |
-| `STREAM_BUF_SIZE`| 64KB | Per-voice ring buffer capacity |
-| `FFT_SIZE_PV` | 2048 | Phase Vocoder STFT window |
-| `WSOLA_FRAME` | 1024 | WSOLA frame length |
-| `WSOLA_TOLERANCE`| 256 | WSOLA search window ($\Delta_{max}$) |
-| `ENV_TARGET_EXP` | 0.0001 | AHDSR target ratio for exponential curve |
-| `FADE_STOLEN` | 1-5ms | Linear fade-out for stolen voices |
-| `FADE_UNDERRUN` | 64 samples | Inverse ramp for buffer starvation |
+| Constant          | Value      | Description                              |
+| :---------------- | :--------- | :--------------------------------------- |
+| `MAX_VOICES`      | 128        | Pre-allocated voice pool size            |
+| `PRELOAD_SIZE`    | 12KB       | RAM-cached attack per sample             |
+| `STREAM_BUF_SIZE` | 64KB       | Per-voice ring buffer capacity           |
+| `FFT_SIZE_PV`     | 2048       | Phase Vocoder STFT window                |
+| `WSOLA_FRAME`     | 1024       | WSOLA frame length                       |
+| `WSOLA_TOLERANCE` | 256        | WSOLA search window ($\Delta_{max}$)     |
+| `ENV_TARGET_EXP`  | 0.0001     | AHDSR target ratio for exponential curve |
+| `FADE_STOLEN`     | 1-5ms      | Linear fade-out for stolen voices        |
+| `FADE_UNDERRUN`   | 64 samples | Inverse ramp for buffer starvation       |
 
 ---
 
@@ -161,12 +161,12 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 ## Implementation notes (Rust Module Hierarchy)
 
 - `sampler_engine/`
-  - `voice/` (`allocator.rs`, `stealing.rs`, `envelope.rs`, `pool.rs`)
-  - `warp/` (`phase_vocoder.rs`, `wsola.rs`, `repitch.rs`, `granular.rs`)
-  - `streaming/` (`preload.rs`, `ring_buffer.rs`, `io_thread.rs`)
-  - `analysis/` (`onset.rs`, `peak_picker.rs`, `bpm.rs`, `pitch.rs`)
-  - `modes/` (`quick.rs`, `drum.rs`, `slice.rs`)
-  - `sample/` (`loader.rs`, `format.rs`, `peaks.rs`)
+    - `voice/` (`allocator.rs`, `stealing.rs`, `envelope.rs`, `pool.rs`)
+    - `warp/` (`phase_vocoder.rs`, `wsola.rs`, `repitch.rs`, `granular.rs`)
+    - `streaming/` (`preload.rs`, `ring_buffer.rs`, `io_thread.rs`)
+    - `analysis/` (`onset.rs`, `peak_picker.rs`, `bpm.rs`, `pitch.rs`)
+    - `modes/` (`quick.rs`, `drum.rs`, `slice.rs`)
+    - `sample/` (`loader.rs`, `format.rs`, `peaks.rs`)
 
 ---
 

@@ -70,14 +70,14 @@ Use `noun.pastTense` dot-separated string keys for clarity:
 
 ```typescript
 // ✅ Clear, descriptive names
-'transport.started'
-'plugin.loaded'
-'track.muted'
+'transport.started';
+'plugin.loaded';
+'track.muted';
 
 // ❌ Vague or unclear names
-'transport'
-'update'
-'data.changed'
+'transport';
+'update';
+'data.changed';
 ```
 
 ### 2. Publish the event
@@ -98,7 +98,7 @@ export function addTrack(input: AddTrackInput): Track | null {
     const track = createTrack(input);
     setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
 
-    void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+    eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
     return track;
 }
 ```
@@ -216,6 +216,7 @@ export function registerAiEventHandlers(): () => void {
 For a complete guide on our testing philosophy and patterns, see the [testing](./06-testing.md) documentation. The following examples show patterns specific to event-driven architectures.
 
 The infra provides test helpers in `#/infra/events/testing/`:
+
 - `recordEvents(bus)` — records all events emitted on the bus; access `.entries` to inspect
 
 ### Event handler testing
@@ -234,9 +235,7 @@ describe('initMixerSubscribers', () => {
 
         await bus.emit('track.added', { trackId: 'track-456', name: 'Bass', kind: 'audio' });
 
-        expect(getMixerTracksStore().value).toContainEqual(
-            expect.objectContaining({ trackId: 'track-456' })
-        );
+        expect(getMixerTracksStore().value).toContainEqual(expect.objectContaining({ trackId: 'track-456' }));
     });
 });
 ```

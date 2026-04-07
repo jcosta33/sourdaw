@@ -2,7 +2,6 @@
 ///
 /// Holds decoded PCM audio in memory. Stereo samples are stored as
 /// separate left/right channel vectors for cache-friendly per-channel access.
-
 use super::types::{SampleCategory, SampleId, SampleMeta};
 
 // ── Sample Data ────────────────────────────────────────────────────────

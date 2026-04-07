@@ -10,7 +10,6 @@
 ///
 /// The UI selects the mipmap level that matches the current zoom, ensuring
 /// O(pixels) data regardless of sample length.
-
 use super::super::types::MIPMAP_BASE_BLOCK;
 
 /// A single min/max pair representing the amplitude range of a block.
@@ -86,7 +85,11 @@ pub fn flatten_level(level: &[PeakPair]) -> Vec<f32> {
 /// Select the best mipmap level for a given display width and visible sample range.
 ///
 /// Returns the level index (0 = finest, higher = coarser).
-pub fn select_level(mipmap: &WaveformMipmap, visible_frames: usize, display_width_px: usize) -> usize {
+pub fn select_level(
+    mipmap: &WaveformMipmap,
+    visible_frames: usize,
+    display_width_px: usize,
+) -> usize {
     if mipmap.levels.is_empty() || display_width_px == 0 {
         return 0;
     }

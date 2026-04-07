@@ -10,7 +10,7 @@ export async function initializeAudioEngine(): Promise<void> {
 
     // Request mic permission early so the prompt appears on first user
     // interaction instead of at the first record attempt.
-    void requestMicPermission();
+    requestMicPermission();
 
     const transport = getTransportStoreValue();
     if (transport) {
@@ -24,6 +24,6 @@ export async function initializeAudioEngine(): Promise<void> {
     // Initialize WAM environment
     const ctx = audioEngine.context;
     if (ctx) {
-        void initWAMEnvironment(ctx);
+        initWAMEnvironment(ctx);
     }
 }

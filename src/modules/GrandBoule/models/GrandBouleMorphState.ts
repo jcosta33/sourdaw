@@ -91,7 +91,5 @@ export const createDefaultMorphState = (): GrandBouleMorphState => ({
  * Look up a built-in piano model by ID. Returns `undefined` when the ID
  * does not match any known model.
  */
-export const findPianoModelById = (
-    id: string,
-): GrandBoulePianoModel | undefined =>
+export const findPianoModelById = (id: string): GrandBoulePianoModel | undefined =>
     BUILTIN_PIANO_MODELS.find((m) => m.id === id);

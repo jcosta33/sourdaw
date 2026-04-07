@@ -8,10 +8,7 @@
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
-import {
-    type GrandBoulePianoModel,
-    findPianoModelById,
-} from '../models/GrandBouleMorphState';
+import { type GrandBoulePianoModel, findPianoModelById } from '../models/GrandBouleMorphState';
 import { grandBouleStore } from '../stores/grandBouleStore';
 
 type SetGrandBouleMorphPositionInput = {
@@ -30,7 +27,7 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const interpolateModels = (
     modelA: GrandBoulePianoModel,
     modelB: GrandBoulePianoModel,
-    t: number,
+    t: number
 ): {
     hammerHardnessScale: number;
     hammerMassScale: number;
@@ -52,7 +49,7 @@ const interpolateModels = (
  */
 const dispatchInterpolatedParams = (
     engine: GrandBouleEngineHandle,
-    params: ReturnType<typeof interpolateModels>,
+    params: ReturnType<typeof interpolateModels>
 ): void => {
     engine.setParam({ name: 'hammer_hardness_scale', value: params.hammerHardnessScale });
     engine.setParam({ name: 'hammer_mass_scale', value: params.hammerMassScale });
@@ -62,9 +59,7 @@ const dispatchInterpolatedParams = (
     engine.setParam({ name: 'tone_color', value: params.toneColor });
 };
 
-export const setGrandBouleMorphPosition = (
-    input: SetGrandBouleMorphPositionInput,
-): void => {
+export const setGrandBouleMorphPosition = (input: SetGrandBouleMorphPositionInput): void => {
     const state = grandBouleStore.value;
     if (state === null) {
         return;

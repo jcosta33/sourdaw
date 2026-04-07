@@ -71,8 +71,6 @@ const NAV_ITEMS: NavItem[] = [
     { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard className="size-3.5" /> },
 ];
 
-
-
 // ── Section props ─────────────────────────────────────────────────────
 
 type SectionProps = {

@@ -47,7 +47,7 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'normalizeClip', payload: { clipId } });
+                executeAppAction({ type: 'normalizeClip', payload: { clipId } });
             }
         },
     },
@@ -59,7 +59,7 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'reverseClip', payload: { clipId } });
+                executeAppAction({ type: 'reverseClip', payload: { clipId } });
             }
         },
     },
@@ -71,7 +71,7 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const ids = getSelectedClipIds();
             if (ids.length >= 2) {
-                void executeAppAction({ type: 'glueClips', payload: { clipIds: ids } });
+                executeAppAction({ type: 'glueClips', payload: { clipIds: ids } });
             }
         },
     },
@@ -87,7 +87,7 @@ export const clipCommands: CommandEntry[] = [
                 const track = trackStore.value?.tracks.find((t) => t.id === trackId);
                 const clip = track?.clips.find((c) => c.id === clipId);
                 if (clip) {
-                    void executeAppAction({
+                    executeAppAction({
                         type: 'consolidateSelection',
                         payload: { trackId, startBeat: clip.startBeat, endBeat: clip.endBeat },
                     });
@@ -106,7 +106,7 @@ export const clipCommands: CommandEntry[] = [
                 const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
                 const clip = track?.clips.find((c) => c.id === clipId);
                 if (clip) {
-                    void executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
+                    executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
                 }
             }
         },

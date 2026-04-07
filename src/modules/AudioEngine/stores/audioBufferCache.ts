@@ -153,13 +153,13 @@ export const audioBufferCache = {
     set(id: string, buffer: AudioBuffer): void {
         audioCacheSet(id, buffer);
         clearWaveformCachesForId(id);
-        void persistToIdb(id, buffer);
+        persistToIdb(id, buffer);
     },
 
     remove(id: string): void {
         cache.delete(id);
         clearWaveformCachesForId(id);
-        void removeFromIdb(id);
+        removeFromIdb(id);
     },
 
     has(id: string): boolean {
@@ -382,7 +382,7 @@ export const audioBufferCache = {
                 }
                 clearWaveformCachesForId(id);
                 audioCacheSet(id, buffer);
-                void persistToIdb(id, buffer);
+                persistToIdb(id, buffer);
             } catch {
                 // Skip any malformed entry
             }

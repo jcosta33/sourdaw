@@ -49,10 +49,18 @@ impl Temperament {
 /// Historical temperament cent offsets relative to A = 0 per spec §4.
 /// Indexed by pitch class: [C, C#, D, D#, E, F, F#, G, G#, A, A#, B].
 const WERCKMEISTER_III: [f32; 12] = [11.7, 2.0, 3.9, 5.9, 2.0, 9.8, 0.0, 7.8, 3.9, 0.0, 7.8, 3.9];
-const KIRNBERGER_III: [f32; 12] = [10.3, 0.5, 3.4, 4.4, -3.4, 8.3, 0.5, 6.8, 2.4, 0.0, 6.4, -1.5];
-const VALLOTTI: [f32; 12] = [5.9, 0.0, 2.0, 3.9, -2.0, 7.8, -2.0, 3.9, 2.0, 0.0, 5.9, -3.9];
-const YOUNG_II: [f32; 12] = [5.9, -3.9, 2.0, 0.0, -2.0, 3.9, -5.9, 3.9, -2.0, 0.0, 2.0, -3.9];
-const MEANTONE_QUARTER_COMMA: [f32; 12] = [10.3, -13.7, 3.4, 20.5, -3.4, 13.7, -10.3, 6.8, -17.1, 0.0, 17.1, -6.8];
+const KIRNBERGER_III: [f32; 12] = [
+    10.3, 0.5, 3.4, 4.4, -3.4, 8.3, 0.5, 6.8, 2.4, 0.0, 6.4, -1.5,
+];
+const VALLOTTI: [f32; 12] = [
+    5.9, 0.0, 2.0, 3.9, -2.0, 7.8, -2.0, 3.9, 2.0, 0.0, 5.9, -3.9,
+];
+const YOUNG_II: [f32; 12] = [
+    5.9, -3.9, 2.0, 0.0, -2.0, 3.9, -5.9, 3.9, -2.0, 0.0, 2.0, -3.9,
+];
+const MEANTONE_QUARTER_COMMA: [f32; 12] = [
+    10.3, -13.7, 3.4, 20.5, -3.4, 13.7, -10.3, 6.8, -17.1, 0.0, 17.1, -6.8,
+];
 
 /// Get the temperament cent offset for a given MIDI note. Returns 0.0 for
 /// equal temperament.
@@ -277,7 +285,10 @@ mod tests {
     #[test]
     fn werckmeister_a_is_zero() {
         // A is pitch class 9. MIDI 69 = A4.
-        assert_eq!(temperament_offset_cents(Temperament::WerckmeisterIII, 69), 0.0);
+        assert_eq!(
+            temperament_offset_cents(Temperament::WerckmeisterIII, 69),
+            0.0
+        );
     }
 
     #[test]

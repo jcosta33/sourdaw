@@ -16,7 +16,7 @@ export const isErr = <TValue, TError>(result: Result<TValue, TError>): result is
 
 export const map = <TValue, TError, TMapped>(
     result: Result<TValue, TError>,
-    fn: (value: TValue) => TMapped,
+    fn: (value: TValue) => TMapped
 ): Result<TMapped, TError> => {
     if (result.ok) {
         return ok(fn(result.value));
@@ -26,7 +26,7 @@ export const map = <TValue, TError, TMapped>(
 
 export const mapError = <TValue, TError, TMappedError>(
     result: Result<TValue, TError>,
-    fn: (error: TError) => TMappedError,
+    fn: (error: TError) => TMappedError
 ): Result<TValue, TMappedError> => {
     if (!result.ok) {
         return err(fn(result.error));
@@ -36,7 +36,7 @@ export const mapError = <TValue, TError, TMappedError>(
 
 export const flatMap = <TValue, TError, TMapped>(
     result: Result<TValue, TError>,
-    fn: (value: TValue) => Result<TMapped, TError>,
+    fn: (value: TValue) => Result<TMapped, TError>
 ): Result<TMapped, TError> => {
     if (result.ok) {
         return fn(result.value);
@@ -49,7 +49,7 @@ export const match = <TValue, TError, TReturn>(
     branches: {
         ok: (value: TValue) => TReturn;
         err: (error: TError) => TReturn;
-    },
+    }
 ): TReturn => {
     if (result.ok) {
         return branches.ok(result.value);
@@ -66,7 +66,7 @@ export const unwrapOr = <TValue, TError>(result: Result<TValue, TError>, fallbac
 
 export const fromNullable = <TValue, TError>(
     value: TValue | null | undefined,
-    errorFactory: () => TError,
+    errorFactory: () => TError
 ): Result<TValue, TError> => {
     if (value === null || value === undefined) {
         return err(errorFactory());
@@ -76,7 +76,7 @@ export const fromNullable = <TValue, TError>(
 
 export const tryCatch = <TValue, TError>(
     fn: () => TValue,
-    errorFactory: (caught: unknown) => TError,
+    errorFactory: (caught: unknown) => TError
 ): Result<TValue, TError> => {
     try {
         return ok(fn());

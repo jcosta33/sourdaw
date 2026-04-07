@@ -10,6 +10,7 @@
  *   - Browser: desktop-only feature (requires PyTorch)
  */
 
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 
@@ -38,36 +39,39 @@ export async function isAudioAiServerRunning(): Promise<boolean> {
  * Generate audio from a text prompt using Stable Audio Open.
  * Desktop only — uses a Python sidecar that auto-starts and auto-downloads the model.
  */
-export async function generateAudio(
-    prompt: string,
-    durationSeconds: number = 8,
-    options?: { bpm?: number; key?: string; durationBars?: number }
-): Promise<AudioBuffer> {
-    if (!isTauri()) {
-        throw new Error('Audio generation is a desktop-only feature. It requires the Sourdaw desktop app.');
-    }
+export const generateAudio = inject({ logger })(
+    ({ logger }) =>
+        async function generateAudio(
+            prompt: string,
+            durationSeconds: number = 8,
+            options?: { bpm?: number; key?: string; durationBars?: number }
+        ): Promise<AudioBuffer> {
+            if (!isTauri()) {
+                throw new Error('Audio generation is a desktop-only feature. It requires the Sourdaw desktop app.');
+            }
 
-    logger.info(`[Audio AI] Generating audio: "${prompt}" (${String(durationSeconds)}s)`);
+            logger.info(`[Audio AI] Generating audio: "${prompt}" (${String(durationSeconds)}s)`);
 
-    const result = (await tauriInvoke('generate_audio_clip', {
-        prompt,
-        bpm: options?.bpm ?? null,
-        key: options?.key ?? null,
-        durationBars: options?.durationBars ?? null,
-        durationSeconds,
-    })) as { wav_path: string; duration_seconds: number; sample_rate: number };
+            const result = (await tauriInvoke('generate_audio_clip', {
+                prompt,
+                bpm: options?.bpm ?? null,
+                key: options?.key ?? null,
+                durationBars: options?.durationBars ?? null,
+                durationSeconds,
+            })) as { wav_path: string; duration_seconds: number; sample_rate: number };
 
-    logger.info(`[Audio AI] Generated: ${result.wav_path} (${String(result.duration_seconds)}s)`);
+            logger.info(`[Audio AI] Generated: ${result.wav_path} (${String(result.duration_seconds)}s)`);
 
-    // Load WAV file into AudioBuffer
-    const fileBytes = (await tauriInvoke('read_audio_file', { path: result.wav_path })) as number[];
-    const wavBuffer = new Uint8Array(fileBytes).buffer;
-    const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(wavBuffer);
-    await audioContext.close();
+            // Load WAV file into AudioBuffer
+            const fileBytes = (await tauriInvoke('read_audio_file', { path: result.wav_path })) as number[];
+            const wavBuffer = new Uint8Array(fileBytes).buffer;
+            const audioContext = new AudioContext();
+            const audioBuffer = await audioContext.decodeAudioData(wavBuffer);
+            await audioContext.close();
 
-    return audioBuffer;
-}
+            return audioBuffer;
+        }
+);
 
 type StemResult = {
     [stemName: string]: AudioBuffer;
@@ -80,58 +84,54 @@ type StemResult = {
  * In browser: onnxruntime-web with WebGPU/WASM.
  * Both auto-download the ~235MB model on first use.
  */
-export async function separateStems(audioData: ArrayBuffer, stems: string[] = ['all']): Promise<StemResult> {
-    logger.info(`[Audio AI] Separating stems: ${stems.join(', ')}`);
+export const separateStems = inject({ logger })(
+    ({ logger }) => {
+        /**
+         * Native stem separation via Tauri Rust command.
+         * Writes WAV to temp file, passes path to Rust (avoids large JSON IPC).
+         */
+        const separateStemsNative = async (audioData: ArrayBuffer, stems: string[]): Promise<StemResult> => {
+            const tempPath = `__sourdaw_stems_input_${String(Date.now())}.wav`;
+            const wavBytes = Array.from(new Uint8Array(audioData));
+            await tauriInvoke('write_audio_file', { path: tempPath, data: wavBytes });
 
-    if (isTauri()) {
-        return separateStemsNative(audioData, stems);
+            logger.info(`[Audio AI] Starting native stem separation...`);
+
+            const result = (await tauriInvoke('separate_stems', {
+                request: {
+                    audio_path: tempPath,
+                    stems,
+                },
+            })) as { stem_paths: Record<string, string>; processing_time_ms: number };
+
+            logger.info(`[Audio AI] Native separation completed in ${String(result.processing_time_ms)}ms`);
+
+            const stemBuffers: StemResult = {};
+
+            for (const [name, filePath] of Object.entries(result.stem_paths)) {
+                try {
+                    const fileBytes = (await tauriInvoke('read_audio_file', { path: filePath })) as number[];
+                    const wavBuffer = new Uint8Array(fileBytes).buffer;
+                    const audioContext = new AudioContext();
+                    stemBuffers[name] = await audioContext.decodeAudioData(wavBuffer);
+                    await audioContext.close();
+                } catch (e) {
+                    logger.warn(`[Audio AI] Failed to load stem "${name}" from ${filePath}: ${String(e)}`);
+                }
+            }
+
+            return stemBuffers;
+        };
+
+        return async function separateStems(audioData: ArrayBuffer, stems: string[] = ['all']): Promise<StemResult> {
+            logger.info(`[Audio AI] Separating stems: ${stems.join(', ')}`);
+
+            if (isTauri()) {
+                return separateStemsNative(audioData, stems);
+            }
+
+            const { separateStemsBrowser } = await import('./browserStemSeparation');
+            return separateStemsBrowser(audioData, stems);
+        };
     }
-
-    return separateStemsBrowserOnnx(audioData, stems);
-}
-
-/**
- * Native stem separation via Tauri Rust command.
- * Writes WAV to temp file, passes path to Rust (avoids large JSON IPC).
- */
-async function separateStemsNative(audioData: ArrayBuffer, stems: string[]): Promise<StemResult> {
-    const tempPath = `__sourdaw_stems_input_${String(Date.now())}.wav`;
-    const wavBytes = Array.from(new Uint8Array(audioData));
-    await tauriInvoke('write_audio_file', { path: tempPath, data: wavBytes });
-
-    logger.info(`[Audio AI] Starting native stem separation...`);
-
-    const result = (await tauriInvoke('separate_stems', {
-        request: {
-            audio_path: tempPath,
-            stems,
-        },
-    })) as { stem_paths: Record<string, string>; processing_time_ms: number };
-
-    logger.info(`[Audio AI] Native separation completed in ${String(result.processing_time_ms)}ms`);
-
-    const stemBuffers: StemResult = {};
-
-    for (const [name, filePath] of Object.entries(result.stem_paths)) {
-        try {
-            const fileBytes = (await tauriInvoke('read_audio_file', { path: filePath })) as number[];
-            const wavBuffer = new Uint8Array(fileBytes).buffer;
-            const audioContext = new AudioContext();
-            stemBuffers[name] = await audioContext.decodeAudioData(wavBuffer);
-            await audioContext.close();
-        } catch (e) {
-            logger.warn(`[Audio AI] Failed to load stem "${name}" from ${filePath}: ${String(e)}`);
-        }
-    }
-
-    return stemBuffers;
-}
-
-/**
- * Browser stem separation via ONNX Runtime Web (Demucs v4).
- * Same model as native, runs entirely in the browser via WebGPU/WASM.
- */
-async function separateStemsBrowserOnnx(audioData: ArrayBuffer, stems: string[]): Promise<StemResult> {
-    const { separateStemsBrowser } = await import('./browserStemSeparation');
-    return separateStemsBrowser(audioData, stems);
-}
+);

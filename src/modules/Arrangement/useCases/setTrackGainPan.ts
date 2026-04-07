@@ -73,7 +73,7 @@ export function setInputMonitoring(trackId: string, mode: InputMonitoring): void
 
     // Actually start/stop the microphone stream on the audio engine.
     if (mode === 'on') {
-        void startInputMonitoring(trackId);
+        startInputMonitoring(trackId);
     } else {
         stopInputMonitoring();
     }

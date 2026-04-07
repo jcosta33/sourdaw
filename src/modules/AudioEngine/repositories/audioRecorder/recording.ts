@@ -16,6 +16,7 @@
  * the first call to startAudioRecording.
  */
 
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '../createWebAudioEngine';
 import { getSelectedInputId } from '../../useCases/audioDeviceSelection';
@@ -60,88 +61,93 @@ export async function requestMicPermission(): Promise<boolean> {
     }
 }
 
-export async function startAudioRecording(
-    trackId: string,
-    onComplete: (buffer: AudioBuffer) => void,
-    inputId?: string | null
-): Promise<boolean> {
-    try {
-        const selectedInputId = inputId ?? getSelectedInputId();
-        const audioConstraints: MediaTrackConstraints = {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-        };
-        if (selectedInputId) {
-            audioConstraints.deviceId = { exact: selectedInputId };
-        }
+export const startAudioRecording = inject({ logger })(
+    ({ logger }) =>
+        async function startAudioRecording(
+            trackId: string,
+            onComplete: (buffer: AudioBuffer) => void,
+            inputId?: string | null
+        ): Promise<boolean> {
+            try {
+                const selectedInputId = inputId ?? getSelectedInputId();
+                const audioConstraints: MediaTrackConstraints = {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                };
+                if (selectedInputId) {
+                    audioConstraints.deviceId = { exact: selectedInputId };
+                }
 
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
-        const ctx = audioEngine.context;
-        sourceNode = ctx.createMediaStreamSource(mediaStream);
+                const ctx = audioEngine.context;
+                sourceNode = ctx.createMediaStreamSource(mediaStream);
 
-        // Monitor via the track strip (same as before).
-        const strip = audioEngine.ensureTrackStrip(trackId);
-        sourceNode.connect(strip.gainNode);
+                // Monitor via the track strip (same as before).
+                const strip = audioEngine.ensureTrackStrip(trackId);
+                sourceNode.connect(strip.gainNode);
 
-        onRecordingComplete = onComplete;
+                onRecordingComplete = onComplete;
 
-        // ── SAB ring ─────────────────────────────────────────────────────────
-        const sab = new SharedArrayBuffer(SAB_BYTES);
+                // ── SAB ring ─────────────────────────────────────────────────────────
+                const sab = new SharedArrayBuffer(SAB_BYTES);
 
-        // ── AudioWorkletNode (recording-processor) ───────────────────────────
-        // numberOfOutputs: 0 — sink node, no destination connection needed.
-        recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
-            numberOfInputs: 1,
-            numberOfOutputs: 0,
-            channelCount: 1,
-            channelCountMode: 'explicit',
-            channelInterpretation: 'discrete',
-        });
-        recordingNode.port.postMessage({ type: 'init', sab });
-        sourceNode.connect(recordingNode);
+                // ── AudioWorkletNode (recording-processor) ───────────────────────────
+                // numberOfOutputs: 0 — sink node, no destination connection needed.
+                recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
+                    numberOfInputs: 1,
+                    numberOfOutputs: 0,
+                    channelCount: 1,
+                    channelCountMode: 'explicit',
+                    channelInterpretation: 'discrete',
+                });
+                recordingNode.port.postMessage({ type: 'init', sab });
+                sourceNode.connect(recordingNode);
 
-        // ── OPFS Worker ──────────────────────────────────────────────────────
-        recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), { type: 'module' });
+                // ── OPFS Worker ──────────────────────────────────────────────────────
+                recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
+                    type: 'module',
+                });
 
-        // Wire up the PCM-complete handler before sending 'start'.
-        recordingWorker.onmessage = ({ data }: MessageEvent): void => {
-            const msg = data as
-                | { type: 'ready' }
-                | { type: 'pcm'; samples: Float32Array; sampleRate: number }
-                | { type: 'error'; message: string };
+                // Wire up the PCM-complete handler before sending 'start'.
+                recordingWorker.onmessage = ({ data }: MessageEvent): void => {
+                    const msg = data as
+                        | { type: 'ready' }
+                        | { type: 'pcm'; samples: Float32Array; sampleRate: number }
+                        | { type: 'error'; message: string };
 
-            if (msg.type === 'ready') {
-                // Both sides are initialised — begin capture.
-                recordingNode?.port.postMessage({ type: 'start' });
-                recordingWorker?.postMessage({ type: 'start' });
-                audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
-            } else if (msg.type === 'pcm') {
-                // Worker has flushed OPFS → build AudioBuffer on the main thread.
-                buildAndDeliver(msg.samples, msg.sampleRate, ctx);
-            } else if (msg.type === 'error') {
-                logger.error(new Error(`Recording worker error: ${msg.message}`));
+                    if (msg.type === 'ready') {
+                        // Both sides are initialised — begin capture.
+                        recordingNode?.port.postMessage({ type: 'start' });
+                        recordingWorker?.postMessage({ type: 'start' });
+                        audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
+                    } else if (msg.type === 'pcm') {
+                        // Worker has flushed OPFS → build AudioBuffer on the main thread.
+                        buildAndDeliver(msg.samples, msg.sampleRate, ctx);
+                    } else if (msg.type === 'error') {
+                        logger.error(new Error(`Recording worker error: ${msg.message}`));
+                        cleanupNodes();
+                        audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+                    }
+                };
+
+                recordingWorker.onerror = (e): void => {
+                    logger.error(new Error('Recording worker crashed', { cause: e }));
+                    cleanupNodes();
+                    audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+                };
+
+                recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
+
+                return true;
+            } catch (error) {
+                logger.error(new Error('Failed to start recording', { cause: error }));
                 cleanupNodes();
-                audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+                return false;
             }
-        };
-
-        recordingWorker.onerror = (e): void => {
-            logger.error(new Error('Recording worker crashed', { cause: e }));
-            cleanupNodes();
-            audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
-        };
-
-        recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
-
-        return true;
-    } catch (error) {
-        logger.error(new Error('Failed to start recording', { cause: error }));
-        cleanupNodes();
-        return false;
-    }
-}
+        }
+);
 
 export function stopAudioRecording(): void {
     // Tell the worklet to stop writing — it will ack with 'stopped' (ignored).

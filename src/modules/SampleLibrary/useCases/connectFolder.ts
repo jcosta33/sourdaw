@@ -62,7 +62,7 @@ async function connectFolderBrowser(): Promise<string | null> {
         addLibraryRoot(root);
 
         // Start scanning in background
-        void scanBrowserDirectory(root);
+        scanBrowserDirectory(root);
 
         return id;
     } catch {
@@ -96,7 +96,7 @@ async function connectFolderTauri(): Promise<string | null> {
         addLibraryRoot(root);
 
         // Start scanning in background
-        void scanTauriDirectory(root);
+        scanTauriDirectory(root);
 
         return id;
     } catch {

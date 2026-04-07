@@ -53,14 +53,14 @@ const SideCard = ({
         className="yeast-window"
         title={title}
         detail={detail}
-        titleClassName="text-[var(--color-accent-peach)]/70"
+        titleClassName="text-[var(--color-accent-rose)]/70"
     >
         {children}
     </DawPluginSectionCard>
 );
 
 const YeastChip = ({
-    tone = 'peach',
+    tone = 'rose',
     size = 'xs',
     shape = 'soft',
     caps = false,
@@ -69,7 +69,7 @@ const YeastChip = ({
     <DawPluginChip tone={tone} size={size} shape={shape} caps={caps} {...props} />
 );
 
-const YeastLed = ({ tone = 'peach', ...props }: ComponentProps<typeof DawPluginLed>): ReactElement => (
+const YeastLed = ({ tone = 'rose', ...props }: ComponentProps<typeof DawPluginLed>): ReactElement => (
     <DawPluginLed tone={tone} {...props} />
 );
 

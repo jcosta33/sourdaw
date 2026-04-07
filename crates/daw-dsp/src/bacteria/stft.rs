@@ -10,7 +10,8 @@ use std::f32::consts::PI;
 const MAX_FFT_SIZE: usize = 4096;
 const HOP_DIVISOR: usize = 4; // 75% overlap
 const DEFAULT_FFT_SIZE: usize = 2048;
-const DEFAULT_BIT_REVERSE: [usize; DEFAULT_FFT_SIZE] = build_bit_reverse_indices::<DEFAULT_FFT_SIZE>();
+const DEFAULT_BIT_REVERSE: [usize; DEFAULT_FFT_SIZE] =
+    build_bit_reverse_indices::<DEFAULT_FFT_SIZE>();
 
 const fn build_bit_reverse_indices<const SIZE: usize>() -> [usize; SIZE] {
     let mut indices = [0usize; SIZE];
@@ -238,7 +239,12 @@ impl StftProcessor {
         }
 
         // Forward FFT
-        fft(&mut self.fft_real, &mut self.fft_imag, &self.bit_reverse, false);
+        fft(
+            &mut self.fft_real,
+            &mut self.fft_imag,
+            &self.bit_reverse,
+            false,
+        );
 
         // Extract magnitudes and phases
         for k in 0..half {
@@ -278,7 +284,12 @@ impl StftProcessor {
         }
 
         // Inverse FFT
-        fft(&mut self.fft_real, &mut self.fft_imag, &self.bit_reverse, true);
+        fft(
+            &mut self.fft_real,
+            &mut self.fft_imag,
+            &self.bit_reverse,
+            true,
+        );
 
         // Window and overlap-add into output buffer
         let out_start = self.output_read_pos;

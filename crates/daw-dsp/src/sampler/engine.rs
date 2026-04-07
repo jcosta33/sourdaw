@@ -7,15 +7,14 @@
 ///
 /// Metering values (peak level, active voice count) are written to atomics
 /// for lock-free reading by the management/UI thread.
-
 use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 use super::allocator::{StealPriority, VoiceAllocator};
 use super::sample::SamplePool;
 use super::smooth::ParamSmoother;
 use super::types::{
-    FilterType, LoopMode, PlaybackMode, RecordState, SamplerCommand, SamplerMode, SamplerParam,
-    SampleId, MAX_VOICES, MAX_STACK_VOICES,
+    FilterType, LoopMode, PlaybackMode, RecordState, SampleId, SamplerCommand, SamplerMode,
+    SamplerParam, MAX_STACK_VOICES, MAX_VOICES,
 };
 use super::voice::{SamplerVoice, VoiceTriggerParams};
 
@@ -247,7 +246,7 @@ impl SamplerEngine {
                 // Spread detune evenly: -spread/2 ... +spread/2
                 let t = stack_idx as f32 / (count - 1) as f32; // 0.0 to 1.0
                 let detune = self.detune_spread * (t - 0.5); // centered
-                // Spread pan: -stack_spread ... +stack_spread
+                                                             // Spread pan: -stack_spread ... +stack_spread
                 let pan = self.stack_spread * (t * 2.0 - 1.0);
                 (detune, pan)
             } else {
@@ -451,11 +450,8 @@ impl SamplerEngine {
         let left = core::mem::take(&mut self.record_buffer_left);
         let right = core::mem::take(&mut self.record_buffer_right);
 
-        let sample_data = super::sample::SampleData::from_stereo(
-            left,
-            right,
-            self.sample_rate as u32,
-        );
+        let sample_data =
+            super::sample::SampleData::from_stereo(left, right, self.sample_rate as u32);
 
         let sample_id = self.sample_pool.add(sample_data);
         self.active_sample_id = Some(sample_id);
@@ -497,11 +493,8 @@ impl SamplerEngine {
                 // Get sample data for this voice
                 let sample_id = self.voices[voice_idx].sample_id;
                 if let Some(sample_data) = self.sample_pool.get(sample_id) {
-                    let still_active = self.voices[voice_idx].render_sample(
-                        sample_data,
-                        &mut mix_l,
-                        &mut mix_r,
-                    );
+                    let still_active =
+                        self.voices[voice_idx].render_sample(sample_data, &mut mix_l, &mut mix_r);
 
                     if !still_active {
                         self.allocator.release(voice_idx);
@@ -540,10 +533,8 @@ impl SamplerEngine {
             .store(youngest_pos, Ordering::Relaxed);
 
         // Write metering to atomics (Relaxed is fine for metering).
-        self.peak_left
-            .store(peak_l.to_bits(), Ordering::Relaxed);
-        self.peak_right
-            .store(peak_r.to_bits(), Ordering::Relaxed);
+        self.peak_left.store(peak_l.to_bits(), Ordering::Relaxed);
+        self.peak_right.store(peak_r.to_bits(), Ordering::Relaxed);
         self.active_voice_count
             .store(voice_count, Ordering::Relaxed);
     }

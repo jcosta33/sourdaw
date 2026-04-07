@@ -124,17 +124,24 @@ impl GrandBouleEngine {
         // Combine una-corda pedal scale, preset hammer hardness offset, and
         // piano model hammer scale. offset -1 → 0.5×, 0 → 1×, +1 → 2×.
         let hardness_scale = (2.0_f32).powf(self.hammer_hardness_offset);
-        let stiffness_scale = self.pedals.hammer_stiffness_scale()
-            * hardness_scale
-            * self.hammer_hardness_scale;
+        let stiffness_scale =
+            self.pedals.hammer_stiffness_scale() * hardness_scale * self.hammer_hardness_scale;
         self.pedals.press_key(key);
         self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
-        self.noise.trigger(NoiseEvent::HammerLetoff, shaped_velocity);
+        self.noise
+            .trigger(NoiseEvent::HammerLetoff, shaped_velocity);
 
         // Retrigger the same voice if this note is already held.
         for voice in self.voices.iter_mut() {
             if !voice.is_idle() && voice.midi_note() == midi_note {
-                voice.note_on(midi_note, shaped_velocity, key, combined_ratio, stiffness_scale, self.hammer_mass_scale);
+                voice.note_on(
+                    midi_note,
+                    shaped_velocity,
+                    key,
+                    combined_ratio,
+                    stiffness_scale,
+                    self.hammer_mass_scale,
+                );
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
                 return;
             }
@@ -161,7 +168,14 @@ impl GrandBouleEngine {
                 .iter_mut()
                 .max_by_key(|voice| voice.age_samples());
             if let Some(voice) = oldest {
-                voice.note_on(midi_note, shaped_velocity, key, combined_ratio, stiffness_scale, self.hammer_mass_scale);
+                voice.note_on(
+                    midi_note,
+                    shaped_velocity,
+                    key,
+                    combined_ratio,
+                    stiffness_scale,
+                    self.hammer_mass_scale,
+                );
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
             }
             return;
@@ -170,7 +184,14 @@ impl GrandBouleEngine {
         if !voice.is_idle() {
             voice.begin_steal();
         }
-        voice.note_on(midi_note, shaped_velocity, key, combined_ratio, stiffness_scale, self.hammer_mass_scale);
+        voice.note_on(
+            midi_note,
+            shaped_velocity,
+            key,
+            combined_ratio,
+            stiffness_scale,
+            self.hammer_mass_scale,
+        );
         voice.arm_attack(key, self.attack_samples.length_for_key(key));
     }
 
@@ -193,8 +214,7 @@ impl GrandBouleEngine {
     }
 
     pub fn note_off(&mut self, midi_note: u8) {
-        self.noise
-            .trigger(NoiseEvent::DamperLift, 0.5);
+        self.noise.trigger(NoiseEvent::DamperLift, 0.5);
         if let Some(key) = midi_to_key(midi_note) {
             self.pedals.release_key(key);
             // Apply damping immediately — `apply_damper_state` will pick up
@@ -203,7 +223,10 @@ impl GrandBouleEngine {
         let sustain_engaged = self.pedals.sustain_position() > 0.5
             || (self.pedals.sostenuto()
                 && midi_to_key(midi_note)
-                    .map(|k| self.pedals.sostenuto() && self.pedals.damper_bandwidth_for_key(k, false) == 0.0)
+                    .map(|k| {
+                        self.pedals.sostenuto()
+                            && self.pedals.damper_bandwidth_for_key(k, false) == 0.0
+                    })
                     .unwrap_or(false));
         for voice in self.voices.iter_mut() {
             if !voice.is_idle() && voice.midi_note() == midi_note && !sustain_engaged {
@@ -280,8 +303,7 @@ impl GrandBouleEngine {
                 let modelled = voice.tick();
                 let mixed = if let Some((key, pos, length)) = voice.attack_playhead() {
                     let sample = self.attack_samples.sample(key, pos as usize);
-                    let s_gain =
-                        AttackSampleSet::sample_gain(pos as usize, length as usize);
+                    let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);
                     let m_gain = AttackSampleSet::model_gain(pos as usize, length as usize);
                     voice.advance_attack();
                     modelled * m_gain + sample * s_gain
@@ -312,8 +334,8 @@ impl GrandBouleEngine {
             let combined_tilt = (self.tone_tilt + self.tone_color * 0.5).clamp(-1.0, 1.0);
             let tilt_dry = (1.0 - self.soundboard_send) + combined_tilt * 0.5;
             // soundboard_brightness scales how much the soundboard contributes.
-            let tilt_sb = self.soundboard_send * self.soundboard_brightness * 2.0
-                - combined_tilt * 0.5;
+            let tilt_sb =
+                self.soundboard_send * self.soundboard_brightness * 2.0 - combined_tilt * 0.5;
             let mono = bridge * tilt_dry.clamp(0.0, 1.0)
                 + (sb_l + sb_r) * 0.5 * tilt_sb.clamp(0.0, 1.0)
                 + sympathetic
@@ -421,7 +443,9 @@ mod tests {
         engine.note_off(60);
         // Voice should still be Active (not Releasing) because the pedal is down.
         let stages: Vec<_> = engine.voices.iter().map(|v| v.stage()).collect();
-        assert!(stages.iter().any(|s| *s == super::super::voice::VoiceStage::Active));
+        assert!(stages
+            .iter()
+            .any(|s| *s == super::super::voice::VoiceStage::Active));
     }
 
     #[test]
@@ -470,36 +494,40 @@ mod tests {
         assert!(!any_nan, "output contains NaN or Inf");
         assert!(peak_overall > 0.01, "no audio produced");
         assert!(peak_overall < 2.0, "output is clipping: {peak_overall}");
-        assert!(peak_at_1s > 0.0001, "signal is dead at 1 second: {peak_at_1s}");
+        assert!(
+            peak_at_1s > 0.0001,
+            "signal is dead at 1 second: {peak_at_1s}"
+        );
     }
 
     #[test]
     fn model_params_produce_different_output() {
         let block = 512;
         let sr = 48000.0;
-        let measure = |hardness: f32, mass: f32, brightness: f32, body: f32, tone: f32| -> (f32, f32) {
-            let mut engine = GrandBouleEngine::new(sr, 4);
-            engine.set_param("hammer_hardness_scale", hardness);
-            engine.set_param("hammer_mass_scale", mass);
-            engine.set_param("soundboard_brightness", brightness);
-            engine.set_param("body_resonance", body);
-            engine.set_param("tone_color", tone);
-            engine.note_on(60, 0.8);
-            let mut left = vec![0.0_f32; block];
-            let mut right = vec![0.0_f32; block];
-            let mut peak = 0.0_f32;
-            let mut energy = 0.0_f32;
-            for _ in 0..(sr as usize / block) {
-                left.fill(0.0);
-                right.fill(0.0);
-                engine.process_block(&mut left, &mut right);
-                for &s in left.iter() {
-                    peak = peak.max(s.abs());
-                    energy += s * s;
+        let measure =
+            |hardness: f32, mass: f32, brightness: f32, body: f32, tone: f32| -> (f32, f32) {
+                let mut engine = GrandBouleEngine::new(sr, 4);
+                engine.set_param("hammer_hardness_scale", hardness);
+                engine.set_param("hammer_mass_scale", mass);
+                engine.set_param("soundboard_brightness", brightness);
+                engine.set_param("body_resonance", body);
+                engine.set_param("tone_color", tone);
+                engine.note_on(60, 0.8);
+                let mut left = vec![0.0_f32; block];
+                let mut right = vec![0.0_f32; block];
+                let mut peak = 0.0_f32;
+                let mut energy = 0.0_f32;
+                for _ in 0..(sr as usize / block) {
+                    left.fill(0.0);
+                    right.fill(0.0);
+                    engine.process_block(&mut left, &mut right);
+                    for &s in left.iter() {
+                        peak = peak.max(s.abs());
+                        energy += s * s;
+                    }
                 }
-            }
-            (peak, energy)
-        };
+                (peak, energy)
+            };
 
         // Steinway D defaults
         let (peak_s, energy_s) = measure(1.0, 1.0, 0.55, 0.6, 0.0);
@@ -607,7 +635,11 @@ mod tests {
         eprintln!("\n--- C4 decay profile (energy per 100ms window) ---");
         for &t in &[0.0, 0.2, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0] {
             let e = measure_at(60, t);
-            let db = if e > 0.0 { 10.0 * (e as f64).log10() } else { -100.0 };
+            let db = if e > 0.0 {
+                10.0 * (e as f64).log10()
+            } else {
+                -100.0
+            };
             eprintln!("  t={t:.1}s  energy={e:.8}  ({db:.1} dB)");
         }
 

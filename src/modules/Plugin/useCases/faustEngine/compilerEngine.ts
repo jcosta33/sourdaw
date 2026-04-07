@@ -32,7 +32,7 @@ const compilationPromises = new Map<string, Promise<boolean>>();
 /**
  * Registration promise cache to prevent concurrent AudioWorklet registration
  * for the same module on the same AudioContext.
- * 
+ *
  * WeakMap<AudioContext, Map<moduleId, Promise<void>>>
  */
 const registrationPromises = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
@@ -166,7 +166,7 @@ export async function compileAllFaustModules(): Promise<number> {
 
 /**
  * Creates an AudioWorkletNode from a compiled Faust module.
- * 
+ *
  * Uses a WeakMap-based promise cache to ensure that AudioWorklet registration
  * (which happens inside generator.createNode) is serialized per context and module.
  */
@@ -208,24 +208,24 @@ export async function createFaustNode(
 
     try {
         const node = await mod.generator.createNode(context);
-        
+
         // Registration successful (or was already done)
         if (!existingReg) resolveReg!();
-        
+
         return node;
     } catch (error) {
         const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
 
         // If the error is "already registered", it means we collided despite the cache
-        // or faustwasm's internal state is out of sync. We can try to recover by 
-        // assuming it's now registered and just trying again, but faustwasm's 
+        // or faustwasm's internal state is out of sync. We can try to recover by
+        // assuming it's now registered and just trying again, but faustwasm's
         // createNode is what performs both registration and node instantiation.
-        
+
         if (msg.includes('already registered')) {
             // Signal that registration is "done" (even if it failed with "already registered")
             // so other waiters can try to create their nodes.
             if (!existingReg) resolveReg!();
-            
+
             // Try one more time — if it was just a race, it might succeed now.
             try {
                 return await mod.generator.createNode(context);

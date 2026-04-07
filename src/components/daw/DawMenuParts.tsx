@@ -76,7 +76,7 @@ export const DawMenuButton = ({
             {leadingContent}
             <span className="truncate">{children}</span>
         </span>
-        {trailingContent ?? shortcut ? (
+        {(trailingContent ?? shortcut) ? (
             <span className="pl-4 text-[10px] text-muted-foreground">{trailingContent ?? shortcut}</span>
         ) : null}
     </button>

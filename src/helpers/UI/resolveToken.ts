@@ -16,9 +16,13 @@ const VAR_RE = /^var\(\s*(--[^),]+)\s*(?:,\s*(.+))?\)$/;
 
 /**
  * Resolves a color string that may be a `var(--token)` expression to a canvas-safe value.
- * If the input is already a hex/rgb string, returns it unchanged.
+ * If the input is already a hex/rgb/named string, returns it unchanged.
+ * Returns `fallback` when the input is empty or cannot be resolved.
  */
 export function resolveCanvasColor(color: string, fallback: string): string {
+    if (!color) {
+        return fallback;
+    }
     const match = VAR_RE.exec(color);
     if (!match) {
         return color;

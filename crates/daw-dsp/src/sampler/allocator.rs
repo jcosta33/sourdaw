@@ -10,7 +10,6 @@
 ///   3. Releasing voices (in release stage)
 ///   4. Oldest active voice
 ///   5. Quietest active voice
-
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::types::MAX_VOICES;

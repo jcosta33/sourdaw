@@ -13,9 +13,7 @@ type SetGrandBouleSympatheticSendInput = {
     amount: number;
 };
 
-export const setGrandBouleSympatheticSend = (
-    input: SetGrandBouleSympatheticSendInput,
-): void => {
+export const setGrandBouleSympatheticSend = (input: SetGrandBouleSympatheticSendInput): void => {
     const state = grandBouleStore.value;
     if (state === null) {
         return;

@@ -40,7 +40,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                 }
             };
 
-            void runAnalysis();
+            runAnalysis();
         } else {
             setReport('');
         }

@@ -18,7 +18,7 @@ type ClipGainEnvelopeSectionProps = {
 
 export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSectionProps): ReactElement => {
     const [envKey, setEnvKey] = useState(0);
-    void envKey; // used to force re-render when envelope mutates
+    envKey; // used to force re-render when envelope mutates
 
     const envelope = getClipGainEnvelope(clipId);
 

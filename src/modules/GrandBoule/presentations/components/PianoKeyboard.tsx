@@ -14,8 +14,7 @@ const NUM_KEYS = HIGHEST_MIDI - LOWEST_MIDI + 1;
 // Pitch-class offsets that are black keys (C#, D#, F#, G#, A#).
 const BLACK_KEY_CLASSES = new Set([1, 3, 6, 8, 10]);
 
-const isBlackKey = (midiNote: number): boolean =>
-    BLACK_KEY_CLASSES.has(midiNote % 12);
+const isBlackKey = (midiNote: number): boolean => BLACK_KEY_CLASSES.has(midiNote % 12);
 
 type PianoKeyboardProps = {
     onNoteOn: (midiNote: number, velocity: number) => void;
@@ -69,10 +68,10 @@ export const PianoKeyboard = ({
                     className={cn(
                         'absolute top-0 h-[60%] w-[2%] rounded-b-sm border border-black',
                         'bg-zinc-900 hover:bg-zinc-700',
-                        (isPressed || isHighlighted) && 'bg-neutral-500',
+                        (isPressed || isHighlighted) && 'bg-neutral-500'
                     )}
                     style={{ left: `calc(${whiteIndex} * (100% / 52) - 1%)` }}
-                />,
+                />
             );
         } else {
             whiteKeys.push(
@@ -86,9 +85,9 @@ export const PianoKeyboard = ({
                     className={cn(
                         'h-full flex-1 border-r border-zinc-300 bg-white last:border-r-0',
                         'hover:bg-zinc-100',
-                        (isPressed || isHighlighted) && 'bg-neutral-300',
+                        (isPressed || isHighlighted) && 'bg-neutral-300'
                     )}
-                />,
+                />
             );
             whiteIndex += 1;
         }

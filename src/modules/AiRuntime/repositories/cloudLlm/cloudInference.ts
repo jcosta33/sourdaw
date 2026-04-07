@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { mcpToOpenAiTools } from '../../repositories/mcpToolAdapter';
@@ -25,41 +26,44 @@ function getClaudeTools(): Anthropic.Messages.Tool[] {
     }));
 }
 
-export async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
-    const client = getCloudClient();
-    if (!client) {
-        throw new Error('Cloud AI not configured. Set API key first.');
-    }
+export const generateCloudToolCalls = inject({ logger })(
+    ({ logger }) =>
+        async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
+            const client = getCloudClient();
+            if (!client) {
+                throw new Error('Cloud AI not configured. Set API key first.');
+            }
 
-    const response = await client.messages.create({
-        model: CLOUD_MODEL,
-        max_tokens: 2048,
-        system: CLOUD_SYSTEM_PROMPT,
-        tools: getClaudeTools(),
-        messages: [
-            {
-                role: 'user',
-                content: `${projectState}\n\nUser request: ${userMessage}`,
-            },
-        ],
-    });
-
-    const results: ToolCallResult[] = [];
-    for (const block of response.content) {
-        if (block.type === 'tool_use') {
-            results.push({
-                name: block.name,
-                arguments: (block.input ?? {}) as Record<string, unknown>,
+            const response = await client.messages.create({
+                model: CLOUD_MODEL,
+                max_tokens: 2048,
+                system: CLOUD_SYSTEM_PROMPT,
+                tools: getClaudeTools(),
+                messages: [
+                    {
+                        role: 'user',
+                        content: `${projectState}\n\nUser request: ${userMessage}`,
+                    },
+                ],
             });
+
+            const results: ToolCallResult[] = [];
+            for (const block of response.content) {
+                if (block.type === 'tool_use') {
+                    results.push({
+                        name: block.name,
+                        arguments: (block.input ?? {}) as Record<string, unknown>,
+                    });
+                }
+            }
+
+            logger.info(
+                `[Cloud AI] Claude returned ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
+            );
+
+            return results;
         }
-    }
-
-    logger.info(
-        `[Cloud AI] Claude returned ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
-    );
-
-    return results;
-}
+);
 
 export async function streamCloudChatCompletion(
     messages: Array<{ role: string; content: string }>,

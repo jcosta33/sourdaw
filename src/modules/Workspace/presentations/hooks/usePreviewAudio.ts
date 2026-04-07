@@ -31,7 +31,7 @@ export const usePreviewAudio = (): PreviewHandle => {
 
         const ctx = getAudioContext();
         if (ctx.state === 'suspended') {
-            void ctx.resume();
+            ctx.resume();
         }
 
         const source = ctx.createBufferSource();
@@ -61,7 +61,7 @@ export const usePreviewAudio = (): PreviewHandle => {
 
         const ctx = getAudioContext();
         if (ctx.state === 'suspended') {
-            void ctx.resume();
+            ctx.resume();
         }
 
         const osc = ctx.createOscillator();

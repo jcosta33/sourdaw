@@ -5,7 +5,7 @@ import {
     InstrumentCard,
     PROOF_THEME,
     SCORING_THEME,
-    PROOF_CHAMBER_THEME,
+    DUTCH_OVEN_THEME,
     GLUTEN_THEME,
     CRUST_THEME,
 } from '../../components/Sidebar/InstrumentCard';
@@ -249,7 +249,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'Proof');
-                            void eventBus.emit('panel.showProof', { deviceId: device?.id ?? null });
+                            eventBus.emit('panel.showProof', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={PROOF_THEME}
@@ -263,7 +263,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'gluten');
-                            void eventBus.emit('panel.showGluten', { deviceId: device?.id ?? null });
+                            eventBus.emit('panel.showGluten', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={GLUTEN_THEME}
@@ -277,7 +277,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             addDevice(selectedTrackId, 'crust');
-                            void eventBus.emit('panel.showCrust', { deviceId: null });
+                            eventBus.emit('panel.showCrust', { deviceId: null });
                         }
                     }}
                     theme={CRUST_THEME}
@@ -291,10 +291,10 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             addDevice(selectedTrackId, 'dutch-oven');
-                            void eventBus.emit('panel.showDutchOven', { deviceId: null });
+                            eventBus.emit('panel.showDutchOven', { deviceId: null });
                         }
                     }}
-                    theme={PROOF_CHAMBER_THEME}
+                    theme={DUTCH_OVEN_THEME}
                 />
 
                 <InstrumentCard
@@ -305,7 +305,7 @@ export const StageTab = ({
                     onClick={() => {
                         if (selectedTrackId) {
                             const device = addDevice(selectedTrackId, 'native-scoring');
-                            void eventBus.emit('panel.showScoring', { deviceId: device?.id ?? null });
+                            eventBus.emit('panel.showScoring', { deviceId: device?.id ?? null });
                         }
                     }}
                     theme={SCORING_THEME}

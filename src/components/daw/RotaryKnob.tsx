@@ -1,4 +1,4 @@
-import { type ReactElement, type PointerEvent, useRef } from 'react';
+import { type MouseEvent, type ReactElement, type PointerEvent, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { useStore } from '#/infra/store/useStore';
 import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
@@ -85,7 +85,9 @@ export const RotaryKnob = ({
         if (event.button !== 0) {
             return;
         }
-        event.currentTarget.setPointerCapture(event.pointerId);
+        if (typeof event.currentTarget.setPointerCapture === 'function') {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
         draggingRef.current = true;
         startY.current = event.clientY;
         startValue.current = value;
@@ -110,7 +112,9 @@ export const RotaryKnob = ({
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
         draggingRef.current = false;
-        event.currentTarget.releasePointerCapture(event.pointerId);
+        if (typeof event.currentTarget.releasePointerCapture === 'function') {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
         rootRef.current?.removeAttribute('data-dragging');
     };
 
@@ -118,7 +122,7 @@ export const RotaryKnob = ({
         onChange(defaultValue);
     };
 
-    const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
         if (paramId && targetType) {
             e.preventDefault();
             startMidiLearn({

@@ -17,49 +17,53 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 ## User-visible behavior
 
 ### Track Mode Selection
+
 - Each track has a **Bed/Object toggle** in the output window/track header
 - **Bed mode**: Channel-based routing (7.1.2 max), fixed speaker mapping
-  - Panner cursor color: **green**
-  - Circular panner shape (following Logic Pro convention)
-- **Object mode**: Position-automated, metadata-driven  
-  - Panner cursor color: **orange**
-  - **Yellow** when automation is off
-  - Square panner shape (following Logic Pro convention)
-  - Small arrow next to object selector indicates metadata status: green = actively sending to renderer, grey = inactive
+    - Panner cursor color: **green**
+    - Circular panner shape (following Logic Pro convention)
+- **Object mode**: Position-automated, metadata-driven
+    - Panner cursor color: **orange**
+    - **Yellow** when automation is off
+    - Square panner shape (following Logic Pro convention)
+    - Small arrow next to object selector indicates metadata status: green = actively sending to renderer, grey = inactive
 - Object tracks display an **object number badge** (1–118 available slots, 10 reserved for bed)
 - **Session object budget display** shows "X of 128 objects used" in the transport bar
 - Users manage budget by submixing multiple sources to shared object buses
 
 ### 3D Panner UI
-- **Top View / Hemisphere view**: 
-  - Top-down rectangular field for Left/Right and Front/Back positioning
-  - Draggable position puck
-  - Height encoded as puck size (following Nuendo convention)
+
+- **Top View / Hemisphere view**:
+    - Top-down rectangular field for Left/Right and Front/Back positioning
+    - Draggable position puck
+    - Height encoded as puck size (following Nuendo convention)
 - **Rear View**: XZ panning view (optional, following Nuendo)
-- **Elevation control**: 
-  - Separate slider (-90° to +90°) 
-  - Visual height indicator with ascending line (following Pro Tools)
+- **Elevation control**:
+    - Separate slider (-90° to +90°)
+    - Visual height indicator with ascending line (following Pro Tools)
 - **Distance control**: Near-field distance adjustment (0.5–2.0 normalized)
 - **Size control**: Source size parameter (following Logic Pro)
 - **Spread control**: MDAP spread angle (0°–90°) for source width
-  - Visual feedback on hemisphere as ring radius
-  - 0° = standard VBAP, 10–25° = natural point-source width, 90°+ = ambient diffusion
+    - Visual feedback on hemisphere as ring radius
+    - 0° = standard VBAP, 10–25° = natural point-source width, 90°+ = ambient diffusion
 - **LFE send**: Independent subwoofer send level (excluded from VBAP panning)
-- **Theater View / Renderer Window**: 
-  - Rotatable 3D cube visualization showing all object positions as dots
-  - Green height plane indicator (following Pro Tools)
-  - Centralized panel listing every bed and object with IDs, source tracks, and binaural render mode settings (following Nuendo ADM Authoring window)
+- **Theater View / Renderer Window**:
+    - Rotatable 3D cube visualization showing all object positions as dots
+    - Green height plane indicator (following Pro Tools)
+    - Centralized panel listing every bed and object with IDs, source tracks, and binaural render mode settings (following Nuendo ADM Authoring window)
 - **Numeric input fields**: XYZ coordinate fields for precise positioning
 - Color-coded handles: blue for mono, yellow/red for stereo L/R (following Nuendo)
 - Color coding follows Pro Tools convention: green = bed, orange = object, grey = inactive
 
 ### Monitoring
+
 - **Format selector dropdown** in control room: 7.1.4, 5.1.4, 5.1, stereo, binaural
 - Simultaneous speaker + headphone monitoring when interface has sufficient outputs
 - Binaural mode uses hybrid rendering: direct HRTF for lead sources, 3rd-order Ambisonics for bed/ambient
 - Per-object binaural render mode (near/far) accessible in object inspector
 
 ### Export
+
 - **Export dialog** gains "ADM BWF (Dolby Atmos)" format option
 - ADM export renders bed to tracks 1–10 (L, R, C, LFE, Ls, Rs, Lrs, Rrs, Ltf, Rtf), objects to tracks 11–N
 - XML metadata contains `audioBlockFormat` elements with timestamped position automation
@@ -98,6 +102,7 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 ## Requirements
 
 ### R1: Bed/Object Track Mode
+
 - **R1.1**: Each track has an `atmosMode` field: `'bed' | 'object' | 'off'` (default `'off'`)
 - **R1.2**: Bed mode consumes fixed bed slots (7.1.2 = 10 tracks: L, R, C, LFE, Ls, Rs, Lrs, Rrs, Ltf, Rtf) shared across all bed-mode tracks
 - **R1.3**: Object mode assigns a unique object ID (1–118) from the session budget pool
@@ -108,6 +113,7 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R1.8**: Object metadata status indicator: green arrow = actively sending to renderer, grey = inactive
 
 ### R2: 3D Position Parameters
+
 - **R2.1**: Object tracks expose: `azimuth` (-180° to +180°), `elevation` (-90° to +90°), `distance` (0.5–2.0)
 - **R2.2**: All position parameters are automatable with existing automation system
 - **R2.3**: Bed tracks use standard stereo/surround panner; 3D controls disabled
@@ -115,9 +121,10 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R2.5**: Size parameter for source width control (0.0–1.0)
 
 ### R3: VBAP Speaker Rendering
-- **R3.1**: 7.1.4 speaker layout (ITU-R BS.2051 System C): 
-  - Ear level: L, R, C, LFE, Ls, Rs, Lrs, Rrs at 0°, ±30°, ±90°, ±135° azimuth (0° elevation)
-  - Height: Ltf, Rtf, Ltr, Rtr at ±45°, ±135° azimuth (30–45° elevation)
+
+- **R3.1**: 7.1.4 speaker layout (ITU-R BS.2051 System C):
+    - Ear level: L, R, C, LFE, Ls, Rs, Lrs, Rrs at 0°, ±30°, ±90°, ±135° azimuth (0° elevation)
+    - Height: Ltf, Rtf, Ltr, Rtr at ±45°, ±135° azimuth (30–45° elevation)
 - **R3.2**: VBAP matrix equation: **g̃ = L⁻¹ · p**, where L = [l₁ | l₂ | l₃] is 3×3 matrix of speaker unit vectors
 - **R3.3**: Power normalization: **gᵢ = g̃ᵢ / √(g̃₁² + g̃₂² + g̃₃²)** (preferred over amplitude normalization for reverberant rooms)
 - **R3.4**: Cartesian conversion: `x = cos(θ)cos(φ)`, `y = sin(θ)cos(φ)`, `z = sin(φ)`
@@ -131,72 +138,75 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R3.12**: Alternative: exponential smoothing with 5–10 ms time constant
 - **R3.13**: LFE send is separate gain parameter, excluded from VBAP normalization (spatial panning meaningless below ~80 Hz)
 - **R3.14**: MDAP spread generates 8 auxiliary virtual sources at angular distance α:
-  - **auxₖ = cos(α)·p + sin(α)·(cos(2πk/N)·u + sin(2πk/N)·v)** where u, v are orthonormal basis ⊥ to p
+    - **auxₖ = cos(α)·p + sin(α)·(cos(2πk/N)·u + sin(2πk/N)·v)** where u, v are orthonormal basis ⊥ to p
 - **R3.15**: MDAP results summed and power-normalized
 
 ### R4: HRTF Binaural Monitoring
+
 - **R4.1**: HRTF dataset options (choose one to bundle):
-  - **Bernschütz KU100**: 16,020 measurement positions, full-sphere Gauss quadrature, 48 kHz (ideal for SH decomposition)
-  - **Bernschütz KU100 HRIR_L2702**: 2,702-point Lebedev grid (recommended for production)
-  - **SADIE II**: 8,802 positions, 44.1/48/96 kHz, diffuse-field compensated (used by YouTube 360)
+    - **Bernschütz KU100**: 16,020 measurement positions, full-sphere Gauss quadrature, 48 kHz (ideal for SH decomposition)
+    - **Bernschütz KU100 HRIR_L2702**: 2,702-point Lebedev grid (recommended for production)
+    - **SADIE II**: 8,802 positions, 44.1/48/96 kHz, diffuse-field compensated (used by YouTube 360)
 - **R4.2**: SOFA format (AES69) support: NetCDF4/HDF5 container with shape [M × R × N] (measurements × receivers × samples)
 - **R4.3**: Barycentric interpolation on triangulated HRIR grid (Delaunay on sphere) for per-object rendering
 - **R4.4**: ITD extraction/removal/re-application after interpolation to prevent comb-filtering artifacts
 - **R4.5**: Hybrid rendering: ≤16 priority sources use direct HRTF convolution; remainder via 3rd-order Ambisonics
 - **R4.6**: Priority determined by: soloed tracks first, then by track order (top = highest priority)
-- **R4.7**: Uniformly partitioned overlap-save convolution (UPOLS): 
-  - 256-tap HRIR with 128-sample buffer → P = 2 partitions
-  - FFT size 2B = 256, real-valued FFT via `realfft` crate (129 complex coefficients)
-  - Latency: 128 samples = **2.67 ms at 48 kHz**
+- **R4.7**: Uniformly partitioned overlap-save convolution (UPOLS):
+    - 256-tap HRIR with 128-sample buffer → P = 2 partitions
+    - FFT size 2B = 256, real-valued FFT via `realfft` crate (129 complex coefficients)
+    - Latency: 128 samples = **2.67 ms at 48 kHz**
 - **R4.8**: 3rd-order Ambisonics: 16 channels, 32 convolutions (2 ears), break-even at 16 objects
 - **R4.9**: MagLS decoding (Magnitude Least Squares) for Ambisonics path:
-  - Optimizes only HRTF magnitude above spatial aliasing frequency (~2 kHz at order 3)
-  - Perceptually near-equivalent to direct HRTF convolution per Engel et al. (Acta Acustica 2022)
+    - Optimizes only HRTF magnitude above spatial aliasing frequency (~2 kHz at order 3)
+    - Perceptually near-equivalent to direct HRTF convolution per Engel et al. (Acta Acustica 2022)
 - **R4.10**: `sofar` crate for SOFA reading + built-in partitioned convolution renderer
 - **R4.11**: `realfft` crate (v3.5) wrapping `rustfft` (v6.4) for real-valued transforms
 - **R4.12**: Shared FFT plans (Arc<FftPlans>) across convolvers
 
 ### R5: ADM BWF Export
+
 - **R5.1**: Export format option "ADM BWF (Dolby Atmos)" in ExportDialog
 - **R5.2**: ADM XML schema (ITU-R BS.2076-3) with two-part hierarchy:
-  - **Content part**: `audioProgramme` → `audioContent` (semantic groupings) → `audioObject`
-  - **Format part**: `audioObject` → `audioPackFormat` → `audioChannelFormat` → `audioBlockFormat`
+    - **Content part**: `audioProgramme` → `audioContent` (semantic groupings) → `audioObject`
+    - **Format part**: `audioObject` → `audioPackFormat` → `audioChannelFormat` → `audioBlockFormat`
 - **R5.3**: `audioBlockFormat` structure with timestamped position data:
-  ```xml
-  <audioBlockFormat audioBlockFormatID="AB_00031001_00000001"
-                    rtime="00:00:00.00000" duration="00:00:02.00000">
-    <position coordinate="azimuth">-90.0</position>
-    <position coordinate="elevation">30.0</position>
-    <position coordinate="distance">1.0</position>
-    <gain>1.0</gain>
-    <width>0.2</width>
-    <height>0.1</height>
-    <depth>0.0</depth>
-  </audioBlockFormat>
-  ```
+    ```xml
+    <audioBlockFormat audioBlockFormatID="AB_00031001_00000001"
+                      rtime="00:00:00.00000" duration="00:00:02.00000">
+      <position coordinate="azimuth">-90.0</position>
+      <position coordinate="elevation">30.0</position>
+      <position coordinate="distance">1.0</position>
+      <gain>1.0</gain>
+      <width>0.2</width>
+      <height>0.1</height>
+      <depth>0.0</depth>
+    </audioBlockFormat>
+    ```
 - **R5.4**: `rtime` and `duration` create timeline of spatial automation; moving objects generate sequence of blocks
 - **R5.5**: Bed tracks: typeDefinition **0001 (DirectSpeakers)**, reference common definition AP_00010017 (7.1.2 pack)
 - **R5.6**: Object tracks: typeDefinition **0003 (Objects)** with custom pack/format/stream/track definitions
 - **R5.7**: RIFF chunk structure:
-  - `fmt`: WAVE_FORMAT_EXTENSIBLE (tag 0xFFFE), 24-bit PCM at 48 kHz, channelMask = 0
-  - `chna`: 40 bytes per entry — 2 bytes track index + 12 bytes UID ("ATU_xxxxxxxx") + 14 bytes track format ref + 11 bytes pack format ref + 1 byte padding
-  - `axml`: Complete ADM XML as raw UTF-8 bytes
-  - `dbmd` (optional): Dolby metadata (renderer version, downmix settings, per-object binaural distance mode)
+    - `fmt`: WAVE_FORMAT_EXTENSIBLE (tag 0xFFFE), 24-bit PCM at 48 kHz, channelMask = 0
+    - `chna`: 40 bytes per entry — 2 bytes track index + 12 bytes UID ("ATU_xxxxxxxx") + 14 bytes track format ref + 11 bytes pack format ref + 1 byte padding
+    - `axml`: Complete ADM XML as raw UTF-8 bytes
+    - `dbmd` (optional): Dolby metadata (renderer version, downmix settings, per-object binaural distance mode)
 - **R5.8**: Standard channel layout: bed in tracks 1–10, objects in tracks 11–N
 - **R5.9**: Maximum 128 total tracks at 48 kHz (64 at 96 kHz)
 - **R5.10**: Bed format maxes at 7.1.2 (not 7.1.4); 7.1.4 is monitoring/rendering target only
 - **R5.11**: Dolby Atmos Master ADM Profile v1.1 constraints:
-  - Only one `audioProgramme` element permitted
-  - Only DirectSpeakers (0001) and Objects (0003) allowed (no HOA or Matrix)
-  - Max 10 `audioChannelFormatIDRef` per DirectSpeakers pack
-  - Exactly 1 `audioChannelFormatIDRef` per Objects pack
-  - Default naming: "Atmos_Bed_M" for beds, "Atmos_Obj_N" for objects
+    - Only one `audioProgramme` element permitted
+    - Only DirectSpeakers (0001) and Objects (0003) allowed (no HOA or Matrix)
+    - Max 10 `audioChannelFormatIDRef` per DirectSpeakers pack
+    - Exactly 1 `audioChannelFormatIDRef` per Objects pack
+    - Default naming: "Atmos_Bed_M" for beds, "Atmos_Obj_N" for objects
 - **R5.12**: BW64 container (ITU-R BS.2088) with `ds64` chunk for files >4 GB
 - **R5.13**: `quick-xml` streaming writer for XML generation (not DOM)
 - **R5.14**: Manual RIFF construction: `std::io::Write` + `Seek` + `BufWriter`
 - **R5.15**: RIFF word-alignment padding: odd-length chunks get trailing zero byte
 
 ### R6: 3D Panner UI
+
 - **R6.1**: Top View: top-down grid with draggable position puck, height encoded as puck size
 - **R6.2**: Rear View: XZ panning view (optional)
 - **R6.3**: Elevation slider (-90° to +90°) with ascending line indicator linking to view
@@ -210,6 +220,7 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R6.11**: ADM Authoring window: centralized panel listing every bed and object with IDs, source tracks, binaural render mode
 
 ### R7: Object Budget Management
+
 - **R7.1**: Session-wide object pool: 118 available IDs (10 reserved for 7.1.2 bed)
 - **R7.2**: Transport bar displays "X/128 objects" with visual indicator (green <80%, yellow 80–100%, red = full)
 - **R7.3**: Attempting to assign object mode when pool exhausted: DAW does not offer additional object routing paths (structural enforcement, not warning dialogs)
@@ -217,6 +228,7 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R7.5**: Users manage budget by submixing multiple sources to shared object buses
 
 ### R8: Monitoring Integration
+
 - **R8.1**: Control room monitoring format selector includes: 7.1.4, 5.1.4, 5.1, stereo, binaural
 - **R8.2**: Speaker mode renders VBAP to physical outputs; binaural mode renders HRTF to headphone outputs
 - **R8.3**: Simultaneous output when audio interface has sufficient channels (separate speaker/phone mixes)
@@ -235,9 +247,9 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 6. **Must support 48kHz/24-bit**: Primary target for Atmos delivery
 7. **Must handle up to 128 objects**: Memory and CPU planning must accommodate full object budget
 8. **Three processing rates**:
-   - **Control rate** (per audio block, 2–10 ms): VBAP gain computation, HRTF filter selection/interpolation, Ambisonics encoding coefficients
-   - **Audio rate** (per sample): Gain interpolation and application for VBAP, partitioned convolution for binaural rendering
-   - **Offline** (at bounce/export): ADM XML serialization, chna chunk construction, multi-channel interleaved PCM writing
+    - **Control rate** (per audio block, 2–10 ms): VBAP gain computation, HRTF filter selection/interpolation, Ambisonics encoding coefficients
+    - **Audio rate** (per sample): Gain interpolation and application for VBAP, partitioned convolution for binaural rendering
+    - **Offline** (at bounce/export): ADM XML serialization, chna chunk construction, multi-channel interleaved PCM writing
 
 ---
 
@@ -248,6 +260,7 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 **Chosen:** Direct HRTF convolution for ≤16 priority sources + 3rd-order Ambisonics for remainder
 
 **Rationale:**
+
 - Per-object HRTF scales linearly: N objects × 2 convolutions
 - At 60 objects = 120 convolutions — prohibitively expensive
 - 3rd-order Ambisonics = 16 channels = 32 fixed convolutions regardless of object count
@@ -255,6 +268,7 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - MagLS decoding provides perceptually equivalent quality to direct HRTF (Engel et al. 2022)
 
 **Considered and rejected:**
+
 - Pure direct HRTF: Too CPU-intensive for many objects
 - Pure Ambisonics: Lower spatial accuracy for lead sources (vocals, featured instruments)
 - Higher-order Ambisonics (5th = 36 channels, 7th = 64 channels): Diminishing returns, higher convolution cost
@@ -264,12 +278,14 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 **Chosen:** Real-time computation per control block (linear search through ~20 triplets)
 
 **Rationale:**
+
 - 7.1.4 layout produces ~16–22 valid triplets after convex hull
 - Linear search = few dozen multiply-adds — negligible at control rate
 - Lookup table (1° resolution = 65,160 entries) only justified for hundreds of sources
 - Simpler implementation, no interpolation artifacts at triangle boundaries
 
 **Considered and rejected:**
+
 - Precomputed lookup table: Unnecessary memory for small triplet count
 - GPU compute: Overkill for control-rate task, adds complexity
 
@@ -278,11 +294,13 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 **Chosen:** Barycentric interpolation on triangulated HRIR grid for per-object; Spherical Harmonics for Ambisonics decoding
 
 **Rationale:**
+
 - Barycentric offers best quality-to-cost ratio for per-object rendering
 - ITD extraction/removal/re-application prevents comb-filtering artifacts
 - Reserve SH interpolation for Ambisonics path where it's most efficient
 
 **Considered and rejected:**
+
 - Nearest-neighbor with crossfade: Simple but produces audible jumps at measurement boundaries
 - Spherical harmonics for per-object: Overkill, better for Ambisonics path
 
@@ -291,12 +309,14 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 **Chosen:** Manual RIFF writing using `std::io::Write` + `quick-xml` for XML
 
 **Rationale:**
+
 - No Rust crate supports custom RIFF chunks (`axml`, `chna`, `dbmd`)
 - `hound` crate (v3.5) handles standard WAV but cannot write custom chunks
 - Manual construction provides full control over byte-level layout for Dolby compliance
 - Use `BufWriter` for performance; handle RIFF word-alignment padding
 
 **Considered and rejected:**
+
 - Using `hound` with extensions: Crate doesn't support custom chunks
 - Wrapping external tool (ffmpeg): Adds dependency, less control over metadata
 
@@ -305,11 +325,13 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 **Chosen:** Support multiple beds like Pro Tools/Nuendo (not Logic's single bed limitation)
 
 **Rationale:**
+
 - Multiple beds provides greater flexibility for complex mixes
 - 7.1.2 bed format maxes at 10 channels regardless of bed count
 - Users can organize different instrument groups into separate beds
 
 **Considered and rejected:**
+
 - Single bed per project (Logic approach): Simpler mental model but limits flexibility
 
 ---
@@ -483,15 +505,15 @@ Offline (export):
 
 ## Tradeoffs and risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| HRTF dataset size (50MB+) increases bundle size | Download/install friction | Lazy-load dataset on first Atmos track creation |
-| VBAP/HOA CPU usage on lower-end machines | Dropouts during complex mixes | Quality slider: reduce Ambisonics order or MDAP spread |
-| ADM export complexity (manual RIFF) | Potential format incompatibilities | Extensive validation testing with Dolby tools |
-| Object budget confusion (128 vs 118 vs 10) | User error, unexpected limits | Clear UI explaining bed = shared (10 ch), object = individual |
-| Binaural vs speaker monitoring discrepancy | Mix decisions don't translate | A/B comparison feature, translation check utility |
-| ITD handling in HRTF interpolation | Comb-filtering artifacts if wrong | Implement extract/remove/re-apply workflow per research |
-| Bed limited to 7.1.2 not 7.1.4 | User confusion about height channels | Document that 7.1.4 is monitoring target, 7.1.2 is bed format |
+| Risk                                            | Impact                               | Mitigation                                                    |
+| ----------------------------------------------- | ------------------------------------ | ------------------------------------------------------------- |
+| HRTF dataset size (50MB+) increases bundle size | Download/install friction            | Lazy-load dataset on first Atmos track creation               |
+| VBAP/HOA CPU usage on lower-end machines        | Dropouts during complex mixes        | Quality slider: reduce Ambisonics order or MDAP spread        |
+| ADM export complexity (manual RIFF)             | Potential format incompatibilities   | Extensive validation testing with Dolby tools                 |
+| Object budget confusion (128 vs 118 vs 10)      | User error, unexpected limits        | Clear UI explaining bed = shared (10 ch), object = individual |
+| Binaural vs speaker monitoring discrepancy      | Mix decisions don't translate        | A/B comparison feature, translation check utility             |
+| ITD handling in HRTF interpolation              | Comb-filtering artifacts if wrong    | Implement extract/remove/re-apply workflow per research       |
+| Bed limited to 7.1.2 not 7.1.4                  | User confusion about height channels | Document that 7.1.4 is monitoring target, 7.1.2 is bed format |
 
 **What was considered and rejected:**
 

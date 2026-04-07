@@ -29,7 +29,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
     const close = closeUndoHistory;
 
     const handleClick = (index: number) => {
-        void undoToIndex(index);
+        undoToIndex(index);
     };
 
     const pastCount = state.past.length;

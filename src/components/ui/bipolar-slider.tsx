@@ -65,6 +65,7 @@ export const BipolarSlider = ({
                 />
 
                 <Slider
+                    aria-label={label ?? 'Bipolar value'}
                     value={[normalized]}
                     onValueChange={handleChange}
                     max={100}

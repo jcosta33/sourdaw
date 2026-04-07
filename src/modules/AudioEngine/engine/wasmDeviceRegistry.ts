@@ -34,7 +34,6 @@ import {
 } from '#/modules/Levain/useCases/levainParamBridge';
 import { setEngineReady } from '#/modules/Levain/stores/levainStore';
 
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type WasmDeviceCreateDeps = {
@@ -142,7 +141,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
             .catch((err) => logger.warn(`[WebAudioEngine] Toaster failed: ${err}`));
         return { placeholder, loadPromise };
@@ -478,7 +477,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
             .catch((err) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${err}`));
         return { placeholder, loadPromise };

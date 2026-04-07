@@ -33,8 +33,8 @@ function SectionCard({
             title={title}
             detail={detail}
             detailMode="badge"
-            titleClassName="text-[var(--color-accent-mint)]/72"
-            detailClassName="text-[var(--color-accent-mint)]"
+            titleClassName="text-[var(--color-accent-indigo)]/72"
+            detailClassName="text-[var(--color-accent-indigo)]"
         >
             {children}
         </DawPluginSectionCard>

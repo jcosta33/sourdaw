@@ -179,7 +179,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                        void handleImportAudio(file);
+                        handleImportAudio(file);
                     }
                     e.target.value = '';
                 }}
@@ -192,7 +192,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                        void importMidiFile(file);
+                        importMidiFile(file);
                     }
                     e.target.value = '';
                     close();

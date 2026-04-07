@@ -17,10 +17,7 @@ export const TimelineChromeSurface = ({
     children,
     ...props
 }: TimelineChromeSurfaceProps): ReactElement => (
-    <div
-        className={cn('relative w-full shrink-0 overflow-hidden', TONE_CLASS_NAMES[tone], className)}
-        {...props}
-    >
+    <div className={cn('relative w-full shrink-0 overflow-hidden', TONE_CLASS_NAMES[tone], className)} {...props}>
         {children}
     </div>
 );

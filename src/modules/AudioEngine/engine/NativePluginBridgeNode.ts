@@ -67,7 +67,7 @@ export async function createNativePluginBridgeNode(
         workletNode: node,
         setParam(paramId: number, value: number) {
             if (isTauri()) {
-                void tauriInvoke('set_plugin_parameter', {
+                tauriInvoke('set_plugin_parameter', {
                     instanceId,
                     paramId,
                     value,

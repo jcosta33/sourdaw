@@ -21,7 +21,7 @@ export const VoiceButton = (): ReactElement | null => {
     const active = voice.isListening || voice.transcribing;
 
     const handleClick = () => {
-        void eventBus.emit('voice.toggle', { active: undefined });
+        eventBus.emit('voice.toggle', { active: undefined });
     };
 
     return (

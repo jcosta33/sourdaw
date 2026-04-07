@@ -1,4 +1,4 @@
-import { type ReactElement, type PointerEvent, useState, useRef } from 'react';
+import { type ReactElement, type PointerEvent, useRef, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
 type ValueFieldProps = {
@@ -32,6 +32,7 @@ export const ValueField = ({
     className,
 }: ValueFieldProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
+    const draggingRef = useRef(false);
     const startY = useRef(0);
     const startValue = useRef(value);
 
@@ -39,14 +40,17 @@ export const ValueField = ({
         if (event.button !== 0) {
             return;
         } // Only left click
-        event.currentTarget.setPointerCapture(event.pointerId);
+        if (typeof event.currentTarget.setPointerCapture === 'function') {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+        draggingRef.current = true;
         setIsDragging(true);
         startY.current = event.clientY;
         startValue.current = value;
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-        if (!isDragging) {
+        if (!draggingRef.current) {
             return;
         }
 
@@ -72,8 +76,11 @@ export const ValueField = ({
     };
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+        draggingRef.current = false;
         setIsDragging(false);
-        event.currentTarget.releasePointerCapture(event.pointerId);
+        if (typeof event.currentTarget.releasePointerCapture === 'function') {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
     };
 
     const handleDoubleClick = () => {

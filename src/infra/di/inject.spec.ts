@@ -14,7 +14,9 @@ describe('inject', () => {
 
     it('should resolve class-token dependencies correctly', () => {
         class MyService {
-            getValue() { return 'hello'; }
+            getValue() {
+                return 'hello';
+            }
         }
         Container.register(MyService, new MyService());
 

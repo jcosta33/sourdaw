@@ -5,39 +5,43 @@
  * into the audio engine strip.
  */
 
+import { inject } from '#/infra/di/inject';
 import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
-import { eventBus } from '#/app/bootstrap';
+import { eventBus } from '#/app/registerDependencies';
 
-export const createGrandBouleTrack = (): string | null => {
-    const state = getTrackStoreState();
-    if (state === null) {
-        return null;
-    }
+export const createGrandBouleTrack = inject({ eventBus })(
+    ({ eventBus }) =>
+        function createGrandBouleTrack(): string | null {
+            const state = getTrackStoreState();
+            if (state === null) {
+                return null;
+            }
 
-    const track = createTrack({ name: 'Grand Boule', kind: 'midi' });
-    const deviceId = `grand-boule-${crypto.randomUUID().slice(0, 8)}`;
-    track.devices = [
-        {
-            id: deviceId,
-            name: 'Grand Boule',
-            type: 'grand-boule',
-            bypassed: false,
-            parameterValues: {},
-        },
-    ];
+            const track = createTrack({ name: 'Grand Boule', kind: 'midi' });
+            const deviceId = `grand-boule-${crypto.randomUUID().slice(0, 8)}`;
+            track.devices = [
+                {
+                    id: deviceId,
+                    name: 'Grand Boule',
+                    type: 'grand-boule',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ];
 
-    setTrackStoreState({
-        ...state,
-        tracks: [...state.tracks, track],
-        selectedTrackId: track.id,
-    });
+            setTrackStoreState({
+                ...state,
+                tracks: [...state.tracks, track],
+                selectedTrackId: track.id,
+            });
 
-    addDeviceToStrip(track.id, deviceId, 'grand-boule');
+            addDeviceToStrip(track.id, deviceId, 'grand-boule');
 
-    void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
 
-    return track.id;
-};
+            return track.id;
+        }
+);

@@ -16,8 +16,7 @@ const LOWEST_MIDI = 21; // A0
 const NUM_KEYS = 88;
 const BLACK_KEY_CLASSES = new Set([1, 3, 6, 8, 10]);
 
-const isBlackKey = (midi: number): boolean =>
-    BLACK_KEY_CLASSES.has(midi % 12);
+const isBlackKey = (midi: number): boolean => BLACK_KEY_CLASSES.has(midi % 12);
 
 // Count white keys for layout
 const NUM_WHITE_KEYS = (() => {
@@ -115,8 +114,14 @@ function buildProgram(gl: WebGL2RenderingContext): WebGLProgram | null {
 /** Push a quad (two triangles) into the vertex buffer. */
 function pushQuad(
     buf: number[],
-    x: number, y: number, w: number, h: number,
-    r: number, g: number, b: number, a: number,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number
 ): void {
     // Each vertex: x, y, r, g, b, a  (6 floats)
     const x2 = x + w;
@@ -134,9 +139,15 @@ function pushQuad(
 /** Push a skewed quad for fake perspective (top edge narrower). */
 function pushSkewQuad(
     buf: number[],
-    x: number, y: number, w: number, h: number,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
     skew: number,
-    r: number, g: number, b: number, a: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number
 ): void {
     const x2 = x + w;
     const y2 = y + h;
@@ -153,11 +164,7 @@ function pushSkewQuad(
 }
 
 /** Push a thin horizontal line as a 1px-high quad. */
-function pushLine(
-    buf: number[],
-    x1: number, y: number, x2: number,
-    r: number, g: number, b: number, a: number,
-): void {
+function pushLine(buf: number[], x1: number, y: number, x2: number, r: number, g: number, b: number, a: number): void {
     pushQuad(buf, x1, y, x2 - x1, 1.2, r, g, b, a);
 }
 
@@ -171,7 +178,7 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
     const keyAreaY = bodyY + bodyH * 0.72;
     const keyAreaH = bodyH * 0.22;
     const strX = bodyX + bodyW * 0.06;
-    const whiteW = bodyW * 0.88 / NUM_WHITE_KEYS;
+    const whiteW = (bodyW * 0.88) / NUM_WHITE_KEYS;
 
     // Outside key area vertically?
     if (canvasY < keyAreaY || canvasY > keyAreaY + keyAreaH) return null;
@@ -229,7 +236,7 @@ export const PianoModel3D = ({
             keyDepress: 0,
             damperLift: 0,
             stringVib: 0,
-        })),
+        }))
     );
     const prevNotesRef = useRef<ReadonlyMap<number, number>>(new Map());
     const lidRef = useRef(lidPosition);
@@ -297,7 +304,7 @@ export const PianoModel3D = ({
                 a.keyDepress += (targetDepress - a.keyDepress) * 0.25;
 
                 // Damper: lifted when note held OR sustain pedal engaged
-                const targetDamper = (isHeld || sustainPedal > 0.3) ? 1.0 : 0.0;
+                const targetDamper = isHeld || sustainPedal > 0.3 ? 1.0 : 0.0;
                 a.damperLift += (targetDamper - a.damperLift) * 0.15;
 
                 // String vibration: energised while held or damper up
@@ -329,8 +336,7 @@ export const PianoModel3D = ({
             const buf: number[] = [];
 
             // --- Piano body (skewed trapezoid) ---
-            pushSkewQuad(buf, bodyX, bodyY, bodyW, bodyH, skew,
-                ...BODY_COLOR, 1);
+            pushSkewQuad(buf, bodyX, bodyY, bodyW, bodyH, skew, ...BODY_COLOR, 1);
 
             // --- Strings ---
             const strX = bodyX + bodyW * 0.06;
@@ -346,14 +352,13 @@ export const PianoModel3D = ({
                     const b = STRING_REST[2] + (AMBER[2] - STRING_REST[2]) * mix;
                     pushLine(buf, strX, y, strX + strW, r, g, b, 0.5 + mix * 0.5);
                 } else {
-                    pushLine(buf, strX, y, strX + strW,
-                        ...STRING_REST, 0.2);
+                    pushLine(buf, strX, y, strX + strW, ...STRING_REST, 0.2);
                 }
             }
 
             // --- Damper rail ---
             let whiteIdx = 0;
-            const whiteW = bodyW * 0.88 / NUM_WHITE_KEYS;
+            const whiteW = (bodyW * 0.88) / NUM_WHITE_KEYS;
             for (let i = 0; i < NUM_KEYS; i += 1) {
                 const midi = LOWEST_MIDI + i;
                 const a = anims[i]!;
@@ -402,8 +407,7 @@ export const PianoModel3D = ({
                 const cr = WHITE_KEY[0] + (WHITE_KEY_PRESSED[0] - WHITE_KEY[0]) * a.keyDepress;
                 const cg = WHITE_KEY[1] + (WHITE_KEY_PRESSED[1] - WHITE_KEY[1]) * a.keyDepress;
                 const cb = WHITE_KEY[2] + (WHITE_KEY_PRESSED[2] - WHITE_KEY[2]) * a.keyDepress;
-                pushQuad(buf, kx + 0.5, keyAreaY + depress, whiteW - 1, keyAreaH - depress,
-                    cr, cg, cb, 1);
+                pushQuad(buf, kx + 0.5, keyAreaY + depress, whiteW - 1, keyAreaH - depress, cr, cg, cb, 1);
                 whiteIdx += 1;
             }
             // Black keys
@@ -419,8 +423,7 @@ export const PianoModel3D = ({
                     const cr = BLACK_KEY[0] + (BLACK_KEY_PRESSED[0] - BLACK_KEY[0]) * a.keyDepress;
                     const cg = BLACK_KEY[1] + (BLACK_KEY_PRESSED[1] - BLACK_KEY[1]) * a.keyDepress;
                     const cb = BLACK_KEY[2] + (BLACK_KEY_PRESSED[2] - BLACK_KEY[2]) * a.keyDepress;
-                    pushQuad(buf, bkx, keyAreaY + depress, bkW, bkH - depress,
-                        cr, cg, cb, 1);
+                    pushQuad(buf, bkx, keyAreaY + depress, bkW, bkH - depress, cr, cg, cb, 1);
                 } else {
                     whiteIdx += 1;
                 }
@@ -433,8 +436,7 @@ export const PianoModel3D = ({
                 const lidY = bodyY;
                 const [lr, lg, lb, la] = LID_COLOR;
                 const lidAlpha = la * (1 - currentLid * 0.6);
-                pushSkewQuad(buf, bodyX + 2, lidY, bodyW - 4, lidH, skew * 0.8,
-                    lr, lg, lb, lidAlpha);
+                pushSkewQuad(buf, bodyX + 2, lidY, bodyW - 4, lidH, skew * 0.8, lr, lg, lb, lidAlpha);
             }
 
             // --- Body rim outline (four thin quads) ---

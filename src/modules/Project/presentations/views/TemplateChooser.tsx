@@ -328,7 +328,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
         saveProject();
 
         setTimeout(() => {
-            void (async () => {
+            (async () => {
                 try {
                     await createFromTemplate(templateId);
                 } finally {

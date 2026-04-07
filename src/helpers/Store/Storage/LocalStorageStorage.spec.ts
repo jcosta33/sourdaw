@@ -223,7 +223,8 @@ describe('LocalStorageStorage', () => {
             vi.spyOn(console, 'error').mockImplementation(() => {});
 
             const storage = new LocalStorageStorage<string>('error-key' as any);
-            vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+            // jsdom: spying on `localStorage.setItem` may not intercept calls; prototype is reliable.
+            vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
                 throw new Error('Storage full');
             });
 

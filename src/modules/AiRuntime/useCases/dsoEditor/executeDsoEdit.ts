@@ -11,6 +11,7 @@
  * 7. Classify safety (auto-apply / preview / confirmation)
  * 8. Execute with full undo support
  */
+import { inject } from '#/infra/di/inject';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
@@ -39,7 +40,9 @@ export type DsoEditResult = {
 /**
  * Execute a DSO edit request — the single orchestration entrypoint.
  */
-export async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
+export const executeDsoEdit = inject({ logger })(
+    ({ logger }) =>
+        async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
     const backend = resolveBackend();
 
     if (!isDsoBackendAvailable()) {
@@ -170,9 +173,10 @@ export async function executeDsoEdit(userRequest: string): Promise<DsoEditResult
 
         setChatGenerating(false);
         llmStatusStore.set({ state: 'error', message: err.message });
-        return { success: false, plan: null, summaries: [], error: err.message };
-    }
-}
+            return { success: false, plan: null, summaries: [], error: err.message };
+        }
+        }
+);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

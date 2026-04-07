@@ -209,11 +209,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         />
                     </div>
                 }
-                value={
-                    <>
-                        {track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB
-                    </>
-                }
+                value={<>{track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB</>}
             />
 
             {/* Pan */}
@@ -301,7 +297,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         + New VCA Group
                     </MixerPopupOption>
                     {track.vcaGroupId && (
-                        <MixerPopupOption role="menuitem" className="text-muted-foreground" onClick={act(actions.removeFromVca)}>
+                        <MixerPopupOption
+                            role="menuitem"
+                            className="text-muted-foreground"
+                            onClick={act(actions.removeFromVca)}
+                        >
                             Remove from VCA
                         </MixerPopupOption>
                     )}

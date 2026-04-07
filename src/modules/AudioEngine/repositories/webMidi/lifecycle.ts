@@ -80,7 +80,7 @@ async function selectMidiInputTauri(portIndex: number): Promise<void> {
     }
 
     const portName = (await tauriInvoke('open_midi_input', { portIndex })) as string;
-    void portName;
+    portName;
 
     const { tauriListen } = await import('#/helpers/tauriBridge');
     const unlisten = (await tauriListen('midi-message', (event) => {
@@ -191,7 +191,7 @@ export async function initWebMidi(): Promise<boolean> {
 
 export function selectMidiInput(deviceId: string): void {
     if (tauriMode) {
-        void selectMidiInputTauri(Number(deviceId));
+        selectMidiInputTauri(Number(deviceId));
         setState({ selectedInputId: deviceId });
         return;
     }
@@ -248,7 +248,7 @@ export function resetMidiState(): void {
                 // already stopped
             }
         }
-        void note;
+        note;
     }
     activeNotes.clear();
     channelToNote.clear();
@@ -275,7 +275,7 @@ export function destroyWebMidi(): void {
             tauriEventUnlisten();
             setTauriEventUnlisten(null);
         }
-        void tauriInvoke('close_midi_input').catch(() => {});
+        tauriInvoke('close_midi_input').catch(() => {});
         setTauriMode(false);
     }
 

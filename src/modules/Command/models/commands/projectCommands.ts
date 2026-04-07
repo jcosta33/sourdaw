@@ -31,7 +31,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘⇧E',
         action: () => {
-            void eventBus.emit('dialog.openExport', undefined);
+            eventBus.emit('dialog.openExport', undefined);
         },
     },
     {

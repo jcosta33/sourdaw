@@ -5,7 +5,7 @@ import { isAppError } from './isAppError';
 describe('AppError', () => {
     it('createAppError() creates the expected flattened shape', () => {
         const error = createAppError('TestError', 'A test error', { foo: 'bar', baz: 123 });
-        
+
         expect(error._tag).toBe('TestError');
         expect(error.message).toBe('A test error');
         expect(error.foo).toBe('bar');

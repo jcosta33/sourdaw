@@ -8,7 +8,6 @@
 /// The actual thread spawning and file I/O happens in the integration
 /// layer (src-tauri) since it requires OS threading and file system access
 /// that is not available in WASM.
-
 use super::ring_buffer::StreamRequest;
 
 // ── I/O Priority Queue ────────────────────────────────────────────────
@@ -32,7 +31,8 @@ impl StreamScheduler {
     /// Add a stream request. Maintains sorted order by priority (ascending).
     pub fn push(&mut self, request: StreamRequest) {
         // Remove any existing request for the same voice.
-        self.requests.retain(|r| r.voice_index != request.voice_index);
+        self.requests
+            .retain(|r| r.voice_index != request.voice_index);
 
         // Insert in priority order.
         let insert_pos = self

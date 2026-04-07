@@ -11,7 +11,6 @@
 /// integration layer (daw-engine / src-tauri). This module defines
 /// the interface and a simple fallback for WASM (where disk streaming
 /// is not applicable — samples are fully in memory).
-
 use super::super::types::{FADE_UNDERRUN_SAMPLES, STREAM_BUF_SIZE};
 
 /// Number of f32 samples that fit in one stream buffer.

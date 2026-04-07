@@ -30,7 +30,7 @@ export const useAppInitialization = (): void => {
         const init = (): void => {
             if (!audioInitialized.current) {
                 audioInitialized.current = true;
-                void (async () => {
+                (async () => {
                     await initializeAudioEngine();
                     // Restore audio buffers from IndexedDB now that a valid AudioContext
                     // exists. The CRDT load path runs before any user gesture so it
@@ -46,7 +46,7 @@ export const useAppInitialization = (): void => {
                         referencedIds.length > 0 ? referencedIds : undefined
                     );
                     verifyAudioBufferReferences();
-                    void initWebMidi();
+                    initWebMidi();
                     registerBuiltinPlugins();
                     registerBuiltinFaustDSP();
                     registerProModulationEffects();
@@ -67,11 +67,11 @@ export const useAppInitialization = (): void => {
 
     // Restore sample library roots and metadata from IndexedDB
     useEffect(() => {
-        void restoreLibrary();
+        restoreLibrary();
     }, []);
 
     useEffect(() => {
-        void (async () => {
+        (async () => {
             const hasSaved = await hasCrdtProject();
             if (hasSaved) {
                 // Returning user — auto-load their project (shows loading spinner).

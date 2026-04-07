@@ -20,7 +20,7 @@ export function newProject(name = 'Untitled Project'): void {
     resetAudioGraph();
 
     // 1. Initialize CRDT Document structure so subsequent .set() calls persist
-    void createCrdtProject(name).catch((error) => {
+    createCrdtProject(name).catch((error) => {
         console.error('[newProject] Failed to initialize CRDT structure:', error);
     });
 

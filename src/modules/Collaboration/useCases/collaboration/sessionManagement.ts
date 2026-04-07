@@ -233,7 +233,7 @@ export const createSession = (name: string): string => {
 
     assetTransfer = new AssetTransfer(peerManager, {
         onAssetAvailable: (hash) => {
-            void resolveAssetForClips(hash);
+            resolveAssetForClips(hash);
         },
         onProgress: (_hash, _received, _total) => {
             // Could update a UI progress indicator.
@@ -331,7 +331,7 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
 
     assetTransfer = new AssetTransfer(peerManager, {
         onAssetAvailable: (hash) => {
-            void resolveAssetForClips(hash);
+            resolveAssetForClips(hash);
         },
         onProgress: (_hash, _received, _total) => {},
     });
@@ -599,7 +599,7 @@ const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void =>
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
         if (message.docId === '__asset__') {
-            void assetTransfer?.handleMessage(peerId, message);
+            assetTransfer?.handleMessage(peerId, message);
         } else if (message.docId === '__permissions__') {
             permissionManager?.handleMessage(peerId, message);
         } else {
@@ -726,8 +726,8 @@ async function compressInvite(json: string): Promise<string> {
     const bytes = new TextEncoder().encode(json);
     const stream = new CompressionStream('deflate-raw');
     const writer = stream.writable.getWriter();
-    void writer.write(bytes);
-    void writer.close();
+    writer.write(bytes);
+    writer.close();
     const chunks: Uint8Array[] = [];
     const reader = stream.readable.getReader();
     for (;;) {
@@ -755,8 +755,8 @@ async function decompressInvite(raw: string): Promise<string> {
     const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
     const stream = new DecompressionStream('deflate-raw');
     const writer = stream.writable.getWriter();
-    void writer.write(bytes);
-    void writer.close();
+    writer.write(bytes);
+    writer.close();
     const chunks: Uint8Array[] = [];
     const reader = stream.readable.getReader();
     for (;;) {

@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type IntentResult } from '../models/IntentResult';
 import { type ProjectContext } from '../models/ProjectContext';
@@ -21,7 +22,9 @@ export { isComplexPrompt } from '../transformers/promptParser/parsing';
  * 3. Compound fast-path: multi-track creation etc.
  * 4. LLM path: DSO editor — Qwen emits typed Domain-Specific Operations via schema-constrained generation
  */
-export async function parsePromptToActions(
+export const parsePromptToActions = inject({ logger })(
+    ({ logger }) =>
+        async function parsePromptToActions(
     prompt: string,
     context: ProjectContext,
     signal?: AbortSignal
@@ -116,5 +119,6 @@ export async function parsePromptToActions(
         }
     }
 
-    return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
-}
+            return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
+        }
+);

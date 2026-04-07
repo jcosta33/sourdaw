@@ -550,24 +550,23 @@ import { eventBus } from '#/app/bootstrap';
 
 type AddTrackInput = { name: string; kind: TrackKind };
 
-export const addTrack = inject(
-    { logger: Logger, trackRepo: TrackRepo },
-)(({ logger, trackRepo }) =>
-    (input: AddTrackInput): Track | null => {
-        const state = trackRepo.getState();
-        if (state === null) {
-            logger.log('addTrack called before store was ready');
-            return null;
+export const addTrack = inject({ logger: Logger, trackRepo: TrackRepo })(
+    ({ logger, trackRepo }) =>
+        (input: AddTrackInput): Track | null => {
+            const state = trackRepo.getState();
+            if (state === null) {
+                logger.log('addTrack called before store was ready');
+                return null;
+            }
+            const track = createTrack(input);
+            trackRepo.setState({
+                ...state,
+                tracks: [...state.tracks, track],
+                selectedTrackId: track.id,
+            });
+            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            return track;
         }
-        const track = createTrack(input);
-        trackRepo.setState({
-            ...state,
-            tracks: [...state.tracks, track],
-            selectedTrackId: track.id,
-        });
-        void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
-        return track;
-    }
 );
 ```
 
@@ -1146,15 +1145,15 @@ repository:
 ```typescript
 // useCases/saveProject.ts
 export const saveProject = (): void => {
-  const state = projectStore.value!;
-  validateProjectBeforeSave(state);
-  saveProjectToStorage(state);
-  void eventBus.emit('project.saved', { projectId: state.id });
+    const state = projectStore.value!;
+    validateProjectBeforeSave(state);
+    saveProjectToStorage(state);
+    void eventBus.emit('project.saved', { projectId: state.id });
 };
 
 // repositories/saveProjectToStorage.ts
 export const saveProjectToStorage = (state: ProjectState): void => {
-  localStorage.setItem('project', JSON.stringify(state));
+    localStorage.setItem('project', JSON.stringify(state));
 };
 ```
 

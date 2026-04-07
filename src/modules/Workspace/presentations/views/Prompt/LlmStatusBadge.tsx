@@ -217,7 +217,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 className="w-full text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
                                 onClick={() => {
                                     setShowPanel(false);
-                                    void unloadEngine();
+                                    unloadEngine();
                                 }}
                             >
                                 <Power className="size-3 mr-1.5" aria-hidden="true" />

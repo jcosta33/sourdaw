@@ -11,7 +11,6 @@
 ///
 /// Best for: drums, speech, percussive content, real-time use.
 /// Degrades beyond 2× stretch ratio with polyphonic content.
-
 use std::f32::consts::PI;
 
 use super::super::types::{WSOLA_FRAME, WSOLA_TOLERANCE};
@@ -72,8 +71,7 @@ impl WsolaProcessor {
 
         while syn_pos + self.frame_len <= output_len {
             // Determine the analysis center, adjusted by previous offset.
-            let target_ana =
-                (ana_pos as i32 + prev_best_offset).max(0) as usize;
+            let target_ana = (ana_pos as i32 + prev_best_offset).max(0) as usize;
 
             // Search for best match within tolerance window.
             let best_offset = if syn_pos > 0 {
@@ -84,8 +82,7 @@ impl WsolaProcessor {
 
             let actual_ana = (target_ana as i32 + best_offset)
                 .max(0)
-                .min((input.len() - self.frame_len) as i32)
-                as usize;
+                .min((input.len() - self.frame_len) as i32) as usize;
 
             // Overlap-add the frame.
             for n in 0..self.frame_len {

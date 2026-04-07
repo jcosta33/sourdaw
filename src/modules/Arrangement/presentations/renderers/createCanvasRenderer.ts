@@ -59,7 +59,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
             break;
         }
         const beatsInSegment = change.beat - barStartBeat;
-        void beatsInSegment;
+        beatsInSegment;
         barStartBeat = change.beat;
         currentNumerator = change.numerator;
     }
@@ -107,7 +107,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
     }
     ctx.stroke();
 
-    void timeSignatureDenominator;
+    timeSignatureDenominator;
 }
 
 const TRACK_KIND_LABELS: Record<string, string> = {

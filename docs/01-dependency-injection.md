@@ -66,7 +66,7 @@ export function addTrack({ name, kind }: AddTrackInput): Track | null {
     const track = createTrack({ name, kind });
     setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
 
-    void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+    eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
     logger.info(`Track added: ${track.id}`);
 
     return track;

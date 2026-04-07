@@ -2,13 +2,14 @@
 ///
 /// Exposes sample loading, playback control, analysis, and waveform
 /// peak retrieval to the React frontend.
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use daw_dsp::sampler::analysis::bpm::estimate_bpm;
 use daw_dsp::sampler::analysis::loop_points::{detect_loop_points, LoopPointConfig};
-use daw_dsp::sampler::analysis::onset::{detect_complex_domain, detect_hfc, detect_superflux, OnsetConfig};
+use daw_dsp::sampler::analysis::onset::{
+    detect_complex_domain, detect_hfc, detect_superflux, OnsetConfig,
+};
 use daw_dsp::sampler::analysis::peaks::{flatten_level, generate_mipmap, generate_mipmap_stereo};
 use daw_dsp::sampler::analysis::pitch::detect_pitch;
 use daw_dsp::sampler::engine::SamplerEngine;
@@ -130,11 +131,7 @@ pub async fn load_sample(
 
     // Build SampleData from decoded channels.
     let sample_data = if channels >= 2 && samples_vec.len() >= 2 {
-        SampleData::from_stereo(
-            samples_vec[0].clone(),
-            samples_vec[1].clone(),
-            sample_rate,
-        )
+        SampleData::from_stereo(samples_vec[0].clone(), samples_vec[1].clone(), sample_rate)
     } else if !samples_vec.is_empty() {
         SampleData::from_mono(samples_vec[0].clone(), sample_rate)
     } else {
@@ -345,10 +342,7 @@ pub async fn get_waveform_peaks(
     };
 
     // Convert f32 slice to raw bytes for binary IPC transfer.
-    let bytes: Vec<u8> = peaks
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let bytes: Vec<u8> = peaks.iter().flat_map(|f| f.to_le_bytes()).collect();
 
     Ok(tauri::ipc::Response::new(bytes))
 }

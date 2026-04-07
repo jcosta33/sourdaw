@@ -114,7 +114,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleExportAudio = () => {
         setOpen(false);
-        void eventBus.emit('dialog.openExport', undefined);
+        eventBus.emit('dialog.openExport', undefined);
     };
 
     const handleExportProject = () => {
@@ -124,19 +124,19 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleImportProject = () => {
         setOpen(false);
-        void pickFiles({
+        pickFiles({
             filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw', 'json'] }],
         }).then((files) => {
             if (!files || files.length === 0) {
                 return;
             }
-            void importProjectFile(files[0]!);
+            importProjectFile(files[0]!);
         });
     };
 
     const handleLoad = (entry: RecentProjectEntry) => {
         saveProject();
-        void loadRecentProject(entry.key);
+        loadRecentProject(entry.key);
         setOpen(false);
     };
 

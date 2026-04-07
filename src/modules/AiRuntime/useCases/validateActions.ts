@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type AppAction, type AppActionType } from '#/modules/Command/useCases/commandQueries';
 
@@ -163,37 +164,40 @@ const KNOWN_ACTION_TYPES: ReadonlySet<AppActionType> = new Set<AppActionType>([
     'deleteTrackAlternative',
 ]);
 
-export function validateActions(actions: AppAction[]): AppAction[] {
-    return actions.filter((action) => {
-        if (!KNOWN_ACTION_TYPES.has(action.type)) {
-            logger.warn(`Unknown action type rejected: ${action.type}`);
-            return false;
-        }
+export const validateActions = inject({ logger })(
+    ({ logger }) =>
+        function validateActions(actions: AppAction[]): AppAction[] {
+            return actions.filter((action) => {
+                if (!KNOWN_ACTION_TYPES.has(action.type)) {
+                    logger.warn(`Unknown action type rejected: ${action.type}`);
+                    return false;
+                }
 
-        if (action.type === 'setTempo') {
-            const bpm = action.payload.bpm;
-            if (bpm < 20 || bpm > 300) {
-                logger.warn(`Invalid tempo rejected: ${bpm}`);
-                return false;
-            }
-        }
+                if (action.type === 'setTempo') {
+                    const bpm = action.payload.bpm;
+                    if (bpm < 20 || bpm > 300) {
+                        logger.warn(`Invalid tempo rejected: ${bpm}`);
+                        return false;
+                    }
+                }
 
-        if (action.type === 'setMasterGain') {
-            const gain = action.payload.gain;
-            if (gain < 0 || gain > 1) {
-                logger.warn(`Invalid gain rejected: ${gain}`);
-                return false;
-            }
-        }
+                if (action.type === 'setMasterGain') {
+                    const gain = action.payload.gain;
+                    if (gain < 0 || gain > 1) {
+                        logger.warn(`Invalid gain rejected: ${gain}`);
+                        return false;
+                    }
+                }
 
-        if (action.type === 'setMetronomeVolume') {
-            const volume = action.payload.volume;
-            if (volume < 0 || volume > 1) {
-                logger.warn(`Invalid metronome volume rejected: ${volume}`);
-                return false;
-            }
-        }
+                if (action.type === 'setMetronomeVolume') {
+                    const volume = action.payload.volume;
+                    if (volume < 0 || volume > 1) {
+                        logger.warn(`Invalid metronome volume rejected: ${volume}`);
+                        return false;
+                    }
+                }
 
-        return true;
-    });
-}
+                return true;
+            });
+        }
+);

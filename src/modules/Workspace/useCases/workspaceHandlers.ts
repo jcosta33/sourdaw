@@ -242,11 +242,11 @@ export const workspaceHandlers = {
 
     importMidiFile: {
         execute: () => {
-            void pickFiles({ filters: [{ name: 'MIDI', extensions: ['mid', 'midi'] }] })
+            pickFiles({ filters: [{ name: 'MIDI', extensions: ['mid', 'midi'] }] })
                 .then((files) => {
                     if (files) {
                         for (const file of files) {
-                            void importMidiFile(file);
+                            importMidiFile(file);
                         }
                     }
                 })
@@ -327,11 +327,11 @@ export const workspaceHandlers = {
 
     importAudioFile: {
         execute: () => {
-            void pickFiles({ filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg', 'flac', 'aiff', 'aac'] }] })
+            pickFiles({ filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg', 'flac', 'aiff', 'aac'] }] })
                 .then((files) => {
                     if (files) {
                         for (const file of files) {
-                            void importAudioFile(file);
+                            importAudioFile(file);
                         }
                     }
                 })

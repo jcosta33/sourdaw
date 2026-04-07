@@ -26,7 +26,7 @@ export const AudioDevicePicker = (): ReactElement => {
 
     const refresh = () => {
         setLoading(true);
-        void getAudioDevices().then((result) => {
+        getAudioDevices().then((result) => {
             setDevices(result);
             setLoading(false);
         });
@@ -40,7 +40,7 @@ export const AudioDevicePicker = (): ReactElement => {
     const inputs = devices.filter((d) => d.kind === 'audioinput');
 
     const handleOutputChange = (deviceId: string) => {
-        void setOutputDevice(deviceId);
+        setOutputDevice(deviceId);
     };
 
     const handleInputChange = (deviceId: string) => {

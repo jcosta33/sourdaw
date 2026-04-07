@@ -29,11 +29,7 @@ export async function loadSample(instanceId: string, filePath: string): Promise<
     return result as SamplerLoadResult;
 }
 
-export async function samplerNoteOn(
-    instanceId: string,
-    note: number,
-    velocity: number
-): Promise<void> {
+export async function samplerNoteOn(instanceId: string, note: number, velocity: number): Promise<void> {
     if (!isTauri()) return;
     await tauriInvoke('sampler_note_on', { instanceId, note, velocity });
 }
@@ -43,11 +39,7 @@ export async function samplerNoteOff(instanceId: string, note: number): Promise<
     await tauriInvoke('sampler_note_off', { instanceId, note });
 }
 
-export async function setSamplerParam(
-    instanceId: string,
-    param: string,
-    value: number
-): Promise<void> {
+export async function setSamplerParam(instanceId: string, param: string, value: number): Promise<void> {
     if (!isTauri()) return;
     await tauriInvoke('set_sampler_param', { instanceId, param, value });
 }
@@ -57,11 +49,7 @@ export async function setSamplerMode(instanceId: string, mode: SamplerMode): Pro
     await tauriInvoke('set_sampler_mode', { instanceId, mode });
 }
 
-export async function getWaveformPeaks(
-    instanceId: string,
-    level: number,
-    channel: number = 0
-): Promise<number[]> {
+export async function getWaveformPeaks(instanceId: string, level: number, channel: number = 0): Promise<number[]> {
     const result = await tauriInvoke('get_waveform_peaks', { instanceId, level, channel });
 
     // Binary IPC returns ArrayBuffer — convert to f32 array.
@@ -73,10 +61,7 @@ export async function getWaveformPeaks(
     return result as number[];
 }
 
-export async function detectOnsets(
-    instanceId: string,
-    algorithm: OnsetAlgorithm
-): Promise<OnsetDetectionResult> {
+export async function detectOnsets(instanceId: string, algorithm: OnsetAlgorithm): Promise<OnsetDetectionResult> {
     const result = await tauriInvoke('detect_onsets', { instanceId, algorithm });
     return result as OnsetDetectionResult;
 }
@@ -101,9 +86,7 @@ export async function getSamplerPosition(instanceId: string): Promise<number> {
     return result as number;
 }
 
-export async function detectSmartLoopPoints(
-    instanceId: string
-): Promise<LoopPointDetectionResult | null> {
+export async function detectSmartLoopPoints(instanceId: string): Promise<LoopPointDetectionResult | null> {
     const result = await tauriInvoke('detect_smart_loop_points', { instanceId });
     return result as LoopPointDetectionResult | null;
 }

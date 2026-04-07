@@ -13,9 +13,7 @@ type SetGrandBouleSoundboardSendInput = {
     amount: number;
 };
 
-export const setGrandBouleSoundboardSend = (
-    input: SetGrandBouleSoundboardSendInput,
-): void => {
+export const setGrandBouleSoundboardSend = (input: SetGrandBouleSoundboardSendInput): void => {
     const state = grandBouleStore.value;
     if (state === null) {
         return;

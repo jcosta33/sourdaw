@@ -8,18 +8,12 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import {
-    grandBouleStore,
-    type TemperamentIndex,
-} from '../../stores/grandBouleStore';
+import { grandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
 import { panicGrandBoule } from '../../useCases/panicGrandBoule';
 import { releaseGrandBouleNote } from '../../useCases/releaseGrandBouleNote';
-import {
-    resolveGrandBouleEngine,
-    type ResolvedGrandBouleEngine,
-} from '../../useCases/resolveGrandBouleEngine';
+import { resolveGrandBouleEngine, type ResolvedGrandBouleEngine } from '../../useCases/resolveGrandBouleEngine';
 import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
 import { setGrandBouleSostenuto } from '../../useCases/setGrandBouleSostenuto';
 import { setGrandBouleSoundboardSend } from '../../useCases/setGrandBouleSoundboardSend';
@@ -29,10 +23,7 @@ import { setGrandBouleTemperament } from '../../useCases/setGrandBouleTemperamen
 import { setGrandBouleUnaCorda } from '../../useCases/setGrandBouleUnaCorda';
 import { setGrandBouleVelocityCurve } from '../../useCases/setGrandBouleVelocityCurve';
 import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
-import {
-    setGrandBoulePerNoteParam,
-    resetGrandBoulePerNoteParams,
-} from '../../useCases/setGrandBoulePerNoteParam';
+import { setGrandBoulePerNoteParam, resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam';
 import { triggerGrandBouleNote } from '../../useCases/triggerGrandBouleNote';
 import {
     setVelocityCurveExponent,
@@ -107,9 +98,7 @@ const Knob = ({
             size="sm"
         />
         <div className="text-center">
-            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                {label}
-            </div>
+            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
     </div>
@@ -127,9 +116,7 @@ const TEMPERAMENT_OPTIONS = [
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId });
     const state = useStore(grandBouleStore, grandBouleStore.value!);
-    const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(
-        () => new Map(),
-    );
+    const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
     const [lidPosition, setLidPosition] = useState(1.0);
     const [lastVelocity, setLastVelocity] = useState(0);
 
@@ -250,18 +237,14 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     <button
                                         key={preset.id}
                                         type="button"
-                                        onClick={() =>
-                                            loadGrandBoulePreset({ engine, presetId: preset.id })
-                                        }
+                                        onClick={() => loadGrandBoulePreset({ engine, presetId: preset.id })}
                                         className={`grand-boule-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
                                             active
                                                 ? 'border-neutral-400/40 bg-neutral-300/10'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
                                     >
-                                        <span className="text-[11px] font-medium text-foreground">
-                                            {preset.name}
-                                        </span>
+                                        <span className="text-[11px] font-medium text-foreground">{preset.name}</span>
                                         <span className="text-[9px] leading-tight text-muted-foreground">
                                             {preset.description}
                                         </span>
@@ -310,9 +293,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
                                 value={config.masterGain}
-                                onChange={(value) =>
-                                    setGrandBouleMasterGain({ engine, gain: value })
-                                }
+                                onChange={(value) => setGrandBouleMasterGain({ engine, gain: value })}
                                 label="Master"
                                 min={0}
                                 max={2}
@@ -322,9 +303,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                             <Knob
                                 value={config.soundboardSend}
-                                onChange={(value) =>
-                                    setGrandBouleSoundboardSend({ engine, amount: value })
-                                }
+                                onChange={(value) => setGrandBouleSoundboardSend({ engine, amount: value })}
                                 label="Board"
                                 min={0}
                                 max={1}
@@ -334,9 +313,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                             <Knob
                                 value={config.sympatheticSend}
-                                onChange={(value) =>
-                                    setGrandBouleSympatheticSend({ engine, amount: value })
-                                }
+                                onChange={(value) => setGrandBouleSympatheticSend({ engine, amount: value })}
                                 label="Symp"
                                 min={0}
                                 max={1}
@@ -401,9 +378,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             <div className="text-[8px] uppercase tracking-[0.26em] text-neutral-400/80">
                                 Grand Boule
                             </div>
-                            <div className="text-[16px] font-semibold text-foreground">
-                                Physical Modeling Piano
-                            </div>
+                            <div className="text-[16px] font-semibold text-foreground">Physical Modeling Piano</div>
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
                             <DawPluginMetricTile
@@ -435,17 +410,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     </div>
 
                     <div className="grand-boule-window min-h-0 flex-1 overflow-hidden p-2">
-                        <StringVibrationView
-                            activeNotes={activeNotes}
-                            className="h-full w-full"
-                        />
+                        <StringVibrationView activeNotes={activeNotes} className="h-full w-full" />
                     </div>
 
                     <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 160 }}>
-                        <SpectralWaterfall
-                            fftFrame={fftFrame}
-                            className="h-full w-full"
-                        />
+                        <SpectralWaterfall fftFrame={fftFrame} className="h-full w-full" />
                     </div>
                 </section>
 
@@ -454,9 +423,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <div className="flex flex-col gap-3">
                             <Knob
                                 value={pedals.sustain}
-                                onChange={(value) =>
-                                    setGrandBouleSustain({ engine, position: value })
-                                }
+                                onChange={(value) => setGrandBouleSustain({ engine, position: value })}
                                 label="Sustain"
                                 min={0}
                                 max={1}
@@ -527,9 +494,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     <SectionCard title="Touch" detail="Velocity curve shaping.">
                         <Knob
                             value={parameters.velocityCurve}
-                            onChange={(value) =>
-                                setGrandBouleVelocityCurve({ engine, exponent: value })
-                            }
+                            onChange={(value) => setGrandBouleVelocityCurve({ engine, exponent: value })}
                             label="Curve"
                             min={0.5}
                             max={2}
@@ -574,13 +539,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             max={1}
                             step={0.01}
                             defaultValue={1.0}
-                            readout={
-                                lidPosition < 0.3
-                                    ? 'closed'
-                                    : lidPosition < 0.7
-                                      ? 'half'
-                                      : 'full'
-                            }
+                            readout={lidPosition < 0.3 ? 'closed' : lidPosition < 0.7 ? 'half' : 'full'}
                         />
                     </SectionCard>
                 </aside>

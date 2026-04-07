@@ -228,7 +228,7 @@ export const TimelineMinimap = (): ReactElement => {
             if (currentViewState) {
                 timelineViewStore.set({ ...currentViewState, scrollX: targetScrollX });
             }
-            void scrollAtDragStart;
+            scrollAtDragStart;
         };
 
         const handleMouseUp = () => {

@@ -8,7 +8,6 @@
 ///   - One-pole parameter smoothing with denormal prevention
 ///   - In-memory sample pool
 ///   - Command-queue driven engine with atomic metering
-
 pub mod allocator;
 pub mod analysis;
 pub mod engine;
@@ -17,7 +16,7 @@ pub mod filter;
 pub mod modes;
 pub mod sample;
 pub mod smooth;
-pub mod types;
 pub mod streaming;
+pub mod types;
 pub mod voice;
 pub mod warp;

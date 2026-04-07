@@ -9,8 +9,8 @@
  * When `disabled` is false, children render normally with no wrapper overhead.
  */
 
-import { type ReactNode } from 'react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { cloneElement, isValidElement, type ReactElement, type ReactNode } from 'react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '#/components/ui/tooltip';
 
 type DisabledFeatureWrapperProps = {
     /** Whether the feature is unavailable */
@@ -33,16 +33,22 @@ export function DisabledFeatureWrapper({
         return children;
     }
 
+    const disabledChild = isValidElement(children)
+        ? cloneElement(children as ReactElement<{ disabled?: boolean }>, { disabled: true })
+        : children;
+
     return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <span className={`inline-flex cursor-not-allowed opacity-50 ${className ?? ''}`} aria-disabled="true">
-                    <span className="pointer-events-none">{children}</span>
-                </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-64 text-center">
-                {reason}
-            </TooltipContent>
-        </Tooltip>
+        <TooltipProvider delayDuration={400}>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <span className={`inline-flex cursor-not-allowed opacity-50 ${className ?? ''}`}>
+                        <span className="pointer-events-none">{disabledChild}</span>
+                    </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-64 text-center">
+                    {reason}
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
     );
 }

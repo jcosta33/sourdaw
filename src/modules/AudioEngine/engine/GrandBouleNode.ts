@@ -69,10 +69,7 @@ export function isGrandBouleDevice(deviceType: string): boolean {
     return deviceType === 'grand-boule';
 }
 
-export async function createGrandBouleNode(
-    ctx: BaseAudioContext,
-    wasmUrl?: string,
-): Promise<GrandBouleNodeResult> {
+export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GrandBouleNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
@@ -92,17 +89,16 @@ export async function createGrandBouleNode(
     if (typeof SharedArrayBuffer === 'undefined') {
         throw new Error(
             'SharedArrayBuffer is not available. The server must send ' +
-            'Cross-Origin-Opener-Policy: same-origin and ' +
-            'Cross-Origin-Embedder-Policy: require-corp headers.',
+                'Cross-Origin-Opener-Policy: same-origin and ' +
+                'Cross-Origin-Embedder-Policy: require-corp headers.'
         );
     }
     const sab = new SharedArrayBuffer(SAB_BYTES);
 
     // Create the engine Worker.
-    const engineWorker = new Worker(
-        new URL('../workers/grandBouleEngineWorker.ts', import.meta.url),
-        { type: 'module' },
-    );
+    const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
+        type: 'module',
+    });
 
     let bypassed = false;
     let settled = false;
@@ -134,10 +130,7 @@ export async function createGrandBouleNode(
     // Send WASM bytes + SAB to the engine worker.
     const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
-    engineWorker.postMessage(
-        { type: 'init', wasmBytes: copy, sab, sampleRate: ctx.sampleRate },
-        [copy],
-    );
+    engineWorker.postMessage({ type: 'init', wasmBytes: copy, sab, sampleRate: ctx.sampleRate }, [copy]);
 
     /** Post a message to the engine worker (not the AudioWorklet). */
     const post = (msg: Record<string, unknown>): void => {

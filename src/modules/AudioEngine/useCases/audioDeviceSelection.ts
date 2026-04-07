@@ -4,6 +4,7 @@
  * Note: setSinkId cast is needed until lib.dom.d.ts ships the type.
  */
 
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
@@ -26,33 +27,41 @@ export const audioDeviceStore = createStore<AudioDeviceState>({
     },
 });
 
-export async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        return devices
-            .filter((d) => d.kind === 'audioinput' || d.kind === 'audiooutput')
-            .map((d) => ({
-                id: d.deviceId,
-                label: d.label || `Device ${d.deviceId.slice(0, 8)}`,
-                kind: d.kind as 'audioinput' | 'audiooutput',
-            }));
-    } catch (error) {
-        logger.warn(`Failed to enumerate audio devices: ${error}`);
-        return [];
-    }
-}
-
-export async function setOutputDevice(deviceId: string): Promise<void> {
-    if ('setSinkId' in audioEngine.context) {
-        try {
-            await (audioEngine.context as unknown as { setSinkId(id: string): Promise<void> }).setSinkId(deviceId);
-        } catch (error) {
-            logger.warn(`Failed to set output device: ${error}`);
+export const getAudioDevices = inject({ logger })(
+    ({ logger }) =>
+        async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                return devices
+                    .filter((d) => d.kind === 'audioinput' || d.kind === 'audiooutput')
+                    .map((d) => ({
+                        id: d.deviceId,
+                        label: d.label || `Device ${d.deviceId.slice(0, 8)}`,
+                        kind: d.kind as 'audioinput' | 'audiooutput',
+                    }));
+            } catch (error) {
+                logger.warn(`Failed to enumerate audio devices: ${error}`);
+                return [];
+            }
         }
-    }
-    const current = audioDeviceStore.value;
-    audioDeviceStore.set({ ...current!, selectedOutputId: deviceId });
-}
+);
+
+export const setOutputDevice = inject({ logger })(
+    ({ logger }) =>
+        async function setOutputDevice(deviceId: string): Promise<void> {
+            if ('setSinkId' in audioEngine.context) {
+                try {
+                    await (audioEngine.context as unknown as { setSinkId(id: string): Promise<void> }).setSinkId(
+                        deviceId
+                    );
+                } catch (error) {
+                    logger.warn(`Failed to set output device: ${error}`);
+                }
+            }
+            const current = audioDeviceStore.value;
+            audioDeviceStore.set({ ...current!, selectedOutputId: deviceId });
+        }
+);
 
 export function setInputDevice(deviceId: string): void {
     const current = audioDeviceStore.value;

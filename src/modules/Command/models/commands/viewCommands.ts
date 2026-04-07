@@ -170,7 +170,7 @@ export const viewCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'stripSilence', payload: { clipId } });
+                executeAppAction({ type: 'stripSilence', payload: { clipId } });
             }
         },
     },

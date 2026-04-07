@@ -119,7 +119,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         rootSamples.filter((s) => s.folder === path || s.folder.startsWith(path + '/')).length;
 
     const handleConnectFolder = (): void => {
-        void connectFolder();
+        connectFolder();
     };
 
     const playSample = async (sample: (typeof rootSamples)[number]): Promise<void> => {
@@ -327,7 +327,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                 sample={sample}
                                 isPlaying={preview.playingId === sample.id}
                                 onPlay={() => {
-                                    void playSample(sample);
+                                    playSample(sample);
                                 }}
                                 onStop={preview.stop}
                                 onToggleFavorite={() => toggleSampleFavorite(sample.id)}
@@ -347,7 +347,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     if (preview.playingId === sample.id) {
                                         preview.stop();
                                     } else {
-                                        void playSample(sample);
+                                        playSample(sample);
                                     }
                                 }}
                             />

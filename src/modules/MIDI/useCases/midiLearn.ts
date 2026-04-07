@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
     midiLearnStore,
@@ -30,75 +31,84 @@ function scaleMidiValue(raw: number, min: number, max: number): number {
     return min + (raw / 127) * (max - min);
 }
 
-export function startMidiLearn(target: LearningTarget): void {
-    const state = midiLearnStore.value;
-    if (!state) {
-        return;
-    }
+export const startMidiLearn = inject({ logger })(
+    ({ logger }) =>
+        function startMidiLearn(target: LearningTarget): void {
+            const state = midiLearnStore.value;
+            if (!state) {
+                return;
+            }
 
-    logger.info(`MIDI Learn started for ${target.targetType} on track ${target.trackId}`);
+            logger.info(`MIDI Learn started for ${target.targetType} on track ${target.trackId}`);
 
-    midiLearnStore.set({
-        ...state,
-        isLearning: true,
-        learningTarget: target,
-    });
-}
+            midiLearnStore.set({
+                ...state,
+                isLearning: true,
+                learningTarget: target,
+            });
+        }
+);
 
-export function stopMidiLearn(): void {
-    const state = midiLearnStore.value;
-    if (!state) {
-        return;
-    }
+export const stopMidiLearn = inject({ logger })(
+    ({ logger }) =>
+        function stopMidiLearn(): void {
+            const state = midiLearnStore.value;
+            if (!state) {
+                return;
+            }
 
-    logger.info('MIDI Learn cancelled');
+            logger.info('MIDI Learn cancelled');
 
-    midiLearnStore.set({
-        ...state,
-        isLearning: false,
-        learningTarget: null,
-    });
-}
+            midiLearnStore.set({
+                ...state,
+                isLearning: false,
+                learningTarget: null,
+            });
+        }
+);
 
-export function completeMidiLearn(channel: number, cc: number): void {
-    const state = midiLearnStore.value;
-    if (!state || !state.isLearning || !state.learningTarget) {
-        return;
-    }
+export const completeMidiLearn = inject({ logger })(
+    ({ logger }) =>
+        function completeMidiLearn(channel: number, cc: number): void {
+            const state = midiLearnStore.value;
+            if (!state || !state.isLearning || !state.learningTarget) {
+                return;
+            }
 
-    const target = state.learningTarget;
-    const defaults = VALUE_RANGES[target.targetType];
+            const target = state.learningTarget;
+            const defaults = VALUE_RANGES[target.targetType];
 
-    const existingIndex = state.mappings.findIndex((m) => m.channel === channel && m.cc === cc);
+            const existingIndex = state.mappings.findIndex((m) => m.channel === channel && m.cc === cc);
 
-    const mapping: MidiMapping = {
-        id: `midi-map-${nextMappingId++}`,
-        channel,
-        cc,
-        targetType: target.targetType,
-        trackId: target.trackId,
-        deviceId: target.deviceId,
-        paramId: target.paramId,
-        minValue: defaults.min,
-        maxValue: defaults.max,
-    };
+            const mapping: MidiMapping = {
+                id: `midi-map-${nextMappingId++}`,
+                channel,
+                cc,
+                targetType: target.targetType,
+                trackId: target.trackId,
+                deviceId: target.deviceId,
+                paramId: target.paramId,
+                minValue: defaults.min,
+                maxValue: defaults.max,
+            };
 
-    const mappings = [...state.mappings];
-    if (existingIndex >= 0) {
-        mappings[existingIndex] = mapping;
-    } else {
-        mappings.push(mapping);
-    }
+            const mappings = [...state.mappings];
+            if (existingIndex >= 0) {
+                mappings[existingIndex] = mapping;
+            } else {
+                mappings.push(mapping);
+            }
 
-    logger.info(`MIDI Learn complete: CC ${cc} ch ${channel} → ${target.targetType}`);
+            logger.info(`MIDI Learn complete: CC ${cc} ch ${channel} → ${target.targetType}`);
 
-    midiLearnStore.set({
-        ...state,
-        mappings,
-        isLearning: false,
-        learningTarget: null,
-    });
-}
+            midiLearnStore.set({
+                ...state,
+                mappings,
+                isLearning: false,
+                learningTarget: null,
+            });
+        }
+);
 
 export function handleMidiMessage(channel: number, cc: number, value: number): void {
     const state = midiLearnStore.value;

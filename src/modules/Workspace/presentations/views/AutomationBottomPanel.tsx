@@ -1,11 +1,4 @@
-import {
-    type ReactElement,
-    type RefObject,
-    type WheelEvent,
-    useRef,
-    useState,
-    useLayoutEffect,
-} from 'react';
+import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useLayoutEffect } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -13,7 +6,11 @@ import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
 import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { timelineViewStore, type TimelineViewState, scrollTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
+import {
+    timelineViewStore,
+    type TimelineViewState,
+    scrollTimeline,
+} from '#/modules/Arrangement/stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
@@ -115,9 +112,7 @@ export const AutomationBottomPanel = (): ReactElement => {
     const trackListWidth = ws.trackListWidth;
     const trackListOpen = ws.trackListOpen;
 
-    const trackLanes = selectedTrackId
-        ? autoState.lanes.filter((l) => l.trackId === selectedTrackId && !l.clipId)
-        : [];
+    const trackLanes = selectedTrackId ? autoState.lanes.filter((l) => l.trackId === selectedTrackId && !l.clipId) : [];
 
     const availableParams = selectedTrack
         ? getAutomatableParams(

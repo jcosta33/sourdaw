@@ -95,7 +95,11 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 onBack={onBack}
                 backLabel="Back to track"
                 actions={
-                    <MechanicalSwitch checked={!device.bypassed} onChange={(c) => bypassDevice(device.id, !c)} size="sm" />
+                    <MechanicalSwitch
+                        checked={!device.bypassed}
+                        onChange={(c) => bypassDevice(device.id, !c)}
+                        size="sm"
+                    />
                 }
             />
 

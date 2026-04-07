@@ -219,9 +219,7 @@ mod tests {
         let word0 = 0x4090_4500;
         let word1 = 0xFFFF_0000;
         match parse_ump64(word0, word1) {
-            Midi2Event::NoteOn {
-                note, velocity, ..
-            } => {
+            Midi2Event::NoteOn { note, velocity, .. } => {
                 assert_eq!(note, 69);
                 assert_eq!(velocity, 0xFFFF);
             }

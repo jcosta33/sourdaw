@@ -29,6 +29,7 @@ This specification defines the implementation of a state-of-the-art physically m
 ## 3. User-Visible Behavior & Scope
 
 ### 3.1 User-Visible Behavior
+
 - **Zero-Friction Playability**: High-polyphony support (256 voices) and MIDI 2.0 resolution ensure a seamless experience from pianissimo to fortissimo.
 - **WebGPU Visualizations**: Real-time feedback via 3D string vibration splines, spectral waterfall, and an interactive 3D grand piano model with articulated lid/hammers.
 - **Authentic Pedaling**: Support for continuous half-pedaling, repedaling (catch pedaling), and authentic timbral shifts via Una Corda and Sostenuto.
@@ -38,6 +39,7 @@ This specification defines the implementation of a state-of-the-art physically m
 - **Near-Zero Footprint**: Instant loading (~50MB) and near-zero disk anxiety compared to multi-gigabyte sample libraries.
 
 ### 3.2 Scope
+
 - **In scope**:
     - **Rust Audio Engine (DSP)**: Modal synthesis with pre-allocated lock-free voice pool.
     - **React Frontend**: Modern UI with Zustand state management.
@@ -50,12 +52,12 @@ This specification defines the implementation of a state-of-the-art physically m
 
 ## 4. Historical Temperament Offsets (Relative to A=0)
 
-| Temperament | C | C# | D | D# | E | F | F# | G | G# | A | A# | B |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Werckmeister III** | +11.7 | +2.0 | +3.9 | +5.9 | +2.0 | +9.8 | 0.0 | +7.8 | +3.9 | 0.0 | +7.8 | +3.9 |
-| **Kirnberger III** | +10.3 | +0.5 | +3.4 | +4.4 | -3.4 | +8.3 | +0.5 | +6.8 | +2.4 | 0.0 | +6.4 | -1.5 |
-| **Vallotti** | +5.9 | 0.0 | +2.0 | +3.9 | -2.0 | +7.8 | -2.0 | +3.9 | +2.0 | 0.0 | +5.9 | -3.9 |
-| **Young II** | +5.9 | -3.9 | +2.0 | 0.0 | -2.0 | +3.9 | -5.9 | +3.9 | -2.0 | 0.0 | +2.0 | -3.9 |
+| Temperament          | C     | C#    | D    | D#    | E    | F     | F#    | G    | G#    | A   | A#    | B    |
+| :------------------- | :---- | :---- | :--- | :---- | :--- | :---- | :---- | :--- | :---- | :-- | :---- | :--- |
+| **Werckmeister III** | +11.7 | +2.0  | +3.9 | +5.9  | +2.0 | +9.8  | 0.0   | +7.8 | +3.9  | 0.0 | +7.8  | +3.9 |
+| **Kirnberger III**   | +10.3 | +0.5  | +3.4 | +4.4  | -3.4 | +8.3  | +0.5  | +6.8 | +2.4  | 0.0 | +6.4  | -1.5 |
+| **Vallotti**         | +5.9  | 0.0   | +2.0 | +3.9  | -2.0 | +7.8  | -2.0  | +3.9 | +2.0  | 0.0 | +5.9  | -3.9 |
+| **Young II**         | +5.9  | -3.9  | +2.0 | 0.0   | -2.0 | +3.9  | -5.9  | +3.9 | -2.0  | 0.0 | +2.0  | -3.9 |
 | **Meantone ¼-comma** | +10.3 | -13.7 | +3.4 | +20.5 | -3.4 | +13.7 | -10.3 | +6.8 | -17.1 | 0.0 | +17.1 | -6.8 |
 
 ---

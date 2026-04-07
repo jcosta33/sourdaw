@@ -46,7 +46,7 @@ export const useAppKeyboardShortcuts = ({ onOpenExport, onOpenPreferences }: Sho
             }
             if (mod && e.shiftKey && e.key === 'a') {
                 e.preventDefault();
-                void eventBus.emit('panel.showAutomation', undefined);
+                eventBus.emit('panel.showAutomation', undefined);
             }
             if (mod && e.key === 'j') {
                 e.preventDefault();

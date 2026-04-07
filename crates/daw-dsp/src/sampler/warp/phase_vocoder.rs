@@ -11,7 +11,6 @@
 ///
 /// Best for: sustained tones, pads, tonal content.
 /// Struggles with: transients (smearing).
-
 use std::f32::consts::PI;
 
 use super::super::types::FFT_SIZE_PV;
@@ -103,7 +102,8 @@ impl PhaseVocoder {
                 let phase = imag.atan2(real);
 
                 // Compute instantaneous frequency via phase difference.
-                let expected_phase_advance = 2.0 * PI * bin as f32 * self.hop_ana as f32 / self.fft_size as f32;
+                let expected_phase_advance =
+                    2.0 * PI * bin as f32 * self.hop_ana as f32 / self.fft_size as f32;
                 let phase_diff = phase - self.prev_phase[bin] - expected_phase_advance;
                 // Wrap to [-pi, pi].
                 let wrapped = phase_diff - (2.0 * PI * (phase_diff / (2.0 * PI)).round());
@@ -138,7 +138,8 @@ impl PhaseVocoder {
                         if nearest_peak < NUM_BINS {
                             let phase_diff_original =
                                 self.prev_phase[bin] - self.prev_phase[nearest_peak];
-                            self.synth_phase[bin] = self.synth_phase[nearest_peak] + phase_diff_original;
+                            self.synth_phase[bin] =
+                                self.synth_phase[nearest_peak] + phase_diff_original;
                         } else {
                             self.synth_phase[bin] += self.frequencies[bin] * ratio as f32;
                         }

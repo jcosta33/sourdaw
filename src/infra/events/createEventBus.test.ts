@@ -82,7 +82,7 @@ describe('createEventBus', () => {
         });
 
         const emitPromise = bus.emit('user.created', { id: '1', name: 'Alice' });
-        
+
         expect(bus.isIdle).toBe(false);
         expect(bus.pendingCount).toBe(1);
 
@@ -103,7 +103,7 @@ describe('createEventBus', () => {
     it('unsubscribe during emit does not corrupt iteration', async () => {
         const bus = createEventBus<TestEvents>();
         const handler2 = vi.fn();
-        
+
         const unsub1 = bus.on('user.created', () => {
             unsub1();
         });

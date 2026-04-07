@@ -4,7 +4,6 @@
 /// envelope, filter, and choke group assignment. Pads default to
 /// one-shot playback. Choke groups allow exclusive playback (e.g.,
 /// open and closed hi-hat).
-
 use super::super::types::{PadConfig, PlaybackMode, SampleId};
 use super::super::voice::VoiceTriggerParams;
 

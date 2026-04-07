@@ -78,7 +78,7 @@ export const workspacePresets: readonly PresetAction[] = [
         keywords: ['preferences', 'settings', 'options', 'config'],
         category: 'Workspace',
         buildAction: () => {
-            void eventBus.emit('dialog.openPreferences', undefined);
+            eventBus.emit('dialog.openPreferences', undefined);
             return [];
         },
     },

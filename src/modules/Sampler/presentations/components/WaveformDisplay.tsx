@@ -88,11 +88,7 @@ export const WaveformDisplay = ({
 
     return (
         <div className="relative">
-            <canvas
-                ref={canvasRef}
-                className={`w-full ${className}`}
-                style={{ height }}
-            />
+            <canvas ref={canvasRef} className={`w-full ${className}`} style={{ height }} />
             <div
                 ref={cursorRef}
                 className="pointer-events-none absolute top-0"

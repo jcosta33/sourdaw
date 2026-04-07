@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
@@ -33,72 +34,75 @@ export type BuildDeviceChainOutput = DeviceNodeEntry[];
  *
  * Unknown or failed devices are skipped gracefully.
  */
-export async function buildDeviceChain(
-    ctx: BaseAudioContext,
-    devices: Device[],
-    inputNode: AudioNode,
-    outputNode: AudioNode
-): Promise<BuildDeviceChainOutput> {
-    const activeDevices = devices.filter((d) => !d.bypassed);
-    if (activeDevices.length === 0) {
-        inputNode.connect(outputNode);
-        return [];
-    }
+export const buildDeviceChain = inject({ logger })(
+    ({ logger }) =>
+        async function buildDeviceChain(
+            ctx: BaseAudioContext,
+            devices: Device[],
+            inputNode: AudioNode,
+            outputNode: AudioNode
+        ): Promise<BuildDeviceChainOutput> {
+            const activeDevices = devices.filter((d) => !d.bypassed);
+            if (activeDevices.length === 0) {
+                inputNode.connect(outputNode);
+                return [];
+            }
 
-    const entries: DeviceNodeEntry[] = [];
-    let prev: AudioNode = inputNode;
+            const entries: DeviceNodeEntry[] = [];
+            let prev: AudioNode = inputNode;
 
-    for (const device of activeDevices) {
-        // Skip devices not supported on the current platform (e.g. native-only on web)
-        if (!isDeviceSupportedOnCurrentPlatform(device.type)) {
-            continue;
+            for (const device of activeDevices) {
+                // Skip devices not supported on the current platform (e.g. native-only on web)
+                if (!isDeviceSupportedOnCurrentPlatform(device.type)) {
+                    continue;
+                }
+
+                let strategy: AudioDeviceStrategy | null = null;
+                try {
+                    strategy = await deviceRegistry.createDevice(ctx, device);
+                } catch (error) {
+                    logger.warn(`Device ${device.type} failed to load: ${error}`);
+                    continue;
+                }
+
+                if (!strategy) {
+                    continue;
+                }
+
+                const dn = strategy.node;
+
+                // Instrument devices (Fermenter, Toaster, Levain) have 0 inputs — they
+                // are audio sources, not pass-through effects. Route their output INTO
+                // the current chain position (trackGain) so:
+                //   Instrument.output → trackGain → [effects] → trackPan → destination
+                // This preserves gain/pan automation on the instrument's output.
+                const isSourceNode = dn.inputNode instanceof AudioWorkletNode && dn.inputNode.numberOfInputs === 0;
+                if (isSourceNode) {
+                    dn.outputNode.connect(prev);
+                    // Don't advance `prev` — subsequent effects chain from trackGain forward
+                } else {
+                    prev.connect(dn.inputNode);
+                    prev = dn.outputNode;
+                }
+
+                entries.push({
+                    deviceId: device.id,
+                    deviceType: device.type,
+                    node: dn,
+                    strategy,
+                    // Proxies for legacy support (to be phased out completely soon)
+                    nativeDsp: {
+                        setParam: (name, value) => strategy!.setParam(name, value),
+                        setBypass: (bypassed) => strategy!.setBypass?.(bypassed),
+                    },
+                    instrumentControls: {
+                        noteOn: (note, vel, midi) => strategy!.noteOn?.(note, vel, midi),
+                        noteOff: (note) => strategy!.noteOff?.(note),
+                    },
+                });
+            }
+
+            prev.connect(outputNode);
+            return entries;
         }
-
-        let strategy: AudioDeviceStrategy | null = null;
-        try {
-            strategy = await deviceRegistry.createDevice(ctx, device);
-        } catch (error) {
-            logger.warn(`Device ${device.type} failed to load: ${error}`);
-            continue;
-        }
-
-        if (!strategy) {
-            continue;
-        }
-
-        const dn = strategy.node;
-
-        // Instrument devices (Fermenter, Toaster, Levain) have 0 inputs — they
-        // are audio sources, not pass-through effects. Route their output INTO
-        // the current chain position (trackGain) so:
-        //   Instrument.output → trackGain → [effects] → trackPan → destination
-        // This preserves gain/pan automation on the instrument's output.
-        const isSourceNode = dn.inputNode instanceof AudioWorkletNode && dn.inputNode.numberOfInputs === 0;
-        if (isSourceNode) {
-            dn.outputNode.connect(prev);
-            // Don't advance `prev` — subsequent effects chain from trackGain forward
-        } else {
-            prev.connect(dn.inputNode);
-            prev = dn.outputNode;
-        }
-
-        entries.push({
-            deviceId: device.id,
-            deviceType: device.type,
-            node: dn,
-            strategy,
-            // Proxies for legacy support (to be phased out completely soon)
-            nativeDsp: {
-                setParam: (name, value) => strategy!.setParam(name, value),
-                setBypass: (bypassed) => strategy!.setBypass?.(bypassed),
-            },
-            instrumentControls: {
-                noteOn: (note, vel, midi) => strategy!.noteOn?.(note, vel, midi),
-                noteOff: (note) => strategy!.noteOff?.(note),
-            },
-        });
-    }
-
-    prev.connect(outputNode);
-    return entries;
-}
+);

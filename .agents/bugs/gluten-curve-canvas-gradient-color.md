@@ -19,8 +19,8 @@ SyntaxError: Failed to execute 'addColorStop' on 'CanvasGradient': The value pro
 
 `GlutenCurve` builds canvas paint colors by taking an **accent** string and appending **two hex digits** for alpha, mimicking **8-digit hex** `#rrggbbaa` in CSS:
 
-- `` `${accent}22` `` → intended ≈ 13% opacity  
-- `` `${accent}00` `` → fully transparent  
+- `` `${accent}22` `` → intended ≈ 13% opacity
+- `` `${accent}00` `` → fully transparent
 
 That only works if **`accent` is already a 6-digit hex** like `#c9a07a`, producing `#c9a07a22` — a valid [CSS color](https://drafts.csswg.org/css-color/) string that `CanvasGradient#addColorStop` can parse.
 
@@ -29,7 +29,7 @@ That only works if **`accent` is already a 6-digit hex** like `#c9a07a`, produci
 `resolveToken` in `#/helpers/UI/resolveToken` does **not** turn custom properties into pixel colors. It does:
 
 ```ts
-getComputedStyle(document.documentElement).getPropertyValue(property).trim()
+getComputedStyle(document.documentElement).getPropertyValue(property).trim();
 ```
 
 For custom properties (`--*`), `getPropertyValue` returns the **declared value** for that property on `:root` — often still a **reference**, e.g. `var(--some-other-token)` or `oklch(...)`, **not** guaranteed to be `#rrggbb`. If the theme chains variables, **`accent` can be the literal string `var(--color-accent-peach)`** (or another unresolved form), not `#c9a07a`.

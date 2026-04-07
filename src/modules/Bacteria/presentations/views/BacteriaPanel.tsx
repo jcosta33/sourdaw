@@ -204,7 +204,7 @@ const SectionHeader = ({
             <span className="sr-only">{description}</span>
         </div>
         {detail ? (
-            <DawPluginLed tone="cyan" className="shrink-0">
+            <DawPluginLed tone="mint" className="shrink-0">
                 {detail}
             </DawPluginLed>
         ) : null}
@@ -218,7 +218,7 @@ const BChip = ({
     children,
     ...props
 }: React.ComponentProps<typeof DawPluginChip>): ReactElement => (
-    <DawPluginChip active={active} tone="cyan" size={size} className={className} {...props}>
+    <DawPluginChip active={active} tone="mint" size={size} className={className} {...props}>
         {children}
     </DawPluginChip>
 );
@@ -599,7 +599,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         </div>
                         <div className="text-[12px] font-medium text-foreground">Zoomed strips</div>
                     </div>
-                    <DawPluginLed tone="cyan">{state.patch.globalRouting.replace('-', ' ')}</DawPluginLed>
+                    <DawPluginLed tone="mint">{state.patch.globalRouting.replace('-', ' ')}</DawPluginLed>
                 </div>
                 <div className="flex min-h-0 gap-2 overflow-x-auto">
                     {Array.from({ length: state.patch.bandCount }, (_, index) => (
@@ -672,7 +672,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band cards</div>
                     <div className="text-[12px] font-medium text-foreground">The organism split open</div>
                 </div>
-                <DawPluginLed tone="cyan">{state.patch.crossoverMode}</DawPluginLed>
+                <DawPluginLed tone="mint">{state.patch.crossoverMode}</DawPluginLed>
             </div>
             <div className="flex min-h-0 gap-2 overflow-x-auto">
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
@@ -1808,7 +1808,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                     ) : null}
 
                     <div className="ml-auto flex items-center gap-2">
-                        <DawPluginLed tone="cyan">{moduleMeta.label}</DawPluginLed>
+                        <DawPluginLed tone="mint">{moduleMeta.label}</DawPluginLed>
                         <div className="text-right">
                             <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">
                                 In {formatValue(state.inputDb, 'dB')} / Out {formatValue(state.outputDb, 'dB')}

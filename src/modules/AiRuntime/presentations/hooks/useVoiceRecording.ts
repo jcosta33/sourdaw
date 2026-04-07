@@ -135,7 +135,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 }
                 setTranscribing(false);
                 setIsListening(false);
-                void unlisten();
+                unlisten();
             });
 
             // Start native recording via cpal + whisper inference
@@ -207,7 +207,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 showError('Microphone access denied. Allow mic in browser settings.');
                 if (isTauriAvailable()) {
                     modeRef.current = 'whisper';
-                    void startWhisperRecording();
+                    startWhisperRecording();
                 }
                 return;
             }
@@ -252,7 +252,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         if (modeRef.current === 'whisper') {
             setTranscribingAndStore(true);
             setInterimText('Transcribing...');
-            void stopDictation().catch((e: unknown) => {
+            stopDictation().catch((e: unknown) => {
                 logger.warn(`stop_dictation failed: ${String(e)}`);
             });
             // The dictation-result event listener (set in startWhisperRecording) handles the rest
@@ -267,13 +267,13 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         if (mode === 'browser') {
             const started = startBrowserRecognition();
             if (!started && isTauriAvailable()) {
-                void startWhisperRecording();
+                startWhisperRecording();
             }
             return;
         }
 
         if (mode === 'whisper') {
-            void startWhisperRecording();
+            startWhisperRecording();
             return;
         }
 

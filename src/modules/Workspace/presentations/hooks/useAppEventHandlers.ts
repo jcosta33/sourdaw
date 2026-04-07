@@ -27,14 +27,14 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
                 window.location.reload();
             }),
             eventBus.on('command.undo', () => {
-                void undo();
+                undo();
             }),
             eventBus.on('command.redo', () => {
-                void redo();
+                redo();
             }),
             eventBus.on('midi.import', (payload) => {
                 if (payload.file) {
-                    void importMidiFile(payload.file);
+                    importMidiFile(payload.file);
                 }
             }),
         ];

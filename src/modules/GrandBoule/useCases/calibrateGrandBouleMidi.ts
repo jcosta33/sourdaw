@@ -12,12 +12,9 @@ import {
 } from '../models/GrandBouleMidiCalibration';
 import { grandBouleStore } from '../stores/grandBouleStore';
 
-const clamp = (value: number, min: number, max: number): number =>
-    Math.max(min, Math.min(max, value));
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
-const updateCalibration = (
-    patch: Partial<GrandBouleMidiCalibration>,
-): void => {
+const updateCalibration = (patch: Partial<GrandBouleMidiCalibration>): void => {
     const state = grandBouleStore.value;
     if (state === null) {
         return;
@@ -79,10 +76,7 @@ export const resetMidiCalibration = (): void => {
  * Useful for previewing how a raw MIDI velocity maps to the engine's
  * hammer force given the current floor/ceiling/exponent settings.
  */
-export const applyVelocityCurve = (
-    rawVelocity: number,
-    calibration: GrandBouleMidiCalibration,
-): number => {
+export const applyVelocityCurve = (rawVelocity: number, calibration: GrandBouleMidiCalibration): number => {
     const normalised = clamp(rawVelocity / 127, 0, 1);
     const curved = Math.pow(normalised, calibration.velocityCurveExponent);
     const { velocityFloor, velocityCeiling } = calibration;

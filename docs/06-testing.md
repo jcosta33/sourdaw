@@ -587,7 +587,10 @@ Use a deterministic counter for IDs, not `Math.random`. Tests should be reproduc
 For injectables that depend on the event bus, build a local spy per test — no shared module-level mock is needed:
 
 ```typescript
-const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void>; on: (event: string, handler: Function) => () => void }>();
+const eventBus = spy<{
+    emit: (event: string, payload: unknown) => Promise<void>;
+    on: (event: string, handler: Function) => () => void;
+}>();
 injectDependencies(subjectUnderTest, { eventBus /* other deps */ });
 ```
 

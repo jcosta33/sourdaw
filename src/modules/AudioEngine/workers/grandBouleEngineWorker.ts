@@ -61,11 +61,7 @@ let ringFrames = 0;
 const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
 
-function initEngine(
-    wasmBytes: ArrayBuffer,
-    sab: SharedArrayBuffer,
-    sampleRate: number,
-): void {
+function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number): void {
     // Parse SAB layout.
     controlInts = new Int32Array(sab, 0, 2);
     const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT; // 8 bytes
@@ -153,11 +149,7 @@ function dispatch(msg: Record<string, unknown>): void {
             instance.set_sostenuto(msg.engaged as boolean);
             break;
         case 'noteOnMidi2':
-            instance.note_on_midi2(
-                msg.midiNote as number,
-                msg.velocity16bit as number,
-                msg.pitchOffsetQ24 as number,
-            );
+            instance.note_on_midi2(msg.midiNote as number, msg.velocity16bit as number, msg.pitchOffsetQ24 as number);
             break;
         case 'temperament':
             instance.set_temperament(msg.index as number);
@@ -174,11 +166,7 @@ function dispatch(msg: Record<string, unknown>): void {
 self.onmessage = ({ data }: MessageEvent): void => {
     const msg = data as Record<string, unknown>;
     if (msg.type === 'init') {
-        initEngine(
-            msg.wasmBytes as ArrayBuffer,
-            msg.sab as SharedArrayBuffer,
-            msg.sampleRate as number,
-        );
+        initEngine(msg.wasmBytes as ArrayBuffer, msg.sab as SharedArrayBuffer, msg.sampleRate as number);
     } else if (msg.type === 'stop') {
         running = false;
     } else {

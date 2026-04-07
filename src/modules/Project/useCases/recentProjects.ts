@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
@@ -29,65 +30,74 @@ export function getRecentProjects(): RecentProjectEntry[] {
     return recentProjectsStorage.get() ?? [];
 }
 
-export function addToRecentProjects(name: string, key: string): void {
-    try {
-        const entries = getRecentProjects().filter((e) => e.key !== key);
-        entries.unshift({ name, key, updatedAt: Date.now() });
-        recentProjectsStorage.set(entries.slice(0, MAX_RECENT));
-    } catch (error) {
-        logger.warn(`Failed to update recent projects: ${error}`);
-    }
-}
-
-export function removeFromRecentProjects(key: string): void {
-    try {
-        recentProjectsStorage.set(getRecentProjects().filter((e) => e.key !== key));
-    } catch (error) {
-        logger.warn(`Failed to remove from recent projects: ${error}`);
-    }
-}
-
-export async function loadRecentProject(key: string): Promise<boolean> {
-    try {
-        const raw = readNamedProjectJson(key);
-        if (!raw) {
-            logger.warn(`No project data found for key: ${key}`);
-            return false;
+export const addToRecentProjects = inject({ logger })(
+    ({ logger }) =>
+        function addToRecentProjects(name: string, key: string): void {
+            try {
+                const entries = getRecentProjects().filter((e) => e.key !== key);
+                entries.unshift({ name, key, updatedAt: Date.now() });
+                recentProjectsStorage.set(entries.slice(0, MAX_RECENT));
+            } catch (error) {
+                logger.warn(`Failed to update recent projects: ${error}`);
+            }
         }
+);
 
-        const data = JSON.parse(raw) as ProjectData;
-        if (data.version !== 1) {
-            logger.warn(`Unsupported project version for key: ${key}`);
-            return false;
+export const removeFromRecentProjects = inject({ logger })(
+    ({ logger }) =>
+        function removeFromRecentProjects(key: string): void {
+            try {
+                recentProjectsStorage.set(getRecentProjects().filter((e) => e.key !== key));
+            } catch (error) {
+                logger.warn(`Failed to remove from recent projects: ${error}`);
+            }
         }
+);
 
-        // Validated — stop any in-flight playback and tear down the previous
-        // project's audio graph before we hydrate stores for the new project.
-        stopPlayback();
-        resetAudioGraph();
+export const loadRecentProject = inject({ logger })(
+    ({ logger }) =>
+        async function loadRecentProject(key: string): Promise<boolean> {
+            try {
+                const raw = readNamedProjectJson(key);
+                if (!raw) {
+                    logger.warn(`No project data found for key: ${key}`);
+                    return false;
+                }
 
-        hydrateModuleStoresFromProjectData(data);
-        projectStore.set({
-            name: data.name,
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt,
-            dirty: false,
-            loading: false,
-            initialized: true,
-        });
+                const data = JSON.parse(raw) as ProjectData;
+                if (data.version !== 1) {
+                    logger.warn(`Unsupported project version for key: ${key}`);
+                    return false;
+                }
 
-        writeProjectJson(raw);
+                // Validated — stop any in-flight playback and tear down the previous
+                // project's audio graph before we hydrate stores for the new project.
+                stopPlayback();
+                resetAudioGraph();
 
-        await audioBufferCache.restoreFromIdb(getAudioContext());
-        if (trackStore.value) {
-            trackStore.set({ ...trackStore.value });
+                hydrateModuleStoresFromProjectData(data);
+                projectStore.set({
+                    name: data.name,
+                    createdAt: data.createdAt,
+                    updatedAt: data.updatedAt,
+                    dirty: false,
+                    loading: false,
+                    initialized: true,
+                });
+
+                writeProjectJson(raw);
+
+                await audioBufferCache.restoreFromIdb(getAudioContext());
+                if (trackStore.value) {
+                    trackStore.set({ ...trackStore.value });
+                }
+                verifyAudioBufferReferences();
+                clearUndoHistory();
+
+                return true;
+            } catch (error) {
+                logger.error(new Error('Failed to load recent project', { cause: error }));
+                return false;
+            }
         }
-        verifyAudioBufferReferences();
-        clearUndoHistory();
-
-        return true;
-    } catch (error) {
-        logger.error(new Error('Failed to load recent project', { cause: error }));
-        return false;
-    }
-}
+);

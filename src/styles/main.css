@@ -43,6 +43,16 @@
     --color-accent-orange: #f1a54b;
     --color-accent-pink: #c18fa3;
 
+    /* Extended Accents for Module Diversity */
+    --color-accent-coral: #e07a6e;
+    --color-accent-sage: #8aa88a;
+    --color-accent-steel: #6a8aa8;
+    --color-accent-copper: #b88868;
+    --color-accent-mint-bright: #66d2a5;
+    --color-accent-yellow-green: #8a9450;
+    --color-accent-rose: #c06070;
+    --color-accent-indigo: #4a60a0;
+
     /* UI States (muted DAW conventions — readable but not screaming) */
     --color-state-success: var(--color-accent-mint);
     --color-state-warning: var(--color-accent-amber);
@@ -495,8 +505,8 @@
 @utility bacteria-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 12% 0%, rgba(127, 184, 196, 0.1), transparent 22%),
-        radial-gradient(circle at 82% 0%, rgba(193, 143, 163, 0.08), transparent 20%),
+        radial-gradient(circle at 12% 0%, rgba(102, 210, 165, 0.12), transparent 22%),
+        radial-gradient(circle at 82% 0%, rgba(127, 184, 196, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -508,7 +518,7 @@
 @utility bacteria-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012)),
-        linear-gradient(180deg, rgba(127, 184, 196, 0.035), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(102, 210, 165, 0.05), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -518,11 +528,18 @@
         var(--shadow-elevation-inset);
 }
 
+@utility bacteria-tab-active {
+    color: var(--color-accent-mint-bright);
+    border-color: rgba(102, 210, 165, 0.44);
+    background: linear-gradient(180deg, rgba(102, 210, 165, 0.16), rgba(102, 210, 165, 0.08));
+    transform: translateY(-1px);
+}
+
 @utility crust-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 16% 0%, rgba(201, 160, 122, 0.12), transparent 24%),
-        radial-gradient(circle at 88% 0%, rgba(127, 184, 196, 0.08), transparent 20%),
+        radial-gradient(circle at 16% 0%, rgba(201, 160, 122, 0.14), transparent 24%),
+        radial-gradient(circle at 88% 0%, rgba(184, 136, 104, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -534,7 +551,7 @@
 @utility crust-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(201, 160, 122, 0.05), transparent 20%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(201, 160, 122, 0.06), transparent 20%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -544,11 +561,18 @@
         var(--shadow-elevation-inset);
 }
 
+@utility crust-tab-active {
+    color: var(--color-accent-peach);
+    border-color: rgba(201, 160, 122, 0.44);
+    background: linear-gradient(180deg, rgba(201, 160, 122, 0.16), rgba(201, 160, 122, 0.08));
+    transform: translateY(-1px);
+}
+
 @utility fermenter-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 14% 0%, rgba(127, 184, 196, 0.1), transparent 22%),
-        radial-gradient(circle at 82% 0%, rgba(196, 170, 95, 0.08), transparent 18%),
+        radial-gradient(circle at 14% 0%, rgba(138, 168, 138, 0.12), transparent 22%),
+        radial-gradient(circle at 82% 0%, rgba(127, 184, 196, 0.08), transparent 18%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -560,7 +584,7 @@
 @utility fermenter-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(127, 184, 196, 0.05), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(138, 168, 138, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -570,11 +594,18 @@
         var(--shadow-elevation-inset);
 }
 
+@utility fermenter-tab-active {
+    color: var(--color-accent-sage);
+    border-color: rgba(138, 168, 138, 0.44);
+    background: linear-gradient(180deg, rgba(138, 168, 138, 0.16), rgba(138, 168, 138, 0.08));
+    transform: translateY(-1px);
+}
+
 @utility gluten-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.042), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 14% 0%, rgba(201, 160, 122, 0.11), transparent 24%),
-        radial-gradient(circle at 82% 0%, rgba(170, 135, 200, 0.08), transparent 20%),
+        radial-gradient(circle at 14% 0%, rgba(168, 155, 196, 0.12), transparent 24%),
+        radial-gradient(circle at 82% 0%, rgba(125, 184, 160, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -586,7 +617,7 @@
 @utility gluten-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(201, 160, 122, 0.045), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(168, 155, 196, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -596,11 +627,18 @@
         var(--shadow-elevation-inset);
 }
 
+@utility gluten-tab-active {
+    color: var(--color-accent-lavender);
+    border-color: rgba(168, 155, 196, 0.44);
+    background: linear-gradient(180deg, rgba(168, 155, 196, 0.16), rgba(168, 155, 196, 0.08));
+    transform: translateY(-1px);
+}
+
 @utility levain-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 16% 0%, rgba(196, 170, 95, 0.12), transparent 24%),
-        radial-gradient(circle at 88% 0%, rgba(127, 184, 196, 0.06), transparent 20%),
+        radial-gradient(circle at 16% 0%, rgba(224, 122, 110, 0.12), transparent 24%),
+        radial-gradient(circle at 88% 0%, rgba(196, 170, 95, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -612,7 +650,7 @@
 @utility levain-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(196, 170, 95, 0.05), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(224, 122, 110, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -716,10 +754,10 @@
         radial-gradient(circle at 14% 0%, rgba(200, 200, 200, 0.08), transparent 24%),
         radial-gradient(circle at 82% 0%, rgba(255, 255, 255, 0.04), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.50),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.5),
         var(--shadow-elevation-raised);
 }
 
@@ -732,15 +770,15 @@
     border-radius: 18px;
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.50),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.5),
         var(--shadow-elevation-inset);
 }
 
 @utility yeast-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 12% 0%, rgba(224, 136, 96, 0.12), transparent 24%),
-        radial-gradient(circle at 82% 0%, rgba(96, 200, 224, 0.08), transparent 20%),
+        radial-gradient(circle at 12% 0%, rgba(192, 96, 112, 0.14), transparent 24%),
+        radial-gradient(circle at 82% 0%, rgba(196, 170, 95, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -752,7 +790,7 @@
 @utility yeast-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(224, 136, 96, 0.05), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(192, 96, 112, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -762,10 +800,17 @@
         var(--shadow-elevation-inset);
 }
 
+@utility yeast-tab-active {
+    color: var(--color-accent-rose);
+    border-color: rgba(192, 96, 112, 0.44);
+    background: linear-gradient(180deg, rgba(192, 96, 112, 0.16), rgba(192, 96, 112, 0.08));
+    transform: translateY(-1px);
+}
+
 @utility scoring-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 14% 0%, rgba(102, 210, 165, 0.12), transparent 24%),
+        radial-gradient(circle at 14% 0%, rgba(74, 96, 160, 0.14), transparent 24%),
         radial-gradient(circle at 84% 0%, rgba(127, 184, 196, 0.08), transparent 18%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -778,7 +823,7 @@
 @utility scoring-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(102, 210, 165, 0.05), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(74, 96, 160, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -786,6 +831,79 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.05),
         inset 0 -1px 0 rgba(0, 0, 0, 0.45),
         var(--shadow-elevation-inset);
+}
+
+@utility scoring-tab-active {
+    color: var(--color-accent-indigo);
+    border-color: rgba(74, 96, 160, 0.44);
+    background: linear-gradient(180deg, rgba(74, 96, 160, 0.16), rgba(74, 96, 160, 0.08));
+    transform: translateY(-1px);
+}
+
+@utility dutch-oven-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 14% 0%, rgba(196, 170, 95, 0.14), transparent 24%),
+        radial-gradient(circle at 84% 0%, rgba(201, 160, 122, 0.1), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility dutch-oven-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(196, 170, 95, 0.06), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility dutch-oven-tab-active {
+    color: var(--color-accent-amber);
+    border-color: rgba(196, 170, 95, 0.44);
+    background: linear-gradient(180deg, rgba(196, 170, 95, 0.16), rgba(196, 170, 95, 0.08));
+    transform: translateY(-1px);
+}
+
+@utility crumbs-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 16% 0%, rgba(168, 155, 196, 0.14), transparent 24%),
+        radial-gradient(circle at 88% 0%, rgba(201, 160, 122, 0.08), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility crumbs-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(168, 155, 196, 0.06), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility crumbs-tab-active {
+    color: var(--color-accent-lavender);
+    border-color: rgba(168, 155, 196, 0.44);
+    background: linear-gradient(180deg, rgba(168, 155, 196, 0.16), rgba(168, 155, 196, 0.08));
+    transform: translateY(-1px);
 }
 
 /* Tauri specific font-weight compensation for Linux WebKitGTK */

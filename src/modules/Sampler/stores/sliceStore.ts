@@ -21,9 +21,7 @@ export const sliceStore = createStore<SliceState>({
 });
 
 export function setMarkers(markers: SliceMarker[], autoDetected: boolean): void {
-    sliceStore.update((s) =>
-        s ? { ...s, markers, autoDetected, activeSliceIndex: 0 } : s
-    );
+    sliceStore.update((s) => (s ? { ...s, markers, autoDetected, activeSliceIndex: 0 } : s));
 }
 
 export function addMarker(framePosition: number): void {

@@ -26,6 +26,9 @@ export async function handleGenerateAudioFallback(prompt: string, durationStr: s
             durationMs: Math.round(performance.now() - start),
         });
     } catch (error: unknown) {
-        updateTask(taskId, { status: 'error', error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Generation failed' });
+        updateTask(taskId, {
+            status: 'error',
+            error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Generation failed',
+        });
     }
 }

@@ -61,12 +61,12 @@ Attempting to use `std::simd` in `daw-dsp` currently requires opting the crate i
 
 ## Issues
 
-| ID  | Title                                       | Needed                                                                                    | Priority |
-| --- | ------------------------------------------- | ----------------------------------------------------------------------------------------- | -------- |
-| 002 | Inline lookup tables with `inline_const`    | Continue auditing other runtime-generated lookup tables beyond the default STFT bit-reversal table now selected via `inline_const`. | Medium   |
-| 004 | Native SIMD in DSP                          | Decide whether `daw-dsp` may opt into nightly `portable_simd` (or another SIMD strategy) before rewriting hot kernels. | High     |
-| 005 | Precision optimization with `Float16Array`  | Selected UI history buffers now prefer `Float16Array`; keep cross-realm SAB telemetry and API-mandated buffers on `Float32Array` unless the format is negotiated explicitly. | Medium   |
-| 006 | Standardized Decorators                     | Clarify the intended decorator model for `setupTests.ts` and the function-based DI layer before changing those surfaces. | Low      |
+| ID  | Title                                      | Needed                                                                                                                                                                       | Priority |
+| --- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| 002 | Inline lookup tables with `inline_const`   | Continue auditing other runtime-generated lookup tables beyond the default STFT bit-reversal table now selected via `inline_const`.                                          | Medium   |
+| 004 | Native SIMD in DSP                         | Decide whether `daw-dsp` may opt into nightly `portable_simd` (or another SIMD strategy) before rewriting hot kernels.                                                       | High     |
+| 005 | Precision optimization with `Float16Array` | Selected UI history buffers now prefer `Float16Array`; keep cross-realm SAB telemetry and API-mandated buffers on `Float32Array` unless the format is negotiated explicitly. | Medium   |
+| 006 | Standardized Decorators                    | Clarify the intended decorator model for `setupTests.ts` and the function-based DI layer before changing those surfaces.                                                     | Low      |
 
 ## Resolved
 

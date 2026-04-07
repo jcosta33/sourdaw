@@ -7,7 +7,7 @@ export const injectDependencies = <TInjectable extends InjectableFunction, TMock
     mocks: TMocks
 ) => {
     Container.clear();
-    
+
     for (const key of Object.keys(injectable._deps)) {
         if (!(key in mocks)) {
             throw new Error(`Missing mock for dependency: ${key}`);
@@ -18,6 +18,6 @@ export const injectDependencies = <TInjectable extends InjectableFunction, TMock
         const originalDep = injectable._deps[key];
         testOverrides.set(originalDep, mockValue);
     }
-    
+
     return injectable;
 };

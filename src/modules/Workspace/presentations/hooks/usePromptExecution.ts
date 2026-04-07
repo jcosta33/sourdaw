@@ -1,11 +1,4 @@
-import {
-    type KeyboardEvent,
-    type RefObject,
-    type FormEvent,
-    useState,
-    useRef,
-    useEffect,
-} from 'react';
+import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, useEffect } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { logger } from '#/infra/logger/appLogger';
 import { parsePromptToActions } from '#/modules/AiRuntime/useCases/parsePromptToActions';
@@ -324,7 +317,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 e.preventDefault();
                 const selected = fuzzyResults[selectedIndex];
                 if (selected) {
-                    void executePreset(selected);
+                    executePreset(selected);
                 }
             } else if (e.key === 'Escape') {
                 e.preventDefault();
@@ -336,7 +329,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     const handleLoadModel = (modelId?: string): void => {
         if (isLlmAvailable()) {
-            void initEngine(modelId);
+            initEngine(modelId);
         }
     };
 

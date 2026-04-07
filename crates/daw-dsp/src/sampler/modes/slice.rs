@@ -6,7 +6,6 @@
 ///
 /// Slices can be reordered, and each slice has its own start/end frame
 /// derived from the marker positions.
-
 use super::super::types::{
     FilterType, LoopMode, PlaybackMode, SampleId, SliceMarker, LOOP_CROSSFADE_DEFAULT,
 };

@@ -3,7 +3,6 @@
 /// Maps a single sample chromatically: each MIDI note transposes the sample
 /// relative to its root note using pitch ratio calculation. This is the
 /// default mode for tonal samples.
-
 use super::super::types::{FilterType, LoopMode, PlaybackMode, SampleId, LOOP_CROSSFADE_DEFAULT};
 use super::super::voice::VoiceTriggerParams;
 

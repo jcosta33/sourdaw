@@ -1,11 +1,4 @@
-import {
-    type ReactElement,
-    type CSSProperties,
-    useState,
-    useRef,
-    useEffect,
-    type KeyboardEvent,
-} from 'react';
+import { type ReactElement, type CSSProperties, useState, useRef, useEffect, type KeyboardEvent } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -72,7 +65,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const chatState = useStore(chatStore, { messages: [], isGenerating: false, chatMode: 'chat', enableReasoning: false });
+    const chatState = useStore(chatStore, {
+        messages: [],
+        isGenerating: false,
+        chatMode: 'chat',
+        enableReasoning: false,
+    });
 
     // Auto scroll bottom when new message streams
     useEffect(() => {
@@ -85,7 +83,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         if (!inputValue.trim() || chatState?.isGenerating) {
             return;
         }
-        void sendChatMessage(inputValue.trim());
+        sendChatMessage(inputValue.trim());
         setInputValue('');
 
         // Return focus to input area after sending

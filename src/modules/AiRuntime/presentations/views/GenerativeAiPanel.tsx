@@ -13,10 +13,7 @@ import { isTauri } from '#/helpers/tauriBridge';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import {
-    aiStore,
-    type AiTaskResult,
-} from '#/modules/AiGeneration/stores/aiStore';
+import { aiStore, type AiTaskResult } from '#/modules/AiGeneration/stores/aiStore';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
 import { handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt';
 import { handleGenerateAudioFallback } from '#/modules/AiGeneration/useCases/actions/handleGenerateAudioFallback';
@@ -81,9 +78,8 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const selectedClipId = workspaceState?.selectedClipId ?? null;
     const trackState = useStore(trackStore, null as unknown as TrackStoreState);
     const tracks = trackState?.tracks ?? [];
-    const selectedClip = tracks.flatMap((t) => t.clips).find(
-        (c) => c.id === selectedClipId && c.type === 'audio'
-    ) ?? null;
+    const selectedClip =
+        tracks.flatMap((t) => t.clips).find((c) => c.id === selectedClipId && c.type === 'audio') ?? null;
 
     const handleStemSep = () => {
         if (selectedClip) {

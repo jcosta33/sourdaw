@@ -1,15 +1,17 @@
-import { eventBus } from '#/app/registerDependencies';
-import { logger } from '#/infra/logger/appLogger';
+import { inject } from '#/infra/di/inject';
+import { eventBus, logger } from '#/app/registerDependencies';
 import { toasterStore } from '../stores/toasterStore';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { TOASTER_ENGINE_MAP } from '../useCases/loadToasterKit';
 import type { BuiltinDeviceNode } from '#/modules/AudioEngine/models/AudioEngineState';
 
-export function initToasterSubscribers(): () => void {
-    const unsubscribe = eventBus.on('audioDevice.loaded', (payload) => {
-        if (payload.deviceType === 'toaster') {
-            logger.info('Hydrating newly loaded Toaster WASM engine with store state');
+export const initToasterSubscribers = inject({ eventBus, logger })(
+    ({ eventBus, logger }) =>
+        function initToasterSubscribers(): () => void {
+            const unsubscribe = eventBus.on('audioDevice.loaded', (payload) => {
+                if (payload.deviceType === 'toaster') {
+                    logger.info('Hydrating newly loaded Toaster WASM engine with store state');
 
             const kit = toasterStore.value?.kit;
             const deviceId = payload.deviceId;
@@ -61,5 +63,6 @@ export function initToasterSubscribers(): () => void {
         }
     });
 
-    return unsubscribe;
-}
+            return unsubscribe;
+        }
+);

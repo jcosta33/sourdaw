@@ -10,57 +10,61 @@
  * - No extra "instrument" track — the folder IS the instrument
  */
 
+import { inject } from '#/infra/di/inject';
 import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
-import { eventBus } from '#/app/bootstrap';
+import { eventBus } from '#/app/registerDependencies';
 
-export function createDrumTrackStack(): string | null {
-    const state = getTrackStoreState();
-    if (!state) {
-        return null;
-    }
+export const createDrumTrackStack = inject({ eventBus })(
+    ({ eventBus }) =>
+        function createDrumTrackStack(): string | null {
+            const state = getTrackStoreState();
+            if (!state) {
+                return null;
+            }
 
-    // Parent is a folder — gives it collapse/expand UI, smaller height, groups children
-    const parent = createTrack({ name: 'Toaster Kit', kind: 'folder' });
-    parent.collapsed = false;
-    const toasterId = `toaster-${crypto.randomUUID().slice(0, 8)}`;
-    parent.devices = [
-        {
-            id: toasterId,
-            name: 'Toaster',
-            type: 'toaster',
-            bypassed: false,
-            parameterValues: {},
-        },
-    ];
+            // Parent is a folder — gives it collapse/expand UI, smaller height, groups children
+            const parent = createTrack({ name: 'Toaster Kit', kind: 'folder' });
+            parent.collapsed = false;
+            const toasterId = `toaster-${crypto.randomUUID().slice(0, 8)}`;
+            parent.devices = [
+                {
+                    id: toasterId,
+                    name: 'Toaster',
+                    type: 'toaster',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ];
 
-    // 16 child tracks — one per pad, nested under the parent
-    const children = Array.from({ length: 16 }, (_, i) => {
-        const child = createTrack({
-            name: DEFAULT_PAD_NAMES[i] ?? `Pad ${i + 1}`,
-            kind: 'midi',
-            parentId: parent.id,
-        });
-        child.devices = []; // no default synth — routes to parent Toaster
-        child.outputId = parent.id; // audio routes through parent
-        child.color = PAD_COLORS[i] ?? child.color;
-        return child;
-    });
+            // 16 child tracks — one per pad, nested under the parent
+            const children = Array.from({ length: 16 }, (_, i) => {
+                const child = createTrack({
+                    name: DEFAULT_PAD_NAMES[i] ?? `Pad ${i + 1}`,
+                    kind: 'midi',
+                    parentId: parent.id,
+                });
+                child.devices = []; // no default synth — routes to parent Toaster
+                child.outputId = parent.id; // audio routes through parent
+                child.color = PAD_COLORS[i] ?? child.color;
+                return child;
+            });
 
-    // Commit all tracks in one batch
-    setTrackStoreState({
-        ...state,
-        tracks: [...state.tracks, parent, ...children],
-        selectedTrackId: parent.id,
-    });
+            // Commit all tracks in one batch
+            setTrackStoreState({
+                ...state,
+                tracks: [...state.tracks, parent, ...children],
+                selectedTrackId: parent.id,
+            });
 
-    // Wire the Toaster device into the audio engine
-    addDeviceToStrip(parent.id, toasterId, 'toaster');
+            // Wire the Toaster device into the audio engine
+            addDeviceToStrip(parent.id, toasterId, 'toaster');
 
-    void eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
+            eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
 
-    return parent.id;
-}
+            return parent.id;
+        }
+);

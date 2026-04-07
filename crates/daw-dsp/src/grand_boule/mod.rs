@@ -87,8 +87,11 @@ impl GrandBouleInstance {
 
     /// Trigger a MIDI 2.0 note-on with 16-bit velocity and Q24 pitch offset.
     pub fn note_on_midi2(&mut self, midi_note: u8, velocity_16bit: u32, pitch_offset_q24: i32) {
-        self.engine
-            .note_on_midi2(midi_note, velocity_16bit.min(0xFFFF) as u16, pitch_offset_q24);
+        self.engine.note_on_midi2(
+            midi_note,
+            velocity_16bit.min(0xFFFF) as u16,
+            pitch_offset_q24,
+        );
     }
 
     /// Load an attack-sample clip into the hybrid sampled-attack set.

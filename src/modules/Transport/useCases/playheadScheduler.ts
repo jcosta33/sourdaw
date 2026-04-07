@@ -170,7 +170,7 @@ export function startPlayheadScheduler(): void {
             for (const track of armedTracks) {
                 if (track.kind === 'audio') {
                     const recClip = clips.find((c) => c.trackId === track.id);
-                    void startAudioRecording(track.id, (buffer) => {
+                    startAudioRecording(track.id, (buffer) => {
                         const bufferId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                         audioBufferCache.set(bufferId, buffer);
                         if (recClip) {

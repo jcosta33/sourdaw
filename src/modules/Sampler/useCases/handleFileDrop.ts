@@ -10,9 +10,7 @@ import { loadSampleFromPath } from './loadSample';
 import { switchSamplerMode } from './setSamplerMode';
 import { samplerStore } from '../stores/samplerStore';
 
-const AUDIO_EXTENSIONS = new Set([
-    '.wav', '.mp3', '.flac', '.ogg', '.aac', '.aiff', '.aif', '.m4a',
-]);
+const AUDIO_EXTENSIONS = new Set(['.wav', '.mp3', '.flac', '.ogg', '.aac', '.aiff', '.aif', '.m4a']);
 
 function isAudioFile(name: string): boolean {
     const lower = name.toLowerCase();

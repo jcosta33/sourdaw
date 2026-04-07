@@ -50,9 +50,9 @@ export const PanelToggles = ({
 
     const handleLinkToggle = (): void => {
         if (linkStatus.enabled) {
-            void disableLink();
+            disableLink();
         } else {
-            void enableLink().catch(() => {
+            enableLink().catch(() => {
                 /* graceful no-op if Link not available */
             });
         }
@@ -167,7 +167,9 @@ export const PanelToggles = ({
                     <Button
                         variant={linkStatus.enabled ? 'secondary' : 'ghost'}
                         size="icon-sm"
-                        aria-label={linkStatus.enabled ? 'Ableton Link active — click to disable' : 'Enable Ableton Link sync'}
+                        aria-label={
+                            linkStatus.enabled ? 'Ableton Link active — click to disable' : 'Enable Ableton Link sync'
+                        }
                         aria-pressed={linkStatus.enabled}
                         onClick={handleLinkToggle}
                         className={linkStatus.enabled ? 'text-[var(--color-accent-amber)]' : ''}

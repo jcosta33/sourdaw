@@ -76,7 +76,20 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         return <div className="h-full" />;
     }
 
-    const { activeSample, mode, envelope, filterCutoff, filterResonance, filterType, masterGain, tune, pan, activeVoices, isLoading, voiceStack } = state;
+    const {
+        activeSample,
+        mode,
+        envelope,
+        filterCutoff,
+        filterResonance,
+        filterType,
+        masterGain,
+        tune,
+        pan,
+        activeVoices,
+        isLoading,
+        voiceStack,
+    } = state;
 
     // Use deviceId as the engine instance identifier for IPC.
     const instanceId = state.instanceId ?? deviceId;
@@ -109,9 +122,7 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         >
             {isDragOver ? (
                 <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[26px] border-2 border-dashed border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/5">
-                    <span className="text-sm font-medium text-[var(--color-accent-peach)]">
-                        Drop sample here
-                    </span>
+                    <span className="text-sm font-medium text-[var(--color-accent-peach)]">Drop sample here</span>
                 </div>
             ) : null}
             <div className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
@@ -136,13 +147,21 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                     <DawPluginMetricTile
                                         className="sampler-window min-w-[80px]"
                                         label="Root"
-                                        value={activeSample.detectedRoot !== null ? midiNoteToName(activeSample.detectedRoot) : '—'}
+                                        value={
+                                            activeSample.detectedRoot !== null
+                                                ? midiNoteToName(activeSample.detectedRoot)
+                                                : '—'
+                                        }
                                         detail="Detected pitch"
                                     />
                                     <DawPluginMetricTile
                                         className="sampler-window min-w-[80px]"
                                         label="BPM"
-                                        value={activeSample.detectedBpm !== null ? `${activeSample.detectedBpm.toFixed(1)}` : '—'}
+                                        value={
+                                            activeSample.detectedBpm !== null
+                                                ? `${activeSample.detectedBpm.toFixed(1)}`
+                                                : '—'
+                                        }
                                         detail="Estimated tempo"
                                     />
                                     <DawPluginMetricTile

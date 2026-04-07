@@ -82,6 +82,7 @@ Provide a robust, CRDT-backed articulation mapping system with real-time-safe MI
 ## Data Model (Lossless Distillation)
 
 ### TypeScript (Frontend)
+
 ```typescript
 interface Articulation {
     id: UUID; // UUID v7 for CRDT ordering
@@ -106,6 +107,7 @@ interface Articulation {
 ```
 
 ### Rust (Engine)
+
 ```rust
 pub struct ArticulationMap {
     pub articulations: Vec<Articulation>,
@@ -124,14 +126,17 @@ pub struct NoteArticulationState {
 ## Design decisions
 
 ### Decision: Articulation State Ownership
+
 **Chosen:** Note-attached metadata (Logic model).
 **Justification:** Ensures assignments move with notes during quantization/editing and allows polyphonic articulations (different notes in the same chord).
 
 ### Decision: Real-time Chase Architecture
+
 **Chosen:** Hybrid O(log n) chase with bar-boundary snapshots and per-parameter binary search indexes.
 **Justification:** Avoids O(n) linear scans from track start which are unacceptable for the real-time thread.
 
 ### Decision: Audio Thread Interception Point
+
 **Chosen:** Pre-processing stage between Event Collection and Plugin Dispatch.
 **Justification:** Maintains sample-accurate timing and intra-buffer priority sorting while remaining transparent to the plugin.
 

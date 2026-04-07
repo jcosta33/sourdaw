@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
 import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores/actionHistoryStore';
@@ -197,68 +198,71 @@ export type ExecuteOptions = {
     skipUndo?: boolean;
 };
 
-export async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = handlerRegistry[action.type] as ActionHandler<any> | undefined;
-    if (!handler) {
-        logger.error(new Error(`No handler registered for action: ${action.type}`));
-        return;
-    }
-
-    // Capture undo info BEFORE executing — this lets describe() snapshot current
-    // state for destructive actions like removeTrack / removeClip.
-    let undoResult: { label: string; inverseAction?: AppAction | null } | null = null;
-    if (handler.undoable) {
-        undoResult = handler.describe(action);
-    }
-
-    // Set semantic context so AutomergeStorage attaches a message to the CRDT change.
-    // This makes `Automerge.getHistory()` return readable change descriptions.
-    const label = undoResult?.label ?? action.type;
-    setSemanticContext({
-        message: label,
-        actionKind: action.type,
-        entityRefs: [],
-    });
-
-    try {
-        await handler.execute(action);
-    } finally {
-        clearSemanticContext();
-    }
-
-    // Record to macro playback
-    recordAction(action);
-
-    if (!options?.skipUndo) {
-        // Record undoable actions to global history (skip UI-only actions like panel toggles)
-        if (handler.undoable) {
-            pushActionHistoryEntry({
-                id: crypto.randomUUID(),
-                label,
-                actionKind: action.type,
-                action,
-                inverseAction: undoResult?.inverseAction ?? null,
-                source: options?.source ?? 'manual',
-                timestamp: Date.now(),
-                groupId: options?.groupId,
-                groupLabel: options?.groupLabel,
-                reverted: false,
-            });
-        }
-
-        if (undoResult) {
-            const entry = createUndoEntry(
-                undoResult.label,
-                action,
-                undoResult.inverseAction ?? null,
-                options?.source ?? 'manual'
-            );
-            if (options?.groupId) {
-                entry.groupId = options.groupId;
-                entry.groupLabel = options.groupLabel;
+export const executeAppAction = inject({ logger })(
+    ({ logger }) =>
+        async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const handler = handlerRegistry[action.type] as ActionHandler<any> | undefined;
+            if (!handler) {
+                logger.error(new Error(`No handler registered for action: ${action.type}`));
+                return;
             }
-            pushUndo(entry);
+
+            // Capture undo info BEFORE executing — this lets describe() snapshot current
+            // state for destructive actions like removeTrack / removeClip.
+            let undoResult: { label: string; inverseAction?: AppAction | null } | null = null;
+            if (handler.undoable) {
+                undoResult = handler.describe(action);
+            }
+
+            // Set semantic context so AutomergeStorage attaches a message to the CRDT change.
+            // This makes `Automerge.getHistory()` return readable change descriptions.
+            const label = undoResult?.label ?? action.type;
+            setSemanticContext({
+                message: label,
+                actionKind: action.type,
+                entityRefs: [],
+            });
+
+            try {
+                await handler.execute(action);
+            } finally {
+                clearSemanticContext();
+            }
+
+            // Record to macro playback
+            recordAction(action);
+
+            if (!options?.skipUndo) {
+                // Record undoable actions to global history (skip UI-only actions like panel toggles)
+                if (handler.undoable) {
+                    pushActionHistoryEntry({
+                        id: crypto.randomUUID(),
+                        label,
+                        actionKind: action.type,
+                        action,
+                        inverseAction: undoResult?.inverseAction ?? null,
+                        source: options?.source ?? 'manual',
+                        timestamp: Date.now(),
+                        groupId: options?.groupId,
+                        groupLabel: options?.groupLabel,
+                        reverted: false,
+                    });
+                }
+
+                if (undoResult) {
+                    const entry = createUndoEntry(
+                        undoResult.label,
+                        action,
+                        undoResult.inverseAction ?? null,
+                        options?.source ?? 'manual'
+                    );
+                    if (options?.groupId) {
+                        entry.groupId = options.groupId;
+                        entry.groupLabel = options.groupLabel;
+                    }
+                    pushUndo(entry);
+                }
+            }
         }
-    }
-}
+);

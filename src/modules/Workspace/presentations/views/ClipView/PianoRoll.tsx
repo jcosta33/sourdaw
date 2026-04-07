@@ -9,14 +9,7 @@
  * - PianoRollToolbar.tsx        (toolbar controls — pure component)
  * - PianoRollContextMenu.tsx    (right-click menu — view component)
  */
-import {
-    type ReactElement,
-    type Dispatch,
-    type SetStateAction,
-    useRef,
-    useLayoutEffect,
-    useState,
-} from 'react';
+import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
 
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';

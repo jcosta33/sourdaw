@@ -68,10 +68,10 @@ function startPolling(): void {
         if (!active) return;
         await drain();
         pollTimer = setTimeout(() => {
-            void tick();
+            tick();
         }, POLL_MS);
     };
-    void tick();
+    tick();
 }
 
 async function stopWorker(): Promise<void> {
@@ -112,7 +112,7 @@ async function stopWorker(): Promise<void> {
 self.onmessage = ({ data }: MessageEvent): void => {
     switch ((data as { type: string }).type) {
         case 'init':
-            void initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
+            initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
                 self.postMessage({ type: 'ready' });
             });
             break;
@@ -120,7 +120,7 @@ self.onmessage = ({ data }: MessageEvent): void => {
             startPolling();
             break;
         case 'stop':
-            void stopWorker();
+            stopWorker();
             break;
     }
 };

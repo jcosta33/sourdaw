@@ -17,7 +17,7 @@ export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> =>
 
     const emit = async <TEventName extends keyof TEvents & string>(
         event: TEventName,
-        payload: TEvents[TEventName],
+        payload: TEvents[TEventName]
     ): Promise<void> => {
         const snapshot = registry.getSnapshot(event);
         if (snapshot.eventHandlers.length === 0 && snapshot.anyHandlers.length === 0) {

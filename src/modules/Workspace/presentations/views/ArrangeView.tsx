@@ -78,7 +78,12 @@ export const ArrangeView = (): ReactElement => {
         // timeline container div is mounted (absent during the empty-state path).
     }, [hasUserTracks]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const viewState = useStore(timelineViewStore, { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true });
+    const viewState = useStore(timelineViewStore, {
+        scrollX: 0,
+        scrollY: 0,
+        pixelsPerBeat: 12,
+        autoScrollEnabled: true,
+    });
 
     const markerState = useStore(markerStore, { markers: [], sections: [] });
 
