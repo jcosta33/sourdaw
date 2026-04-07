@@ -13,6 +13,7 @@ import { TimelineMinimap } from '#/modules/Arrangement/presentations/views/Timel
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
 import { MarkerLane } from '#/modules/Arrangement/presentations/views/MarkerLane';
 import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
+import { TimelineChromeSurface } from '#/modules/Arrangement/presentations/views/TimelineChromeSurface';
 import { timelineViewStore, setScrollX } from '#/modules/Arrangement/stores/timelineViewStore';
 import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
@@ -192,20 +193,19 @@ const TimelineHScrollbar = ({
     };
 
     return (
-        <div className="relative shrink-0 select-none" style={{ height: 10, background: 'rgba(0,0,0,0.25)' }}>
+        <TimelineChromeSurface tone="subtle" className="select-none" style={{ height: 10 }}>
             <div
-                className="absolute rounded-full"
+                className="daw-scrollbar-thumb absolute rounded-full"
                 style={{
                     top: 2,
                     bottom: 2,
                     left: thumbLeft,
                     width: thumbWidth,
-                    background: 'rgba(255,255,255,0.14)',
                     cursor: 'grab',
                 }}
                 onMouseDown={handleMouseDown}
             />
-        </div>
+        </TimelineChromeSurface>
     );
 };
 

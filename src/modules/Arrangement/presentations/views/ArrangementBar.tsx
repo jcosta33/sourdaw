@@ -16,6 +16,7 @@ import { type ArrangementSection } from '../../models/Marker';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { cn } from '#/helpers/Styles/cn';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 type ArrangementBarProps = {
     pixelsPerBeat: number;
@@ -272,8 +273,8 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
     };
 
     return (
-        <div
-            className="daw-header-band relative shrink-0 overflow-hidden select-none"
+        <TimelineChromeSurface
+            className="select-none"
             style={{ height: BAR_HEIGHT }}
             onContextMenu={handleBarContextMenu}
             role="region"
@@ -417,6 +418,6 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                     )}
                 </div>
             ) : null}
-        </div>
+        </TimelineChromeSurface>
     );
 };

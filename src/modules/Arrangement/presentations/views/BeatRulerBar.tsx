@@ -7,6 +7,7 @@ import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
 import { setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
 import { disableLooping } from '#/modules/Transport/useCases/setLooping';
+import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 const HEIGHT = 18;
 
@@ -261,13 +262,10 @@ export const BeatRulerBar = (): React.ReactElement => {
     };
 
     return (
-        <div
+        <TimelineChromeSurface
             ref={containerRef}
-            className="relative w-full shrink-0 select-none cursor-col-resize"
-            style={{
-                height: HEIGHT,
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 0 rgba(0,0,0,0.3)',
-            }}
+            className="cursor-col-resize select-none"
+            style={{ height: HEIGHT }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -278,6 +276,6 @@ export const BeatRulerBar = (): React.ReactElement => {
             title="Drag to set loop region · Shift+drag to extend · Click to move playhead"
         >
             <canvas ref={setCanvas} className="block w-full" style={{ height: HEIGHT }} />
-        </div>
+        </TimelineChromeSurface>
     );
 };
