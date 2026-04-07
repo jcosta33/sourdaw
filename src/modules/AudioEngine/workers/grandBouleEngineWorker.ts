@@ -83,12 +83,19 @@ function initEngine(
 function renderLoop(): void {
     if (!running || !instance || !controlInts || !leftRing || !rightRing || !memory) return;
 
-    const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
-    const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
-    const buffered = writeHead - readHead;
-    const available = ringFrames - buffered;
+    // Render as many blocks as needed to stay TARGET_AHEAD of the consumer,
+    // using a bounded loop instead of recursion to avoid stack overflow.
+    const maxBlocksPerTick = Math.ceil(TARGET_AHEAD / BLOCK_SIZE) + 1;
 
-    if (available >= BLOCK_SIZE) {
+    for (let i = 0; i < maxBlocksPerTick; i++) {
+        const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
+        const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
+        const buffered = writeHead - readHead;
+
+        if (buffered >= TARGET_AHEAD || ringFrames - buffered < BLOCK_SIZE) {
+            break; // Enough headroom or ring is full.
+        }
+
         // Render one block.
         const leftPtr = instance.process(BLOCK_SIZE);
         const rightPtr = instance.get_right_ptr();
@@ -111,16 +118,9 @@ function renderLoop(): void {
         Atomics.store(controlInts, WRITE_HEAD_IDX, writeHead + BLOCK_SIZE);
     }
 
-    // Keep rendering ahead up to TARGET_AHEAD, then yield.
-    const newBuffered = Atomics.load(controlInts, WRITE_HEAD_IDX) - Atomics.load(controlInts, READ_HEAD_IDX);
-    if (newBuffered < TARGET_AHEAD && available >= BLOCK_SIZE * 2) {
-        // More room — render another block immediately.
-        renderLoop();
-    } else {
-        // Yield to the event loop so we can process incoming MIDI messages,
-        // then resume rendering.
-        setTimeout(renderLoop, 0);
-    }
+    // Yield to the event loop so we can process incoming MIDI messages,
+    // then resume rendering.
+    setTimeout(renderLoop, 1);
 }
 
 function dispatch(msg: Record<string, unknown>): void {
