@@ -44,4 +44,5 @@ daw-core = { path = "../crates/daw-core" }
 daw-collab = { path = "../crates/daw-collab" }
 daw-engine = { path = "../crates/daw-engine" }
 daw-plugin-host = { path = "../crates/daw-plugin-host" }
+daw-dsp = { path = "../crates/daw-dsp" }
 daw-io = { path = "../crates/daw-io" }
