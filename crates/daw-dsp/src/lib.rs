@@ -5,4 +5,5 @@ pub mod grinder;
 pub mod knead;
 pub mod levain;
 pub mod proof;
+pub mod sampler;
 pub mod toaster;
