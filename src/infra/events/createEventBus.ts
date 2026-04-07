@@ -1,91 +1,80 @@
-import type { EventBus, EventHandler, EventMap, WildcardHandler } from './types';
+import type { EventBus, EventMap } from './types';
+import { createSubscriptionRegistry } from './internal/createSubscriptionRegistry';
 
 export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> => {
-    const handlers = new Map<keyof TEvents & string, Set<EventHandler<any>>>();
-    const wildcardHandlers = new Set<WildcardHandler<TEvents>>();
-
+    const registry = createSubscriptionRegistry<TEvents>();
     let pendingCount = 0;
-    let idlePromise: Promise<void> | null = null;
-    let idleResolve: (() => void) | null = null;
+    let idleWaiters: Array<() => void> = [];
 
-    const checkIdle = () => {
-        if (pendingCount === 0 && idleResolve) {
-            idleResolve();
-            idlePromise = null;
-            idleResolve = null;
+    const waitForIdle = (): Promise<void> => {
+        if (pendingCount === 0) {
+            return Promise.resolve();
+        }
+        const { promise, resolve } = Promise.withResolvers<void>();
+        idleWaiters.push(resolve);
+        return promise;
+    };
+
+    const emit = async <K extends keyof TEvents & string>(event: K, payload: TEvents[K]): Promise<void> => {
+        const snapshot = registry.getSnapshot(event);
+        if (snapshot.eventHandlers.length === 0 && snapshot.anyHandlers.length === 0) {
+            return;
+        }
+
+        pendingCount++;
+        try {
+            const promises: Promise<void>[] = [];
+
+            for (const handler of snapshot.eventHandlers) {
+                try {
+                    const result = handler(payload);
+                    if (result instanceof Promise) {
+                        promises.push(result);
+                    }
+                } catch (err) {
+                    // Log but do not interrupt other handlers
+                    console.error(`Error in event handler for ${event}:`, err);
+                }
+            }
+
+            for (const handler of snapshot.anyHandlers) {
+                try {
+                    const result = handler(event, payload);
+                    if (result instanceof Promise) {
+                        promises.push(result);
+                    }
+                } catch (err) {
+                    // Log but do not interrupt other handlers
+                    console.error(`Error in wildcard event handler for ${event}:`, err);
+                }
+            }
+
+            if (promises.length > 0) {
+                await Promise.allSettled(promises);
+            }
+        } finally {
+            pendingCount--;
+            if (pendingCount === 0) {
+                const waiters = idleWaiters;
+                idleWaiters = [];
+                for (const resolve of waiters) {
+                    resolve();
+                }
+            }
         }
     };
 
     return {
+        on: registry.on,
+        once: registry.once,
+        onAny: registry.onAny,
+        emit,
+        waitForIdle,
         get pendingCount() {
             return pendingCount;
         },
         get isIdle() {
             return pendingCount === 0;
-        },
-        on(event, handler) {
-            let set = handlers.get(event);
-            if (!set) {
-                set = new Set();
-                handlers.set(event, set);
-            }
-            set.add(handler);
-            return () => {
-                set?.delete(handler);
-            };
-        },
-        once(event, handler) {
-            const unsub = this.on(event, (payload) => {
-                unsub();
-                return handler(payload);
-            });
-            return unsub;
-        },
-        onAny(handler) {
-            wildcardHandlers.add(handler);
-            return () => {
-                wildcardHandlers.delete(handler);
-            };
-        },
-        async emit(event, payload) {
-            pendingCount++;
-            
-            const eventHandlers = handlers.get(event) ? Array.from(handlers.get(event)!) : [];
-            const anyHandlers = Array.from(wildcardHandlers);
-            
-            const promises: (void | Promise<void>)[] = [];
-            
-            for (const handler of eventHandlers) {
-                try {
-                    promises.push(handler(payload));
-                } catch (err) {
-                    console.error(`Error in event handler for ${event}:`, err);
-                }
-            }
-            
-            for (const handler of anyHandlers) {
-                try {
-                    promises.push(handler(event, payload));
-                } catch (err) {
-                    console.error(`Error in wildcard handler for ${event}:`, err);
-                }
-            }
-
-            try {
-                await Promise.all(promises);
-            } finally {
-                pendingCount--;
-                checkIdle();
-            }
-        },
-        waitForIdle(): Promise<void> {
-            if (pendingCount === 0) return Promise.resolve();
-            if (!idlePromise) {
-                const { promise, resolve } = (Promise as any).withResolvers();
-                idlePromise = promise;
-                idleResolve = resolve;
-            }
-            return idlePromise!;
         },
     };
 };

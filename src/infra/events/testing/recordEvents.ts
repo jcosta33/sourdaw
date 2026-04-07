@@ -12,7 +12,9 @@ export const recordEvents = <TEvents extends EventMap>(bus: EventBus<TEvents>) =
     });
 
     return {
-        entries,
+        get entries() {
+            return [...entries];
+        },
         stop,
     };
 };
