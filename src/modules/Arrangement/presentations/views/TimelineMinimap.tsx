@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
+import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 const MINIMAP_HEIGHT = 28;
 const MIN_PROJECT_BEATS = 64;
@@ -241,9 +242,10 @@ export const TimelineMinimap = (): ReactElement => {
     };
 
     return (
-        <div
+        <TimelineChromeSurface
+            tone="subtle"
             ref={containerRef}
-            className="relative w-full shrink-0 cursor-pointer border-b border-border/30 bg-surface-base"
+            className="cursor-pointer"
             style={{ height: MINIMAP_HEIGHT }}
             onMouseDown={handleMouseDown}
             aria-label="Timeline minimap — drag the viewport to scroll, click to jump"
@@ -253,6 +255,6 @@ export const TimelineMinimap = (): ReactElement => {
             aria-valuenow={Math.round((scrollX / Math.max(1, pixelsPerBeat * MIN_PROJECT_BEATS)) * 100)}
         >
             <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: MINIMAP_HEIGHT }} />
-        </div>
+        </TimelineChromeSurface>
     );
 };

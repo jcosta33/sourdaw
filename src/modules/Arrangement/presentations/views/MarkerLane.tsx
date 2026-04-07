@@ -12,6 +12,7 @@ import {
 } from '../../useCases/marker/markerOperations';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
+import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 type MarkerLaneProps = {
     pixelsPerBeat: number;
@@ -179,14 +180,11 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
     };
 
     return (
-        <div
+        <TimelineChromeSurface
             ref={laneRef}
-            className="relative shrink-0 overflow-hidden select-none"
+            className="select-none"
             style={{
                 height: LANE_HEIGHT,
-                background: 'linear-gradient(180deg, rgba(8,8,8,0.7) 0%, rgba(14,14,14,0.7) 100%)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 0 rgba(0,0,0,0.2)',
-                borderBottom: '1px solid rgba(40,40,40,0.3)',
             }}
             onContextMenu={handleLaneContextMenu}
             role="region"
@@ -289,6 +287,6 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                     )}
                 </div>
             ) : null}
-        </div>
+        </TimelineChromeSurface>
     );
 };

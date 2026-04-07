@@ -26,18 +26,17 @@ The unresolved work still needs to respect `.agents/specs/look-and-feel.md`:
 
 Open issue:
 
-- Shared panel surfaces now cover the main base, dock, and tray shells; the remaining drift is concentrated in timeline-specific header bars and a few view-local empty-state / shell hybrids.
+- Shared panel surfaces now cover the main base, dock, and tray shells. Timeline-specific chrome is now routed through `src/modules/Arrangement/presentations/views/TimelineChromeSurface.tsx`, and the automation split-panel left rail now uses `src/modules/Workspace/presentations/views/AutomationView/AutomationSidebarCell.tsx`. The remaining drift is concentrated in view-local onboarding/editor shell hybrids rather than the timeline bars themselves.
 
 Representative files:
 
-- `src/modules/Arrangement/presentations/views/ArrangementBar.tsx`
 - `src/modules/Workspace/presentations/views/ArrangeView.tsx`
-- `src/modules/Workspace/presentations/views/AutomationBottomPanel.tsx`
 - `src/modules/Workspace/presentations/views/ClipView.tsx`
 
 Needed:
 
-- finish the last restrained DAW shell variants without making the shell louder
+- decide whether the remaining Arrange empty-state shell and Clip editor tray should stay local or share one calmer DAW shell variant
+- keep onboarding/editor-specific shells local unless the same pattern repeats elsewhere
 
 ### 2. Floating menus and context surfaces are not fully unified repo-wide
 

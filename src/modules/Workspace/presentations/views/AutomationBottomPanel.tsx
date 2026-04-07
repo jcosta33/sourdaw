@@ -20,11 +20,13 @@ import { toggleLaneCollapsed } from '#/modules/Automation/useCases/automation/to
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
+import { AutomationSidebarCell } from './AutomationView/AutomationSidebarCell';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationView/AutomationControls';
 import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
+import { TimelineChromeSurface } from '#/modules/Arrangement/presentations/views/TimelineChromeSurface';
 
 const SPARKLINE_HEIGHT = 24;
 
@@ -212,7 +214,7 @@ export const AutomationBottomPanel = (): ReactElement => {
                     }}
                 >
                     {/* Left panel — fixed width matching track list */}
-                    <div className="min-w-0 border-r border-border/30 bg-surface-well">
+                    <AutomationSidebarCell>
                         {/* Track info header */}
                         <DawHeaderBand className="h-7 gap-2 px-2" compact>
                             <div className="size-2.5 rounded-sm" style={{ backgroundColor: trackColor }} />
@@ -220,18 +222,18 @@ export const AutomationBottomPanel = (): ReactElement => {
                                 {selectedTrack.name}
                             </span>
                         </DawHeaderBand>
-                    </div>
+                    </AutomationSidebarCell>
                     {/* Spacer: same height as track header so row 2 lines up across columns */}
-                    <div className="h-7 shrink-0 border-b border-border/30 bg-surface-base/50" aria-hidden />
+                    <TimelineChromeSurface tone="subtle" className="h-7" aria-hidden />
 
                     {/* Automation mode selector */}
-                    <div className="min-w-0 shrink-0 border-b border-border/20 border-r border-border/30 bg-surface-well px-2 py-1.5">
+                    <AutomationSidebarCell className="shrink-0 border-b border-border/20 px-2 py-1.5">
                         <AutomationModeControl
                             automationMode={automationMode}
                             laneCount={trackLanes.length}
                             onModeChange={(mode) => setAutomationMode(selectedTrackId!, mode)}
                         />
-                    </div>
+                    </AutomationSidebarCell>
                     {/* Beat ruler for alignment — flex filler below matches mode row height */}
                     <div className="flex h-full min-h-0 min-w-0 flex-col border-b border-border/20">
                         <BeatRulerBar />
@@ -239,7 +241,7 @@ export const AutomationBottomPanel = (): ReactElement => {
                     </div>
 
                     {/* Lane labels with collapse toggle and delete */}
-                    <div className="min-h-0 overflow-y-auto border-r border-border/30 bg-surface-well">
+                    <AutomationSidebarCell className="min-h-0 overflow-y-auto">
                         {trackLanes.map((lane) => (
                             <div
                                 key={lane.id}
@@ -282,7 +284,7 @@ export const AutomationBottomPanel = (): ReactElement => {
                         <div className="shrink-0 px-2 py-1.5 hover:bg-surface-base/50">
                             <AutomationAddLaneControl params={unusedParams} onAdd={handleAddLane} showAvailableCount />
                         </div>
-                    </div>
+                    </AutomationSidebarCell>
 
                     {/* Right panel — automation lanes aligned with timeline */}
                     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden" ref={containerRef}>
