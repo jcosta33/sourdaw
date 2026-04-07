@@ -1,15 +1,13 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
 import { ChevronsRight } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { timelineViewStore, toggleAutoScroll } from '#/modules/Arrangement/stores/timelineViewStore';
+import { useStore } from '#/infra/store/useStore';
 
 export const AutoScrollToggle = (): ReactElement => {
-    const autoScrollEnabled = useSyncExternalStore(
-        (onChange) => timelineViewStore.subscribe(() => onChange()),
-        () => timelineViewStore.value?.autoScrollEnabled ?? true,
-        () => timelineViewStore.value?.autoScrollEnabled ?? true
-    );
+    const timelineViewState = useStore(timelineViewStore, { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true });
+    const autoScrollEnabled = timelineViewState.autoScrollEnabled;
 
     return (
         <Tooltip>

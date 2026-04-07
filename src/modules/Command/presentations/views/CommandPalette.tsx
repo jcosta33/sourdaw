@@ -1,4 +1,5 @@
-import { type ReactElement, type KeyboardEvent, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, type KeyboardEvent, useState, useEffect, useRef } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
@@ -7,12 +8,10 @@ import { searchCommands, type CommandEntry } from '../../models/CommandRegistry'
 import { executeAppAction } from '../../useCases/executeAppAction';
 import { closeCommandPalette } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-
-const subscribe = (cb: () => void): (() => void) => workspaceStore.subscribe(cb);
-const getCommandPaletteOpen = (): boolean => workspaceStore.value?.commandPaletteOpen ?? false;
+import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 
 export const CommandPalette = (): ReactElement | null => {
-    const commandPaletteOpen = useSyncExternalStore(subscribe, getCommandPaletteOpen, () => false);
+    const commandPaletteOpen = useStore(workspaceStore, null as unknown as WorkspaceState)?.commandPaletteOpen ?? false;
     const [query, setQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);

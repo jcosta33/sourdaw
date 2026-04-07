@@ -8,7 +8,8 @@
  * - Searchable across entire root
  * - Sample preview, favorites, drag-to-timeline
  */
-import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react';
@@ -33,11 +34,23 @@ type LibraryBrowserProps = {
     selectedTrackId: string | null;
 };
 
+const defaultLibraryState: LibraryState = {
+    roots: [],
+    samples: [],
+    folderTrees: {},
+    activeRootId: null,
+    currentFolder: null,
+    searchQuery: '',
+    tagFilter: null,
+    favoritesOnly: false,
+    sortField: 'name',
+    sortDirection: 'asc',
+    scanning: false,
+    scanProgress: 0,
+};
+
 export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: LibraryBrowserProps): ReactElement => {
-    const state = useSyncExternalStore<LibraryState | null>(
-        (cb) => libraryStore.subscribe(cb),
-        () => libraryStore.value
-    );
+    const state = useStore(libraryStore, defaultLibraryState);
 
     const [showSearch, setShowSearch] = useState(false);
 

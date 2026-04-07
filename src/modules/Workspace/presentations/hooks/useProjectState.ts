@@ -1,7 +1,7 @@
 /**
  * useProjectState — local re-implementation using projectStore (contract).
  */
-import { useSyncExternalStore } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { projectStore, type ProjectStoreState } from '#/modules/Project/stores/projectStore';
 
 const defaultState: ProjectStoreState = {
@@ -14,9 +14,5 @@ const defaultState: ProjectStoreState = {
 };
 
 export const useProjectState = (): ProjectStoreState => {
-    return useSyncExternalStore(
-        (onChange) => projectStore.subscribe(() => onChange()),
-        () => projectStore.value ?? defaultState,
-        () => projectStore.value ?? defaultState
-    );
+    return useStore(projectStore, defaultState);
 };

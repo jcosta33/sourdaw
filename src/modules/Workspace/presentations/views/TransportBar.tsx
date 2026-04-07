@@ -1,4 +1,5 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { useTransportState } from '../hooks/useTransportState';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
@@ -21,8 +22,7 @@ import { RecentProjectsMenu } from '#/modules/Project/presentations/views/Recent
 import { ArrangementSelector } from '#/modules/Project/presentations/views/ArrangementSelector';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 
-const subscribeTrackStore = (cb: () => void) => trackStore.subscribe(() => cb());
-const getTrackStoreSnapshot = (): Track[] => trackStore.value?.tracks ?? [];
+const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
 
 /** Lit-edge separator that follows the NW light source model from the design system */
 const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
@@ -44,7 +44,7 @@ export const TransportBar = (): ReactElement => {
     const undoState = useUndoState();
     const project = useProjectState();
 
-    const tracks = useSyncExternalStore(subscribeTrackStore, getTrackStoreSnapshot, getTrackStoreSnapshot);
+    const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
     const anyTrackArmed = tracks.some((t) => t.armed);
     const anyMidiTrackArmed = tracks.some((t) => t.armed && t.kind === 'midi');
 

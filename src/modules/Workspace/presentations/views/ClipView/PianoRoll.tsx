@@ -16,12 +16,12 @@ import {
     useRef,
     useLayoutEffect,
     useState,
-    useSyncExternalStore,
 } from 'react';
 
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { useStore } from '#/infra/store/useStore';
 import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
 
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
@@ -71,16 +71,8 @@ export const PianoRoll = ({
     const beatWidth = Math.max(1, 40 * zoom);
 
     // ── Store subscriptions ──────────────────────────────────────────
-    const midiState = useSyncExternalStore(
-        (cb) => midiStore.subscribe(() => cb()),
-        () => midiStore.value,
-        () => midiStore.value
-    );
-    const trackState = useSyncExternalStore(
-        (cb) => trackStore.subscribe(() => cb()),
-        () => trackStore.value,
-        () => trackStore.value
-    );
+    const midiState = useStore(midiStore, { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+    const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const notes = midiState?.notesByClipId[clipId] ?? [];
 
     // ── Report layout to parent ──────────────────────────────────────

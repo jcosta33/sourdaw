@@ -11,7 +11,8 @@
  * - Routes through triggerLiveNoteOn/Off use cases → same path as a physical MIDI controller.
  */
 
-import { type ReactElement, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawDisplaySurface } from '#/components/daw/DawDisplaySurface';
@@ -24,6 +25,7 @@ import { Slider } from '#/components/ui/slider';
 import { triggerLiveNoteOn } from '#/modules/AudioEngine/useCases/triggerLiveNoteOn';
 import { triggerLiveNoteOff } from '#/modules/AudioEngine/useCases/triggerLiveNoteOff';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import {
     setVirtualKeyboardOctave,
     setVirtualKeyboardVelocity,
@@ -121,11 +123,10 @@ function buildBlackKeys(): BlackKeyDef[] {
 
 const ALL_BLACK_KEYS = buildBlackKeys();
 
-// ─── Store selectors ──────────────────────────────────────────────────────────
-
-const subscribeWorkspace = (cb: () => void) => workspaceStore.subscribe(cb);
-const getOctave = () => workspaceStore.value?.virtualKeyboardOctave ?? 4;
-const getVelocity = () => workspaceStore.value?.virtualKeyboardVelocity ?? 100;
+const defaultWorkspaceState: WorkspaceState = {
+    virtualKeyboardOctave: 4,
+    virtualKeyboardVelocity: 100,
+} as WorkspaceState;
 
 // ─── Computer keyboard mappings ───────────────────────────────────────────────
 
@@ -160,8 +161,9 @@ type VirtualKeyboardProps = {
 };
 
 export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement => {
-    const octave = useSyncExternalStore(subscribeWorkspace, getOctave);
-    const velocity = useSyncExternalStore(subscribeWorkspace, getVelocity);
+    const workspace = useStore(workspaceStore, defaultWorkspaceState);
+    const octave = workspace.virtualKeyboardOctave;
+    const velocity = workspace.virtualKeyboardVelocity;
 
     const panelRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);

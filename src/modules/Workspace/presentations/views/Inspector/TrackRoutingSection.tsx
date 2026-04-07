@@ -1,8 +1,10 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { useStore } from '#/infra/store/useStore';
 import { audioGraphStore } from '#/modules/AudioEngine/stores/audioGraphStore';
+import { type AudioGraphState, defaultAudioGraphState } from '#/modules/AudioEngine/models/AudioGraph';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
@@ -11,12 +13,9 @@ type TrackRoutingSectionProps = {
 };
 
 export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactElement => {
-    const graphState = useSyncExternalStore(
-        (cb) => audioGraphStore.subscribe(cb),
-        () => audioGraphStore.value
-    );
+    const graphState = useStore<AudioGraphState>(audioGraphStore, defaultAudioGraphState);
 
-    const trackRoutes = graphState?.routes.filter((r) => r.sourceId === track.id || r.destinationId === track.id) ?? [];
+    const trackRoutes = graphState.routes.filter((r) => r.sourceId === track.id || r.destinationId === track.id);
 
     return (
         <div>

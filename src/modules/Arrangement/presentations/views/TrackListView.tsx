@@ -6,8 +6,8 @@ import {
     useRef,
     useState,
     useLayoutEffect,
-    useSyncExternalStore,
 } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -29,7 +29,7 @@ import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { removeTrack } from '../../useCases/removeTrack';
 import { setWorkspaceMode } from '../../useCases/trackViewActions';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
-import { timelineViewStore, setScrollY } from '#/modules/Arrangement/stores/timelineViewStore';
+import { timelineViewStore, setScrollY, type TimelineViewState } from '#/modules/Arrangement/stores/timelineViewStore';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
 import { defaultPreferences, type Preferences } from '#/modules/Workspace/useCases/workspaceQueries';
 import { setTrackHeight } from '#/modules/Workspace/useCases/setTrackHeight';
@@ -56,17 +56,17 @@ export const TrackListView = ({
     const dragTrackIdRef = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const isSyncingRef = useRef(false);
-    const prefs = useSyncExternalStore(
-        (cb) => preferencesStore.subscribe(cb),
-        () => preferencesStore.value ?? defaultPreferences
-    );
+    const prefs = useStore(preferencesStore, defaultPreferences);
     const currentHeight = prefs.trackHeight;
 
-    const scrollY = useSyncExternalStore(
-        (cb) => timelineViewStore.subscribe(() => cb()),
-        () => timelineViewStore.value?.scrollY ?? 0,
-        () => 0
-    );
+    const defaultTimelineView: TimelineViewState = {
+        scrollX: 0,
+        scrollY: 0,
+        pixelsPerBeat: 12,
+        autoScrollEnabled: true,
+    };
+    const timelineView = useStore(timelineViewStore, defaultTimelineView);
+    const scrollY = timelineView.scrollY;
 
     useLayoutEffect(() => {
         const el = scrollRef.current;

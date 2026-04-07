@@ -1,8 +1,9 @@
-import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { markerStore } from '../../stores/markerStore';
+import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import {
     addSection,
     removeSection,
@@ -52,14 +53,12 @@ type DragState = {
 const BAR_HEIGHT = 22;
 const EDGE_ZONE = 6; // px from edge to detect resize handle
 
-export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps): ReactElement => {
-    const markerState = useSyncExternalStore(
-        (cb) => markerStore.subscribe(() => cb()),
-        () => markerStore.value,
-        () => markerStore.value
-    );
+const defaultMarkerState: MarkerStoreState = { markers: [], sections: [] };
 
-    const sections = markerState?.sections ?? [];
+export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps): ReactElement => {
+    const markerState = useStore(markerStore, defaultMarkerState);
+
+    const sections = markerState.sections;
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [editing, setEditing] = useState<EditingState>(null);
     const [dragPreview, setDragPreview] = useState<{

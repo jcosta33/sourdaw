@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
@@ -20,11 +21,7 @@ export const ArrangementSelector = (): ReactElement | null => {
     const menuRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const state = useSyncExternalStore(
-        (cb) => arrangementStore.subscribe(() => cb()),
-        () => arrangementStore.value,
-        () => arrangementStore.value
-    );
+    const state = useStore(arrangementStore, arrangementStore.value!);
 
     useEffect(() => {
         if (!open) {

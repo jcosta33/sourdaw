@@ -1152,7 +1152,7 @@ What **cannot** be shared between platforms: audio I/O (cpal vs Web Audio API), 
 
 ## DAW UI performance requires bypassing React for all 60fps visuals
 
-The single most important React performance rule for a DAW: **never put audio-rate or display-rate data in React state**. Meter levels, playhead position, and waveform scroll position must live in `useRef` values that drive Canvas rendering via `requestAnimationFrame`, completely bypassing React's reconciler. React state triggers re-renders; at 60fps, that means 60 full reconciliation passes per second — unacceptable. `useSyncExternalStore` is appropriate only for discrete state changes (play/stop, BPM, track selection) where the store snapshot changes infrequently.
+The single most important React performance rule for a DAW: **never put audio-rate or display-rate data in React state**. Meter levels, playhead position, and waveform scroll position must live in `useRef` values that drive Canvas rendering via `requestAnimationFrame`, completely bypassing React's reconciler. React state triggers re-renders; at 60fps, that means 60 full reconciliation passes per second — unacceptable. `useStore` from `#/infra/store/useStore` is appropriate only for discrete state changes (play/stop, BPM, track selection) where the store snapshot changes infrequently.
 
 React 19's Compiler (stable since October 2025) auto-inserts memoization at the reactive-scope level, delivering up to **2.5x faster interactions** per Meta's Quest Store benchmarks and **20-30% render time reduction** across Sanity Studio's 1,231 components. The compiler de-optimizes on props mutation during render, non-deterministic reads, and mutable external variable closures — so structure components with stable primitive props (string IDs, not object references) and pure render functions.
 
@@ -6166,7 +6166,7 @@ interface AutomationStore {
 }
 ```
 
-React subscribes to structural changes via `useSyncExternalStore`. The GPU renderer reads `dirtyLanes` each frame, re-uploads only modified buffers, then clears the dirty set. During playback without editing, zero buffer uploads occur — only the playhead uniform updates.
+React subscribes to structural changes via `useStore` from `#/infra/store/useStore`. The GPU renderer reads `dirtyLanes` each frame, re-uploads only modified buffers, then clears the dirty set. During playback without editing, zero buffer uploads occur — only the playhead uniform updates.
 
 ---
 

@@ -9,7 +9,8 @@
  * with oklch colors, border-white/10, and consistent context menus.
  */
 
-import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
@@ -51,10 +52,7 @@ type ScratchPadViewProps = {
 };
 
 export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): ReactElement => {
-    const state = useSyncExternalStore(
-        (cb) => scratchPadStore.subscribe(cb),
-        () => scratchPadStore.value ?? defaultState
-    );
+    const state = useStore(scratchPadStore, defaultState);
 
     const sections = [...state.sections].sort((a, b) => a.order - b.order);
 

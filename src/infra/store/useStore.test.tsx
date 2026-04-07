@@ -9,9 +9,9 @@ describe('useStore', () => {
         let renderCount = 0;
 
         const TestComponent = () => {
-            const state = useStore(store);
+            const state = useStore(store, { count: 0 });
             renderCount++;
-            return <div data-testid="count">{state?.count ?? 'null'}</div>;
+            return <div data-testid="count">{state.count}</div>;
         };
 
         const { getByTestId } = render(<TestComponent />);
@@ -19,7 +19,7 @@ describe('useStore', () => {
         expect(renderCount).toBe(1);
 
         act(() => {
-            store.update((prev) => (prev ? { count: prev.count + 1 } : null));
+            store.update((prev) => ({ count: (prev?.count ?? 0) + 1 }));
         });
 
         expect(getByTestId('count').textContent).toBe('1');
@@ -31,7 +31,7 @@ describe('useStore', () => {
         let renderCount = 0;
 
         const TestComponent = () => {
-            useStore(store);
+            useStore(store, { count: 0 });
             renderCount++;
             return null;
         };

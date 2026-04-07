@@ -5,16 +5,18 @@ import {
     useRef,
     useState,
     useLayoutEffect,
-    useSyncExternalStore,
 } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
+import { useStore } from '#/infra/store/useStore';
+import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import { timelineViewStore, type TimelineViewState, scrollTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
+import { defaultWorkspaceState } from '../../models/WorkspaceState';
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { toggleLaneCollapsed } from '#/modules/Automation/useCases/automation/toggleLaneCollapsed';
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
@@ -96,39 +98,25 @@ export const AutomationBottomPanel = (): ReactElement => {
 
     const containerWidth = useContainerWidth(containerRef);
 
-    const trackState = useSyncExternalStore(
-        (cb) => trackStore.subscribe(() => cb()),
-        () => trackStore.value,
-        () => trackStore.value
-    );
+    const trackState = useStore<TrackStoreState>(trackStore, { tracks: [], selectedTrackId: null });
+    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
+    const viewState = useStore<TimelineViewState>(timelineViewStore, {
+        scrollX: 0,
+        scrollY: 0,
+        pixelsPerBeat: 12,
+        autoScrollEnabled: true,
+    });
+    const ws = useStore<WorkspaceState>(workspaceStore, defaultWorkspaceState);
 
-    const autoState = useSyncExternalStore(
-        (cb) => automationStore.subscribe(() => cb()),
-        () => automationStore.value,
-        () => automationStore.value
-    );
-
-    const viewState = useSyncExternalStore(
-        (cb) => timelineViewStore.subscribe(() => cb()),
-        () => timelineViewStore.value,
-        () => timelineViewStore.value
-    );
-
-    const ws = useSyncExternalStore(
-        (cb) => workspaceStore.subscribe(() => cb()),
-        () => workspaceStore.value,
-        () => workspaceStore.value
-    );
-
-    const selectedTrackId = trackState?.selectedTrackId ?? null;
-    const selectedTrack = trackState?.tracks.find((t) => t.id === selectedTrackId) ?? null;
-    const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
-    const scrollX = viewState?.scrollX ?? 0;
-    const trackListWidth = ws?.trackListWidth ?? 176;
-    const trackListOpen = ws?.trackListOpen ?? true;
+    const selectedTrackId = trackState.selectedTrackId;
+    const selectedTrack = trackState.tracks.find((t) => t.id === selectedTrackId) ?? null;
+    const pixelsPerBeat = viewState.pixelsPerBeat;
+    const scrollX = viewState.scrollX;
+    const trackListWidth = ws.trackListWidth;
+    const trackListOpen = ws.trackListOpen;
 
     const trackLanes = selectedTrackId
-        ? (autoState?.lanes ?? []).filter((l) => l.trackId === selectedTrackId && !l.clipId)
+        ? autoState.lanes.filter((l) => l.trackId === selectedTrackId && !l.clipId)
         : [];
 
     const availableParams = selectedTrack

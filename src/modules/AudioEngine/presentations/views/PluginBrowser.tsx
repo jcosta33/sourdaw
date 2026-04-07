@@ -1,4 +1,5 @@
-import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
@@ -29,10 +30,7 @@ const FORMAT_COLORS: Record<string, string> = {
 const FORMAT_ORDER = ['vst3', 'clap', 'au'];
 
 export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserProps): ReactElement | null => {
-    const state = useSyncExternalStore(
-        (cb) => pluginScanStore.subscribe(cb),
-        () => pluginScanStore.value ?? defaultPluginScanState
-    );
+    const state = useStore(pluginScanStore, defaultPluginScanState);
     const [collapsedFormats, setCollapsedFormats] = useState<Set<string>>(new Set());
     const [localSearch, setLocalSearch] = useState('');
 

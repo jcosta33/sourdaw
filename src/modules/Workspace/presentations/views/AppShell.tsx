@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState } from 'react';
 import { LaunchScreen } from '../components/LaunchScreen';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
@@ -44,7 +44,8 @@ import { AiChangeToast } from '#/modules/AiRuntime/presentations/views/AiChangeT
 import { NotificationToast } from '../components/NotificationToast';
 import { AiActionHistoryPanel } from '#/modules/AiRuntime/presentations/views/AiActionHistoryPanel';
 import { MixAnalysisPanel } from '#/modules/AiRuntime/presentations/views/MixAnalysisPanel';
-import { subscribeAiStore, getAiSnapshot } from '#/modules/AiGeneration/stores/aiStore';
+import { useStore } from '#/infra/store/useStore';
+import { aiStore } from '#/modules/AiGeneration/stores/aiStore';
 import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog';
 import { PreferencesDialog } from './PreferencesDialog';
 import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
@@ -114,11 +115,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     } = workspaceState;
 
     const project = useProjectState();
-    const prefs = useSyncExternalStore(
-        (cb) => preferencesStore.subscribe(cb),
-        () => preferencesStore.value ?? defaultPreferences
-    );
-    const aiState = useSyncExternalStore(subscribeAiStore, getAiSnapshot);
+    const prefs = useStore(preferencesStore, defaultPreferences);
+    const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);

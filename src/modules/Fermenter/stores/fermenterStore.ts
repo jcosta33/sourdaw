@@ -1,6 +1,6 @@
 /**
  * Fermenter synth state store.
- * Holds the current patch and UI state. Reactive — UI subscribes via useSyncExternalStore.
+ * Holds the current patch and UI state. Reactive — UI subscribes via useStore from #/infra/store/useStore.
  * Keyed by deviceId to support multiple simultaneous instances.
  */
 

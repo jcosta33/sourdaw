@@ -47,6 +47,7 @@
     --color-accent-steel: #6a8aa8;
     --color-accent-copper: #b88868;
     --color-accent-mint-bright: #66d2a5;
+    --color-accent-yellow-green: #8a9450;
 
     /* UI States (muted DAW conventions — readable but not screaming) */
     --color-state-success: var(--color-accent-mint);

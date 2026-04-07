@@ -1,4 +1,5 @@
-import { type ReactElement, useEffect, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Activity, Waves } from 'lucide-react';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -41,10 +42,7 @@ function SectionCard({
 }
 
 export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const allInstances = useSyncExternalStore(
-        (callback) => scoringStore.subscribe(callback),
-        () => scoringStore.value
-    );
+    const allInstances = useStore(scoringStore, {});
     const state = allInstances?.[deviceId] ?? getScoringState(deviceId);
 
     const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;

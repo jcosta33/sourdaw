@@ -1,10 +1,22 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Loader2 } from 'lucide-react';
-import { levainStore } from '#/modules/Levain/stores/levainStore';
+import { levainStore, type LevainState } from '#/modules/Levain/stores/levainStore';
 import { type Track } from '#/modules/Arrangement/models/Track';
 
 type Props = {
     track: Track;
+};
+
+const defaultLevainState: LevainState = {
+    patch: {} as LevainState['patch'],
+    uiLevel: 1,
+    engineReady: false,
+    sampleLoadProgress: null,
+    activeVoices: 0,
+    peakL: 0,
+    peakR: 0,
+    currentArticulationDisplay: 'Long',
 };
 
 export const LevainLoadingSpinner = ({ track }: Props): ReactElement | null => {
@@ -12,17 +24,9 @@ export const LevainLoadingSpinner = ({ track }: Props): ReactElement | null => {
     const isLevainTrack = track.devices.some((d: any) => d.type === 'levain');
 
     // We only subscribe if it's a levain track to avoid unnecessary re-renders on pure audio tracks
-    const isLoading = useSyncExternalStore(
-        (cb) => {
-            if (!isLevainTrack) return () => {};
-            return levainStore.subscribe(cb);
-        },
-        () => {
-            if (!isLevainTrack) return false;
-            const progress = levainStore.value?.sampleLoadProgress;
-            return progress !== null && progress !== undefined;
-        }
-    );
+    const levainState = useStore(levainStore, defaultLevainState);
+    const progress = levainState.sampleLoadProgress;
+    const isLoading = isLevainTrack && progress !== null && progress !== undefined;
 
     if (!isLoading) {
         return null;

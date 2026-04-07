@@ -1,4 +1,5 @@
-import { type ReactElement, type ReactNode, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, type ReactNode, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
@@ -303,12 +304,11 @@ const Knob = ({
     </div>
 );
 
+const defaultGlutenInstances: Record<string, GlutenState> = {};
+
 export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const allInstances = useSyncExternalStore(
-        (callback) => glutenStore.subscribe(callback),
-        () => glutenStore.value
-    );
-    const state: GlutenState = allInstances?.[deviceId] ?? getGlutenState(deviceId);
+    const allInstances = useStore(glutenStore, defaultGlutenInstances);
+    const state: GlutenState = allInstances[deviceId] ?? getGlutenState(deviceId);
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
 

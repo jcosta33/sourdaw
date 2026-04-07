@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
@@ -7,6 +8,7 @@ import { Input } from '#/components/ui/input';
 import { GitBranch, Plus, Merge, Trash2, Check, X } from 'lucide-react';
 
 import { type BranchRecord, type BranchStoreState, MAIN_BRANCH_ID } from '../../models/BranchTypes';
+
 import { branchStore } from '../../stores/branchStore';
 import { forkProjectBranch, switchBranch, mergeBranch, deleteBranch } from '../../useCases/crdtBranching';
 
@@ -20,10 +22,7 @@ type BranchManagerDialogProps = {
 };
 
 export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): ReactElement => {
-    const state = useSyncExternalStore(
-        (cb) => branchStore.subscribe(cb),
-        () => branchStore.value ?? defaultState
-    );
+    const state = useStore(branchStore, defaultState);
     const [newBranchName, setNewBranchName] = useState('');
     const [creating, setCreating] = useState(false);
 

@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
@@ -7,6 +8,7 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { closeCollaborationPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
 
 import { useCollaborationState } from '../hooks/useCollaborationState';
@@ -23,11 +25,13 @@ import { CollaborationBlock } from '../components/CollaborationBlock';
 import { CollaborationStatusRow } from '../components/CollaborationStatusRow';
 import { QrInvite } from './QrInvite';
 
+const defaultWorkspaceState: WorkspaceState = {
+    collaborationPanelOpen: false,
+} as WorkspaceState;
+
 export const CollaborationPanel = (): ReactElement | null => {
-    const panelOpen = useSyncExternalStore(
-        (cb) => workspaceStore.subscribe(cb),
-        () => workspaceStore.value?.collaborationPanelOpen ?? false
-    );
+    const workspace = useStore(workspaceStore, defaultWorkspaceState);
+    const panelOpen = workspace.collaborationPanelOpen;
 
     const state = useCollaborationState();
     const [hostName, setHostName] = useState('');

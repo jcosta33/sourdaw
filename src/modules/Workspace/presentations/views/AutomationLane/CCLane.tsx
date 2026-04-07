@@ -1,12 +1,13 @@
-import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addMidiCC } from '#/modules/MIDI/useCases/midiEvent/addMidiCC';
 import { removeMidiCC } from '#/modules/MIDI/useCases/midiEvent/removeMidiCC';
 import { moveMidiCC } from '#/modules/MIDI/useCases/midiEvent/moveMidiCC';
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
+import { useStore } from '#/infra/store/useStore';
 
 type CCLaneProps = {
     clipId: string | null;
@@ -19,13 +20,13 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     const containerRef = useRef<HTMLDivElement>(null);
     const [dragId, setDragId] = useState<string | null>(null);
 
-    const midiState = useSyncExternalStore(
-        (cb) => midiStore.subscribe(() => cb()),
-        () => midiStore.value,
-        () => midiStore.value
-    );
+    const midiState = useStore<MidiStoreState>(midiStore, {
+        notesByClipId: {},
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    });
 
-    const allCc = clipId ? (midiState?.ccByClipId[clipId] ?? []) : [];
+    const allCc = clipId ? (midiState.ccByClipId[clipId] ?? []) : [];
     const points = [...allCc.filter((c: MidiCC) => c.controller === controller)].sort(
         (a: MidiCC, b: MidiCC) => a.beat - b.beat
     );

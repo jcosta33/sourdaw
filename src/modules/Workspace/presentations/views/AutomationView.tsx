@@ -1,25 +1,32 @@
-import { type ReactElement, type WheelEvent, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, type WheelEvent, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
-import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Arrangement/stores/timelineViewStore';
+import {
+    timelineViewStore,
+    scrollTimeline,
+    setScrollY,
+    type TimelineViewState,
+} from '#/modules/Arrangement/stores/timelineViewStore';
 import { useTracks } from '../hooks/useTracks';
 import { TrackAutomationSection } from './AutomationView/TrackAutomationSection';
 import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
 import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles';
+import { useStore } from '#/infra/store/useStore';
 
 export const AutomationView = (): ReactElement => {
     const { tracks } = useTracks();
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const viewState = useSyncExternalStore(
-        (cb) => timelineViewStore.subscribe(() => cb()),
-        () => timelineViewStore.value,
-        () => timelineViewStore.value
-    );
+    const viewState = useStore<TimelineViewState>(timelineViewStore, {
+        scrollX: 0,
+        scrollY: 0,
+        pixelsPerBeat: 12,
+        autoScrollEnabled: true,
+    });
 
-    const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
-    const scrollX = viewState?.scrollX ?? 0;
+    const pixelsPerBeat = viewState.pixelsPerBeat;
+    const scrollX = viewState.scrollX;
     const containerWidth = containerRef.current?.clientWidth ?? 800;
 
     const handleWheel = (event: WheelEvent<HTMLDivElement>) => {

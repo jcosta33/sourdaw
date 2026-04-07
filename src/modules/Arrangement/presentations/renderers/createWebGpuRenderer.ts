@@ -227,6 +227,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
         function render(model: TimelineRenderModel): void {
             const w = canvasW;
             const h = canvasH;
+            if (w <= 0 || h <= 0) {
+                return;
+            }
             const dpr = window.devicePixelRatio || 1;
 
             // Viewport beat range → pixel helpers
@@ -432,6 +435,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
         }
 
         function resize(w: number, h: number): void {
+            if (w <= 0 || h <= 0) {
+                return;
+            }
             const dpr = window.devicePixelRatio || 1;
             canvasW = w * dpr;
             canvasH = h * dpr;

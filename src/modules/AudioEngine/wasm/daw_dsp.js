@@ -1,3 +1,46 @@
+// AudioWorklet scope lacks TextDecoder/TextEncoder — polyfill before wasm-bindgen glue loads
+if (typeof TextDecoder === 'undefined') {
+    globalThis.TextDecoder = class TextDecoder {
+        decode(input) {
+            if (!input) return '';
+            const bytes = input instanceof Uint8Array ? input : new Uint8Array(
+                input instanceof ArrayBuffer ? input : input.buffer,
+                input instanceof ArrayBuffer ? 0 : input.byteOffset,
+                input instanceof ArrayBuffer ? input.byteLength : input.byteLength,
+            );
+            let result = '';
+            for (let i = 0; i < bytes.length; i++) {
+                result += String.fromCharCode(bytes[i]);
+            }
+            return result;
+        }
+    };
+}
+if (typeof TextEncoder === 'undefined') {
+    globalThis.TextEncoder = class TextEncoder {
+        encode(input) {
+            if (!input) return new Uint8Array(0);
+            const buf = new Uint8Array(input.length);
+            for (let i = 0; i < input.length; i++) {
+                buf[i] = input.charCodeAt(i) & 0xff;
+            }
+            return buf;
+        }
+        encodeInto(src, dest) {
+            const len = Math.min(src.length, dest.length);
+            for (let i = 0; i < len; i++) {
+                dest[i] = src.charCodeAt(i) & 0xff;
+            }
+            return { read: len, written: len };
+        }
+    };
+}
+if (typeof FinalizationRegistry === 'undefined') {
+    globalThis.FinalizationRegistry = class FinalizationRegistry {
+        register() {}
+        unregister() {}
+    };
+}
 /* @ts-self-types="./daw_dsp.d.ts" */
 
 /**
@@ -1273,7 +1316,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('daw_dsp_bg.wasm', import.meta.url);
+        module_or_path = '/wasm/daw-dsp/daw_dsp_bg.wasm'; // served from public/
     }
     const imports = __wbg_get_imports();
 

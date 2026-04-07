@@ -1,5 +1,6 @@
-import { type ReactElement, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 import { kneadStore } from '#/modules/Knead/stores/kneadStore';
+import { useStore } from '#/infra/store/useStore';
 import { useTracks } from '../../hooks/useTracks';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { ingestDspAnalysis } from '#/modules/Knead/useCases/dspAnalysis';
@@ -16,11 +17,8 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
     const track = tracks.find((t) => t.id === trackId);
     const hasKnead = track?.devices.some((d) => d.type.toLowerCase() === 'knead') ?? false;
 
-    const kneadState = useSyncExternalStore(
-        (cb) => kneadStore.subscribe(() => cb()),
-        () => kneadStore.value?.tracks[trackId],
-        () => kneadStore.value?.tracks[trackId]
-    );
+    const kneadStoreState = useStore(kneadStore, { activeTrackId: null, tracks: {}, isAnalyzing: false, analysisProgress: 0 });
+    const kneadState = kneadStoreState.tracks[trackId];
 
     // Auto-analyze mock hook when enabled
     useEffect(() => {

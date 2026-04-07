@@ -5,7 +5,6 @@ import {
     type KeyboardEvent,
     useState,
     useRef,
-    useSyncExternalStore,
 } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
@@ -21,6 +20,8 @@ import { formatParameterValue, curveLabel } from '../../helpers/automationLaneCo
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases/automationQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
+import { defaultTransportState, type TransportState } from '#/modules/Transport/useCases/transportQueries';
 import { AutomationLaneHeader } from './AutomationLaneHeader';
 import { AutomationLaneControls } from './AutomationLaneControls';
 import { AutomationContextMenu } from './AutomationContextMenu';
@@ -31,6 +32,7 @@ import {
     onPointMouseDown,
     applyCurveSelect,
 } from '../../helpers/automationDrag';
+import { useStore } from '#/infra/store/useStore';
 
 type AutomationLaneRowProps = {
     lane: AutomationLane;
@@ -60,22 +62,14 @@ export const AutomationLaneRow = ({
         section: 'curve' | 'shape' | null;
     } | null>(null);
 
-    const workspace = useSyncExternalStore(
-        (cb) => workspaceStore.subscribe(() => cb()),
-        () => workspaceStore.value,
-        () => workspaceStore.value
-    );
+    const workspace = useStore<WorkspaceState>(workspaceStore, defaultWorkspaceState);
 
-    const transport = useSyncExternalStore(
-        (cb) => transportStore.subscribe(() => cb()),
-        () => transportStore.value,
-        () => transportStore.value
-    );
+    const transport = useStore<TransportState>(transportStore, defaultTransportState);
 
-    const isDrawMode = workspace?.activeTool === 'draw';
+    const isDrawMode = workspace.activeTool === 'draw';
     const curveColor = lane.color ?? trackColor ?? '#a78bfa';
     const isDisabled = lane.enabled === false;
-    const snapValue = workspace?.snapValue ?? 1;
+    const snapValue = workspace.snapValue ?? 1;
 
     const viewportStartBeat = scrollX / pixelsPerBeat;
     const viewportEndBeat = viewportStartBeat + containerWidth / pixelsPerBeat;
@@ -104,7 +98,7 @@ export const AutomationLaneRow = ({
     const vtRegions = lane.virginTerritory ? getAutomationRegions(lane.points) : [];
 
     // Interpolated value at playhead
-    const playheadBeat = transport?.playheadPosition ?? 0;
+    const playheadBeat = transport.playheadPosition;
     let currentValue: number | null = null;
     if (lane.points.length > 0) {
         const before = lane.points.filter((p) => p.beat <= playheadBeat);

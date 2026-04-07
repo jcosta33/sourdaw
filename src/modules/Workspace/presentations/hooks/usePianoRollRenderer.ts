@@ -4,7 +4,7 @@
  * ## Architecture — AnimationScheduler + OffscreenCanvas grid cache
  *
  * This hook previously called `draw()` inside a `useEffect`, which meant every
- * React re-render (triggered by `useSyncExternalStore` on midiStore / trackStore)
+ * React re-render (triggered by `useStore` subscriptions on midiStore / trackStore)
  * forced a full canvas repaint through React's reconciler. That caused
  * frame-pacing issues: dragging notes → React re-renders → useEffect fires →
  * canvas redraws — all serialised through the JS event loop.

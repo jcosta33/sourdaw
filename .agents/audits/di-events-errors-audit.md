@@ -1,5 +1,7 @@
 # DI, Event Handling, and Error Handling Comprehensive Audit
 
+> **Product backlog:** `.agents/audits/open-issues.md` (item **22** references this doc). Violation line numbers were generated against an older tree — **re-grep before refactors**.
+
 ## Goal
 
 The purpose of this audit is to provide an exhaustive list of architectural violations in the codebase and clear instructions on how to resolve them. This document is intended to be used as a checklist for agents or developers to systematically refactor the codebase.

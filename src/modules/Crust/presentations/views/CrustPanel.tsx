@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { ChevronDown } from 'lucide-react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
@@ -8,7 +9,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
-import { crustStore, type CrustState, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
+import { crustStore, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio, setCrustParamWithAudio } from '../../useCases/crustParamBridge';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
 import { type CrustPatch } from '../../models/CrustPatch';
@@ -62,10 +63,7 @@ const MetricTile = ({ label, value, detail }: { label: string; value: string; de
 );
 
 export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useSyncExternalStore<CrustState | null>(
-        (cb) => crustStore.subscribe(cb),
-        () => crustStore.value
-    );
+    const state = useStore(crustStore, crustStore.value!);
     const [presetMenuOpen, setPresetMenuOpen] = useState(false);
     const [streamingMenuOpen, setStreamingMenuOpen] = useState(false);
 

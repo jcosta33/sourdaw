@@ -1,13 +1,14 @@
-import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addPitchBend } from '#/modules/MIDI/useCases/midiEvent/addPitchBend';
 import { removePitchBend } from '#/modules/MIDI/useCases/midiEvent/removePitchBend';
 import { movePitchBend } from '#/modules/MIDI/useCases/midiEvent/movePitchBend';
 import { type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
 import { PITCH_BEND_CENTER } from '../../helpers/laneConstants';
+import { useStore } from '#/infra/store/useStore';
 
 type PitchBendLaneProps = {
     clipId: string | null;
@@ -19,13 +20,13 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     const containerRef = useRef<HTMLDivElement>(null);
     const [dragId, setDragId] = useState<string | null>(null);
 
-    const midiState = useSyncExternalStore(
-        (cb) => midiStore.subscribe(() => cb()),
-        () => midiStore.value,
-        () => midiStore.value
-    );
+    const midiState = useStore<MidiStoreState>(midiStore, {
+        notesByClipId: {},
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    });
 
-    const allPb = clipId ? (midiState?.pitchBendByClipId[clipId] ?? []) : [];
+    const allPb = clipId ? (midiState.pitchBendByClipId[clipId] ?? []) : [];
     const points = [...allPb].sort((a: MidiPitchBend, b: MidiPitchBend) => a.beat - b.beat);
 
     const beatToX = (beat: number): number => beat * beatWidth + 8;

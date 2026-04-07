@@ -1,17 +1,13 @@
 /**
  * useUndoState — local re-implementation using undoStore (contract).
  */
-import { useSyncExternalStore } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { undoStore, type UndoStoreState } from '#/modules/Command/stores/undoStore';
 
 const defaultState: UndoStoreState = { past: [], future: [] };
 
 export const useUndoState = () => {
-    const state = useSyncExternalStore(
-        (onChange) => undoStore.subscribe(() => onChange()),
-        () => undoStore.value ?? defaultState,
-        () => undoStore.value ?? defaultState
-    );
+    const state = useStore(undoStore, defaultState);
 
     return {
         canUndo: state.past.length > 0,

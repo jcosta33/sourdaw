@@ -1,4 +1,5 @@
-import { type RefObject, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type RefObject, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { useTransportState } from './useTransportState';
 import { setTempo } from '#/modules/Transport/useCases/setTempo';
 import { setTimeSignature } from '#/modules/Transport/useCases/setTimeSignature';
@@ -9,11 +10,7 @@ import { type TempoChange } from '#/modules/Transport/useCases/transportQueries'
 const defaultTempoMapState: TempoMapStoreState = { changes: [] };
 
 const useTempoMapState = (): TempoMapStoreState => {
-    return useSyncExternalStore(
-        (onChange) => tempoMapStore.subscribe(() => onChange()),
-        () => tempoMapStore.value ?? defaultTempoMapState,
-        () => tempoMapStore.value ?? defaultTempoMapState
-    );
+    return useStore(tempoMapStore, defaultTempoMapState);
 };
 
 export type TempoEditorState = {

@@ -6,7 +6,7 @@ This document explains our approach to client-side state management for UI and d
 
 ## Our approach to state
 
-Our state management philosophy is to keep domain state in plain, framework-agnostic TypeScript stores, decoupling it from the UI. We connect these vanilla stores to React components only when needed using the `useSyncExternalStore` hook. This ensures clear boundaries, as components receive data via props from subscribing views or hooks rather than accessing stores directly. We reserve React Context for simple, localized UI state -- consumed via the `use()` hook (React 19) rather than `useContext`.
+Our state management philosophy is to keep domain state in plain, framework-agnostic TypeScript stores, decoupling it from the UI. We connect these vanilla stores to React components using the `useStore` hook from `#/infra/store/useStore`. This ensures clear boundaries, as components receive data via props from subscribing views or hooks rather than accessing stores directly. We reserve React Context for simple, localized UI state -- consumed via the `use()` hook (React 19) rather than `useContext`.
 
 ### The vanilla store
 
@@ -16,18 +16,17 @@ Our custom `Store` class (located at `src/helpers/Store/Store.ts`) provides a si
 
 ## Cross-module store contracts
 
-Business-layer stores (located at `ModuleName/stores/`, outside `presentations/`) are **cross-module contracts**. Any module may import and subscribe to them — both from use cases (for reading/writing) and from presentation hooks (for reactive UI binding via `useSyncExternalStore`).
+Business-layer stores (located at `ModuleName/stores/`, outside `presentations/`) are **cross-module contracts**. Any module may import and subscribe to them — both from use cases (for reading/writing) and from presentation hooks (for reactive UI binding via `useStore`).
 
 Presentation-layer stores (located at `ModuleName/presentations/stores/`) are **module-private**. They hold UI preferences (zoom, sidebar state, panel layout) and are never imported by another module.
 
 ```typescript
 // ✅ Cross-module: import a business-layer store from another module
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { useStore } from '#/infra/store/useStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 
-const tracks = useSyncExternalStore(
-    (cb) => trackStore.subscribe(cb),
-    () => trackStore.value?.tracks ?? []
-);
+const trackState = useStore<TrackStoreState>(trackStore, { tracks: [], selectedTrackId: null });
+const tracks = trackState.tracks;
 
 // ❌ Forbidden: import a presentation-layer store from another module
 import { zoomStore } from '#/modules/Arrangement/presentations/stores/zoomStore';
@@ -71,19 +70,23 @@ export function getWorkspacePreferencesStore(): Store<WorkspacePreferencesStore>
 
 ### 2. Connect the store to React with a hook
 
-Create a custom hook that uses `useSyncExternalStore` to subscribe to your store instance. This hook will provide the component with the current state and trigger re-renders when the state changes.
+Create a custom hook that uses `useStore` to subscribe to your store instance. This hook will provide the component with the current state and trigger re-renders when the state changes.
 
 ```tsx
 // Workspace/presentations/hooks/useWorkspacePreferences.ts
 
-import { useSyncExternalStore } from 'react';
-
+import { useStore } from '#/infra/store/useStore';
 import { getWorkspacePreferencesStore, type WorkspacePreferencesStore } from '../stores/workspacePreferencesStore';
+
+const defaultPreferences: WorkspacePreferencesStore = {
+    theme: 'dark',
+    defaultSampleRate: 48000,
+    showMetrics: false,
+};
 
 export const useWorkspacePreferences = (): WorkspacePreferencesStore => {
     const store = getWorkspacePreferencesStore();
-    const state = useSyncExternalStore(store.subscribe, store.get, store.get);
-    return state;
+    return useStore<WorkspacePreferencesStore>(store, defaultPreferences);
 };
 ```
 

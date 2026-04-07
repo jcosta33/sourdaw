@@ -42,7 +42,7 @@ export type ProofChamberNodeResult = {
 };
 
 export function isProofChamberDevice(deviceType: string): boolean {
-    return deviceType === 'native-proof-chamber';
+    return deviceType === 'dutch-oven';
 }
 
 export async function createProofChamberNode(ctx: BaseAudioContext): Promise<ProofChamberNodeResult> {

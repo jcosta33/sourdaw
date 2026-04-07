@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
@@ -8,7 +8,8 @@ import { getBuiltinPlugins } from '#/modules/Arrangement/useCases/getBuiltinPlug
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automation/toggleAutomationVisibility';
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { useStore } from '#/infra/store/useStore';
+import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
@@ -20,12 +21,9 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
     const [showAutoMenu, setShowAutoMenu] = useState(false);
     const autoMenuRef = useRef<HTMLDivElement>(null);
 
-    const autoState = useSyncExternalStore(
-        (cb) => automationStore.subscribe(cb),
-        () => automationStore.value
-    );
+    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
 
-    const trackLanes = autoState?.lanes.filter((l) => l.trackId === track.id) ?? [];
+    const trackLanes = autoState.lanes.filter((l) => l.trackId === track.id);
 
     useEffect(() => {
         if (!showAutoMenu) {

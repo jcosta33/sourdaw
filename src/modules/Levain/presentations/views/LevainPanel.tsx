@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Cpu, Search } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -6,7 +7,8 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { type InstrumentId } from '../../models/LevainPatch';
+import { type InstrumentId, createDefaultPatch } from '../../models/LevainPatch';
+import { type LevainState } from '../../stores/levainStore';
 import { levainStore, setCurrentArticulation, updateMicPosition } from '../../stores/levainStore';
 import { loadInstrument } from '../../useCases/loadPreset';
 import { sendMicParamToEngine, setLevainParamWithAudio, setMacroWithAudio } from '../../useCases/levainParamBridge';
@@ -59,11 +61,19 @@ const SectionCard = ({
     </DawPluginSectionCard>
 );
 
+const defaultLevainState: LevainState = {
+    patch: createDefaultPatch('violin-1'),
+    uiLevel: 1,
+    engineReady: false,
+    sampleLoadProgress: null,
+    activeVoices: 0,
+    peakL: 0,
+    peakR: 0,
+    currentArticulationDisplay: 'Long',
+};
+
 export const LevainPanel = (): ReactElement => {
-    const state = useSyncExternalStore(
-        (callback) => levainStore.subscribe(callback),
-        () => levainStore.value
-    );
+    const state = useStore(levainStore, defaultLevainState);
     const [search, setSearch] = useState('');
     const [family, setFamily] = useState('All');
 

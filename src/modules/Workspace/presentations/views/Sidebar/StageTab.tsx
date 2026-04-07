@@ -46,7 +46,7 @@ export const StageTab = ({
     onToggleFavorite,
     preview,
 }: StageTabProps): ReactElement => {
-    const premiumIds = new Set(['proof', 'native-scoring', 'native-proof-chamber', 'gluten', 'crust']);
+    const premiumIds = new Set(['proof', 'native-scoring', 'dutch-oven', 'gluten', 'crust']);
 
     // Stage plugins are mix utilities, eq, compression, space.
     const isStagePlugin = (p: EffectPlugin) => {
@@ -290,7 +290,7 @@ export const StageTab = ({
                     description="Dattorro plate · FDN · Convolution"
                     onClick={() => {
                         if (selectedTrackId) {
-                            addDevice(selectedTrackId, 'native-proof-chamber');
+                            addDevice(selectedTrackId, 'dutch-oven');
                             void eventBus.emit('panel.showDutchOven', { deviceId: null });
                         }
                     }}

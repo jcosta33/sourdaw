@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, useRef } from 'react';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { DawMetricCluster } from '#/components/daw/DawMetricCluster';
@@ -10,7 +10,8 @@ import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
 import { useSelectionLabel } from '../hooks/useSelectionLabel';
 import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggles';
 import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles';
-import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
+import { useStore } from '#/infra/store/useStore';
+import { llmStatusStore, type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { History, Users } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -26,10 +27,7 @@ export const StatusBar = (): ReactElement => {
     const collab = useCollaborationState();
     const selectionLabel = useSelectionLabel();
 
-    const llmStatus = useSyncExternalStore(
-        (cb) => llmStatusStore.subscribe(() => cb()),
-        () => llmStatusStore.value
-    );
+    const llmStatus = useStore<LlmEngineStatus>(llmStatusStore, { state: 'idle' });
 
     // ── Metric refs (written at 60 fps by useStatusBarMetrics) ───────────
     const cpuBarRef = useRef<HTMLDivElement>(null);

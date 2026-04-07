@@ -1,4 +1,5 @@
-import { type ReactElement, useEffect, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Cpu, Play, Send, Square } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -15,7 +16,6 @@ import {
     toasterStore,
     toggleStep,
     updatePad,
-    type ToasterState,
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
@@ -84,14 +84,9 @@ const Knob = ({
 );
 
 export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useSyncExternalStore<ToasterState | null>(
-        (callback) => toasterStore.subscribe(callback),
-        () => toasterStore.value
-    );
-    const selectedTrackId = useSyncExternalStore(
-        (callback) => trackStore.subscribe(callback),
-        () => trackStore.value?.selectedTrackId ?? null
-    );
+    const state = useStore(toasterStore, toasterStore.value!);
+    const trackState = useStore(trackStore, trackStore.value!);
+    const selectedTrackId = trackState?.selectedTrackId ?? null;
     const [presetQuery, setPresetQuery] = useState('');
     const [eucHits, setEucHits] = useState(4);
     const [eucSteps, setEucSteps] = useState(16);

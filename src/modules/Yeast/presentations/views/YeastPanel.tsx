@@ -7,7 +7,8 @@
  * Level 4 (Route):  Keyboard split zones, CC routing
  * Level 5 (Lab):    Euclidean, Markov, mutation, groove template
  */
-import { type ComponentProps, type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ComponentProps, type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -166,11 +167,13 @@ const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+const defaultYeastState: YeastState = {
+    processors: [],
+    uiLevel: 1,
+};
+
 export const YeastPanel = (): ReactElement => {
-    const state = useSyncExternalStore<YeastState | null>(
-        (cb) => yeastStore.subscribe(cb),
-        () => yeastStore.value
-    );
+    const state = useStore(yeastStore, defaultYeastState);
 
     if (!state) {
         return (

@@ -1,7 +1,14 @@
-import { type ReactElement, type PointerEvent, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, type PointerEvent, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { midiLearnStore } from '#/modules/MIDI/stores/midiLearnStore';
+import { useStore } from '#/infra/store/useStore';
+import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
 import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn';
+
+const defaultMidiLearnState: MidiLearnState = {
+    mappings: [],
+    isLearning: false,
+    learningTarget: null,
+};
 
 type RotaryKnobProps = {
     value: number;
@@ -49,17 +56,14 @@ export const RotaryKnob = ({
     trackId,
     deviceId,
 }: RotaryKnobProps): ReactElement => {
-    const midiLearnState = useSyncExternalStore(
-        (cb) => midiLearnStore.subscribe(cb),
-        () => midiLearnStore.value
-    );
+    const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
     const isLearningThis = Boolean(
-        midiLearnState?.isLearning &&
+        midiLearnState.isLearning &&
         midiLearnState.learningTarget &&
         midiLearnState.learningTarget.paramId === paramId &&
         paramId !== undefined
     );
-    const isMapped = Boolean(midiLearnState?.mappings.some((m) => m.paramId === paramId));
+    const isMapped = Boolean(midiLearnState.mappings.some((m) => m.paramId === paramId));
     // Derive sensible defaults from range when not explicitly provided
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
     const fineStep = fineStepProp ?? step / 10;

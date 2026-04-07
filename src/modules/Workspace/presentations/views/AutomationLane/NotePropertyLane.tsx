@@ -1,9 +1,10 @@
-import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useSyncExternalStore } from 'react';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { type ReactElement, type MouseEvent, useRef, useLayoutEffect } from 'react';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
+import { useStore } from '#/infra/store/useStore';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
 
@@ -37,21 +38,20 @@ export const NotePropertyLane = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const midiState = useSyncExternalStore(
-        (cb) => midiStore.subscribe(() => cb()),
-        () => midiStore.value,
-        () => midiStore.value
-    );
+    const midiState = useStore<MidiStoreState>(midiStore, {
+        notesByClipId: {},
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    });
 
-    const trackState = useSyncExternalStore(
-        (cb) => trackStore.subscribe(() => cb()),
-        () => trackStore.value,
-        () => trackStore.value
-    );
+    const trackState = useStore<TrackStoreState>(trackStore, {
+        tracks: [],
+        selectedTrackId: null,
+    });
 
-    const notes = clipId ? (midiState?.notesByClipId[clipId] ?? []) : [];
+    const notes = clipId ? (midiState.notesByClipId[clipId] ?? []) : [];
 
-    const activeTrack = trackState?.tracks.find((t) => t.id === trackId);
+    const activeTrack = trackState.tracks.find((t) => t.id === trackId);
     const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
     const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
@@ -114,7 +114,7 @@ export const NotePropertyLane = ({
                 ctx.fillText(String(val), x + 1 + barW / 2, barY - 2);
             }
         }
-    }, [notes, selectedNoteIds, beatWidth, contentWidth, clipColor, selectedColor, getValue]);
+    }, [notes, selectedNoteIds, beatWidth, contentWidth, clipColor, selectedColor, getValue, label]);
 
     const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>): void => {
         if (!clipId) {

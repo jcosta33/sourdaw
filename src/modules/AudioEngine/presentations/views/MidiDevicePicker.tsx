@@ -1,4 +1,4 @@
-import { type ReactElement, useSyncExternalStore, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
@@ -6,10 +6,17 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { KeyboardMusic, RefreshCw } from 'lucide-react';
-import { subscribe, getSnapshot, initWebMidi, selectMidiInput } from '../../useCases/webMidiInput';
+import { useStore } from '#/infra/store/useStore';
+import { initWebMidi, selectMidiInput, webMidiStore } from '../../repositories/webMidi';
+
+const defaultWebMidiState = {
+    isSupported: false,
+    inputs: [],
+    selectedInputId: null,
+};
 
 export const MidiDevicePicker = (): ReactElement => {
-    const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+    const state = useStore(webMidiStore, defaultWebMidiState);
     const [initialised, setInitialised] = useState(false);
 
     useEffect(() => {

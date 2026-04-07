@@ -1,5 +1,7 @@
 # Dependency Injection Migration Audit
 
+> **Product backlog:** `.agents/audits/open-issues.md` (item **22** references this doc). Line-by-file checklists below may be stale — re-verify paths before using as work tickets.
+
 ## Overview
 
 This audit tracks the migration of use cases and repositories to the `inject()` pattern as defined in:

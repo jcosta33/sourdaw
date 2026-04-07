@@ -6,7 +6,8 @@
  * and a compact control strip matching the deep-black metallic DAW aesthetic.
  */
 
-import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
@@ -62,10 +63,7 @@ type ContextMenuState =
     | { kind: 'chord'; x: number; y: number; event: ChordEvent };
 
 export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps): ReactElement => {
-    const state = useSyncExternalStore(
-        (cb) => chordTrackStore.subscribe(cb),
-        () => chordTrackStore.value ?? defaultState
-    );
+    const state = useStore(chordTrackStore, defaultState);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [dragState, setDragState] = useState<{ eventId: string; startX: number; originalBeat: number } | null>(null);

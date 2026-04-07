@@ -1,20 +1,18 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
 import { Mic } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores/voiceStatusStore';
+import { useStore } from '#/infra/store/useStore';
 import { isSpeechRecognitionAvailable } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
 import { isTauri } from '#/helpers/tauriBridge';
 import { eventBus } from '#/app/registerDependencies';
 
-const subscribeVoice = (cb: () => void): (() => void) => voiceStatusStore.subscribe(() => cb());
-const getVoiceSnapshot = () => voiceStatusStore.value ?? { isListening: false, transcribing: false };
-
 const isVoiceAvailable = (): boolean => isSpeechRecognitionAvailable() || isTauri();
 
 export const VoiceButton = (): ReactElement | null => {
-    const voice = useSyncExternalStore(subscribeVoice, getVoiceSnapshot, getVoiceSnapshot);
+    const voice = useStore(voiceStatusStore, { isListening: false, transcribing: false });
 
     if (!isVoiceAvailable()) {
         return null;

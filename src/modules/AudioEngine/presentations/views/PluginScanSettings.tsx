@@ -1,4 +1,5 @@
-import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
@@ -12,10 +13,7 @@ import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCap
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 export const PluginScanSettings = (): ReactElement | null => {
-    const state = useSyncExternalStore(
-        (cb) => pluginScanStore.subscribe(cb),
-        () => pluginScanStore.value ?? defaultPluginScanState
-    );
+    const state = useStore(pluginScanStore, defaultPluginScanState);
     const [newPath, setNewPath] = useState('');
 
     const { hasPluginScanning } = getPlatformCapabilities();

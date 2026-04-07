@@ -11,3 +11,17 @@ export function resolveToken(property: string, fallback: string): string {
     const value = getComputedStyle(document.documentElement).getPropertyValue(property).trim();
     return value || fallback;
 }
+
+const VAR_RE = /^var\(\s*(--[^),]+)\s*(?:,\s*(.+))?\)$/;
+
+/**
+ * Resolves a color string that may be a `var(--token)` expression to a canvas-safe value.
+ * If the input is already a hex/rgb string, returns it unchanged.
+ */
+export function resolveCanvasColor(color: string, fallback: string): string {
+    const match = VAR_RE.exec(color);
+    if (!match) {
+        return color;
+    }
+    return resolveToken(match[1]!, match[2] ?? fallback);
+}

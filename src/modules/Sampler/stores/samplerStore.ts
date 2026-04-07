@@ -1,7 +1,7 @@
 /**
  * Unified Sampler state store.
  * Holds sample metadata, mode, envelope, filter, and playback state.
- * Reactive — UI subscribes via useSyncExternalStore.
+ * Reactive — UI subscribes via useStore from #/infra/store/useStore.
  */
 
 import { createStore } from '#/infra/store/createStore';

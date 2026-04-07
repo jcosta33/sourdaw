@@ -1,4 +1,5 @@
-import { type ReactElement, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricStrip } from '#/components/daw/DawPluginMetricStrip';
@@ -12,6 +13,7 @@ import {
     registerChamberInstance,
     updateChamberEngine,
     setChamberUILevel,
+    type ChamberStoreState,
 } from '../../stores/chamberStore';
 
 export const ProofChamber = ({ instanceId }: { instanceId: string }): ReactElement => {
@@ -19,11 +21,12 @@ export const ProofChamber = ({ instanceId }: { instanceId: string }): ReactEleme
         registerChamberInstance(instanceId);
     }, [instanceId]);
 
-    const state = useSyncExternalStore(
-        (cb) => chamberStore.subscribe(() => cb()),
-        () => chamberStore.value?.instances[instanceId],
-        () => chamberStore.value?.instances[instanceId]
-    );
+    const defaultChamberState: ChamberStoreState = {
+        activeInstanceId: null,
+        instances: {},
+    };
+    const chamberValue = useStore(chamberStore, defaultChamberState);
+    const state = chamberValue.instances[instanceId];
 
     if (!state) {
         return (

@@ -5,7 +5,8 @@
  * Features: play, rename, delete macros + recording indicator.
  */
 
-import { type ReactElement, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Play, Trash2, Pencil, Circle, Square } from 'lucide-react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
@@ -20,10 +21,7 @@ import { cn } from '#/helpers/Styles/cn';
 const defaultState: MacroStoreState = { macros: [], recording: false, currentRecording: [] };
 
 export const MacrosPanel = (): ReactElement => {
-    const state = useSyncExternalStore(
-        (cb) => macroStore.subscribe(cb),
-        () => macroStore.value ?? defaultState
-    );
+    const state = useStore(macroStore, defaultState);
 
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');

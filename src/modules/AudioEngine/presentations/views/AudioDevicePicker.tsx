@@ -1,9 +1,10 @@
-import { type ReactElement, useSyncExternalStore, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { RefreshCw } from 'lucide-react';
+import { useStore } from '#/infra/store/useStore';
 import {
     audioDeviceStore,
     getAudioDevices,
@@ -12,12 +13,13 @@ import {
     type AudioDeviceInfo,
 } from '../../useCases/audioDeviceSelection';
 
+const defaultAudioDeviceState = {
+    selectedOutputId: null,
+    selectedInputId: null,
+};
+
 export const AudioDevicePicker = (): ReactElement => {
-    const state = useSyncExternalStore(
-        (cb) => audioDeviceStore.subscribe(cb),
-        () => audioDeviceStore.value,
-        () => audioDeviceStore.value
-    );
+    const state = useStore(audioDeviceStore, defaultAudioDeviceState);
 
     const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
     const [loading, setLoading] = useState(true);

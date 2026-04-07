@@ -1,7 +1,7 @@
 /**
  * Levain instrument state store.
  * Holds the current patch, selected instrument, articulation state, and UI level.
- * Reactive — UI subscribes via useSyncExternalStore.
+ * Reactive — UI subscribes via useStore from #/infra/store/useStore.
  *
  * This store is a pure reactive state container. Engine calls belong in
  * useCases/levainParamBridge.ts. Previously this store had a circular

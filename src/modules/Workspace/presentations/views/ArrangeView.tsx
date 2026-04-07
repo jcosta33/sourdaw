@@ -2,12 +2,12 @@ import {
     type ReactElement,
     type MouseEvent as ReactMouseEvent,
     type DragEvent,
-    useSyncExternalStore,
     useState,
     useRef,
     useEffect,
     useLayoutEffect,
 } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { TimelineSurface } from '#/modules/Arrangement/presentations/views/TimelineSurface';
 import { TimelineMinimap } from '#/modules/Arrangement/presentations/views/TimelineMinimap';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
@@ -77,23 +77,11 @@ export const ArrangeView = (): ReactElement => {
         // timeline container div is mounted (absent during the empty-state path).
     }, [hasUserTracks]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const viewState = useSyncExternalStore(
-        (cb) => timelineViewStore.subscribe(() => cb()),
-        () => timelineViewStore.value,
-        () => timelineViewStore.value
-    );
+    const viewState = useStore(timelineViewStore, { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true });
 
-    const markerState = useSyncExternalStore(
-        (cb) => markerStore.subscribe(() => cb()),
-        () => markerStore.value,
-        () => markerStore.value
-    );
+    const markerState = useStore(markerStore, { markers: [], sections: [] });
 
-    const chordState = useSyncExternalStore(
-        (cb) => chordTrackStore.subscribe(cb),
-        () => chordTrackStore.value,
-        () => chordTrackStore.value
-    );
+    const chordState = useStore(chordTrackStore, { enabled: false, events: [] });
 
     const hasMarkers = (markerState?.markers.length ?? 0) > 0;
     const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);

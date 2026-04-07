@@ -1,7 +1,8 @@
 import { useRef, useEffect, type MouseEvent } from 'react';
-import { useSyncExternalStore } from 'react';
-import { timelineViewStore } from '../../stores/timelineViewStore';
+import { useStore } from '#/infra/store/useStore';
+import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { type TransportState } from '#/modules/Transport/models/TransportState';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
@@ -18,22 +19,45 @@ export const BeatRulerBar = (): React.ReactElement => {
     /** Ephemeral loop preview during drag — avoids flooding transportStore with 60Hz writes. */
     const loopPreviewRef = useRef<{ start: number; end: number } | null>(null);
 
-    const viewState = useSyncExternalStore(
-        (cb) => timelineViewStore.subscribe(cb),
-        () => timelineViewStore.value
-    );
-    const transport = useSyncExternalStore(
-        (cb) => transportStore.subscribe(cb),
-        () => transportStore.value
-    );
+    const defaultTimelineView: TimelineViewState = {
+        scrollX: 0,
+        scrollY: 0,
+        pixelsPerBeat: 12,
+        autoScrollEnabled: true,
+    };
+    const defaultTransport: TransportState = {
+        isPlaying: false,
+        isRecording: false,
+        isLooping: false,
+        overdubEnabled: false,
+        metronomeEnabled: false,
+        metronomeVolume: 0.5,
+        tempo: 120,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        playheadPosition: 0,
+        loopStart: 0,
+        loopEnd: 0,
+        scheduleGrainMs: 10,
+        punchInEnabled: false,
+        punchInBeat: 0,
+        punchOutBeat: 16,
+        countInEnabled: false,
+        countInBars: 1,
+        preRollEnabled: false,
+        preRollBars: 2,
+        masterGain: 80,
+    };
+    const viewState = useStore(timelineViewStore, defaultTimelineView);
+    const transport = useStore(transportStore, defaultTransport);
 
-    const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
-    const scrollX = viewState?.scrollX ?? 0;
-    const loopStart = transport?.loopStart ?? 0;
-    const loopEnd = transport?.loopEnd ?? 0;
-    const isLooping = transport?.isLooping ?? false;
-    const isPlaying = transport?.isPlaying ?? false;
-    const timeSigNum = transport?.timeSignatureNumerator ?? 4;
+    const pixelsPerBeat = viewState.pixelsPerBeat;
+    const scrollX = viewState.scrollX;
+    const loopStart = transport.loopStart;
+    const loopEnd = transport.loopEnd;
+    const isLooping = transport.isLooping;
+    const isPlaying = transport.isPlaying;
+    const timeSigNum = transport.timeSignatureNumerator;
 
     // Draw the ruler via canvas
     const drawRuler = (canvas: HTMLCanvasElement, playhead: number = playheadPositionRef.current) => {

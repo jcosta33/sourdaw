@@ -2,7 +2,7 @@
  * Gain Reduction meter — vertical bar with peak hold and dB labels.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveCanvasColor } from '#/helpers/UI/resolveToken';
 
 type GrMeterProps = {
     grDb: number;
@@ -36,7 +36,7 @@ export const GrMeter = ({
         canvas.height = height * dpr;
         ctx.scale(dpr, dpr);
 
-        const accent = accentColor ?? resolveToken('--color-accent-peach', '#c4987b');
+        const accent = resolveCanvasColor(accentColor ?? 'var(--color-accent-peach)', '#c4987b');
 
         ctx.clearRect(0, 0, width, height);
 

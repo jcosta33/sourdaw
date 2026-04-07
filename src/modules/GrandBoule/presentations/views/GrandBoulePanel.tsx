@@ -1,4 +1,5 @@
-import { type ReactElement, useEffect, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Cpu, Power } from 'lucide-react';
 import { eventBus } from '#/app/registerDependencies';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
@@ -9,7 +10,6 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
     grandBouleStore,
-    type GrandBouleState,
     type TemperamentIndex,
 } from '../../stores/grandBouleStore';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
@@ -126,10 +126,7 @@ const TEMPERAMENT_OPTIONS = [
 
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId });
-    const state = useSyncExternalStore<GrandBouleState | null>(
-        (callback) => grandBouleStore.subscribe(callback),
-        () => grandBouleStore.value,
-    );
+    const state = useStore(grandBouleStore, grandBouleStore.value!);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(
         () => new Map(),
     );

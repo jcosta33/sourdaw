@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -446,10 +447,7 @@ function renderSectionContent(
 }
 
 export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useSyncExternalStore<FermenterState>(
-        (cb) => fermenterStore.subscribe(cb),
-        () => getFermenterState(deviceId)
-    );
+    const state = useStore(fermenterStore, {} as Record<string, FermenterState>)[deviceId] ?? getFermenterState(deviceId);
     const patch = state.patch;
     const activeVoices = state.activeVoices;
     const scopeBuffer = state.scopeBuffer;

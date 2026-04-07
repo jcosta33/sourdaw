@@ -1,4 +1,5 @@
-import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -32,14 +33,8 @@ type HistoryItem = { kind: 'ai'; group: AiActionGroup } | { kind: 'action'; entr
  * User actions show individually with non-linear revert when an inverse exists.
  */
 export const AiActionHistoryPanel = (): ReactElement | null => {
-    const aiState = useSyncExternalStore(
-        (cb) => aiActionHistoryStore.subscribe(cb),
-        () => aiActionHistoryStore.value ?? defaultAiState
-    );
-    const historyState = useSyncExternalStore(
-        (cb) => actionHistoryStore.subscribe(cb),
-        () => actionHistoryStore.value ?? defaultHistoryState
-    );
+    const aiState = useStore(aiActionHistoryStore, defaultAiState);
+    const historyState = useStore(actionHistoryStore, defaultHistoryState);
 
     if (!aiState.panelOpen) {
         return null;

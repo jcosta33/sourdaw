@@ -1,9 +1,11 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
 import { setMasterGain } from '#/modules/Transport/useCases/setMasterGain';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 
 import { LevelMeter } from '../Metering/LevelMeter';
@@ -13,10 +15,7 @@ type MasterChannelStripProps = {
 };
 
 export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): ReactElement => {
-    const masterGain = useSyncExternalStore(
-        (cb) => transportStore.subscribe(cb),
-        () => transportStore.value?.masterGain ?? 80
-    );
+    const masterGain = useStore(transportStore, defaultTransportState).masterGain;
 
     return (
         <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel">

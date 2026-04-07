@@ -1,9 +1,11 @@
-import { type ReactElement, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, useRef, useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { type TimeDisplayMode } from '../../../models/WorkspaceState';
 import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { useStore } from '#/infra/store/useStore';
+import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 import { TransportSegmentedReadout } from '../../components/Transport/TransportSegmentedReadout';
 
 type PlayheadDisplayProps = {
@@ -19,10 +21,8 @@ type PlayheadDisplayProps = {
  */
 export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadDisplayProps): ReactElement => {
     const isMusical = timeDisplayMode === 'musical';
-    const isPlaying = useSyncExternalStore(
-        (cb) => transportStore.subscribe(cb),
-        () => transportStore.value?.isPlaying ?? false
-    );
+    const transportState = useStore(transportStore, defaultTransportState);
+    const isPlaying = transportState.isPlaying;
 
     // Refs for direct DOM updates
     const seg1Ref = useRef<HTMLSpanElement>(null);

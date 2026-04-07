@@ -5,8 +5,8 @@ import {
     useState,
     useRef,
     useEffect,
-    useSyncExternalStore,
 } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { logger } from '#/infra/logger/appLogger';
 import { parsePromptToActions } from '#/modules/AiRuntime/useCases/parsePromptToActions';
 import { isComplexPrompt } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
@@ -19,6 +19,8 @@ import { notifyAiChange } from '#/modules/AiRuntime/useCases/notifyAiChange';
 import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
 import { initEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
 import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
+import { defaultTrackState } from '#/modules/Arrangement/stores/trackStore';
+import { defaultWorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { generateGroupId } from '#/modules/Command/useCases/commandQueries';
 import { pushAiActionGroup, type AiActionGroup } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
@@ -28,14 +30,7 @@ import { describeAction } from '#/modules/Command/useCases/actionLabels';
 import { type IntentResult } from '#/modules/AiRuntime/models/IntentResult';
 import { type PresetContext } from '#/modules/AiRuntime/models/presetActions/registry';
 
-// ── Store subscription helpers ──────────────────────────────────────────
-
-const subscribeLlm = (cb: () => void): (() => void) => llmStatusStore.subscribe(() => cb());
-const getLlmSnapshot = (): typeof llmStatusStore.value => llmStatusStore.value;
-const subscribeTrack = (cb: () => void): (() => void) => trackStore.subscribe(cb);
-const getTrackSnapshot = () => trackStore.value;
-const subscribeWs = (cb: () => void): (() => void) => workspaceStore.subscribe(cb);
-const getWsSnapshot = () => workspaceStore.value;
+const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 
 // ── Selection tag type ──────────────────────────────────────────────────
 
@@ -92,9 +87,9 @@ export const usePromptExecution = (): PromptExecutionState => {
     const abortRef = useRef<AbortController | null>(null);
     const pendingSubmitRef = useRef(false);
 
-    const llmStatus = useSyncExternalStore(subscribeLlm, getLlmSnapshot, getLlmSnapshot);
-    const trackState = useSyncExternalStore(subscribeTrack, getTrackSnapshot);
-    const wsState = useSyncExternalStore(subscribeWs, getWsSnapshot);
+    const llmStatus = useStore(llmStatusStore, defaultLlmStatus);
+    const trackState = useStore(trackStore, defaultTrackState);
+    const wsState = useStore(workspaceStore, defaultWorkspaceState);
 
     // ── Derive selection tags ───────────────────────────────────────────
     const selectionTags: SelectionTag[] = [];

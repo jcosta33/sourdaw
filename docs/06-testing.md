@@ -25,7 +25,7 @@ This codebase currently has zero TypeScript tests. This document defines how we 
 - Stores — the custom `Store<T>` class and its backing storage
 - Event subscribers — files that call `eventBus.on(...)`
 - Engine classes — `TrackNode`, scheduler classes, anything in `engine/`, with `AudioContext` mocked
-- Presentation hooks — thin wrappers over `useSyncExternalStore` and similar
+- Presentation hooks — thin wrappers over `useStore` and similar
 - Presentation components — rendering + user interaction
 - Presentation helpers — pure utility functions
 
@@ -443,7 +443,7 @@ handler({ deviceId: 'dev-1', deviceType: 'toaster' });
 
 ### 6.9 Presentation hooks
 
-Subject: `src/modules/Arrangement/presentations/hooks/useTracks.ts` — thin wrapper over `useSyncExternalStore` reading `trackStore`.
+Subject: `src/modules/Arrangement/presentations/hooks/useTracks.ts` — thin wrapper over `useStore` reading `trackStore`.
 
 Mock the store. Use `@testing-library/react`'s `renderHook`.
 

@@ -1,4 +1,4 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
 import {
     PanelLeft,
     PanelRight,
@@ -21,9 +21,10 @@ import {
     toggleTrackList,
     toggleVirtualKeyboard,
 } from '../../../useCases/togglePanel/panelToggles';
-import { subscribeAiStore, getAiSnapshot } from '#/modules/AiGeneration/stores/aiStore';
+import { useStore } from '#/infra/store/useStore';
+import { aiStore, type AiState } from '#/modules/AiGeneration/stores/aiStore';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
-import { subscribeToLinkStatus, getLinkStatusSnapshot } from '#/modules/AudioEngine/stores/linkStatusStore';
+import { linkStatusStore, type LinkStatus, defaultLinkStatus } from '#/modules/AudioEngine/stores/linkStatusStore';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
 import { eventBus } from '#/app/registerDependencies';
 
@@ -44,11 +45,11 @@ export const PanelToggles = ({
     trackListOpen,
     virtualKeyboardOpen,
 }: PanelTogglesProps): ReactElement => {
-    const aiState = useSyncExternalStore<{ isPanelOpen: boolean }>(subscribeAiStore, getAiSnapshot);
-    const linkEnabled = useSyncExternalStore(subscribeToLinkStatus, getLinkStatusSnapshot);
+    const aiState = useStore<AiState>(aiStore, { isPanelOpen: false, tasks: [] });
+    const linkStatus = useStore<LinkStatus>(linkStatusStore, defaultLinkStatus);
 
     const handleLinkToggle = (): void => {
-        if (linkEnabled) {
+        if (linkStatus.enabled) {
             void disableLink();
         } else {
             void enableLink().catch(() => {
@@ -164,17 +165,17 @@ export const PanelToggles = ({
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
-                        variant={linkEnabled ? 'secondary' : 'ghost'}
+                        variant={linkStatus.enabled ? 'secondary' : 'ghost'}
                         size="icon-sm"
-                        aria-label={linkEnabled ? 'Ableton Link active — click to disable' : 'Enable Ableton Link sync'}
-                        aria-pressed={linkEnabled}
+                        aria-label={linkStatus.enabled ? 'Ableton Link active — click to disable' : 'Enable Ableton Link sync'}
+                        aria-pressed={linkStatus.enabled}
                         onClick={handleLinkToggle}
-                        className={linkEnabled ? 'text-[var(--color-accent-amber)]' : ''}
+                        className={linkStatus.enabled ? 'text-[var(--color-accent-amber)]' : ''}
                     >
                         <LinkIcon className="size-3.5" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
-                <TooltipContent>Ableton Link{linkEnabled ? ' (active)' : ''}</TooltipContent>
+                <TooltipContent>Ableton Link{linkStatus.enabled ? ' (active)' : ''}</TooltipContent>
             </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>

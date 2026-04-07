@@ -1,13 +1,13 @@
 /* Fermenter - Bubbling Activity Theme
- * Primary: Amber (bubbling, active, golden)
- * Secondary: Pink (yeast, living culture)
+ * Primary: Yellow-Green (bubbling, active, fermentation)
+ * Secondary: Sage (natural, organic culture)
  */
 
 @utility fermenter-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 14% 0%, rgba(196, 170, 95, 0.12), transparent 22%),
-        radial-gradient(circle at 82% 0%, rgba(193, 143, 163, 0.08), transparent 18%),
+        radial-gradient(circle at 14% 0%, rgba(138, 148, 80, 0.12), transparent 22%),
+        radial-gradient(circle at 82% 0%, rgba(138, 168, 138, 0.08), transparent 18%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -19,7 +19,7 @@
 @utility fermenter-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(196, 170, 95, 0.06), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(138, 148, 80, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -30,8 +30,8 @@
 }
 
 @utility fermenter-tab-active {
-    color: var(--color-accent-amber);
-    border-color: rgba(196, 170, 95, 0.44);
-    background: linear-gradient(180deg, rgba(196, 170, 95, 0.16), rgba(196, 170, 95, 0.08));
+    color: var(--color-accent-yellow-green);
+    border-color: rgba(138, 148, 80, 0.44);
+    background: linear-gradient(180deg, rgba(138, 148, 80, 0.16), rgba(138, 148, 80, 0.08));
     transform: translateY(-1px);
 }

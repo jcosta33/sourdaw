@@ -1,4 +1,5 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -160,10 +161,7 @@ function isModuleBypassed(state: ProofState, moduleIndex: number): boolean {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const allInstances = useSyncExternalStore(
-        (cb) => proofStore.subscribe(cb),
-        () => proofStore.value
-    );
+    const allInstances = useStore(proofStore, {});
     const state: ProofState = allInstances?.[deviceId] ?? getProofState(deviceId);
 
     const { patch, uiLevel } = state;

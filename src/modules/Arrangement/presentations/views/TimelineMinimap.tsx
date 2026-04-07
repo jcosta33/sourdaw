@@ -1,11 +1,20 @@
-import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useState, useSyncExternalStore } from 'react';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { timelineViewStore } from '../../stores/timelineViewStore';
+import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 const MINIMAP_HEIGHT = 28;
 const MIN_PROJECT_BEATS = 64;
 const VIEWPORT_MIN_WIDTH = 6;
+
+const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };
+const defaultTimelineView: TimelineViewState = {
+    scrollX: 0,
+    scrollY: 0,
+    pixelsPerBeat: 12,
+    autoScrollEnabled: true,
+};
 
 export const TimelineMinimap = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -14,21 +23,12 @@ export const TimelineMinimap = (): ReactElement => {
     const dragOffsetRef = useRef(0);
     const [containerWidth, setContainerWidth] = useState(0);
 
-    const trackState = useSyncExternalStore(
-        (cb) => trackStore.subscribe(() => cb()),
-        () => trackStore.value,
-        () => trackStore.value
-    );
+    const trackState = useStore(trackStore, defaultTrackState);
+    const viewState = useStore(timelineViewStore, defaultTimelineView);
 
-    const viewState = useSyncExternalStore(
-        (cb) => timelineViewStore.subscribe(() => cb()),
-        () => timelineViewStore.value,
-        () => timelineViewStore.value
-    );
-
-    const tracks = trackState?.tracks ?? [];
-    const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
-    const scrollX = viewState?.scrollX ?? 0;
+    const tracks = trackState.tracks;
+    const pixelsPerBeat = viewState.pixelsPerBeat;
+    const scrollX = viewState.scrollX;
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;

@@ -1,8 +1,9 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { useStore } from '#/infra/store/useStore';
+import { takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores/takeLaneStore';
 import { setCompRegion } from '#/modules/Arrangement/useCases/comping/setCompRegion';
 import { selectTake } from '#/modules/Arrangement/useCases/comping/selectTake';
 import { flattenComp } from '#/modules/Arrangement/useCases/comping/flattenComp';
@@ -14,12 +15,9 @@ type TakesSectionProps = {
 };
 
 export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | null => {
-    const takeLaneState = useSyncExternalStore(
-        (cb) => takeLaneStore.subscribe(cb),
-        () => takeLaneStore.value
-    );
+    const takeLaneState = useStore<TakeLaneStoreState>(takeLaneStore, { lanes: [] });
 
-    const lane = takeLaneState?.lanes.find((l) => l.trackId === trackId);
+    const lane = takeLaneState.lanes.find((l) => l.trackId === trackId);
     if (!lane || lane.takes.length === 0) {
         return null;
     }

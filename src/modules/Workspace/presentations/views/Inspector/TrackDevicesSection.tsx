@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuDisabledRow, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
@@ -11,7 +11,8 @@ import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { addExternalDevice } from '#/modules/Arrangement/useCases/device/addExternalDevice';
 import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDevices';
-import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores/pluginScanStore';
+import { useStore } from '#/infra/store/useStore';
+import { pluginScanStore, type PluginScanState, defaultPluginScanState } from '#/modules/Plugin/stores/pluginScanStore';
 import { type Track } from '../../../models/TrackViewTypes';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -24,7 +25,7 @@ const DEVICE_TYPE_TO_PANEL_EVENT: Record<string, keyof AppEvents> = {
     'fermenter': 'panel.showFermenter',
     'toaster': 'panel.showToaster',
     'levain': 'panel.showLevain',
-    'native-dutch-oven': 'panel.showDutchOven',
+    'dutch-oven': 'panel.showDutchOven',
     'gluten': 'panel.showGluten',
     'bacteria': 'panel.showBacteria',
     'grinder': 'panel.showGrinder',
@@ -45,10 +46,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     const [showDeviceMenu, setShowDeviceMenu] = useState(false);
     const deviceMenuRef = useRef<HTMLDivElement>(null);
 
-    const pluginScanState = useSyncExternalStore(
-        (cb) => pluginScanStore.subscribe(cb),
-        () => pluginScanStore.value ?? defaultPluginScanState
-    );
+    const pluginScanState = useStore<PluginScanState>(pluginScanStore, defaultPluginScanState);
 
     useEffect(() => {
         if (!showDeviceMenu) {

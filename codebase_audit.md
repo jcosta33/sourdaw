@@ -8,14 +8,14 @@ Audit of `src/modules/` against project documentation (`docs/`).
 
 ### PreferencesDialog infinite re-render loop
 
-**Root cause:** `useSyncExternalStore` subscribe/getSnapshot functions were inline arrows, creating new references each render. Combined with the `update()` closure reading stale `prefs`, this created a cascade:
+**Root cause:** Store subscription functions were inline arrows, creating new references each render. Combined with the `update()` closure reading stale `prefs`, this created a cascade:
 
-- `update({})` → `store.set()` → `#notify()` → `useSyncExternalStore` re-render → new subscribe function → re-subscribe → loop
+- `update({})` → `store.set()` → `#notify()` → `useStore` re-render → new subscription → re-subscribe → loop
 
 **Fix applied:** Moved `subscribe` and `getSnapshot` to module scope (stable references). Wrapped `update` with `useCallback` + `useRef` to always read latest prefs.
 
 > [!IMPORTANT]
-> The `useCallback` I added violates the "no manual memoization" convention but is necessary here to prevent the infinite loop. This is a valid exception — `useSyncExternalStore` has stricter requirements than normal component code.
+> The `useCallback` I added violates the "no manual memoization" convention but is necessary here to prevent the infinite loop. This is a valid exception — store subscriptions have stricter stability requirements than normal component code.
 
 ---
 
@@ -86,9 +86,9 @@ However: In a DAW, `Track`, `Clip`, `MidiNote` etc. are core domain primitives s
 
 The store is initialized with `loadFromStorage()` which reads `localStorage.getItem(...)` directly, and a subscriber writes back via `localStorage.setItem(...)`. The `Store` class supports an official `storage` option with `LocalStorageStorage` — this should be used instead.
 
-### 2. `Store.subscribe` signature mismatch with `useSyncExternalStore`
+### 2. `Store.subscribe` signature for React integration
 
-The `Store.subscribe` expects `(value: T | null) => void` but `useSyncExternalStore` passes `() => void`. While this works (extra args ignored), it creates a subtle incompatibility. Consider adding a `subscribeReact` method that matches the expected `(onStoreChange: () => void) => () => void` signature.
+The store provides a `subscribeReact` method that matches the `(onStoreChange: () => void) => () => void` signature expected by React's `useSyncExternalStore`. Developers should use the `useStore` hook from `#/infra/store/useStore` rather than calling `useSyncExternalStore` directly.
 
 ### 3. Missing `errors/` folders
 
@@ -121,6 +121,6 @@ Several components exceed 500+ lines:
 
 - **Strong typing** throughout — no `any` types visible
 - **Consistent use of `aria-label`** on most interactive elements
-- **Proper use of `useSyncExternalStore`** for store integration (aside from the subscribe wrapper issue)
+- **Proper use of `useStore`** from `#/infra/store/useStore` for store integration
 - **Clean module structure** — clear separation into models, useCases, presentations, stores
 - **Good undo/redo coverage** — PianoRoll operations all push undo entries

@@ -110,7 +110,7 @@ Prohibited tools and techniques include, but are not limited to:
 ## 🧪 State Management
 
 - **Async/Server State:** Use **TanStack Query** (`useSuspenseQuery`, `useQuery`). Never use `useEffect` for data fetching.
-- **Cross-Domain UI State:** Use Vanilla `Store<T>` instances (in `stores/`). Business logic interacts directly with the Store instance. React connects via `useSyncExternalStore`.
+- **Cross-Domain UI State:** Use Vanilla `Store<T>` instances (in `stores/`). Business logic interacts directly with the Store instance. React connects via `useStore` from `#/infra/store/useStore`.
 - **Local Form/Settings:** Use React Hook Form + Zod.
 - **Local Primitive State:** Use `useState` + React Compiler.
 - **Context:** Used ONLY for deeply local view state (e.g. collapsing a panel). Consume Context using `use()` instead of `useContext`.

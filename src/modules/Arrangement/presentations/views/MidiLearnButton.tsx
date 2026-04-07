@@ -1,4 +1,5 @@
-import { type ReactElement, type MouseEvent, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
@@ -17,9 +18,11 @@ type MidiLearnButtonProps = {
     paramId?: string;
 };
 
-const subscribe = (callback: () => void): (() => void) => midiLearnStore.subscribe(() => callback());
-
-const getSnapshot = (): MidiLearnState | null => midiLearnStore.value;
+const defaultMidiLearnState: MidiLearnState = {
+    mappings: [],
+    isLearning: false,
+    learningTarget: null,
+};
 
 const isTargetMatch = (a: LearningTarget, b: LearningTarget): boolean => {
     return (
@@ -28,14 +31,14 @@ const isTargetMatch = (a: LearningTarget, b: LearningTarget): boolean => {
 };
 
 export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: MidiLearnButtonProps): ReactElement => {
-    const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+    const state = useStore(midiLearnStore, defaultMidiLearnState);
 
     const target: LearningTarget = { targetType, trackId, deviceId, paramId };
 
     const isLearningThis =
-        state?.isLearning === true && state.learningTarget !== null && isTargetMatch(state.learningTarget, target);
+        state.isLearning === true && state.learningTarget !== null && isTargetMatch(state.learningTarget, target);
 
-    const existingMapping = state ? findMappingForTarget(target) : undefined;
+    const existingMapping = findMappingForTarget(target);
 
     const handleClick = (e: MouseEvent): void => {
         e.stopPropagation();

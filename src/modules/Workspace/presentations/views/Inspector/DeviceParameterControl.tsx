@@ -1,4 +1,4 @@
-import { type ReactElement, type ChangeEvent, useSyncExternalStore } from 'react';
+import { type ReactElement, type ChangeEvent } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
@@ -8,7 +8,8 @@ import { type DeviceParameterView as DeviceParameter } from '../../../models/Plu
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { useStore } from '#/infra/store/useStore';
+import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
 import { type Device } from '../../../models/TrackViewTypes';
 
 type DeviceParameterControlProps = {
@@ -46,12 +47,9 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
 }
 
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
-    const autoState = useSyncExternalStore(
-        (cb) => automationStore.subscribe(cb),
-        () => automationStore.value
-    );
+    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
 
-    const activeLane = autoState?.lanes.find((l) => l.trackId === trackId && l.parameterId === param.id);
+    const activeLane = autoState.lanes.find((l) => l.trackId === trackId && l.parameterId === param.id);
     const hasAutomation = !!activeLane;
 
     const value = device.parameterValues[param.id] ?? param.value;

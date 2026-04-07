@@ -1,7 +1,7 @@
 /**
  * Grinder drum machine state store.
  * Holds the current kit, selected pad, sequencer state, and UI level.
- * Reactive — UI subscribes via useSyncExternalStore.
+ * Reactive — UI subscribes via useStore from #/infra/store/useStore.
  */
 
 import { createStore } from '#/infra/store/createStore';

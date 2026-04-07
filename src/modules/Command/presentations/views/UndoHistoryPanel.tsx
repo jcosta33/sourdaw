@@ -1,10 +1,12 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 import { undoToIndex } from '../../useCases/undoRedo';
 import { closeUndoHistory } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
@@ -16,16 +18,9 @@ import { Button } from '#/components/ui/button';
 const defaultState: UndoStoreState = { past: [], future: [] };
 
 export const UndoHistoryPanel = (): ReactElement | null => {
-    const wsOpen = useSyncExternalStore(
-        (cb) => workspaceStore.subscribe(cb),
-        () => workspaceStore.value?.undoHistoryOpen ?? false
-    );
+    const wsOpen = useStore(workspaceStore, null as unknown as WorkspaceState)?.undoHistoryOpen ?? false;
 
-    const state = useSyncExternalStore(
-        (cb) => undoStore.subscribe(() => cb()),
-        () => undoStore.value ?? defaultState,
-        () => undoStore.value ?? defaultState
-    );
+    const state = useStore(undoStore, defaultState);
 
     if (!wsOpen) {
         return null;

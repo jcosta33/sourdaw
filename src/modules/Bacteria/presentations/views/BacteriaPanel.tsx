@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useSyncExternalStore, useTransition } from 'react';
+import { type ReactElement, useState, useTransition } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Search } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -1737,10 +1738,7 @@ function renderDeck(deviceId: string, state: BacteriaState): ReactElement {
 }
 
 export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const allInstances = useSyncExternalStore(
-        (cb) => bacteriaStore.subscribe(cb),
-        () => bacteriaStore.value
-    );
+    const allInstances = useStore(bacteriaStore, {});
     const state: BacteriaState = allInstances?.[deviceId] ?? getBacteriaState(deviceId);
     const [presetQuery, setPresetQuery] = useState('');
     const [presetCategory, setPresetCategory] = useState('All');

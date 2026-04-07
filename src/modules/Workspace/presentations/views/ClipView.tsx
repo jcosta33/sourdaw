@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, useState, useRef } from 'react';
 import { useTracks } from '../hooks/useTracks';
 import { Button } from '#/components/ui/button';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
@@ -8,6 +8,8 @@ import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
 import { selectClip } from '../../useCases/togglePanel/panelToggles';
 import { workspaceStore } from '../../stores/workspaceStore';
+import { useStore } from '#/infra/store/useStore';
+import { defaultWorkspaceState } from '../../models/WorkspaceState';
 
 import { PianoRoll } from './ClipView/PianoRoll';
 import { WaveformEditor } from './ClipView/WaveformEditor';
@@ -24,11 +26,7 @@ export const ClipView = (): ReactElement => {
     const automationScrollRef = useRef<HTMLDivElement>(null);
     const [audioEditMode, setAudioEditMode] = useState<'waveform' | 'pitch'>('waveform');
 
-    const wsState = useSyncExternalStore(
-        (cb) => workspaceStore.subscribe(() => cb()),
-        () => workspaceStore.value,
-        () => workspaceStore.value
-    );
+    const wsState = useStore(workspaceStore, defaultWorkspaceState);
 
     if (!selectedTrack) {
         return (

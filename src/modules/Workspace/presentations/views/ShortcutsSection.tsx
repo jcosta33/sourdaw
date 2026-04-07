@@ -1,14 +1,17 @@
-import { type ReactElement, useSyncExternalStore, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 import { Keyboard } from 'lucide-react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
+import { useStore } from '#/infra/store/useStore';
 import {
     shortcutStore,
     updateShortcutBinding,
     resetShortcutsToDefault,
     formatKeyBinding,
     type ShortcutAction,
+    DEFAULT_SHORTCUTS,
+    type ShortcutState,
 } from '../../models/Shortcuts';
 import { cn } from '#/helpers/Styles/cn';
 import { CaptureKeyButton } from '../components/CaptureKeyButton';
@@ -37,11 +40,7 @@ const ACTION_LABELS: Record<ShortcutAction, string> = {
 // ── ShortcutsSection ──────────────────────────────────────────────────
 
 export const ShortcutsSection = (): ReactElement => {
-    const shortcutState = useSyncExternalStore(
-        (cb) => shortcutStore.subscribe(() => cb()),
-        () => shortcutStore.value,
-        () => shortcutStore.value
-    );
+    const shortcutState = useStore<ShortcutState>(shortcutStore, { bindings: DEFAULT_SHORTCUTS });
 
     const [editingAction, setEditingAction] = useState<ShortcutAction | null>(null);
 

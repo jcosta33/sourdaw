@@ -1,4 +1,4 @@
-import { type ReactElement, useSyncExternalStore, useState, useRef } from 'react';
+import { type ReactElement, useState, useRef } from 'react';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
@@ -27,6 +27,7 @@ import {
 import { MidiDevicePicker } from '#/modules/AudioEngine/presentations/views/MidiDevicePicker';
 import { AudioDevicePicker } from '#/modules/AudioEngine/presentations/views/AudioDevicePicker';
 import { PluginScanSettings } from '#/modules/AudioEngine/presentations/views/PluginScanSettings';
+import { useStore } from '#/infra/store/useStore';
 import { preferencesStore } from '../../stores/preferencesStore';
 import {
     defaultPreferences,
@@ -70,10 +71,7 @@ const NAV_ITEMS: NavItem[] = [
     { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard className="size-3.5" /> },
 ];
 
-// ── Store wiring ──────────────────────────────────────────────────────
 
-const subscribe = (cb: () => void) => preferencesStore.subscribe(cb);
-const getSnapshot = () => preferencesStore.value ?? defaultPreferences;
 
 // ── Section props ─────────────────────────────────────────────────────
 
@@ -85,7 +83,7 @@ type SectionProps = {
 // ── Main dialog ───────────────────────────────────────────────────────
 
 export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): ReactElement => {
-    const prefs = useSyncExternalStore(subscribe, getSnapshot);
+    const prefs = useStore<Preferences>(preferencesStore, defaultPreferences);
     const [section, setSection] = useState<PreferencesSection>('general');
 
     const prefsRef = useRef(prefs);

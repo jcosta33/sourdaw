@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -1381,10 +1382,7 @@ function StatusStrip({ state }: { state: GrinderState }): ReactElement {
 }
 
 export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const allInstances = useSyncExternalStore(
-        (cb) => grinderStore.subscribe(cb),
-        () => grinderStore.value
-    );
+    const allInstances = useStore(grinderStore, {});
     const state: GrinderState = allInstances?.[deviceId] ?? getGrinderState(deviceId);
     const patch = state.patch;
 

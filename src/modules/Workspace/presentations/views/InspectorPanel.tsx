@@ -1,4 +1,5 @@
-import { type CSSProperties, type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type CSSProperties, type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
@@ -7,6 +8,7 @@ import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { defaultWorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { toggleInspector, clearClipSelection, selectClipWithFocus } from '../../useCases/togglePanel/panelToggles';
 import { TrackInspector } from './Inspector/TrackInspector';
 import { ClipInspector } from './Inspector/ClipInspector';
@@ -22,10 +24,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
 
     const selectedTrack =
         (selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null) ?? masterTrack ?? null;
-    const wsSelectedClipId = useSyncExternalStore(
-        (cb) => workspaceStore.subscribe(cb),
-        () => workspaceStore.value?.selectedClipId ?? null
-    );
+    const wsSelectedClipId = useStore(workspaceStore, defaultWorkspaceState).selectedClipId;
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
     const selectedClip = selectedTrack?.clips.find((c) => c.id === wsSelectedClipId) ?? null;

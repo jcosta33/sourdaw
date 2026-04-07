@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Info, Upload } from 'lucide-react';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
@@ -10,12 +11,11 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { isTauri } from '#/helpers/tauriBridge';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import {
-    subscribeAiStore,
-    getAiSnapshot,
+    aiStore,
     type AiTaskResult,
-    type AiState,
 } from '#/modules/AiGeneration/stores/aiStore';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
 import { handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt';
@@ -36,7 +36,7 @@ const DesktopOnlyNotice = ({ feature }: { feature: string }): ReactElement => (
 );
 
 export const GenerativeAiPanel = (): ReactElement | null => {
-    const state = useSyncExternalStore<AiState>(subscribeAiStore, getAiSnapshot);
+    const state = useStore(aiStore, { isPanelOpen: false, tasks: [] });
     const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
@@ -77,26 +77,13 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     };
 
     // Get selected audio clip for stem separation
-    const selectedClipId = useSyncExternalStore(
-        (cb) => workspaceStore.subscribe(cb),
-        () => workspaceStore.value?.selectedClipId ?? null
-    );
-    const selectedClip = useSyncExternalStore(
-        (cb) => trackStore.subscribe(cb),
-        () => {
-            if (!selectedClipId) {
-                return null;
-            }
-            const tracks = trackStore.value?.tracks ?? [];
-            for (const t of tracks) {
-                const c = t.clips.find((clip) => clip.id === selectedClipId);
-                if (c && c.type === 'audio') {
-                    return c;
-                }
-            }
-            return null;
-        }
-    );
+    const workspaceState = useStore(workspaceStore, null as unknown as WorkspaceState);
+    const selectedClipId = workspaceState?.selectedClipId ?? null;
+    const trackState = useStore(trackStore, null as unknown as TrackStoreState);
+    const tracks = trackState?.tracks ?? [];
+    const selectedClip = tracks.flatMap((t) => t.clips).find(
+        (c) => c.id === selectedClipId && c.type === 'audio'
+    ) ?? null;
 
     const handleStemSep = () => {
         if (selectedClip) {

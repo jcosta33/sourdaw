@@ -3,7 +3,7 @@ import { type PluginDescriptor } from '../DeviceParameter';
 /** Premium WASM plugin descriptors (Dutch Oven, Scoring). */
 export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
     {
-        id: 'native-proof-chamber',
+        id: 'dutch-oven',
         name: 'Dutch Oven',
         vendor: 'Sourdaw',
         format: 'builtin',
@@ -13,7 +13,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
         parameters: [
             {
                 id: 'mix',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Mix',
                 type: 'float',
                 value: 0.3,
@@ -26,7 +26,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'decay',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Decay',
                 type: 'float',
                 value: 0.5,
@@ -39,7 +39,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'damping',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Damping',
                 type: 'float',
                 value: 0.0005,
@@ -52,7 +52,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'predelay',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Pre-Delay',
                 type: 'float',
                 value: 15,
@@ -65,7 +65,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'size',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Size',
                 type: 'float',
                 value: 0.75,
@@ -78,7 +78,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'mod_rate',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Mod Rate',
                 type: 'float',
                 value: 1.0,
@@ -91,7 +91,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'mod_depth',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Mod Depth',
                 type: 'float',
                 value: 0.3,
@@ -104,7 +104,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'diffusion',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Diffusion',
                 type: 'float',
                 value: 0.75,
@@ -117,7 +117,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'high_cut',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'High Cut',
                 type: 'float',
                 value: 12000,
@@ -131,7 +131,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'low_cut',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Low Cut',
                 type: 'float',
                 value: 80,
@@ -145,7 +145,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'width',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Width',
                 type: 'float',
                 value: 1.0,
@@ -158,7 +158,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'freeze',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Freeze',
                 type: 'bool',
                 value: 0,
@@ -171,7 +171,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'shimmer',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Shimmer',
                 type: 'bool',
                 value: 0,
@@ -184,7 +184,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'shimmer_amount',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Shimmer Amount',
                 type: 'float',
                 value: 0.2,
@@ -197,7 +197,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'shimmer_pitch',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Shimmer Pitch',
                 type: 'float',
                 value: 1,
@@ -210,7 +210,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'gravity',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Gravity',
                 type: 'float',
                 value: 0.5,
@@ -223,7 +223,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'saturation',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Saturation',
                 type: 'bool',
                 value: 0,
@@ -236,7 +236,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'early_late',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Early/Late',
                 type: 'float',
                 value: 0.4,
@@ -249,7 +249,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'density',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Density',
                 type: 'float',
                 value: 1.0,
@@ -262,7 +262,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'algorithm',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Algorithm',
                 type: 'int',
                 value: 0,
@@ -275,7 +275,7 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
             },
             {
                 id: 'vintage',
-                deviceId: 'native-proof-chamber',
+                deviceId: 'dutch-oven',
                 name: 'Vintage',
                 type: 'int',
                 value: 0,

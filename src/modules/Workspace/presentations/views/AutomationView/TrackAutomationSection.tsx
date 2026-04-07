@@ -1,6 +1,6 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { toggleLaneCollapsed } from '#/modules/Automation/useCases/automation/toggleLaneCollapsed';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -10,6 +10,7 @@ import { getAutomatableParams } from '../../helpers/automationViewHelpers';
 import { type AutomationMode } from '../../../models/TrackViewTypes';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
+import { useStore } from '#/infra/store/useStore';
 
 type TrackAutomationSectionProps = {
     trackId: string;
@@ -78,13 +79,9 @@ export const TrackAutomationSection = ({
 }: TrackAutomationSectionProps): ReactElement => {
     const [isExpanded, setIsExpanded] = useState(true);
 
-    const autoState = useSyncExternalStore(
-        (cb) => automationStore.subscribe(() => cb()),
-        () => automationStore.value,
-        () => automationStore.value
-    );
+    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
 
-    const trackLanes = (autoState?.lanes ?? []).filter((l) => l.trackId === trackId && !l.clipId);
+    const trackLanes = autoState.lanes.filter((l) => l.trackId === trackId && !l.clipId);
     const availableParams = getAutomatableParams(trackId, devices);
     const unusedParams = availableParams.filter((param) => !trackLanes.some((lane) => lane.parameterId === param.id));
 

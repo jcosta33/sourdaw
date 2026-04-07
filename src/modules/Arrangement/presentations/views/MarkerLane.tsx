@@ -1,8 +1,9 @@
-import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { markerStore } from '../../stores/markerStore';
+import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import {
     addMarker,
     removeMarker,
@@ -44,14 +45,12 @@ type DragState = {
 
 const LANE_HEIGHT = 20;
 
-export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactElement => {
-    const markerState = useSyncExternalStore(
-        (cb) => markerStore.subscribe(() => cb()),
-        () => markerStore.value,
-        () => markerStore.value
-    );
+const defaultMarkerState: MarkerStoreState = { markers: [], sections: [] };
 
-    const markers = markerState?.markers ?? [];
+export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactElement => {
+    const markerState = useStore(markerStore, defaultMarkerState);
+
+    const markers = markerState.markers;
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [editing, setEditing] = useState<EditingState>(null);
     const [dragPreview, setDragPreview] = useState<{ markerId: string; beat: number } | null>(null);

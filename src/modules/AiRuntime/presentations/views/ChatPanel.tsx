@@ -2,11 +2,11 @@ import {
     type ReactElement,
     type CSSProperties,
     useState,
-    useSyncExternalStore,
     useRef,
     useEffect,
     type KeyboardEvent,
 } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -72,10 +72,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const chatState = useSyncExternalStore(
-        (cb) => chatStore.subscribe(cb),
-        () => chatStore.value
-    );
+    const chatState = useStore(chatStore, { messages: [], isGenerating: false, chatMode: 'chat', enableReasoning: false });
 
     // Auto scroll bottom when new message streams
     useEffect(() => {

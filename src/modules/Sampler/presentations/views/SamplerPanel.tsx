@@ -4,7 +4,8 @@
  * into the full sampler interface.
  */
 
-import { type ReactElement, useEffect, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { Circle, Cpu, Volume2 } from 'lucide-react';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -17,10 +18,9 @@ import {
     setPan,
     setTune,
     updateEnvelope,
-    type SamplerState,
 } from '../../stores/samplerStore';
-import { padStore, reorderPad, selectPad, type PadState } from '../../stores/padStore';
-import { sliceStore, setActiveSlice, type SliceState } from '../../stores/sliceStore';
+import { padStore, reorderPad, selectPad } from '../../stores/padStore';
+import { sliceStore, setActiveSlice } from '../../stores/sliceStore';
 import { setSamplerParamThrottled } from '../../useCases/samplerParamBridge';
 import { switchSamplerMode } from '../../useCases/setSamplerMode';
 import { triggerPadOn } from '../../useCases/triggerPad';
@@ -56,18 +56,9 @@ const SectionCard = ({
 );
 
 export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useSyncExternalStore<SamplerState | null>(
-        (cb) => samplerStore.subscribe(cb),
-        () => samplerStore.value
-    );
-    const pads = useSyncExternalStore<PadState | null>(
-        (cb) => padStore.subscribe(cb),
-        () => padStore.value
-    );
-    const slices = useSyncExternalStore<SliceState | null>(
-        (cb) => sliceStore.subscribe(cb),
-        () => sliceStore.value
-    );
+    const state = useStore(samplerStore, samplerStore.value!);
+    const pads = useStore(padStore, padStore.value!);
+    const slices = useStore(sliceStore, sliceStore.value!);
 
     // Create / destroy sampler engine instance on mount/unmount.
     useEffect(() => {

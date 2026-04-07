@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useStore } from '#/infra/store/useStore';
 
 import { collaborationStore } from '../../stores/collaborationStore';
 import { type CollaborationState } from '../../models/CollaborationTypes';
@@ -16,9 +16,5 @@ const defaultState: CollaborationState = {
 };
 
 export const useCollaborationState = (): CollaborationState => {
-    return useSyncExternalStore(
-        (onChange) => collaborationStore.subscribe(() => onChange()),
-        () => collaborationStore.value ?? defaultState,
-        () => collaborationStore.value ?? defaultState
-    );
+    return useStore<CollaborationState>(collaborationStore, defaultState);
 };

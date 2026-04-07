@@ -1,6 +1,7 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { useStore } from '#/infra/store/useStore';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
 import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
@@ -8,7 +9,7 @@ import { type Track } from '../../models/TrackViewTypes';
 import { type SidechainRoute } from '#/modules/Routing/useCases/sidechain';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
-const defaultState: TrackStoreState = { tracks: [], selectedTrackId: null };
+const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };
 
 const NODE_W = 100;
 const NODE_H = 32;
@@ -161,14 +162,7 @@ const ConnectionLine = ({
 };
 
 export const RoutingGraph = (): ReactElement => {
-    const state = useSyncExternalStore(
-        (cb) =>
-            trackStore.subscribe(() => {
-                cb();
-            }),
-        () => trackStore.value ?? defaultState,
-        () => trackStore.value ?? defaultState
-    );
+    const state = useStore<TrackStoreState>(trackStore, defaultTrackState);
 
     const { tracks, selectedTrackId } = state;
     const sidechainRoutes: SidechainRoute[] = getAllSidechainRoutes();

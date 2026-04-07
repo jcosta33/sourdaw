@@ -10,12 +10,14 @@ export type TrackStoreState = {
     selectedTrackId: string | null;
 };
 
+export const defaultTrackState: TrackStoreState = {
+    tracks: [],
+    selectedTrackId: null,
+};
+
 export const trackStore = createStore<TrackStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
         toCrdt: ({ tracks }) => ({ tracks }),
     }),
-    initialData: {
-        tracks: [],
-        selectedTrackId: null,
-    },
+    initialData: defaultTrackState,
 });

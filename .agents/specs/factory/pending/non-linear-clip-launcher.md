@@ -20,7 +20,7 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
 - **Clip Slot States**: Slots can be empty (with/without stop button), filled/stopped, queued (flashing), playing (with progress readout), or recording.
 - **Stop Button Logic**: Empty slots with stop buttons silence the track on scene launch. Removing a stop button makes the track "immune" to scene launches.
 - **Quantization**: Global setting (None to 8 Bars) with per-clip overrides.
-- **Trigger Modes**: 
+- **Trigger Modes**:
     - **Trigger**: Starts on next boundary.
     - **Gate**: Plays while held, stops on release.
     - **Toggle**: Click to start, click to stop.
@@ -36,20 +36,22 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
 ## Scope
 
 ### In scope:
+
 - **Grid UI**: React-based grid with virtualized rendering.
 - **Launcher State Machine**: Per-track source multiplexer (Arrangement, Launcher, Stopped).
 - **Quantization**: Sample-accurate buffer splitting at quantization boundaries.
 - **Follow Actions**: Full implementation of Ableton-style A/B probability and Linked/Unlinked modes.
 - **Warp/Time-stretch**: Integration with a custom or permissively licensed (e.g., MIT/Apache) time-stretch engine (such as a Phase Vocoder + WSOLA hybrid) for tempo-synced clip playback.
-> ⚠️ **LEGAL & COMPLIANCE WARNING**: Do not link against or implement algorithms directly sourced from GPL-licensed software such as the Rubber Band Library. Rubber Band may be referenced for performance benchmarks, but all stretching logic must be implemented clean-room or utilize compatible permissive licenses.
+    > ⚠️ **LEGAL & COMPLIANCE WARNING**: Do not link against or implement algorithms directly sourced from GPL-licensed software such as the Rubber Band Library. Rubber Band may be referenced for performance benchmarks, but all stretching logic must be implemented clean-room or utilize compatible permissive licenses.
 - **Legato Mode**: Position inheritance in beat-time across clip launches.
 - **MIDI State Tracking**: Note-on tracking, CC chase, and cleanup to prevent stuck notes.
 - **Recording to Arrangement**: Flattening of launcher performance logs into arrangement clips.
 - **IPC Protocol**: High-performance Tauri v2 Commands (UI -> Rust) and Channels (Rust -> UI).
 
 ### Non-goals:
+
 - Multi-clip editing within a single slot.
-- Real-time audio recording *into* slots (initially).
+- Real-time audio recording _into_ slots (initially).
 - Complex MIDI MPE support in the launcher.
 
 ---
@@ -57,11 +59,12 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
 ## Requirements
 
 ### 1. Data Model & State
+
 - **LauncherMatrix**: Global structure containing Tracks, Scenes, and Global Quantization settings.
-- **ClipSlot**: 
+- **ClipSlot**:
     - `ClipId`, `hasStopButton`, `launchQuantize` override.
     - `PlayMode`: Trigger, Gate, Toggle, Retrigger, Repeat.
-- **FollowActionConfig**: 
+- **FollowActionConfig**:
     - Actions: `NoAction`, `Stop`, `Again`, `Previous`, `Next`, `First`, `Last`, `Any`, `Other`, `Jump(Scene)`, `ReturnToArrangement`.
     - `Next/Previous` Logic: Wraps within contiguous "Clip Blocks" (blocks of non-empty slots).
     - Probabilities: A/B weights (0-100%).
@@ -69,6 +72,7 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
     - `Unlinked`: Fires after fixed `duration`.
 
 ### 2. Audio Engine (Rust)
+
 - **Three-Thread Architecture**:
     - **Audio Thread**: Pure DSP, no alloc/lock. Processes `ScheduledEvent`s.
     - **Scheduler Thread**: Evaluates Follow Actions, resolves quantization to sample offsets, manages priority queue.
@@ -86,16 +90,19 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
     - **Params**: `atomic_float`.
 
 ### 3. Warp & Legato
+
 - **Time-Stretch Engine**: Push-input/pull-output model supporting generic variable-ratio processing.
 - **Warp Map**: Piecewise linear interpolation between `(beat_pos, sample_pos)` markers.
 - **Legato**: Inherit beat position, map through target warp map to new source sample offset.
 
 ### 4. MIDI Handling
+
 - **Active Note Tracker**: 16 channels x 128 notes bitfield.
 - **CC Chase**: Scan backwards before start beat to emit latest CC/PitchBend.
 - **Loop Boundary Race Prevention**: Note-Offs at `sample_offset`, Note-Ons at `sample_offset + 1`.
 
 ### 5. Recording & Arrangement
+
 - **Snapshot**: On "Record", snapshot all playing clips as `ClipStart` events at the start beat.
 - **Flattening**: Log `PerformanceEvent`s and flatten into `ArrangementClipRef` (preserving deterministic outcomes, optionally preserving seeds).
 
@@ -104,10 +111,12 @@ Implement a production-grade non-linear clip launcher with a dual-mode schedulin
 ## Design decisions
 
 ### Decision: Follow Action Logic Location
+
 **Chosen:** Scheduler Thread.
 **Rationale:** Keeps the audio thread focused on DSP. Sub-microsecond queue overhead + 1ms poll is inaudible for quantization boundaries.
 
 ### Decision: Warp Marker Interpolation
+
 **Chosen:** Piecewise Linear.
 **Rationale:** Industry standard for predictable time-stretching and simple beat-to-sample mapping.
 

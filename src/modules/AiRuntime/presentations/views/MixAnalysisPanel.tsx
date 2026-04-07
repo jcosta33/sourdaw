@@ -1,4 +1,5 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
@@ -26,10 +27,7 @@ type MixAnalysisStoreState = {
 const defaultState: MixAnalysisStoreState = { result: null, isAnalyzing: false, panelOpen: false };
 
 export const MixAnalysisPanel = (): ReactElement | null => {
-    const state = useSyncExternalStore(
-        (cb) => mixAnalysisStore.subscribe(cb),
-        () => mixAnalysisStore.value ?? defaultState
-    );
+    const state = useStore(mixAnalysisStore, defaultState);
 
     if (!state.panelOpen) {
         return null;
