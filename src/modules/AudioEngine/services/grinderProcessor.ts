@@ -8,6 +8,7 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
 const PARAM_MAP = {

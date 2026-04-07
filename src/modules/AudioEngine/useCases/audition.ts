@@ -89,6 +89,19 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
+    // Check for Grand Boule piano on this track
+    const grandBouleDevice = track?.devices.find((d) => d.type === 'grand-boule');
+    if (grandBouleDevice) {
+        const dn = strip.deviceNodes.find((d) => d.deviceId === grandBouleDevice.id || d.type === 'grand-boule');
+        if (dn?.grandBouleControls?.ready) {
+            dn.grandBouleControls.noteOn(pitch, velocity / 127);
+            return () => {
+                dn.grandBouleControls?.noteOff(pitch);
+            };
+        }
+        return () => {};
+    }
+
     // Check for Levain instrument on this track
     const levainDevice = track?.devices.find((d) => d.type === 'levain');
     if (levainDevice) {

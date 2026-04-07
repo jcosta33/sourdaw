@@ -10,6 +10,7 @@
  * Sends metering data (LUFS, GR, correlation, tap levels) back to main thread.
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
 class ProofProcessor extends AudioWorkletProcessor {

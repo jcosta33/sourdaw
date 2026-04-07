@@ -3,7 +3,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Disc3 } from 'lucide-react';
+import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Piano, Disc3 } from 'lucide-react';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
@@ -16,10 +16,18 @@ import {
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
+import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases/createGrandBouleTrack';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';
-import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME, SAMPLER_THEME } from '../../components/Sidebar/InstrumentCard';
+import {
+    InstrumentCard,
+    FERMENTER_THEME,
+    TOASTER_THEME,
+    LEVAIN_THEME,
+    SAMPLER_THEME,
+    GRAND_BOULE_THEME,
+} from '../../components/Sidebar/InstrumentCard';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
@@ -49,7 +57,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 ];
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
-const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-sampler']);
+const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-sampler', 'grand-boule']);
 
 // Categories that belong in the Effects tab, not here
 const EFFECTS_CATEGORIES = new Set<SoundPresetCategory>(['fx', 'vocal']);
@@ -187,6 +195,13 @@ export const InstrumentsTab = ({
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'toaster');
         document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_TOASTER_TAB, { detail: { deviceId: device?.id } }));
+    };
+
+    const handleAddGrandBouleTrack = () => {
+        const trackId = createGrandBouleTrack();
+        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
+        const device = track?.devices.find((d) => d.type === 'grand-boule');
+        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_GRAND_BOULE_TAB, { detail: { deviceId: device?.id } }));
     };
 
     const handleAddLevainTrack = () => {
@@ -340,6 +355,14 @@ export const InstrumentsTab = ({
                     description="Quick · Drum · Slice · Warp — drag & drop any audio"
                     onClick={handleAddSamplerTrack}
                     theme={SAMPLER_THEME}
+                />
+                <InstrumentCard
+                    icon={Piano}
+                    label="Grand Boule"
+                    badge="Piano"
+                    description="Physical modeling · 88 keys · Modal synthesis · Pedals"
+                    onClick={handleAddGrandBouleTrack}
+                    theme={GRAND_BOULE_THEME}
                 />
             </div>
 

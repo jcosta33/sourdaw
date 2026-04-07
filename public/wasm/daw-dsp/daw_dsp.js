@@ -1,3 +1,5 @@
+/* @ts-self-types="./daw_dsp.d.ts" */
+
 /**
  * WASM-exported Bacteria instance for AudioWorklet.
  */
@@ -11,6 +13,31 @@ export class BacteriaInstance {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_bacteriainstance_free(ptr, 0);
+    }
+    /**
+     * Add a macro mapping: macro `macro_index` (0-7) → `target_param`, remapped
+     * from the macro's 0-1 range into `[min_value, max_value]`.
+     * @param {number} macro_index
+     * @param {number} target_param
+     * @param {number} min_value
+     * @param {number} max_value
+     */
+    add_macro_mapping(macro_index, target_param, min_value, max_value) {
+        wasm.bacteriainstance_add_macro_mapping(this.__wbg_ptr, macro_index, target_param, min_value, max_value);
+    }
+    /**
+     * Add a modulation assignment: `source_id` → `target_param` with scalar `amount`.
+     *
+     * Source IDs: 0=LFO1, 1=LFO2, 2=envelope follower, 3=Lorenz X, 4=Lorenz Z,
+     * 5=step sequencer, 6-13=macros 0-7.
+     *
+     * Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset).
+     * @param {number} source_id
+     * @param {number} target_param
+     * @param {number} amount
+     */
+    add_mod_assignment(source_id, target_param, amount) {
+        wasm.bacteriainstance_add_mod_assignment(this.__wbg_ptr, source_id, target_param, amount);
     }
     /**
      * Get per-band levels packed as: [band0_db, band1_db, ... band5_db].
@@ -312,6 +339,132 @@ export class GlutenInstance {
     }
 }
 if (Symbol.dispose) GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
+
+/**
+ * WASM-exported Grand Boule instance for AudioWorklet integration.
+ */
+export class GrandBouleInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        GrandBouleInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_grandbouleinstance_free(ptr, 0);
+    }
+    /**
+     * Panic: silence every voice immediately.
+     */
+    all_notes_off() {
+        wasm.grandbouleinstance_all_notes_off(this.__wbg_ptr);
+    }
+    /**
+     * Pointer to the right channel buffer (call after `process`).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.grandbouleinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Load an attack-sample clip into the hybrid sampled-attack set.
+     * @param {number} key
+     * @param {Float32Array} samples
+     */
+    load_attack_clip(key, samples) {
+        const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.grandbouleinstance_load_attack_clip(this.__wbg_ptr, key, ptr0, len0);
+    }
+    /**
+     * @param {number} sample_rate
+     * @param {number} voice_count
+     */
+    constructor(sample_rate, voice_count) {
+        const ret = wasm.grandbouleinstance_new(sample_rate, voice_count);
+        this.__wbg_ptr = ret >>> 0;
+        GrandBouleInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Begin the release phase for any voice holding this note.
+     * @param {number} midi_note
+     */
+    note_off(midi_note) {
+        wasm.grandbouleinstance_note_off(this.__wbg_ptr, midi_note);
+    }
+    /**
+     * Trigger a note. `midi_note` covers the full MIDI range; out-of-piano
+     * notes are silently ignored.
+     * @param {number} midi_note
+     * @param {number} velocity
+     */
+    note_on(midi_note, velocity) {
+        wasm.grandbouleinstance_note_on(this.__wbg_ptr, midi_note, velocity);
+    }
+    /**
+     * Trigger a MIDI 2.0 note-on with 16-bit velocity and Q24 pitch offset.
+     * @param {number} midi_note
+     * @param {number} velocity_16bit
+     * @param {number} pitch_offset_q24
+     */
+    note_on_midi2(midi_note, velocity_16bit, pitch_offset_q24) {
+        wasm.grandbouleinstance_note_on_midi2(this.__wbg_ptr, midi_note, velocity_16bit, pitch_offset_q24);
+    }
+    /**
+     * Render a block of audio and return a pointer to the left channel.
+     * The caller reads both channels from WASM memory.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.grandbouleinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Set a global parameter (`master_gain`, `soundboard_send`,
+     * `sympathetic_send`).
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.grandbouleinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+    /**
+     * Set the sostenuto pedal state.
+     * @param {boolean} engaged
+     */
+    set_sostenuto(engaged) {
+        wasm.grandbouleinstance_set_sostenuto(this.__wbg_ptr, engaged);
+    }
+    /**
+     * Set the sustain pedal position (0..1).
+     * @param {number} position
+     */
+    set_sustain(position) {
+        wasm.grandbouleinstance_set_sustain(this.__wbg_ptr, position);
+    }
+    /**
+     * Set the historical temperament (0 = Equal, 1 = Werckmeister III,
+     * 2 = Kirnberger III, 3 = Vallotti, 4 = Young II, 5 = Meantone ¼-comma).
+     * @param {number} index
+     */
+    set_temperament(index) {
+        wasm.grandbouleinstance_set_temperament(this.__wbg_ptr, index);
+    }
+    /**
+     * Set the una-corda pedal state.
+     * @param {boolean} engaged
+     */
+    set_una_corda(engaged) {
+        wasm.grandbouleinstance_set_una_corda(this.__wbg_ptr, engaged);
+    }
+}
+if (Symbol.dispose) GrandBouleInstance.prototype[Symbol.dispose] = GrandBouleInstance.prototype.free;
 
 /**
  * WASM-exported Grinder instance for AudioWorklet.
@@ -627,102 +780,6 @@ export class LevainInstance {
 }
 if (Symbol.dispose) LevainInstance.prototype[Symbol.dispose] = LevainInstance.prototype.free;
 
-export class ProofChamberEngine {
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        ProofChamberEngineFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_proofchamberengine_free(ptr, 0);
-    }
-    /**
-     * @returns {number}
-     */
-    get mix() {
-        const ret = wasm.__wbg_get_proofchamberengine_mix(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * @returns {number}
-     */
-    get pre_delay_ms() {
-        const ret = wasm.__wbg_get_proofchamberengine_pre_delay_ms(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * @returns {number}
-     */
-    get_input_left_ptr() {
-        const ret = wasm.proofchamberengine_get_input_left_ptr(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * @returns {number}
-     */
-    get_input_right_ptr() {
-        const ret = wasm.proofchamberengine_get_input_right_ptr(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * @returns {number}
-     */
-    get_output_left_ptr() {
-        const ret = wasm.proofchamberengine_get_output_left_ptr(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * @returns {number}
-     */
-    get_output_right_ptr() {
-        const ret = wasm.proofchamberengine_get_output_right_ptr(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * @param {number} sample_rate
-     */
-    constructor(sample_rate) {
-        const ret = wasm.proofchamberengine_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
-        ProofChamberEngineFinalization.register(this, this.__wbg_ptr, this);
-        return this;
-    }
-    /**
-     * @param {number} size
-     */
-    process_block(size) {
-        wasm.proofchamberengine_process_block(this.__wbg_ptr, size);
-    }
-    /**
-     * Update internal Dattorro plate parameters smoothly
-     * @param {number} mix
-     * @param {number} pre_delay_ms
-     * @param {number} decay
-     * @param {number} bandwidth
-     * @param {number} damping
-     * @param {number} diffusion
-     * @param {number} excursion_samples
-     */
-    set_parameters(mix, pre_delay_ms, decay, bandwidth, damping, diffusion, excursion_samples) {
-        wasm.proofchamberengine_set_parameters(this.__wbg_ptr, mix, pre_delay_ms, decay, bandwidth, damping, diffusion, excursion_samples);
-    }
-    /**
-     * @param {number} arg0
-     */
-    set mix(arg0) {
-        wasm.__wbg_set_proofchamberengine_mix(this.__wbg_ptr, arg0);
-    }
-    /**
-     * @param {number} arg0
-     */
-    set pre_delay_ms(arg0) {
-        wasm.__wbg_set_proofchamberengine_pre_delay_ms(this.__wbg_ptr, arg0);
-    }
-}
-if (Symbol.dispose) ProofChamberEngine.prototype[Symbol.dispose] = ProofChamberEngine.prototype.free;
-
 /**
  * WASM-exported Proof mastering suite instance for AudioWorklet.
  */
@@ -1020,6 +1077,9 @@ const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefine
 const GlutenInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
+const GrandBouleInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_grandbouleinstance_free(ptr >>> 0, 1));
 const GrinderInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_grinderinstance_free(ptr >>> 0, 1));
@@ -1029,9 +1089,6 @@ const KneadInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
 const LevainInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_levaininstance_free(ptr >>> 0, 1));
-const ProofChamberEngineFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_proofchamberengine_free(ptr >>> 0, 1));
 const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_proofinstance_free(ptr >>> 0, 1));

@@ -21,6 +21,7 @@ import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from '.
 import { isGrinderDevice, createGrinderNode, type GrinderNodeResult } from './GrinderNode';
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
+import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
 
 import { updateTunerTelemetry } from '#/modules/Scoring/stores/scoringStore';
 import { updateGlutenMeters } from '#/modules/Gluten/stores/glutenStore';
@@ -429,6 +430,63 @@ const scoringDescriptor: WasmDeviceDescriptor = {
     },
 };
 
+const grandBouleDescriptor: WasmDeviceDescriptor = {
+    matches: isGrandBouleDevice,
+    create({ context, deviceId, deviceType, onLoaded }) {
+        const pendingParams: Array<[string, number]> = [];
+        const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        placeholder.grandBouleControls = {
+            ready: false,
+            noteOn: () => {},
+            noteOff: () => {},
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setSustain: () => {},
+            setUnaCorda: () => {},
+            setSostenuto: () => {},
+            noteOnMidi2: () => {},
+            setTemperament: () => {},
+            loadAttackClip: () => {},
+            allNotesOff: () => {},
+            setBypass: () => {},
+            destroy: () => {},
+        };
+        const loadPromise = createGrandBouleNode(context)
+            .then(async (result: GrandBouleNodeResult) => {
+                await result.ready;
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
+                onLoaded({
+                    deviceId,
+                    type: deviceType,
+                    nodes: [result.workletNode],
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    grandBouleControls: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        setParam: result.setParam,
+                        setSustain: result.setSustain,
+                        setUnaCorda: result.setUnaCorda,
+                        setSostenuto: result.setSostenuto,
+                        noteOnMidi2: result.noteOnMidi2,
+                        setTemperament: result.setTemperament,
+                        loadAttackClip: result.loadAttackClip,
+                        allNotesOff: result.allNotesOff,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
+                });
+                eventBus.emit(new AudioDeviceLoadedEvent({ deviceId, deviceType }));
+            })
+            .catch((err) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${err}`));
+        return { placeholder, loadPromise };
+    },
+};
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
@@ -441,6 +499,7 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
     grinderDescriptor,
     proofDescriptor,
     scoringDescriptor,
+    grandBouleDescriptor,
 ];
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {

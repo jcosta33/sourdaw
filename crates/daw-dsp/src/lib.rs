@@ -1,6 +1,7 @@
 pub mod bacteria;
 pub mod fermenter;
 pub mod gluten;
+pub mod grand_boule;
 pub mod grinder;
 pub mod knead;
 pub mod levain;

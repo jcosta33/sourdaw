@@ -126,6 +126,14 @@ export const SAMPLER_THEME: InstrumentCardTheme = {
     glow: 'bg-[var(--color-accent-lavender)]/8',
 };
 
+export const GRAND_BOULE_THEME: InstrumentCardTheme = {
+    button: 'border-neutral-400/25 bg-gradient-to-br from-neutral-300/10 via-surface-raised to-neutral-400/5 hover:border-neutral-300/45 hover:from-neutral-300/15',
+    iconBox: 'bg-neutral-300/15 border-neutral-400/20 shadow-[0_0_12px_rgba(200,200,200,0.10)]',
+    iconColor: 'text-neutral-300',
+    badgeColor: 'bg-neutral-400/20 text-neutral-300',
+    glow: 'bg-neutral-400/8',
+};
+
 export const CRUST_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-peach)]/30 bg-gradient-to-br from-[var(--color-accent-peach)]/10 via-surface-raised to-[var(--color-accent-peach)]/5 hover:border-[var(--color-accent-peach)]/50 hover:from-[var(--color-accent-peach)]/15',
     iconBox:

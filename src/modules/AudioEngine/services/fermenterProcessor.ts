@@ -12,6 +12,7 @@
  *   { type: 'param', name, value }
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
 /**

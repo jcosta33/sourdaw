@@ -13,6 +13,7 @@
  *   { type: 'bypass', bypassed }
  */
 
+import '../wasm/workletPolyfill.js';
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
 class ProofChamberProcessor extends AudioWorkletProcessor {
