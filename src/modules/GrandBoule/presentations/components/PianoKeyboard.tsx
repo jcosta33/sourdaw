@@ -69,7 +69,7 @@ export const PianoKeyboard = ({
                     className={cn(
                         'absolute top-0 h-[60%] w-[2%] rounded-b-sm border border-black',
                         'bg-zinc-900 hover:bg-zinc-700',
-                        (isPressed || isHighlighted) && 'bg-amber-600',
+                        (isPressed || isHighlighted) && 'bg-neutral-500',
                     )}
                     style={{ left: `calc(${whiteIndex} * (100% / 52) - 1%)` }}
                 />,
@@ -86,7 +86,7 @@ export const PianoKeyboard = ({
                     className={cn(
                         'h-full flex-1 border-r border-zinc-300 bg-white last:border-r-0',
                         'hover:bg-zinc-100',
-                        (isPressed || isHighlighted) && 'bg-amber-300',
+                        (isPressed || isHighlighted) && 'bg-neutral-300',
                     )}
                 />,
             );

@@ -71,7 +71,7 @@ const SectionCard = ({
         className="grand-boule-window"
         title={title}
         detail={detail}
-        titleClassName="text-amber-400/70"
+        titleClassName="text-neutral-400/80"
     >
         {children}
     </DawPluginSectionCard>
@@ -266,7 +266,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         }
                                         className={`grand-boule-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
                                             active
-                                                ? 'border-amber-400/40 bg-amber-400/10'
+                                                ? 'border-neutral-400/40 bg-neutral-300/10'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
                                     >
@@ -409,7 +409,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
                     <div className="flex items-start justify-between gap-3">
                         <div className="space-y-2">
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-amber-400/70">
+                            <div className="text-[8px] uppercase tracking-[0.26em] text-neutral-400/80">
                                 Grand Boule
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">
@@ -481,7 +481,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 </span>
                                 <DawPluginToggle
                                     pressed={pedals.unaCorda}
-                                    tone="amber"
+                                    tone="neutral"
                                     onClick={() =>
                                         setGrandBouleUnaCorda({
                                             engine,
@@ -496,7 +496,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 </span>
                                 <DawPluginToggle
                                     pressed={pedals.sostenuto}
-                                    tone="amber"
+                                    tone="neutral"
                                     onClick={() =>
                                         setGrandBouleSostenuto({
                                             engine,
@@ -524,7 +524,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         }
                                         className={`rounded-sm px-2 py-1 text-left text-[10px] transition-colors ${
                                             active
-                                                ? 'bg-amber-400/15 text-amber-300 font-medium'
+                                                ? 'bg-neutral-300/15 text-neutral-200 font-medium'
                                                 : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
                                         }`}
                                     >
@@ -569,7 +569,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 <Power className="size-3.5" />
                                 Panic
                             </DawPluginChip>
-                            <DawPluginLed tone="amber" className="flex items-center gap-1">
+                            <DawPluginLed tone="neutral" className="flex items-center gap-1">
                                 <Cpu className="size-3" />
                                 {activeVoices} voices
                             </DawPluginLed>

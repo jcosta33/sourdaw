@@ -38,7 +38,7 @@ const ModelSelector = ({
     onSelect: (id: string) => void;
 }): ReactElement => (
     <div className="flex flex-col gap-1">
-        <div className="text-[8px] uppercase tracking-[0.2em] text-amber-400/50">
+        <div className="text-[8px] uppercase tracking-[0.2em] text-neutral-400/50">
             {label}
         </div>
         <div className="flex flex-col gap-0.5">
@@ -51,7 +51,7 @@ const ModelSelector = ({
                         onClick={() => onSelect(model.id)}
                         className={`rounded-sm px-2 py-1 text-left text-[10px] transition-colors ${
                             active
-                                ? 'bg-amber-400/15 text-amber-300 font-medium'
+                                ? 'bg-neutral-300/15 text-neutral-200 font-medium'
                                 : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
                         }`}
                     >
@@ -166,7 +166,7 @@ export const MorphPanel = ({
             className="grand-boule-window"
             title="Morph"
             detail="Blend between piano models (§3.1)."
-            titleClassName="text-amber-400/70"
+            titleClassName="text-neutral-400/80"
         >
             <div className="flex flex-col gap-3">
                 {/* Enable toggle */}
@@ -176,7 +176,7 @@ export const MorphPanel = ({
                     </span>
                     <DawPluginToggle
                         pressed={morph.enabled}
-                        tone="amber"
+                        tone="neutral"
                         onClick={() => onEnabledChange(!morph.enabled)}
                     />
                 </div>

@@ -202,7 +202,7 @@ export const MidiCalibrationPanel = ({
                 className="grand-boule-window"
                 title="MIDI Calibration"
                 detail="Velocity curves and controller calibration (SS3.1)."
-                titleClassName="text-amber-400/70"
+                titleClassName="text-neutral-400/80"
             >
                 {/* Velocity histogram / prompt */}
                 <div className="grand-boule-window relative h-16 overflow-hidden rounded-sm p-1.5">
@@ -306,7 +306,7 @@ export const MidiCalibrationPanel = ({
                 {/* Reset defaults */}
                 <div className="flex items-center gap-2 pt-1">
                     <DawPluginChip
-                        tone="amber"
+                        tone="neutral"
                         size="sm"
                         onClick={() => {
                             onReset();

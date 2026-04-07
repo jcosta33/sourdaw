@@ -118,11 +118,11 @@ export const YEAST_THEME: InstrumentCardTheme = {
 };
 
 export const GRAND_BOULE_THEME: InstrumentCardTheme = {
-    button: 'border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-surface-raised to-amber-500/5 hover:border-amber-500/50 hover:from-amber-500/15',
-    iconBox: 'bg-amber-500/20 border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]',
-    iconColor: 'text-amber-400',
-    badgeColor: 'bg-amber-500/20 text-amber-400',
-    glow: 'bg-amber-500/8',
+    button: 'border-neutral-400/25 bg-gradient-to-br from-neutral-300/10 via-surface-raised to-neutral-400/5 hover:border-neutral-300/45 hover:from-neutral-300/15',
+    iconBox: 'bg-neutral-300/15 border-neutral-400/20 shadow-[0_0_12px_rgba(200,200,200,0.10)]',
+    iconColor: 'text-neutral-300',
+    badgeColor: 'bg-neutral-400/20 text-neutral-300',
+    glow: 'bg-neutral-400/8',
 };
 
 export const CRUST_THEME: InstrumentCardTheme = {

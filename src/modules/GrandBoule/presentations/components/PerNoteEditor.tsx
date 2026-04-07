@@ -72,7 +72,7 @@ export const PerNoteEditor = ({
                     type="button"
                     disabled={!hasOverrides}
                     onClick={() => onReset(selectedKey)}
-                    className="rounded px-2 py-0.5 text-[8px] uppercase tracking-[0.16em] text-amber-300/70 transition-colors hover:bg-amber-400/10 hover:text-amber-300 disabled:pointer-events-none disabled:opacity-30"
+                    className="rounded px-2 py-0.5 text-[8px] uppercase tracking-[0.16em] text-neutral-300/70 transition-colors hover:bg-neutral-400/10 hover:text-neutral-200 disabled:pointer-events-none disabled:opacity-30"
                 >
                     Reset
                 </button>
@@ -105,7 +105,7 @@ export const PerNoteEditor = ({
                                     className={`font-mono text-[9px] ${
                                         isDefault
                                             ? 'text-foreground/85'
-                                            : 'text-amber-300/90'
+                                            : 'text-neutral-200/90'
                                     }`}
                                 >
                                     {value.toFixed(2)}{descriptor.unit}
