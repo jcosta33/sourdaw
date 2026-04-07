@@ -1,8 +1,8 @@
-import { isOk, type Result } from '../result';
+import { type Result, isOk } from '../result';
 
 export const assertOk = <T, E>(result: Result<T, E>): T => {
     if (!isOk(result)) {
-        throw new Error(`Expected Ok, but got Err: ${JSON.stringify(result.error)}`);
+        throw new Error(`Expected Ok, got Err: ${String(result.error)}`);
     }
     return result.value;
 };

@@ -15,21 +15,21 @@ export const isErr = <T, E>(result: Result<T, E>): result is Err<E> => {
 };
 
 export const map = <T, E, U>(result: Result<T, E>, fn: (value: T) => U): Result<U, E> => {
-    if (isOk(result)) {
+    if (result.ok) {
         return ok(fn(result.value));
     }
     return result;
 };
 
 export const mapError = <T, E, F>(result: Result<T, E>, fn: (error: E) => F): Result<T, F> => {
-    if (isErr(result)) {
+    if (!result.ok) {
         return err(fn(result.error));
     }
     return result;
 };
 
-export const flatMap = <T, E, U, F>(result: Result<T, E>, fn: (value: T) => Result<U, F>): Result<U, E | F> => {
-    if (isOk(result)) {
+export const flatMap = <T, E, U>(result: Result<T, E>, fn: (value: T) => Result<U, E>): Result<U, E> => {
+    if (result.ok) {
         return fn(result.value);
     }
     return result;
@@ -59,10 +59,10 @@ export const fromNullable = <T, E>(value: T | null | undefined, errorFactory: ()
     if (value === null || value === undefined) {
         return err(errorFactory());
     }
-    return ok(value);
+    return ok(value as T);
 };
 
-export const tryCatch = <T, E>(fn: () => T, errorFactory: (error: unknown) => E): Result<T, E> => {
+export const tryCatch = <T, E>(fn: () => T, errorFactory: (e: unknown) => E): Result<T, E> => {
     try {
         return ok(fn());
     } catch (e) {
