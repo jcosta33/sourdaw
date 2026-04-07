@@ -26,6 +26,7 @@ import {
 } from '#/modules/AudioEngine/models/WebMidiTypes';
 import { activeNotes, channelToNote, mpeEnabled, targetTrackId } from './state';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases/yeastSchedulingBridge';
+import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
 
 function secondsToBeats(seconds: number, tempo: number): number {
@@ -69,11 +70,13 @@ function findActiveRecordingClip(trackId: string): string | null {
     return midiClips[midiClips.length - 1]!.id;
 }
 
-export function handleNoteOn(channel: number, note: number, velocity: number): void {
-    if (velocity === 0) {
-        handleNoteOff(channel, note);
-        return;
-    }
+export const handleNoteOn = inject({ eventBus })(
+    ({ eventBus }) =>
+        function handleNoteOn(channel: number, note: number, velocity: number): void {
+            if (velocity === 0) {
+                handleNoteOff(channel, note);
+                return;
+            }
 
     if (!targetTrackId) {
         console.warn('[MIDI] No target track set — select a MIDI track first');
