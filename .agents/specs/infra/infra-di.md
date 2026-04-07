@@ -1,15 +1,26 @@
 # Dependency Injection and Testing Infrastructure
 
+> **Changelog (review revision):**
+>
+> - Renamed `registerOnce` → `register` (safe default, throws on duplicate)
+> - Renamed `register` → `set` (deliberate overwrite, test/escape hatch)
+> - Renamed `Container.reset()` → `container.clear()`
+> - Removed `has()` from public API (internal only, no production caller)
+> - Added destructure-in-body convention for `inject()` to reduce arrow nesting
+> - Clarified that `inject` is the correct name (not `di` — abbreviations are banned by conventions)
+> - Resolved open question: `createChild()` is internal to `testing/` in v1
+> - Resolved open question: strict-mode guard deferred to v2
+
 ## Context
 
 The architecture already chooses `inject()` as the canonical business-layer DI mechanism. Use cases and other injectables declare dependencies explicitly, resolve at call time, and are testable through `injectDependencies()`. The same doc also defines important constraints:
 
 - dependencies are memoized after first resolution
-- `Container.reset()` must clear caches for tests
+- `container.clear()` must clear caches for tests
 - circular dependency chains must throw with a chain
 - async dependencies are forbidden
 - React hooks/components do not use `inject()`
-- no `Container.get()` at module top-level
+- no `container.get()` at module top-level
 - bootstrap registrations happen before use cases run
 
 This feature exists to replace the old company DI/container/testing helpers while preserving the architecture-level ergonomics already chosen by the codebase.
@@ -24,17 +35,17 @@ Implement a functional DI container plus `inject()` abstraction and testing help
 
 ## User-visible behavior
 
-From the caller’s point of view:
+From the caller's point of view:
 
 - business-layer code writes:
 
 ```ts
 export const addTrack = inject(
     { eventBus: EventBus, logger: Logger, trackRepo: TrackRepo },
-    ({ eventBus, logger, trackRepo }) =>
-        (input: AddTrackInput) => {
-            // use deps here
-        }
+    (deps) => (input: AddTrackInput) => {
+        const { eventBus, logger, trackRepo } = deps;
+        // use deps here
+    }
 );
 ```
 
@@ -52,11 +63,10 @@ export const addTrack = inject(
 
 - container primitive
 - singleton container facade used by app bootstrap
-- `register`
-- `registerOnce`
+- `register` (throws on duplicate — safe default)
+- `set` (overwrites silently — escape hatch for tests)
 - `get`
-- `has`
-- `reset`
+- `clear`
 - `inject()`
 - injectable memoization
 - circular dependency detection
@@ -68,6 +78,9 @@ export const addTrack = inject(
 
 ## **Non-goals (explicitly out of scope):**
 
+- `has()` on the public API (internal only, no production caller)
+- `createChild()` as a public API (internal to `testing/` only in v1)
+- dev-only strict-mode guard (deferred to v2)
 - decorators
 - reflect-metadata
 - constructor injection framework
@@ -94,13 +107,13 @@ export const addTrack = inject(
 
 5. **Memoized invoker** — resolved invokers are cached after first resolution.
 
-6. **Reset semantics** — `Container.reset()` must clear injectable caches so tests can re-resolve against fresh mocks.
+6. **Clear semantics** — `container.clear()` must clear all registrations and injectable caches so tests can re-resolve against fresh mocks.
 
 7. **Circular dependency detection** — when `A -> B -> A` occurs, resolution must throw with the full chain.
 
 8. **Async dependencies forbidden** — if any dependency map value resolves to a `Promise`, `inject()` must throw during setup or resolution.
 
-9. **No top-level `Container.get()` usage pattern** — the spec must reinforce that top-level reads are forbidden; module code should use `inject()` instead.
+9. **No top-level `container.get()` usage pattern** — the spec must reinforce that top-level reads are forbidden; module code should use `inject()` instead.
 
 10. **Test override ergonomics** — implement `injectDependencies(injectable, mocks)` so tests can replace all dependencies cleanly.
 
@@ -111,6 +124,8 @@ export const addTrack = inject(
 - `createTestContainer()`
 
 12. **Bootstrap compatibility** — support app bootstrap registration before business-layer execution begins.
+
+13. **Safe-by-default registration** — `register()` throws on duplicate registration. `set()` overwrites silently and is the deliberate escape hatch for tests and dynamic overrides.
 
 ---
 
@@ -138,10 +153,60 @@ Preserve the existing app-facing DI style centered on `inject()` and a container
 
 **Considered and rejected:**
 
+- `di` as the function name
+    - rejected because the conventions doc bans abbreviated names; `inject` is a verb that describes what it does
 - switching the codebase to explicit symbol-token container calls everywhere
     - rejected because it would fight the current architecture and create migration churn
 - decorator-based DI
     - rejected because it adds hidden magic and is unnecessary here
+- curried form `inject(deps)(factory)`
+    - rejected because dangling `)(` in the middle is harder to read than the two-argument form
+
+### Decision: inject() call-site convention
+
+**Chosen:**
+
+Destructure `deps` inside the body, not in the parameter list. This reduces visual nesting and shifts weight to the business logic:
+
+```ts
+export const addTrack = inject(
+    { eventBus: EventBus, logger: Logger, trackRepo: TrackRepo },
+    (deps) =>
+        (input: AddTrackInput): Track | null => {
+            const { eventBus, logger, trackRepo } = deps;
+
+            const state = trackRepo.getState();
+
+            if (state === null) {
+                logger.log('addTrack called before store was ready');
+                return null;
+            }
+
+            const track = createTrack(input);
+
+            trackRepo.setState({
+                ...state,
+                tracks: [...state.tracks, track],
+                selectedTrackId: track.id,
+            });
+
+            eventBus.emit(
+                new TrackAddedEvent({
+                    trackId: track.id,
+                    name: track.name,
+                    kind: track.kind,
+                })
+            );
+
+            return track;
+        }
+);
+```
+
+**Considered and rejected:**
+
+- destructuring in the parameter (`({ eventBus, logger, trackRepo }) =>`)
+    - rejected because it creates a long, noisy parameter line that competes visually with the real function signature
 
 ### Decision: Container shape
 
@@ -151,18 +216,23 @@ Implement a functional container internally, but expose the container behavior t
 
 ```ts
 type ContainerApi = {
-    register<T>(token: DependencyKey<T>, value: T): void;
-    registerOnce<T>(token: DependencyKey<T>, value: T): void;
+    register<T>(token: DependencyKey<T>, value: T): void; // throws on duplicate
+    set<T>(token: DependencyKey<T>, value: T): void; // overwrites silently
     get<T>(token: DependencyKey<T>): T;
-    has<T>(token: DependencyKey<T>): boolean;
-    reset(): void;
+    clear(): void;
 };
 ```
 
 `DependencyKey<T>` may internally support multiple token kinds, but the app-facing behavior must support the current class-token usage patterns.
 
+`has()` is available internally for parent-child lookup but is not part of the public API — no production code calls it.
+
 **Considered and rejected:**
 
+- `registerOnce` / `register` naming pair
+    - rejected because `register` should be the safe default (throw on duplicate); the overwrite path should look deliberate (`set`)
+- `reset()` as the clearing method name
+    - rejected because `clear()` says what it does (empties registrations) and matches `Map.clear()` / `Set.clear()` conventions
 - requiring only branded symbol tokens
     - rejected for v1 compatibility
 - exporting only `createContainer()` with no shared facade
@@ -172,7 +242,7 @@ type ContainerApi = {
 
 **Chosen:**
 
-`inject()` memoizes the resolved invoker and stores it against an internal token. `Container.reset()` clears those cached invokers.
+`inject()` memoizes the resolved invoker and stores it against an internal token. `container.clear()` clears those cached invokers.
 
 **Considered and rejected:**
 
@@ -196,6 +266,17 @@ Provide three layers:
 - making all tests hand-roll overrides manually
     - rejected because that recreates the pain the current helper is meant to solve
 
+### Decision: createChild() visibility
+
+**Chosen:**
+
+`createChild()` is internal to `testing/` in v1. It is used by `createTestContainer()` but not exposed as a public container method.
+
+**Considered and rejected:**
+
+- exposing `createChild()` publicly
+    - rejected because no production code needs it in v1; testing helpers are the only consumer
+
 ---
 
 ## Acceptance criteria
@@ -203,12 +284,14 @@ Provide three layers:
 - [ ] `inject()` supports dependency maps containing class tokens, injectables, and plain values
 - [ ] injectables resolve lazily on first invocation
 - [ ] injectables are memoized after first invocation
-- [ ] `Container.reset()` clears injectable caches
+- [ ] `container.clear()` clears all registrations and injectable caches
 - [ ] circular dependency chains throw with a readable chain
 - [ ] async dependencies are rejected
-- [ ] `registerOnce()` throws on duplicate registration
+- [ ] `register()` throws on duplicate registration
+- [ ] `set()` overwrites existing registrations silently
 - [ ] `injectDependencies()` enables isolated dependency overrides in tests
 - [ ] `spy<T>()` and `createMock<T>()` are usable in tests without type-casting noise
+- [ ] `has()` is not on the public API surface
 - [ ] `pnpm deps:validate` passes with zero violations
 
 ---
@@ -231,6 +314,7 @@ src/helpers/DependencyInjector/
     containerState.ts
     injectableRegistry.ts
     resolutionStack.ts
+    createChild.ts
 ```
 
 Suggested external usage:
@@ -238,8 +322,10 @@ Suggested external usage:
 ```ts
 export const addTrack = inject(
     { eventBus: EventBus, logger: Logger, trackRepo: TrackRepo },
-    ({ eventBus, logger, trackRepo }) =>
+    (deps) =>
         (input: AddTrackInput): Track | null => {
+            const { eventBus, logger, trackRepo } = deps;
+
             const state = trackRepo.getState();
 
             if (state === null) {
@@ -281,7 +367,7 @@ Testing helper sketch:
 
 ```ts
 export const injectDependencies = <TInjectable, TMocks>(injectable: TInjectable, mocks: TMocks) => {
-    Container.reset();
+    container.clear();
     // register provided mocks against the injectable dependency graph
     // return the same injectable so the test can call it directly
     return injectable;
@@ -297,9 +383,9 @@ export const injectDependencies = <TInjectable, TMocks>(injectable: TInjectable,
 ## Test plan
 
 - [ ] Unit: `register()` and `get()` resolve registered values
-- [ ] Unit: `registerOnce()` throws on duplicate registration
-- [ ] Unit: `has()` reports registrations accurately
-- [ ] Unit: `reset()` clears container state and injectable cache
+- [ ] Unit: `register()` throws on duplicate registration
+- [ ] Unit: `set()` overwrites existing registrations silently
+- [ ] Unit: `clear()` clears container state and injectable cache
 - [ ] Unit: `inject()` resolves plain values correctly
 - [ ] Unit: `inject()` resolves class-token dependencies correctly
 - [ ] Unit: `inject()` resolves nested injectables correctly
@@ -315,8 +401,7 @@ export const injectDependencies = <TInjectable, TMocks>(injectable: TInjectable,
 
 ## Open questions
 
-- [ ] **[MINOR]** Whether the container facade should expose `createChild()` publicly in v1, or keep child-container behavior inside testing helpers
-- [ ] **[MINOR]** Whether to add a dev-only strict-mode guard immediately, or defer if the current codebase still has too many legacy top-level reads
+None. All previously open questions have been resolved as design decisions.
 
 ---
 

@@ -1,10 +1,20 @@
 # Events and Event Bus Infrastructure
 
+> **Changelog (review revision):**
+>
+> - Removed `off()` from public API (returned unsubscribe function is the only unsubscribe mechanism)
+> - Removed `handlerCount()`, `registeredEvents()`, `hasHandlers()` from public API (introspection with no production caller)
+> - Deferred `createDomainEvent()` to v2 (event payloads are plain typed objects; bus stamps metadata at emit time if needed)
+> - Changed `createEventLog` to compose with the bus directly (`createEventLog(bus, options)`) — no public `append()` method
+> - Deferred `createEventLog` itself to v2 (production debugging tool without a consumer yet; `recordEvents()` covers testing)
+> - Resolved open question: branded `EventId`/`CorrelationId` deferred to v2, plain strings for now
+> - Resolved open question: `hasHandlers()`/`handlerCount()` excluded from v1
+> - Noted `Promise.withResolvers()` as the preferred internal primitive for idle waiting
+> - Clarified that EventBus does NOT share internal subscription code with Store
+
 ## Context
 
 The architecture defines `events/` as a public contract surface for meaningful business occurrences. Events are for cases where another concern should react independently; they are not meant for every tiny state mutation, and they should not replace direct use-case calls when a direct dependency is cleaner.
-
-The infra research already proposes a typed event bus, plain-object domain events, wildcard subscriptions, idle detection for tests, and an event log.
 
 This feature exists to replace the old company event helpers with a typed, minimal, async-safe event bus and event primitives that fit the DAW architecture.
 
@@ -12,19 +22,20 @@ This feature exists to replace the old company event helpers with a typed, minim
 
 ## Goal
 
-Implement a typed event bus and domain-event primitive that are easy for modules to use, easy to test, and explicit enough to discourage event-noise abuse.
+Implement a typed event bus that is easy for modules to use, easy to test, and explicit enough to discourage event-noise abuse.
 
 ---
 
 ## User-visible behavior
 
-From the caller’s point of view:
+From the caller's point of view:
 
-- a module can define meaningful events as plain typed objects
-- subscribers can register with `on`, `off`, `once`, and `onAny`
+- a module defines event payloads as plain typed objects in its EventMap
+- subscribers register with `on`, `once`, and `onAny`
+- unsubscription is done by calling the returned function (no separate `off`)
 - `emit()` is async and resolves when all handlers complete
 - tests can `await bus.waitForIdle()` before asserting effects
-- a test can record emitted events without patching internals
+- tests can use `recordEvents(bus)` to capture emissions without patching internals
 
 ---
 
@@ -33,17 +44,20 @@ From the caller’s point of view:
 ## **In scope:**
 
 - typed `createEventBus<TEventMap>()`
-- typed handler registration and unregistration
+- typed handler registration (`on`, `once`, `onAny`)
+- unsubscription via returned function
 - async `emit()`
-- `waitForIdle()`
-- `once()`
-- wildcard subscriptions
-- plain-object domain event helper
-- bounded `EventLog`
-- event test helper(s)
+- `waitForIdle()`, `pendingCount`, `isIdle`
+- `recordEvents()` testing helper
 
 ## **Non-goals (explicitly out of scope):**
 
+- `off(event, handler)` as a separate API (unsubscribe via returned function only)
+- `handlerCount()`, `registeredEvents()`, `hasHandlers()` (introspection with no production caller)
+- `createDomainEvent()` (deferred to v2 — plain typed payloads are sufficient for v1)
+- `createEventLog()` (deferred to v2 — `recordEvents()` covers testing needs)
+- branded `EventId` / `CorrelationId` types (deferred to v2 — plain strings for now)
+- shared internal subscription code with Store
 - event sourcing
 - replay engine
 - persistence of events
@@ -58,32 +72,46 @@ From the caller’s point of view:
 ## Requirements
 
 1. **Typed event map** — the bus must be generic over an `EventMap`:
-   event name string -> payload type.
+   event name string → payload type.
 
 2. **Async-first emit** — `emit(event, payload)` must return `Promise<void>` and resolve when all registered handlers finish.
 
-3. **Stable subscription API** — support:
-    - `on`
-    - `off`
-    - `once`
-    - `onAny`
+3. **Subscription API** — support:
+    - `on(event, handler)` → returns `() => void` unsubscribe function
+    - `once(event, handler)` → returns `() => void` unsubscribe function
+    - `onAny(handler)` → returns `() => void` unsubscribe function
 
-4. **Idle detection** — support:
+4. **No separate `off`** — unsubscription is done exclusively by calling the function returned from `on`/`once`/`onAny`. This is the only mechanism. No `off(event, handler)` on the public API.
+
+5. **Idle detection** — support:
     - `waitForIdle(): Promise<void>`
     - `pendingCount`
     - `isIdle`
 
-5. **Plain-object events** — implement `createDomainEvent(type, data, metadata?)` returning a readonly object, not a class instance.
+6. **Plain-object event payloads** — event payloads are whatever the EventMap defines. No wrapper factory required. Modules define their payloads as plain types:
 
-6. **Bounded event log** — implement an optional `createEventLog(maxSize)` ring buffer for debugging and tests.
+```ts
+type ArrangementEvents = {
+    'track:added': { trackId: string; name: string; kind: TrackKind };
+    'clip:moved': { clipId: string; toPosition: number };
+};
+```
+
+And usage is:
+
+```ts
+await eventBus.emit('track:added', { trackId, name, kind });
+```
 
 7. **No swallowed test races** — async handlers must be included in idle tracking so tests can reliably wait.
 
 8. **No event-name magic** — event names are explicit string keys, not reflection or decorator output.
 
-9. **Minimal testing helper** — provide a tiny `recordEvents(bus)` or equivalent helper that records emitted events for assertions.
+9. **Testing helper** — provide `recordEvents(bus)` that subscribes via `onAny` and returns a readable array of recorded events plus a `stop()` function.
 
 10. **Architecture fit** — the spec must reinforce that business events are meaningful occurrences, not a general substitute for module boundaries.
+
+11. **No shared subscription internals** — the EventBus must NOT share internal listener management code with Store. Each module owns its own implementation.
 
 ---
 
@@ -96,7 +124,7 @@ From the caller’s point of view:
 - No default exports
 - No browser-only event APIs as the core abstraction
 - Do not introduce a global singleton bus in this spec
-- Internal utilities may be shared with Store infra if cleanly separated
+- `Promise.withResolvers()` is the preferred internal primitive for idle waiting
 
 ---
 
@@ -117,7 +145,6 @@ type WildcardHandler<TEvents extends EventMap> = (
 
 type EventBus<TEvents extends EventMap> = {
     on<K extends keyof TEvents & string>(event: K, handler: EventHandler<TEvents[K]>): () => void;
-    off<K extends keyof TEvents & string>(event: K, handler: EventHandler<TEvents[K]>): void;
     once<K extends keyof TEvents & string>(event: K, handler: EventHandler<TEvents[K]>): () => void;
     onAny(handler: WildcardHandler<TEvents>): () => void;
     emit<K extends keyof TEvents & string>(event: K, payload: TEvents[K]): Promise<void>;
@@ -129,6 +156,10 @@ type EventBus<TEvents extends EventMap> = {
 
 **Considered and rejected:**
 
+- `off(event, handler)` as a separate unsubscribe method
+    - rejected because it creates two ways to unsubscribe; the returned function is simpler and doesn't require the caller to hold a stable handler reference
+- `handlerCount()`, `registeredEvents()`, `hasHandlers()` introspection methods
+    - rejected because no production code calls them; the bus's own unit tests can access internals if needed
 - synchronous-only `emit`
     - rejected because handler chains in this app are often async and tests need a real completion boundary
 - class-based bus
@@ -136,44 +167,61 @@ type EventBus<TEvents extends EventMap> = {
 - `EventTarget`
     - rejected because typed payloads and async completion semantics are awkward
 
-### Decision: Domain event shape
+### Decision: Event payload model (v1)
 
 **Chosen:**
 
-A plain readonly object:
+Event payloads are plain typed objects defined by the EventMap. No `createDomainEvent()` wrapper. No metadata ceremony. Modules define their event types directly:
 
 ```ts
-type DomainEvent<TType extends string, TData extends Record<string, unknown>> = Readonly<{
-    type: TType;
-    data: TData;
-    metadata: {
-        eventId: string;
-        timestamp: number;
-        correlationId?: string;
-        causationId?: string;
-    };
-}>;
+type ArrangementEvents = {
+    'track:added': { trackId: string; name: string; kind: TrackKind };
+};
+
+await eventBus.emit('track:added', { trackId, name, kind });
 ```
 
 **Considered and rejected:**
 
+- `createDomainEvent(type, data, metadata?)` wrapper
+    - rejected for v1 because it forces the event name to appear twice (once as the bus key, once inside the domain event object), adds metadata ceremony that callers rarely care about, and can be added non-breakingly in v2 when correlation/causation chains are actually needed
 - event classes
     - rejected because they add ceremony without adding useful safety here
-- untyped string payloads
-    - rejected because this is infrastructure and should preserve types
 
 ### Decision: Internal async wait primitive
 
 **Chosen:**
 
-`Promise.withResolvers()` may be used internally for idle waiting and one-shot test helpers.
+`Promise.withResolvers()` for idle waiting and one-shot test helpers.
 
 **Considered and rejected:**
 
-- custom resolver juggling everywhere
+- manual resolver arrays
     - rejected because `Promise.withResolvers()` makes the code smaller and clearer
-- `using` / `Symbol.dispose`
-    - rejected as a core requirement because browser availability is still limited
+
+### Decision: Event log
+
+**Chosen:**
+
+Deferred to v2. `recordEvents()` in `testing/` covers all current needs.
+
+**Considered and rejected:**
+
+- `createEventLog(maxSize)` as a standalone append-only ring buffer
+    - rejected for v1 because it is a production debugging tool without a concrete consumer yet; `recordEvents()` is sufficient for tests
+- `createEventLog(bus, options)` with automatic `onAny` wiring
+    - this is the preferred shape IF event log is added in v2 — no public `append()` method, the log subscribes internally
+
+### Decision: No shared subscription internals with Store
+
+**Chosen:**
+
+EventBus and Store each own their own listener management. No shared `SubscriptionManager`.
+
+**Considered and rejected:**
+
+- shared `SubscriptionManager<T>` from the research
+    - rejected because the two have different semantics (Store listeners receive no arguments; EventBus handlers receive typed payloads and return `Promise<void>`). Coupling them creates a false DRY abstraction.
 
 ---
 
@@ -181,13 +229,13 @@ type DomainEvent<TType extends string, TData extends Record<string, unknown>> = 
 
 - [ ] `createEventBus<T>()` enforces typed payloads by event name
 - [ ] `emit()` waits for async handlers
-- [ ] `once()` unsubscribes after first invocation
-- [ ] `onAny()` observes all emissions
+- [ ] `once()` fires exactly once then auto-unsubscribes
+- [ ] `onAny()` observes all emissions with event name and payload
 - [ ] `waitForIdle()` resolves when all in-flight handlers complete
 - [ ] `pendingCount` and `isIdle` reflect in-flight work
-- [ ] `createDomainEvent()` returns a plain readonly object
-- [ ] `createEventLog()` keeps only the most recent `maxSize` entries
-- [ ] `recordEvents()` or equivalent enables clean assertions in tests
+- [ ] Unsubscription is done exclusively by calling the returned function
+- [ ] No `off`, `handlerCount`, `registeredEvents`, or `hasHandlers` on public API
+- [ ] `recordEvents()` enables clean assertions in tests
 - [ ] `pnpm deps:validate` passes with zero violations
 
 ---
@@ -199,32 +247,20 @@ Suggested helper layout:
 ```text
 src/helpers/Event/
   createEventBus.ts
-  createDomainEvent.ts
-  createEventLog.ts
   types.ts
   testing/
     recordEvents.ts
-  internal/
-    createSubscriptionRegistry.ts
 ```
 
 Recommended bus behavior:
 
 - copy handler sets before iterating so unsubscribe during emit does not corrupt iteration
 - track `pendingCount` around the entire async dispatch
+- use `Promise.withResolvers()` for `waitForIdle()` implementation
 - `waitForIdle()` should resolve immediately when already idle
 - `onAny()` should receive both the event name and payload
-- `once()` should unsubscribe before awaiting user handler continuation
-
-Recommended event log behavior:
-
-- append-only bounded buffer
-- oldest entries dropped when exceeding max size
-- log entry includes:
-    - event name
-    - payload
-    - timestamp
-    - handler count at emit time
+- `once()` should unsubscribe before invoking the handler to prevent re-entrancy issues
+- internal method references must use closed-over functions, not `this` (plain objects break if destructured)
 
 Recommended test helper:
 
@@ -252,23 +288,21 @@ export const recordEvents = <TEvents extends EventMap>(bus: EventBus<TEvents>) =
 ## Test plan
 
 - [ ] Unit: `on()` handler fires for matching event only
-- [ ] Unit: `off()` removes handler
+- [ ] Unit: returned unsubscribe function removes handler
 - [ ] Unit: `once()` fires exactly once
 - [ ] Unit: `onAny()` receives event name and payload
 - [ ] Unit: `emit()` awaits async handlers
 - [ ] Unit: `waitForIdle()` resolves after pending handlers finish
 - [ ] Unit: `pendingCount` increments and decrements correctly
-- [ ] Unit: `createDomainEvent()` fills default metadata
-- [ ] Unit: `createEventLog()` enforces max size
 - [ ] Unit: `recordEvents()` records emissions
+- [ ] Unit: unsubscribe during emit does not corrupt iteration
 - [ ] Manual: wire a small subscriber to a module event and verify end-to-end behavior
 
 ---
 
 ## Open questions
 
-- [ ] **[MINOR]** Whether to include `hasHandlers()` / `handlerCount()` in v1 or keep the surface smaller
-- [ ] **[MINOR]** Whether branded `EventId` / `CorrelationId` types are worth v1, or whether plain strings are sufficient initially
+None. All previously open questions have been resolved as design decisions.
 
 ---
 
@@ -277,3 +311,5 @@ export const recordEvents = <TEvents extends EventMap>(bus: EventBus<TEvents>) =
 Async-first emission makes tests and orchestration cleaner, but it also makes event handlers part of the flow-control surface. That is acceptable here because the DAW already needs deterministic async behavior for orchestration.
 
 The main risk is overusing events. The architecture already guards against that: use events only for meaningful independent reactions, not as a universal escape hatch.
+
+Deferring `createDomainEvent` and `createEventLog` to v2 means correlation/causation tracing and production debugging are not available yet. That is acceptable because neither has a concrete consumer in the current codebase.
