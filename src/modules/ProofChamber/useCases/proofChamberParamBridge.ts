@@ -2,8 +2,8 @@
  * ProofChamber (Dutch Oven) parameter bridge — forwards UI param changes
  * to the WASM audio engine for the specific device instance.
  */
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { updateDeviceParam } from '#/modules/AudioEngine';
+import { getAllTracks } from '#/modules/Arrangement';
 
 type DeviceRef = { trackId: string; deviceId: string };
 

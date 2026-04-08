@@ -12,8 +12,7 @@
  * We resolve params by matching the last path segment.
  */
 
-import { scheduleDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getCurrentTime } from '#/modules/AudioEngine/useCases/scheduling';
+import { scheduleDeviceParam, getCurrentTime } from '#/modules/AudioEngine';
 
 /**
  * Schedule a note on a Faust instrument.

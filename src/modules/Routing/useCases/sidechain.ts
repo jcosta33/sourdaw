@@ -1,5 +1,9 @@
-import { createSidechainRoute, type SidechainRoute } from '#/modules/AudioEngine/useCases/audioEngineQueries';
-import { wireSidechainRoute, unwireSidechainRoute } from '#/modules/AudioEngine/useCases/engineAccess';
+import {
+    createSidechainRoute,
+    type SidechainRoute,
+    wireSidechainRoute,
+    unwireSidechainRoute,
+} from '#/modules/AudioEngine';
 
 import { sidechainStore } from '../stores/sidechainStore';
 import { SidechainCycleError } from '../errors/RoutingErrors';
