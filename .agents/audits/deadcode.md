@@ -1,6 +1,6 @@
 # Deep Dead Code Audit (Knip Results)
 
-Verified analysis of files flagged by `knip` across two audit sessions. Maps each flagged file against actual engine usage to distinguish superseded dead code from valuable pending epics.
+Verified analysis of files flagged by `knip` across audit sessions. Maps each flagged file against actual engine usage to distinguish superseded dead code from valuable pending epics.
 
 ---
 
@@ -10,9 +10,50 @@ Verified analysis of files flagged by `knip` across two audit sessions. Maps eac
 | -------------------------- | ---------- | ------------------------------------------------------------------------- |
 | Baseline                   | 93         | —                                                                         |
 | Session 1 (commit bc9c743) | 74         | Deleted obsolete engines, legacy validators, IPC nodes, Inspector layouts |
-| Session 2 (this audit)     | 63         | Deleted 8 more; integrated 3 pending features into UI                     |
+| Session 2                  | 63         | Deleted 8 more; integrated 3 pending features into UI                     |
+| Session 3 (2026-04-07)      | See §0      | Full `pnpm exec knip` refresh; **198** unused files / **132** unused exports (see interpretation) |
 
-**Current state:** 63 flagged files remain. None are safe to delete — they are either pending epics with real domain value or false positives that knip cannot trace.
+**Current state:** Prior manual triage (~63 “flagged files”) reflected **curated** Knip output. Session 3’s **198 unused files** is **raw** Knip — mostly **entry-graph limits** and module barrels, not a deletion backlog. See **§0 Session 3** for metrics and what is actually actionable.
+
+---
+
+## 0. Session 3 — Knip baseline refresh (2026-04-07)
+
+**Command:** `pnpm exec knip` (knip `^6.3.1`, config: `knip.json`). Exit code **1** when any issue is reported.
+
+### Raw metrics
+
+| Category | Count |
+| -------- | ----- |
+| Unused files | 198 |
+| Unused exports | 132 |
+| Unused exported types | 8 |
+| Duplicate exports | 2 |
+| Unused dependencies | 1 |
+| Unresolved imports | 1 |
+| Configuration hints | 8 |
+
+### How much of this is “legitimate” dead code?
+
+**Very little is safe to treat as bulk-delete dead code.**
+
+1. **Unused files (198)** — **Not** 198 orphan modules. `knip.json` **`entry`** is only `src/routes/**/*.tsx`. Most implementation files are reached via `#/` path aliases and deep imports; Knip does not model the full app graph. Many hits are **`src/modules/*/index.ts` barrels** (aggregate exports by design). **Verdict:** graph / entry limitation + barrels — **not** a green light to delete 198 paths.
+
+2. **Unused exports (132)** — Overlaps heavily with **§3 Incomplete Epics** (adjustment layers, RAVE sub-operations, control room, extensions, node view, Push, plugin bridge, etc.) plus **store helpers**, **bridge exports**, and **command-registered** surfaces Knip does not attribute. A small subset may be trimmable on a **per-symbol** basis when touching that area.
+
+3. **Actionable hygiene** (review in isolation, not mass delete):
+   - **Unresolved import (1):** `AutomationSidebarCell.spec.tsx` line 3 — `./AutomationSidebarCell` does not resolve (fix import path or component filename).
+   - **Unused dependency (1):** `@typescript-eslint/eslint-plugin` — often loaded only from ESLint config; confirm before removing from `package.json`.
+   - **Duplicate exports (2):** `DEFAULT_WEBLLM_MODEL_ID` \| `WEBLLM_MODEL_ID` in `AiRuntime/models/ModelInfo.ts`; `CRUMBS_THEME` \| `SAMPLER_THEME` in `Workspace/.../InstrumentCard.tsx` — naming / duplicate identifier cleanup.
+   - **Unused exported types (8)** — e.g. `AutomationLane`, Proof/SampleLibrary model types — may still be part of public model surfaces; verify consumers before removing exports.
+
+4. **Relation to older “63 files”** — Sessions 1–2 reported **manually triaged** “flagged files” after excluding known false positives. Session 3 is a **full** Knip dump **without** that manual filter — **198 is not comparable** to **63** as “more dead code,” only as “stricter / unfiltered unused-file detection.”
+
+### Conclusion (Session 3)
+
+- **No bulk deletion** recommended from this run alone.
+- Sections **§1–§4** below remain the authoritative list of **deleted** work, **integrated** UI, **incomplete epics**, and **known false positives**.
+- **Next steps:** fix the **unresolved spec import**; optionally reconcile **duplicate exports** and **eslint-plugin** when touching tooling; trim **unused exports** only alongside feature work in the same module.
 
 ---
 
@@ -175,8 +216,10 @@ These were documented as "KEEP" in the original audit but were subsequently remo
 
 ## Conclusion
 
-After two audit sessions, knip has been reduced from **93 → 63** flagged files.
+After two audit sessions, knip had been reduced from **93 → 63** **manually triaged** flagged files.
 
 - **30 files deleted** across the two sessions — all confirmed as superseded, redundant, or entirely without consumers.
 - **3 features integrated** into the UI with no regressions.
-- **63 remaining files** are either pending epics (real domain value, missing one integration layer) or false positives (actively used but unreachable by static analysis). None should be deleted.
+- **63 remaining files** (Session 2 framing) are either pending epics (real domain value, missing one integration layer) or false positives (actively used but unreachable by static analysis). None should be deleted **on that basis alone**.
+
+**Session 3 (§0):** A fresh `pnpm exec knip` run reports **198** unused files and **132** unused exports — mostly **entry-graph limits**, barrels, and epic-related symbols. Treat as **baseline metrics** and **hygiene hints**, not a deletion quota.
