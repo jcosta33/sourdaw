@@ -4,8 +4,8 @@
  * Uses rAF throttling to avoid flooding MessagePort during knob dragging.
  */
 
-import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getTrackStrip } from '#/modules/AudioEngine';
+import { getAllTracks } from '#/modules/Arrangement';
 import { updateKit, updatePad } from '../stores/toasterStore';
 import { type PadState, type ToasterKit } from '../models/ToasterKit';
 

@@ -3,7 +3,7 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
-import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases/scheduling';
+import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine';
 
 export let lastMetronomeBeat = -1;
 

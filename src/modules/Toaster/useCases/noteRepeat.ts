@@ -4,7 +4,7 @@
  * Uses AudioContext clock correction (chained setTimeout) to prevent drift.
  */
 
-import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getAudioTime } from '#/modules/AudioEngine';
 import { triggerToasterPad } from './triggerPad';
 
 type NoteRepeatState = {

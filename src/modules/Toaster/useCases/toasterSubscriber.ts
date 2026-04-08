@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { eventBus, logger } from '#/app/registerDependencies';
 import { toasterStore } from '../stores/toasterStore';
-import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getTrackStrip } from '#/modules/AudioEngine';
+import { getAllTracks } from '#/modules/Arrangement';
 import { TOASTER_ENGINE_MAP } from '../useCases/loadToasterKit';
 import type { BuiltinDeviceNode } from '#/modules/AudioEngine/models/AudioEngineState';
 

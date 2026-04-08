@@ -3,8 +3,8 @@
  * Finds the active Toaster device and sends a noteOn through toasterControls.
  */
 
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { ensureTrackStrip } from '#/modules/AudioEngine';
+import { getAllTracks } from '#/modules/Arrangement';
 
 export function triggerToasterPad(padIndex: number, velocity: number = 100): void {
     const toasterTrack = getAllTracks().find((t) => t.devices.some((d) => d.type === 'toaster'));
