@@ -8,8 +8,8 @@
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 import { getYeastRack } from '../stores/yeastStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { transportStore } from '#/modules/Transport';
+import { getAudioContext } from '#/modules/AudioEngine';
 
 /**
  * Process a batch of MIDI events through the Yeast rack for a specific track.

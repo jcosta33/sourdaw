@@ -1,18 +1,18 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore, resolveClipsWithComping, getGainAtBeat } from '#/modules/Arrangement';
 import { transportStore } from '../../stores/transportStore';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { getCurrentTime, createBufferSource } from '#/modules/AudioEngine/useCases/scheduling';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation/compensation';
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
-import { getGainAtBeat } from '#/modules/Arrangement/useCases/clipGainEnvelope/getGainAtBeat';
+import {
+    audioBufferCache,
+    ensureTrackStrip,
+    getCurrentTime,
+    createBufferSource,
+    getAudioContext,
+    getCompensationDelay,
+} from '#/modules/AudioEngine';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
-import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
+import { collaborationStore, getAssetTransfer } from '#/modules/Collaboration';
 
 const MICRO_FADE_SECONDS = 0.003;
 

@@ -5,16 +5,17 @@
  * Used by startPlayback and toggleRecording before audio begins.
  */
 
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 import {
     ensureTrackStrip,
     setTrackGain,
     setTrackPan,
     setTrackMute,
     setTrackOutput,
-} from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing/useCases/busControls';
+    addDeviceToStrip,
+    updateDeviceParam,
+} from '#/modules/AudioEngine';
+import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing';
 
 export function ensureTrackStrips(): void {
     const tracks = trackStore.value?.tracks;
