@@ -99,6 +99,9 @@ export {
     setSend,
     wireSidechainRoute,
     unwireSidechainRoute,
+    enableLink,
+    disableLink,
+    getLinkStatus,
 } from './useCases/engineAccess';
 
 // finalFeatureHandlers

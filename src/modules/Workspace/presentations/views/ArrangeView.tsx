@@ -8,31 +8,33 @@ import {
     useLayoutEffect,
 } from 'react';
 import { useStore } from '#/infra/store/useStore';
-import { TimelineSurface } from '#/modules/Arrangement/presentations/views/TimelineSurface';
-import { TimelineMinimap } from '#/modules/Arrangement/presentations/views/TimelineMinimap';
-import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
-import { MarkerLane } from '#/modules/Arrangement/presentations/views/MarkerLane';
-import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
-import { TimelineChromeSurface } from '#/modules/Arrangement/presentations/views/TimelineChromeSurface';
-import { timelineViewStore, setScrollX } from '#/modules/Arrangement/stores/timelineViewStore';
-import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
+import {
+    TimelineSurface,
+    TimelineMinimap,
+    ArrangementBar,
+    MarkerLane,
+    BeatRulerBar,
+    TimelineChromeSurface,
+    timelineViewStore,
+    setScrollX,
+    TrackListView,
+    addTrack,
+    addClip,
+    decodeAudioFile,
+    markerStore,
+    chordTrackStore,
+} from '#/modules/Arrangement';
 import { useTracks } from '../hooks/useTracks';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
-import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
+import { importMidiFile } from '#/modules/MIDI';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
+import { transportStore } from '#/modules/Transport';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
-import { setTrackListWidth } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { closeScratchPad } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { setTrackListWidth, closeScratchPad } from '#/modules/Workspace';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
 import { Piano, Upload, Headphones } from 'lucide-react';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
-import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
 import { clamp } from '#/helpers/Math/clamp';
 
 const TRACK_LIST_MIN = 120;

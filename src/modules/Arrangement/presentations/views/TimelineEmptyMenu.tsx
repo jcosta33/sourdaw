@@ -5,11 +5,10 @@ import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { addClip, addTrack, decodeAudioFile, importMidiFile, pasteClip } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { executeAppAction } from '#/modules/Command';
 import { isTauri } from '#/helpers/tauriBridge';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { trackStore, markerStore } from '#/modules/Arrangement';
+import { transportStore } from '#/modules/Transport';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 // ── Marker color presets ──────────────────────────────────────────────

@@ -4,22 +4,28 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuDisabledRow, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
-import { getPlatformPlugins } from '#/modules/Arrangement/useCases/getPlatformPlugins';
-import { getPluginById } from '#/modules/Arrangement/useCases/getPluginById';
-import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
-import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { addExternalDevice } from '#/modules/Arrangement/useCases/device/addExternalDevice';
-import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDevices';
+import {
+    getPlatformPlugins,
+    getPluginById,
+    bypassDevice,
+    removeDevice,
+    addDevice,
+    addExternalDevice,
+    reorderDevices,
+} from '#/modules/Arrangement';
 import { useStore } from '#/infra/store/useStore';
-import { pluginScanStore, type PluginScanState, defaultPluginScanState } from '#/modules/Plugin/stores/pluginScanStore';
+import {
+    pluginScanStore,
+    type PluginScanState,
+    defaultPluginScanState,
+    openPluginGui,
+} from '#/modules/Plugin';
 import { type Track } from '../../../models/TrackViewTypes';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
-import { openPluginGui } from '#/modules/Plugin/useCases/pluginLifecycle';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
-import { showDevicePanelForType } from '#/modules/Workspace/useCases/panels/devicePanels';
+import { showDevicePanelForType } from '#/modules/Workspace';
 
 type TrackDevicesSectionProps = {
     track: Track;

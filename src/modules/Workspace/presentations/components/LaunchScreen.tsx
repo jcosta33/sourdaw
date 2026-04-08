@@ -15,14 +15,11 @@ import {
     Layers,
 } from 'lucide-react';
 import { SourdawLogo } from './SourdawLogo';
-import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
-import { createFromTemplate, getTemplates } from '#/modules/Project/useCases/projectTemplates/templateDefinitions';
+import { newProject, createFromTemplate, getTemplates } from '#/modules/Project';
 import { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
-import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { addTrack, addClip, decodeAudioFile } from '#/modules/Arrangement';
+import { importMidiFile } from '#/modules/MIDI';
+import { transportStore } from '#/modules/Transport';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 // ─────────────────────────────────────────────────────────────

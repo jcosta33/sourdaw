@@ -1,17 +1,21 @@
-import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
-import { soloTrack } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrack';
-import { soloTrackExclusive } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrackExclusive';
-import { toggleInputMonitoring } from '#/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring';
-import { toggleSoloSafe } from '#/modules/Arrangement/useCases/toggleTrackState/toggleSoloSafe';
-import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
-import { setTrackGain, setTrackPan, setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { armTrack } from '#/modules/Arrangement/useCases/recording';
-import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
-import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
-import { toggleVcaMembership } from '#/modules/Arrangement/useCases/vca/toggleVcaMembership';
-import { createAndAssignVcaGroup } from '#/modules/Arrangement/useCases/vca/createAndAssignVcaGroup';
-import { removeTrackFromVCA } from '#/modules/Arrangement/useCases/vcaFader';
-import { releaseTouchAutomation } from '#/modules/Automation/useCases/automationRecording/releaseTouchAutomation';
+import {
+    muteTrack,
+    soloTrack,
+    soloTrackExclusive,
+    toggleInputMonitoring,
+    toggleSoloSafe,
+    selectTrack,
+    setTrackGain,
+    setTrackPan,
+    setTrackColor,
+    armTrack,
+    removeTrack,
+    renameTrack,
+    toggleVcaMembership,
+    createAndAssignVcaGroup,
+    removeTrackFromVCA,
+} from '#/modules/Arrangement';
+import { releaseTouchAutomation } from '#/modules/Automation';
 import { type Track } from '../../models/TrackViewTypes';
 
 export type ChannelStripActions = {

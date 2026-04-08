@@ -1,20 +1,25 @@
 import { type ReactElement, type MouseEvent, type WheelEvent, type KeyboardEvent, useState, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
-import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
-import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automation/toggleAutomationVisibility';
-import { insertAutomationShape, type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
-import { deleteSelectedPoints, getSelectionBounds } from '#/modules/Automation/useCases/automationSelection';
-import { adjustYZoom, zoomToUsedRange, toggleVirginTerritory } from '#/modules/Automation/useCases/automationZoom';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import {
+    addAutomationPoint,
+    removeAutomationPoint,
+    toggleAutomationVisibility,
+    insertAutomationShape,
+    type AutomationShapeType,
+    deleteSelectedPoints,
+    getSelectionBounds,
+    adjustYZoom,
+    zoomToUsedRange,
+    toggleVirginTerritory,
+} from '#/modules/Automation';
+import { pushUndoEntry } from '#/modules/Command';
 import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
 import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases/automationQueries';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { transportStore, defaultTransportState, type TransportState } from '#/modules/Transport';
+import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement';
+import { workspaceStore } from '#/modules/Workspace';
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
-import { defaultTransportState, type TransportState } from '#/modules/Transport/useCases/transportQueries';
 import { AutomationLaneHeader } from './AutomationLaneHeader';
 import { AutomationLaneControls } from './AutomationLaneControls';
 import { AutomationContextMenu } from './AutomationContextMenu';

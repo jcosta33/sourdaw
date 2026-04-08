@@ -22,11 +22,15 @@ import {
     toggleVirtualKeyboard,
 } from '../../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
-import { aiStore, type AiState } from '#/modules/AiGeneration/stores/aiStore';
-import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
-import { linkStatusStore, type LinkStatus, defaultLinkStatus } from '#/modules/AudioEngine/stores/linkStatusStore';
-import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
-import { openPreferencesDialog } from '#/modules/Workspace/useCases/dialogs';
+import { aiStore, type AiState, toggleAiPanel } from '#/modules/AiGeneration';
+import {
+    linkStatusStore,
+    type LinkStatus,
+    defaultLinkStatus,
+    enableLink,
+    disableLink,
+} from '#/modules/AudioEngine';
+import { openPreferencesDialog } from '#/modules/Workspace';
 
 type PanelTogglesProps = {
     sidebarOpen: boolean;

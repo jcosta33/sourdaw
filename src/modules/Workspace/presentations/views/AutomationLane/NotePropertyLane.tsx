@@ -1,7 +1,7 @@
 import { type ReactElement, type MouseEvent, useRef, useLayoutEffect } from 'react';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement';
+import { pushUndoEntry } from '#/modules/Command';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
 import { useStore } from '#/infra/store/useStore';

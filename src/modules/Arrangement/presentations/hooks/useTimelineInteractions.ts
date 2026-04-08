@@ -1,6 +1,5 @@
 import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
-import { broadcastPresence } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
-import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
+import { broadcastPresence, collaborationStore } from '#/modules/Collaboration';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { useTimelineGestures } from './useTimelineGestures';
 import { useTimelineFileDrop } from './useTimelineFileDrop';
@@ -25,19 +24,18 @@ import {
     trimClipEnd,
 } from '../../useCases/timelineViewActions';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { toggleLoop } from '#/modules/Transport/useCases/transportControls/toggleLoop';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import {
+    workspaceStore,
     toggleClipInSelection,
     selectClipWithFocus,
     clearClipSelection,
     setClipSelection,
     selectClip,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+} from '#/modules/Workspace';
+import { trackStore } from '#/modules/Arrangement';
+import { toggleLoop, getTransportState } from '#/modules/Transport';
+import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
+import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';
 import {
     handleCutTool,

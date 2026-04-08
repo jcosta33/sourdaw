@@ -7,7 +7,7 @@ import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import { setDeviceParameter } from '#/modules/Arrangement';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({

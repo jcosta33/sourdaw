@@ -2,7 +2,7 @@
  * useUndoState — local re-implementation using undoStore (contract).
  */
 import { useStore } from '#/infra/store/useStore';
-import { undoStore, type UndoStoreState } from '#/modules/Command/stores/undoStore';
+import { undoStore, type UndoStoreState } from '#/modules/Command';
 
 const defaultState: UndoStoreState = { past: [], future: [] };
 

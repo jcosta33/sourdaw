@@ -12,19 +12,23 @@ import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/tim
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { ClipContextMenu, TimelineEmptyMenu } from './TimelineContextMenus';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { PresenceOverlay } from '#/modules/Collaboration/presentations/views/PresenceOverlay';
-import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
+import {
+    workspaceStore,
+    TRACK_HEIGHT_VALUES,
+    onZoomToFit,
+    onZoomToSelection,
+    onScrollToPlayhead,
+} from '#/modules/Workspace';
+import { PresenceOverlay } from '#/modules/Collaboration';
 
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
+import { automationStore } from '#/modules/Automation';
+import { trackStore, takeLaneStore, markerStore } from '#/modules/Arrangement';
+import {
+    transportStore,
+    playheadPositionRef,
+    tempoMapStore,
+    timeSignatureMapStore,
+} from '#/modules/Transport';
 
 export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);

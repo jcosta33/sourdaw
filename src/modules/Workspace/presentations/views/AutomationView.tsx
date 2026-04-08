@@ -1,12 +1,12 @@
 import { type ReactElement, type WheelEvent, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
-import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
 import {
+    ArrangementBar,
     timelineViewStore,
     scrollTimeline,
     setScrollY,
     type TimelineViewState,
-} from '#/modules/Arrangement/stores/timelineViewStore';
+} from '#/modules/Arrangement';
 import { useTracks } from '../hooks/useTracks';
 import { TrackAutomationSection } from './AutomationView/TrackAutomationSection';
 import { Button } from '#/components/ui/button';

@@ -4,28 +4,31 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
-import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import {
+    automationStore,
+    type AutomationStoreState,
+    addAutomationLane,
+    toggleLaneCollapsed,
+    removeAutomationLane,
+} from '#/modules/Automation';
+import {
+    trackStore,
+    type TrackStoreState,
     timelineViewStore,
     type TimelineViewState,
     scrollTimeline,
-} from '#/modules/Arrangement/stores/timelineViewStore';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
+    setAutomationMode,
+    BeatRulerBar,
+    TimelineChromeSurface,
+} from '#/modules/Arrangement';
+import { workspaceStore, type WorkspaceState } from '#/modules/Workspace';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
-import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { toggleLaneCollapsed } from '#/modules/Automation/useCases/automation/toggleLaneCollapsed';
-import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
-import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
 import { AutomationSidebarCell } from './AutomationView/AutomationSidebarCell';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationView/AutomationControls';
 import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
-import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
-import { TimelineChromeSurface } from '#/modules/Arrangement/presentations/views/TimelineChromeSurface';
 
 const SPARKLINE_HEIGHT = 24;
 

@@ -1,27 +1,32 @@
 import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, useEffect } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { logger } from '#/infra/logger/appLogger';
-import { parsePromptToActions } from '#/modules/AiRuntime/useCases/parsePromptToActions';
-import { isComplexPrompt } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { getProjectContext } from '#/modules/AiRuntime/useCases/getProjectContext';
-import { searchPresets, type FuzzyResult } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { getAvailablePresets } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { onPromptInjection } from '#/modules/AiRuntime/useCases/promptInjection';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { notifyAiChange } from '#/modules/AiRuntime/useCases/notifyAiChange';
-import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
-import { initEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
-import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
-import { defaultTrackState } from '#/modules/Arrangement/stores/trackStore';
+import {
+    parsePromptToActions,
+    isComplexPrompt,
+    getProjectContext,
+    searchPresets,
+    type FuzzyResult,
+    getAvailablePresets,
+    onPromptInjection,
+    notifyAiChange,
+    isLlmAvailable,
+    initEngine,
+    llmStatusStore,
+    pushAiActionGroup,
+    type AiActionGroup,
+    type IntentResult,
+    type PresetContext,
+} from '#/modules/AiRuntime';
+import {
+    executeAppAction,
+    generateGroupId,
+    type AppAction,
+    describeAction,
+} from '#/modules/Command';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement';
 import { defaultWorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
-import { generateGroupId } from '#/modules/Command/useCases/commandQueries';
-import { pushAiActionGroup, type AiActionGroup } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { describeAction } from '#/modules/Command/useCases/actionLabels';
-import { type IntentResult } from '#/modules/AiRuntime/models/IntentResult';
-import { type PresetContext } from '#/modules/AiRuntime/models/presetActions/registry';
+import { workspaceStore } from '#/modules/Workspace';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 

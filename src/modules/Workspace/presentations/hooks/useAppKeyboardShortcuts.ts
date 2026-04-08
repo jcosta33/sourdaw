@@ -1,15 +1,17 @@
 import { useEffect } from 'react';
 import { showAutomationPanel } from '#/modules/Workspace/useCases/panels/devicePanels';
-import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
-import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
-import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
-import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import {
+    copySelectedClip,
+    cutSelectedClip,
+    pasteClip,
+    removeClip,
+    addClip,
+    trackStore,
+} from '#/modules/Arrangement';
+import { pushUndoEntry } from '#/modules/Command';
+import { saveProject } from '#/modules/Project';
+import {
+    workspaceStore,
     toggleChatPanel,
     toggleSidebar,
     toggleInspector,
@@ -17,7 +19,7 @@ import {
     toggleTrackList,
     clearClipSelection,
     toggleVirtualKeyboard,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+} from '#/modules/Workspace';
 
 type ShortcutCallbacks = {
     onOpenExport: () => void;

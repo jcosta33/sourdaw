@@ -3,7 +3,7 @@
  * Uses the Track store (a contract) directly, avoiding cross-module hook import.
  */
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement';
 
 const defaultState: TrackStoreState = { tracks: [], selectedTrackId: null };
 

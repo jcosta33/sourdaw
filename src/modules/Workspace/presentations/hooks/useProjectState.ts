@@ -2,7 +2,7 @@
  * useProjectState — local re-implementation using projectStore (contract).
  */
 import { useStore } from '#/infra/store/useStore';
-import { projectStore, type ProjectStoreState } from '#/modules/Project/stores/projectStore';
+import { projectStore, type ProjectStoreState } from '#/modules/Project';
 
 const defaultState: ProjectStoreState = {
     name: 'Untitled Project',

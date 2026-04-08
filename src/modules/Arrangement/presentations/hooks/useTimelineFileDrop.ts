@@ -1,12 +1,12 @@
 import { type DragEvent, useState } from 'react';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
 import { addClip, addTrack, addDevice, importMidiFile, decodeAudioFile } from '../../useCases/timelineViewActions';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
+import { trackStore } from '#/modules/Arrangement';
+import { libraryStore } from '#/modules/SampleLibrary';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
+import { getAssetTransfer } from '#/modules/Collaboration';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
 type GetBeatFromX = (x: number) => number;

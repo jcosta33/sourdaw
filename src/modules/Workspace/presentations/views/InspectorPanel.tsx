@@ -7,7 +7,7 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { workspaceStore } from '#/modules/Workspace';
 import { defaultWorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { toggleInspector, clearClipSelection, selectClipWithFocus } from '../../useCases/togglePanel/panelToggles';
 import { TrackInspector } from './Inspector/TrackInspector';

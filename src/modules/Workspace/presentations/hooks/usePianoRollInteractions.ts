@@ -17,15 +17,19 @@ import {
     useState,
 } from 'react';
 
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
-import { removeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/removeMidiNote';
-import { moveMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/moveMidiNote';
-import { resizeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/resizeMidiNote';
-import { setNoteVelocity } from '#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity';
+import { pushUndoEntry } from '#/modules/Command';
+import {
+    addMidiNote,
+    removeMidiNote,
+    moveMidiNote,
+    resizeMidiNote,
+    setNoteVelocity,
+    stampChord,
+    removeNotesByIds,
+    type ChordType,
+} from '#/modules/MIDI';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
-import { stampChord, removeNotesByIds, type ChordType } from '#/modules/MIDI/useCases/chordStamps';
-import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
+import { playAuditionNote } from '#/modules/AudioEngine';
 
 import {
     ROW_HEIGHT,

@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { setNoteSlide } from '#/modules/MIDI/useCases/midiEvent/setNoteSlide';
+import { setNoteSlide } from '#/modules/MIDI';
 import { NotePropertyLane } from './NotePropertyLane';
 
 type SlideLaneProps = {

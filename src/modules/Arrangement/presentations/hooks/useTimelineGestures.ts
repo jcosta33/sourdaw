@@ -6,8 +6,8 @@ import {
     setScrollY,
     timelineViewStore,
 } from '../../stores/timelineViewStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { trackStore } from '#/modules/Arrangement';
+import { transportStore } from '#/modules/Transport';
 
 interface GestureEvent extends UIEvent {
     readonly scale: number;

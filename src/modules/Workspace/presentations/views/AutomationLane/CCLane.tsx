@@ -1,11 +1,14 @@
 import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addMidiCC } from '#/modules/MIDI/useCases/midiEvent/addMidiCC';
-import { removeMidiCC } from '#/modules/MIDI/useCases/midiEvent/removeMidiCC';
-import { moveMidiCC } from '#/modules/MIDI/useCases/midiEvent/moveMidiCC';
+import {
+    midiStore,
+    type MidiStoreState,
+    addMidiCC,
+    removeMidiCC,
+    moveMidiCC,
+} from '#/modules/MIDI';
+import { pushUndoEntry } from '#/modules/Command';
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
 import { useStore } from '#/infra/store/useStore';
 

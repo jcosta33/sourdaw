@@ -9,7 +9,7 @@ import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import { setDeviceParameter } from '#/modules/Arrangement';
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 type P = DeviceLayoutProps['parameters'][number];

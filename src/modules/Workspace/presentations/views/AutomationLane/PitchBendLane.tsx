@@ -1,11 +1,14 @@
 import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addPitchBend } from '#/modules/MIDI/useCases/midiEvent/addPitchBend';
-import { removePitchBend } from '#/modules/MIDI/useCases/midiEvent/removePitchBend';
-import { movePitchBend } from '#/modules/MIDI/useCases/midiEvent/movePitchBend';
+import {
+    midiStore,
+    type MidiStoreState,
+    addPitchBend,
+    removePitchBend,
+    movePitchBend,
+} from '#/modules/MIDI';
+import { pushUndoEntry } from '#/modules/Command';
 import { type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
 import { PITCH_BEND_CENTER } from '../../helpers/laneConstants';
 import { useStore } from '#/infra/store/useStore';

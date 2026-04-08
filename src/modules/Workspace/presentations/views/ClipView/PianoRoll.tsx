@@ -12,10 +12,9 @@
 import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
 
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { midiStore, type ChordType } from '#/modules/MIDI';
+import { trackStore } from '#/modules/Arrangement';
 import { useStore } from '#/infra/store/useStore';
-import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
 
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';

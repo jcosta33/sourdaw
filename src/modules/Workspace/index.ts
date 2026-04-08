@@ -14,6 +14,9 @@ export { toggleRippleEditing, planRippleDelete, rippleDeleteClips, undoRippleDel
 // useCases/scratchPadHandlers.ts
 export { scratchPadHandlers } from './useCases/scratchPadHandlers';
 
+// useCases/panels/devicePanels.ts
+export { showDevicePanelForType } from './useCases/panels/devicePanels';
+
 // useCases/setEditingTool.ts
 export type { EditingTool } from './useCases/setEditingTool';
 export { setEditingTool } from './useCases/setEditingTool';

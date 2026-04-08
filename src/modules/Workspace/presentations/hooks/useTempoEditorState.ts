@@ -1,11 +1,16 @@
 import { type RefObject, useState, useRef, useEffect } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { useTransportState } from './useTransportState';
-import { setTempo } from '#/modules/Transport/useCases/setTempo';
-import { setTimeSignature } from '#/modules/Transport/useCases/setTimeSignature';
-import { tempoMapStore, type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStore';
-import { addTempoChange, removeTempoChange, updateTempoChange } from '#/modules/Transport/useCases/tempoMap';
-import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
+import {
+    setTempo,
+    setTimeSignature,
+    tempoMapStore,
+    type TempoMapStoreState,
+    addTempoChange,
+    removeTempoChange,
+    updateTempoChange,
+    type TempoChange,
+} from '#/modules/Transport';
 
 const defaultTempoMapState: TempoMapStoreState = { changes: [] };
 

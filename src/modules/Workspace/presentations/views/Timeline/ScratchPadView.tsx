@@ -16,19 +16,18 @@ import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
-import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Arrangement/stores/scratchPadStore';
 import {
+    scratchPadStore,
+    type ScratchPadStoreState,
     removeScratchPadSection,
     renameScratchPadSection,
     setScratchPadSectionColor,
     reorderScratchPadSection,
     clearScratchPad,
     type ScratchPadSection,
-} from '#/modules/Arrangement/useCases/scratchPad/scratchPadCrud';
-import {
     captureArrangementToScratchPad,
     commitScratchPadToArrangement,
-} from '#/modules/Arrangement/useCases/scratchPad/captureCommit';
+} from '#/modules/Arrangement';
 import { cn } from '#/helpers/Styles/cn';
 
 const defaultState: ScratchPadStoreState = { sections: [] };

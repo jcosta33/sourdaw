@@ -4,8 +4,7 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { workspaceStore, selectClip } from '#/modules/Workspace';
 import {
     setWorkspaceMode,
     splitClipWithUndo,
@@ -28,8 +27,8 @@ import {
     executeAppAction,
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { runAiActionWithToast } from '#/modules/AiRuntime/useCases/runAiActionWithToast';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { runAiActionWithToast } from '#/modules/AiRuntime';
+import { trackStore } from '#/modules/Arrangement';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 type ClipContextMenuProps = {
