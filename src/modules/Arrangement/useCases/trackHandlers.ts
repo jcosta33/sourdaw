@@ -1,9 +1,9 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { setTrackInput } from '#/modules/Arrangement/useCases/setTrackInput';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { automationStore } from '#/modules/Automation';
+import { midiStore } from '#/modules/MIDI';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
@@ -32,10 +32,7 @@ import {
     setTrackNotes,
 } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { zoomTracksVertical } from '#/modules/Arrangement/useCases/trackZoom';
-import {
-    setTrackGain as engineSetTrackGain,
-    setTrackPan as engineSetTrackPan,
-} from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { setTrackGain as engineSetTrackGain, setTrackPan as engineSetTrackPan } from '#/modules/AudioEngine';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

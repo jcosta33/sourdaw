@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { setTrackMute as engineSetTrackMute } from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { setTrackMute as engineSetTrackMute } from '#/modules/AudioEngine';
 import { applySoloLogic } from '#/modules/Arrangement/services/applySoloLogic';
 
 export const muteTrack = inject({ updateTrack })(

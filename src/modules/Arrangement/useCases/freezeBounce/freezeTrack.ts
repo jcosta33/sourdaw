@@ -1,5 +1,5 @@
 import { trackStore } from '../../stores/trackStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { audioBufferCache } from '#/modules/AudioEngine';
 import { renderTrackOffline } from './renderOffline';
 
 export async function freezeTrack(trackId: string): Promise<void> {

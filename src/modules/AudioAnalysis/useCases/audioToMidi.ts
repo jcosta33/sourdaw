@@ -1,9 +1,7 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { audioBufferCache } from '#/modules/AudioEngine';
+import { getTransportState } from '#/modules/Transport';
+import { getAllTracks, addClip, addTrack } from '#/modules/Arrangement';
+import { addMidiNote } from '#/modules/MIDI';
 
 export type AudioToMidiOptions = {
     clipId: string;

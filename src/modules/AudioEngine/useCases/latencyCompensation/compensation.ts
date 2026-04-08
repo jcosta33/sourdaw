@@ -1,4 +1,4 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getTrackStoreState } from '#/modules/Arrangement';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { type TrackLatency, type LatencyReport } from '#/modules/AudioEngine/models/LatencyCompensationTypes';
 

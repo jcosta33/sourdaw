@@ -1,4 +1,4 @@
-import { type AutomationShapeType, generateShapePoints } from '#/modules/Arrangement/useCases/automationQueries';
+import { type AutomationShapeType, generateShapePoints } from '#/modules/Arrangement';
 import { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 import { automationStore } from '../stores/automationStore';
 

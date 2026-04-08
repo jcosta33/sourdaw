@@ -1,5 +1,5 @@
 import { automationStore } from '../stores/automationStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { pushUndoEntry } from '#/modules/Command';
 
 /**
  * Find all points within a rectangular region (beat range + value range).

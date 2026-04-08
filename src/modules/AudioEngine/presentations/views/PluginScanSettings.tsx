@@ -7,8 +7,13 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Button } from '#/components/ui/button';
 import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
-import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores/pluginScanStore';
-import { startPluginScan, addScanPath, removeScanPath } from '#/modules/Plugin/useCases/pluginScan/scanning';
+import {
+    pluginScanStore,
+    defaultPluginScanState,
+    startPluginScan,
+    addScanPath,
+    removeScanPath,
+} from '#/modules/Plugin';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 

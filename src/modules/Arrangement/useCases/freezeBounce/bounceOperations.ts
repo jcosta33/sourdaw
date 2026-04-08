@@ -1,5 +1,5 @@
 import { trackStore } from '../../stores/trackStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { audioBufferCache } from '#/modules/AudioEngine';
 import { type Clip, type Track } from '../../models/Track';
 import { renderTrackOffline } from './renderOffline';
 
