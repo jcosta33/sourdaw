@@ -7,8 +7,7 @@
  */
 
 import { workspaceStore } from '../stores/workspaceStore';
-import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import { getTrackStoreState as getTrackState, setTrackState } from '#/modules/Arrangement';
 import { type Clip } from '../models/TrackViewTypes';
 
 /**

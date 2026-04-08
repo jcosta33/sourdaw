@@ -1,13 +1,19 @@
 import { inject } from '#/infra/di/inject';
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
-import { resumeEngine, getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { scheduleClick } from '#/modules/AudioEngine/useCases/scheduling';
-import { startAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording';
-import { stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording';
-import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recording';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import {
+    getTrackStoreState,
+    updateClip,
+    startRecording,
+    stopRecording,
+} from '#/modules/Arrangement';
+import {
+    resumeEngine,
+    getAudioContext,
+    scheduleClick,
+    startAudioRecording,
+    stopAudioRecording,
+    audioBufferCache,
+} from '#/modules/AudioEngine';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 import { startPlayback } from './startPlayback';
 

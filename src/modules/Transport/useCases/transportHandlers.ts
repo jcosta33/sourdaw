@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { setTempo } from '#/modules/Transport/useCases/setTempo';
 import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
@@ -16,7 +16,7 @@ import { setCountInBars } from '#/modules/Transport/useCases/transportControls/s
 import { togglePreRoll } from '#/modules/Transport/useCases/transportControls/togglePreRoll';
 import { setPreRollBars } from '#/modules/Transport/useCases/transportControls/setPreRollBars';
 import { addTimeSignatureChange, removeTimeSignatureChange } from '#/modules/Transport/useCases/timeSignatureChanges';
-import { setMasterGain } from '#/modules/AudioEngine/useCases/setMasterGain';
+import { setMasterGain } from '#/modules/AudioEngine';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

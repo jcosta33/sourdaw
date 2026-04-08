@@ -1,10 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
-import { clearScratchPad } from '#/modules/Arrangement/useCases/scratchPad/scratchPadCrud';
-import {
-    captureArrangementToScratchPad,
-    commitScratchPadToArrangement,
-} from '#/modules/Arrangement/useCases/scratchPad/captureCommit';
+import { type ActionHandler } from '#/modules/Command';
+import { clearScratchPad, captureArrangementToScratchPad, commitScratchPadToArrangement } from '#/modules/Arrangement';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 export const executeToggleScratchPad = inject({})(() => async function executeToggleScratchPad(): Promise<void> {

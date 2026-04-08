@@ -2,8 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
-import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling';
-import { resetMidiState } from '#/modules/AudioEngine/useCases/webMidiInput';
+import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine';
 
 export const stopPlayback = inject({ getTransportState, updateTransportState })(
     ({ getTransportState, updateTransportState }) =>

@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
 import {
@@ -10,29 +10,41 @@ import {
 } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { zoomToFit, zoomToSelection } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
 import { setEditingTool } from '#/modules/Workspace/useCases/setEditingTool';
-import { addMarker, removeMarker, setMarkerColor } from '#/modules/Arrangement/useCases/marker/markerOperations';
-import { addSection, removeSection, renameSection } from '#/modules/Arrangement/useCases/marker/sectionOperations';
-import { quantizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNotes';
-import { quantizeNoteLengths } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNoteLengths';
-import { transposeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes';
-import { humanizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes';
-import { invertNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/invertNotes';
-import { retrogradeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/retrogradeNotes';
-import { scaleVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/scaleVelocities';
-import { scaleAllVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/scaleAllVelocities';
-import { setAllVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/setAllVelocities';
-import { type VelocityCurve } from '#/modules/Arrangement/useCases/automationQueries';
-import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
-import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
-import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
-import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
-import { exportProjectFile } from '#/modules/Project/useCases/projectPersistence/fileIO';
-import { exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
-import { pickFiles } from '#/modules/Project/useCases/fileDialog';
-import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
-import { importAudioFile } from '#/modules/Arrangement/useCases/importAudioFile';
+import {
+    addMarker,
+    removeMarker,
+    setMarkerColor,
+    addSection,
+    removeSection,
+    renameSection,
+    type VelocityCurve,
+    importAudioFile,
+} from '#/modules/Arrangement';
+import {
+    quantizeNotes,
+    quantizeNoteLengths,
+    transposeNotes,
+    humanizeNotes,
+    invertNotes,
+    retrogradeNotes,
+    scaleVelocities,
+    scaleAllVelocities,
+    setAllVelocities,
+    exportMidiClip,
+    importMidiFile,
+} from '#/modules/MIDI';
+import {
+    addAutomationLane,
+    addAutomationPoint,
+    removeAutomationPoint,
+    getAutomationStoreState,
+} from '#/modules/Automation';
+import {
+    saveProject,
+    newProject,
+    exportProjectFile,
+    pickFiles,
+} from '#/modules/Project';
 import { type EditingTool } from '#/modules/Workspace/models/EditingTool';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
