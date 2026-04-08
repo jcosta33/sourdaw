@@ -27,7 +27,12 @@ describe('initToasterSubscribers', () => {
 
         const logger = createMock<Logger>();
 
-        injectDependencies(initToasterSubscribers, { eventBus, logger });
+        injectDependencies(initToasterSubscribers, {
+            eventBus,
+            logger,
+            getTrackStrip: vi.fn(),
+            getAllTracks: vi.fn(() => []),
+        });
 
         const teardown = initToasterSubscribers();
 

@@ -4,8 +4,8 @@ import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrack
 import { type Clip } from '#/modules/Arrangement/models/Track';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud/shiftClipMidiNotes';
 
-export const moveClipPreview = inject({ getTrackState, setTrackState })(
-    ({ getTrackState, setTrackState }) =>
+export const moveClipPreview = inject({ getTrackState, setTrackState, shiftClipMidiNotes })(
+    ({ getTrackState, setTrackState, shiftClipMidiNotes }) =>
         function moveClipPreview(clipId: string, targetTrackId: string, startBeat: number): void {
             const state = getTrackState();
             if (!state) {

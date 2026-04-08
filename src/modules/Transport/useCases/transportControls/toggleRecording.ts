@@ -14,8 +14,38 @@ import { startPlayback } from './startPlayback';
 let activeRecordingClipIds: string[] = [];
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 
-export const toggleRecording = inject({ getTransportState, updateTransportState })(
-    ({ getTransportState, updateTransportState }) => {
+export const toggleRecording = inject({
+    getTransportState,
+    updateTransportState,
+    getTrackStoreState,
+    updateClip,
+    resumeEngine,
+    getAudioContext,
+    scheduleClick,
+    startAudioRecording,
+    stopAudioRecording,
+    startRecording,
+    stopRecording,
+    audioBufferCache,
+    ensureTrackStrips,
+    startPlayback,
+})(
+    ({
+        getTransportState,
+        updateTransportState,
+        getTrackStoreState,
+        updateClip,
+        resumeEngine,
+        getAudioContext,
+        scheduleClick,
+        startAudioRecording,
+        stopAudioRecording,
+        startRecording,
+        stopRecording,
+        audioBufferCache,
+        ensureTrackStrips,
+        startPlayback,
+    }) => {
         function beginActualRecording(): void {
             const clips = startRecording();
             activeRecordingClipIds = clips.map((c) => c.id);
@@ -32,10 +62,6 @@ export const toggleRecording = inject({ getTransportState, updateTransportState 
                         if (recClip) {
                             updateClip(recClip.id, (c) => ({ ...c, audioBufferId: bufferId }));
 
-                            // Compute beat-accurate endBeat from the actual buffer duration.
-                            // This fires synchronously inside stopAudioRecording(), BEFORE
-                            // stopRecording() runs, so we defer via microtask to override its
-                            // playhead-based estimate with the precise audio length.
                             const transport = getTransportState();
                             const bpm = transport?.tempo ?? 120;
                             const durationBeats = buffer.duration * (bpm / 60);

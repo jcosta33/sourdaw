@@ -2,6 +2,7 @@
  * Gluten parameter bridge — keeps the patch truthful while throttling
  * audio-engine updates to animation frames.
  */
+import { inject } from '#/infra/di/inject';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
@@ -13,13 +14,41 @@ type DeviceRef = { trackId: string; deviceId: string };
 const pendingUpdates = new Map<string, number>();
 const latestValues = new Map<string, number>();
 
-function findDeviceRef(deviceId: string): DeviceRef | null {
-    for (const track of getAllTracks()) {
-        if (track.devices.some((d) => d.id === deviceId)) {
-            return { trackId: track.id, deviceId };
+type BridgeDeps = {
+    updateDeviceParam: typeof updateDeviceParam;
+    persistDeviceParam: typeof persistDeviceParam;
+};
+
+function createFindDeviceRef(getAllTracksFn: typeof getAllTracks) {
+    return function findDeviceRef(deviceId: string): DeviceRef | null {
+        for (const track of getAllTracksFn()) {
+            if (track.devices.some((d) => d.id === deviceId)) {
+                return { trackId: track.id, deviceId };
+            }
         }
+        return null;
+    };
+}
+
+function createFlushHandlers(deps: BridgeDeps) {
+    function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
+        const compositeKey = `${deviceId}:${key}`;
+        pendingUpdates.delete(compositeKey);
+        const value = latestValues.get(compositeKey);
+        if (value === undefined) {
+            return;
+        }
+        latestValues.delete(compositeKey);
+        deps.updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+        deps.persistDeviceParam(ref.deviceId, key, value);
     }
-    return null;
+
+    function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
+        deps.updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+        deps.persistDeviceParam(ref.deviceId, key, value);
+    }
+
+    return { flushParam, pushParamImmediately };
 }
 
 const TOPOLOGY_INDEX = {
@@ -47,21 +76,6 @@ const STEREO_MODE_INDEX = {
     side: 2,
     'dual-mono': 3,
 } as const;
-
-function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
-    const compositeKey = `${deviceId}:${key}`;
-    pendingUpdates.delete(compositeKey);
-    const value = latestValues.get(compositeKey);
-    if (value === undefined) return;
-    latestValues.delete(compositeKey);
-    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-    persistDeviceParam(ref.deviceId, key, value);
-}
-
-function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
-    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-    persistDeviceParam(ref.deviceId, key, value);
-}
 
 function encodeGlutenValue(key: string, value: unknown): number | null {
     if (typeof value === 'number') {
@@ -95,85 +109,105 @@ function encodeGlutenValue(key: string, value: unknown): number | null {
     return null;
 }
 
-export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
-    deviceId: string,
-    key: K,
-    value: GlutenPatch[K]
-): void {
-    setGlutenParam(deviceId, key, value);
+export const setGlutenParamWithAudio = inject({ updateDeviceParam, persistDeviceParam, getAllTracks })(
+    (deps) => {
+        const { flushParam } = createFlushHandlers(deps);
+        const findDeviceRef = createFindDeviceRef(deps.getAllTracks);
 
-    const encodedValue = encodeGlutenValue(key, value);
-    if (encodedValue === null) return;
+        return function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
+            deviceId: string,
+            key: K,
+            value: GlutenPatch[K]
+        ): void {
+            setGlutenParam(deviceId, key, value);
 
-    const ref = findDeviceRef(deviceId);
-    if (!ref) return;
+            const encodedValue = encodeGlutenValue(key, value);
+            if (encodedValue === null) {
+                return;
+            }
 
-    const compositeKey = `${deviceId}:${key}`;
-    latestValues.set(compositeKey, encodedValue);
-    if (!pendingUpdates.has(compositeKey)) {
-        pendingUpdates.set(
-            compositeKey,
-            requestAnimationFrame(() => flushParam(deviceId, ref, key))
-        );
+            const ref = findDeviceRef(deviceId);
+            if (!ref) {
+                return;
+            }
+
+            const compositeKey = `${deviceId}:${key}`;
+            latestValues.set(compositeKey, encodedValue);
+            if (!pendingUpdates.has(compositeKey)) {
+                pendingUpdates.set(
+                    compositeKey,
+                    requestAnimationFrame(() => flushParam(deviceId, ref, key))
+                );
+            }
+        };
     }
-}
+);
 
-export function loadGlutenPatchWithAudio(deviceId: string, patch: GlutenPatch): void {
-    loadGlutenPatch(deviceId, patch);
+export const loadGlutenPatchWithAudio = inject({ updateDeviceParam, persistDeviceParam, getAllTracks })(
+    (deps) => {
+        const { pushParamImmediately } = createFlushHandlers(deps);
+        const findDeviceRef = createFindDeviceRef(deps.getAllTracks);
 
-    const ref = findDeviceRef(deviceId);
-    if (!ref) return;
+        return function loadGlutenPatchWithAudio(deviceId: string, patch: GlutenPatch): void {
+            loadGlutenPatch(deviceId, patch);
 
-    const params: Array<[string, unknown]> = [
-        ['topology', patch.topology],
-        ['style', patch.style],
-        ['amount', patch.amount],
-        ['threshold', patch.threshold],
-        ['ratio', patch.ratio],
-        ['attack', patch.attack],
-        ['release', patch.release],
-        ['knee', patch.knee],
-        ['makeup', patch.makeup],
-        ['mix', patch.mix],
-        ['autoMakeup', patch.autoMakeup],
-        ['autoRelease', patch.autoRelease],
-        ['range', patch.range],
-        ['scHpfFreq', patch.scHpfFreq],
-        ['scHpfEnabled', patch.scHpfEnabled],
-        ['thrust', patch.thrust],
-        ['detection', patch.detection],
-        ['stereoMode', patch.stereoMode],
-        ['stereoLink', patch.stereoLink],
-        ['oversampling', patch.oversampling],
-        ['lookahead', patch.lookahead],
-        ['scLpfFreq', patch.scLpfFreq],
-        ['scLpfEnabled', patch.scLpfEnabled],
-        ['scEqFreq', patch.scEqFreq],
-        ['scEqGain', patch.scEqGain],
-        ['scEqQ', patch.scEqQ],
-        ['scEqEnabled', patch.scEqEnabled],
-        ['deltaListen', patch.deltaListen],
-        ['gainMatchBypass', patch.gainMatchBypass],
-        ['extSidechain', patch.extSidechain],
-        ['inputGain', patch.inputGain],
-        ['outputGain', patch.outputGain],
-        ['xfmrDrive', patch.xfmrDrive],
-        ['allButtons', patch.allButtons],
-        ['limitMode', patch.limitMode],
-        ['recovery', patch.recovery],
-        ['vcaType', patch.vcaType],
-        ['vcaCharacter', patch.vcaCharacter],
-        ['feedForward', patch.feedForward],
-        ['jfetK3', patch.jfetK3],
-        ['xfmrK2', patch.xfmrK2],
-        ['blendTopology', patch.blendTopology],
-        ['blendAmount', patch.blendAmount],
-    ];
+            const ref = findDeviceRef(deviceId);
+            if (!ref) {
+                return;
+            }
 
-    for (const [key, rawValue] of params) {
-        const encodedValue = encodeGlutenValue(key, rawValue);
-        if (encodedValue !== null) {
-            pushParamImmediately(ref, key, encodedValue);
-        }
+            const params: Array<[string, unknown]> = [
+                ['topology', patch.topology],
+                ['style', patch.style],
+                ['amount', patch.amount],
+                ['threshold', patch.threshold],
+                ['ratio', patch.ratio],
+                ['attack', patch.attack],
+                ['release', patch.release],
+                ['knee', patch.knee],
+                ['makeup', patch.makeup],
+                ['mix', patch.mix],
+                ['autoMakeup', patch.autoMakeup],
+                ['autoRelease', patch.autoRelease],
+                ['range', patch.range],
+                ['scHpfFreq', patch.scHpfFreq],
+                ['scHpfEnabled', patch.scHpfEnabled],
+                ['thrust', patch.thrust],
+                ['detection', patch.detection],
+                ['stereoMode', patch.stereoMode],
+                ['stereoLink', patch.stereoLink],
+                ['oversampling', patch.oversampling],
+                ['lookahead', patch.lookahead],
+                ['scLpfFreq', patch.scLpfFreq],
+                ['scLpfEnabled', patch.scLpfEnabled],
+                ['scEqFreq', patch.scEqFreq],
+                ['scEqGain', patch.scEqGain],
+                ['scEqQ', patch.scEqQ],
+                ['scEqEnabled', patch.scEqEnabled],
+                ['deltaListen', patch.deltaListen],
+                ['gainMatchBypass', patch.gainMatchBypass],
+                ['extSidechain', patch.extSidechain],
+                ['inputGain', patch.inputGain],
+                ['outputGain', patch.outputGain],
+                ['xfmrDrive', patch.xfmrDrive],
+                ['allButtons', patch.allButtons],
+                ['limitMode', patch.limitMode],
+                ['recovery', patch.recovery],
+                ['vcaType', patch.vcaType],
+                ['vcaCharacter', patch.vcaCharacter],
+                ['feedForward', patch.feedForward],
+                ['jfetK3', patch.jfetK3],
+                ['xfmrK2', patch.xfmrK2],
+                ['blendTopology', patch.blendTopology],
+                ['blendAmount', patch.blendAmount],
+            ];
+
+            for (const [key, rawValue] of params) {
+                const encodedValue = encodeGlutenValue(key, rawValue);
+                if (encodedValue !== null) {
+                    pushParamImmediately(ref, key, encodedValue);
+                }
+            }
+        };
     }
-}
+);

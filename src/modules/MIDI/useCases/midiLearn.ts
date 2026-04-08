@@ -15,7 +15,7 @@ import {
 import { setFermenterParamWithAudio } from '#/modules/Fermenter/useCases/fermenterParamBridge';
 import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 
 let nextMappingId = 1;
@@ -110,79 +110,102 @@ export const completeMidiLearn = inject({ logger })(
         }
 );
 
-export function handleMidiMessage(channel: number, cc: number, value: number): void {
-    const state = midiLearnStore.value;
-    if (!state) {
-        return;
-    }
-
-    const matchingMappings = state.mappings.filter((m) => m.channel === channel && m.cc === cc);
-
-    for (const mapping of matchingMappings) {
-        const scaled = scaleMidiValue(value, mapping.minValue, mapping.maxValue);
-
-        switch (mapping.targetType) {
-            case 'trackGain': {
-                setTrackGain(mapping.trackId, scaled);
-                engineSetTrackGain(mapping.trackId, scaled);
-                break;
+export const handleMidiMessage = inject({
+    setTrackGain,
+    setTrackPan,
+    engineSetTrackGain,
+    engineSetTrackPan,
+    setDeviceParameter,
+    setFermenterParamWithAudio,
+    getTransportState,
+    recordAutomationValue,
+    getAllTracks,
+    getTrackStoreState,
+})(
+    ({
+        setTrackGain,
+        setTrackPan,
+        engineSetTrackGain,
+        engineSetTrackPan,
+        setDeviceParameter,
+        setFermenterParamWithAudio,
+        getTransportState,
+        recordAutomationValue,
+        getAllTracks,
+        getTrackStoreState,
+    }) =>
+        function handleMidiMessage(channel: number, cc: number, value: number): void {
+            const state = midiLearnStore.value;
+            if (!state) {
+                return;
             }
-            case 'trackPan': {
-                setTrackPan(mapping.trackId, scaled);
-                engineSetTrackPan(mapping.trackId, scaled);
-                break;
-            }
-            case 'deviceParam': {
-                if (mapping.deviceId && mapping.paramId) {
-                    setDeviceParameter(mapping.deviceId, mapping.paramId, scaled);
-                }
-                break;
-            }
-            case 'fermenterGlobalParam': {
-                if (mapping.paramId) {
-                    // Find the first Fermenter device to target
-                    let fermenterDeviceId: string | undefined;
-                    for (const track of getAllTracks()) {
-                        const d = track.devices.find((dev) => dev.type === 'fermenter');
-                        if (d) {
-                            fermenterDeviceId = d.id;
-                            break;
+
+            const matchingMappings = state.mappings.filter((m) => m.channel === channel && m.cc === cc);
+
+            for (const mapping of matchingMappings) {
+                const scaled = scaleMidiValue(value, mapping.minValue, mapping.maxValue);
+
+                switch (mapping.targetType) {
+                    case 'trackGain': {
+                        setTrackGain(mapping.trackId, scaled);
+                        engineSetTrackGain(mapping.trackId, scaled);
+                        break;
+                    }
+                    case 'trackPan': {
+                        setTrackPan(mapping.trackId, scaled);
+                        engineSetTrackPan(mapping.trackId, scaled);
+                        break;
+                    }
+                    case 'deviceParam': {
+                        if (mapping.deviceId && mapping.paramId) {
+                            setDeviceParameter(mapping.deviceId, mapping.paramId, scaled);
                         }
+                        break;
                     }
-                    if (fermenterDeviceId) {
-                        setFermenterParamWithAudio(fermenterDeviceId, mapping.paramId as any, scaled);
-                    }
+                    case 'fermenterGlobalParam': {
+                        if (mapping.paramId) {
+                            let fermenterDeviceId: string | undefined;
+                            for (const track of getAllTracks()) {
+                                const d = track.devices.find((dev) => dev.type === 'fermenter');
+                                if (d) {
+                                    fermenterDeviceId = d.id;
+                                    break;
+                                }
+                            }
+                            if (fermenterDeviceId) {
+                                setFermenterParamWithAudio(fermenterDeviceId, mapping.paramId as never, scaled);
+                            }
 
-                    // Record automation if playing
-                    const transport = getTransportState();
-                    if (transport?.isPlaying) {
-                        const trackState = trackStore.value;
-                        if (trackState) {
-                            for (const track of trackState.tracks) {
-                                if (
-                                    track.automationMode === 'write' ||
-                                    track.automationMode === 'touch' ||
-                                    track.automationMode === 'latch'
-                                ) {
-                                    const fermenterDevice = track.devices.find((d: any) => d.type === 'fermenter');
-                                    if (fermenterDevice) {
-                                        recordAutomationValue(
-                                            track.id,
-                                            `${fermenterDevice.id}:${mapping.paramId}`,
-                                            scaled,
-                                            transport.playheadPosition
-                                        );
+                            const transport = getTransportState();
+                            if (transport?.isPlaying) {
+                                const trackState = getTrackStoreState();
+                                if (trackState) {
+                                    for (const track of trackState.tracks) {
+                                        if (
+                                            track.automationMode === 'write' ||
+                                            track.automationMode === 'touch' ||
+                                            track.automationMode === 'latch'
+                                        ) {
+                                            const fermenterDevice = track.devices.find((d) => d.type === 'fermenter');
+                                            if (fermenterDevice) {
+                                                recordAutomationValue(
+                                                    track.id,
+                                                    `${fermenterDevice.id}:${mapping.paramId}`,
+                                                    scaled,
+                                                    transport.playheadPosition
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
+                        break;
                     }
                 }
-                break;
             }
         }
-    }
-}
+);
 
 export function findMappingForTarget(target: LearningTarget): MidiMapping | undefined {
     const state = midiLearnStore.value;

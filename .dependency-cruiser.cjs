@@ -83,15 +83,16 @@ module.exports = {
             severity: 'error',
             comment:
                 'Module index.ts is the public contract surface. ' +
-                'It may only re-export from useCases/, events/, and stores/ within the same module. ' +
+                'It may only re-export from useCases/, events/, stores/, and presentations/views/ within the same module. ' +
                 'Importing from models/, repositories/, services/, validators/, transformers/, ' +
-                'presentations/, engine/, runtime/, or worklets/ is forbidden.',
+                'presentations/hooks/, presentations/components/, presentations/context/, ' +
+                'engine/, runtime/, or worklets/ is forbidden.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
             },
             to: {
                 path: '^$1/',
-                pathNot: ['^$1/(useCases|events|stores)/'],
+                pathNot: ['^$1/(useCases|events|stores|presentations/views)/'],
             },
         },
 

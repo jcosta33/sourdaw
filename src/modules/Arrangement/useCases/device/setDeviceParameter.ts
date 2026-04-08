@@ -31,8 +31,14 @@ export const persistDeviceParam = inject({ getTrackState, updateTrack })(
         }
 );
 
-export const setDeviceParameter = inject({ getTrackState, updateTrack })(
-    ({ getTrackState, updateTrack }) =>
+export const setDeviceParameter = inject({
+    getTrackState,
+    updateTrack,
+    getTransportState,
+    updateDeviceParam,
+    recordAutomationValue,
+})(
+    ({ getTrackState, updateTrack, getTransportState, updateDeviceParam, recordAutomationValue }) =>
         function setDeviceParameter(deviceId: string, paramId: string, value: number): void {
             // Guard against invalid values that could crash the audio engine
             if (!Number.isFinite(value)) {

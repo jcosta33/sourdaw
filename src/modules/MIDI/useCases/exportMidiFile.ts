@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
-import { midiStore } from '../stores/midiStore';
+import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
 import { downloadBlob } from '../repositories/downloadFile';
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
 
@@ -79,11 +79,11 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     return trackBytes;
 }
 
-export const exportMidiClip = inject({ downloadBlob })(
-    ({ downloadBlob }) =>
+export const exportMidiClip = inject({ downloadBlob, getAllTracks, getMidiStoreState })(
+    ({ downloadBlob, getAllTracks, getMidiStoreState }) =>
         function exportMidiClip(clipId: string): void {
             const tracks = getAllTracks();
-            const midi = midiStore.value;
+            const midi = getMidiStoreState();
             if (tracks.length === 0 || !midi) {
                 return;
             }

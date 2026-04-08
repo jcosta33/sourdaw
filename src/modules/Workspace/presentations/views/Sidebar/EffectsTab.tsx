@@ -1,5 +1,16 @@
 import { type ReactElement } from 'react';
-import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar, Bug, GitBranch, Sliders } from 'lucide-react';
+import {
+    Shield,
+    Waves as WavesIcon,
+    Gauge,
+    Sparkles,
+    AudioLines,
+    Layers,
+    Guitar,
+    Bug,
+    GitBranch,
+    Sliders,
+} from 'lucide-react';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import {
     InstrumentCard,
@@ -81,7 +92,10 @@ export const EffectsTab = ({
     const uncategorized: EffectPlugin[] = [];
 
     for (const plugin of effects) {
-        const idKey = plugin.id.replace(/^builtin-/, '').replace(/^native-/, '').toLowerCase();
+        const idKey = plugin.id
+            .replace(/^builtin-/, '')
+            .replace(/^native-/, '')
+            .toLowerCase();
         const group = EFFECT_GROUPS.find((g) => g.categories.some((gc) => idKey === gc || idKey.includes(gc)));
         if (group) {
             const existing = groupedEffects.get(group.id) ?? [];
@@ -238,7 +252,8 @@ export const EffectsTab = ({
             (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
         );
         const filteredMidi = MIDI_EFFECT_FACTORIES.filter((m) => m.name.toLowerCase().includes(query));
-        const total = filteredEffects.length + filteredFxPresets.length + filteredModulators.length + filteredMidi.length;
+        const total =
+            filteredEffects.length + filteredFxPresets.length + filteredModulators.length + filteredMidi.length;
 
         return (
             <div className="flex flex-col gap-1 animate-in fade-in duration-150">
@@ -251,10 +266,15 @@ export const EffectsTab = ({
                             className="mt-1 px-1.5 py-0.5"
                             lineClassName="bg-border/15"
                         />
-                        <div className="flex flex-col gap-[2px]">
+                        <div className="flex flex-col">
                             {filteredEffects.map((plugin) => {
                                 const card = renderPremiumCard(plugin.id);
-                                if (card) return <div key={plugin.id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">{card}</div>;
+                                if (card)
+                                    return (
+                                        <div key={plugin.id} className="mb-1 mt-1.5 px-0.5 drop-shadow-sm">
+                                            {card}
+                                        </div>
+                                    );
                                 return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                             })}
                         </div>
@@ -332,7 +352,7 @@ export const EffectsTab = ({
     if (currentRoute.id.startsWith('effects-audiofx-')) {
         const groupId = currentRoute.id.replace('effects-audiofx-', '');
         const items = groupId === 'other' ? uncategorized : (groupedEffects.get(groupId) ?? []);
-        
+
         // Sort items so premium plugins are pinned to the top
         const sortedItems = [...items].sort((a, b) => {
             const aIsPremium = !!renderPremiumCard(a.id);
@@ -347,7 +367,12 @@ export const EffectsTab = ({
                 {sortedItems.length === 0 ? <EmptyState message="Empty category." /> : null}
                 {sortedItems.map((plugin) => {
                     const card = renderPremiumCard(plugin.id);
-                    if (card) return <div key={plugin.id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">{card}</div>;
+                    if (card)
+                        return (
+                            <div key={plugin.id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
+                                {card}
+                            </div>
+                        );
                     return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                 })}
             </div>

@@ -1,21 +1,6 @@
 /**
- * Track View Actions — use case wrappers for cross-module calls
- * used by Track presentation views.
+ * Track View Actions — re-exports for cross-module calls from Track presentation views.
  */
-
-// ── Workspace ─────────────────────────────────────────────────────
-import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
-
-export const setWorkspaceMode = (mode: Parameters<typeof _setWorkspaceMode>[0]): void => _setWorkspaceMode(mode);
-
-// ── AudioEngine ───────────────────────────────────────────────────
-import {
-    getAudioDevices as _getAudioDevices,
-    type AudioDeviceInfo,
-} from '#/modules/AudioEngine/useCases/audioDeviceSelection';
-import { decodeAudioFile as _decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
-
-export const getAudioDevices = (): Promise<AudioDeviceInfo[]> => _getAudioDevices();
-export type { AudioDeviceInfo };
-
-export const decodeAudioFile = (file: File): Promise<{ id: string; buffer: AudioBuffer }> => _decodeAudioFile(file);
+export { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
+export { getAudioDevices, type AudioDeviceInfo } from '#/modules/AudioEngine/useCases/audioDeviceSelection';
+export { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';

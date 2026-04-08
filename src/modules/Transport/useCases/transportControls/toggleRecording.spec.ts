@@ -8,6 +8,18 @@ describe('toggleRecording', () => {
         injectDependencies(toggleRecording, {
             getTransportState: vi.fn(() => null),
             updateTransportState: update,
+            getTrackStoreState: vi.fn(),
+            updateClip: vi.fn(),
+            resumeEngine: vi.fn(),
+            getAudioContext: vi.fn(),
+            scheduleClick: vi.fn(),
+            startAudioRecording: vi.fn(),
+            stopAudioRecording: vi.fn(),
+            startRecording: vi.fn(),
+            stopRecording: vi.fn(),
+            audioBufferCache: { set: vi.fn() },
+            ensureTrackStrips: vi.fn(),
+            startPlayback: vi.fn(),
         });
 
         toggleRecording();

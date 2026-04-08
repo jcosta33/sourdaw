@@ -3,8 +3,6 @@
  * semantic parameter grouping, and collapsible advanced sections.
  */
 import { type ReactElement } from 'react';
-import { Music, Guitar, Piano, Mic2, Waves, Zap } from 'lucide-react';
-import { type LucideIcon } from 'lucide-react';
 import { type DeviceLayoutProps, SectionHeader, registerPrefixLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
@@ -15,22 +13,6 @@ import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDev
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 type P = DeviceLayoutProps['parameters'][number];
-
-// ── Instrument metadata ──
-type InstrumentMeta = { label: string; icon: LucideIcon; color: string };
-
-const INSTRUMENT_META: Record<string, InstrumentMeta> = {
-    'faust-rhodes': { label: 'Electric Piano', icon: Piano, color: 'var(--color-accent-amber)' },
-    'faust-hammond-b3': { label: 'Tonewheel Organ', icon: Music, color: 'var(--color-accent-coral)' },
-    'faust-physical-model-string': { label: 'Physical Modeling', icon: Guitar, color: 'var(--color-accent-teal)' },
-    'faust-minimoog': { label: 'Analog Synth', icon: Zap, color: 'var(--color-accent-green)' },
-    'faust-fm-synth': { label: 'FM Synthesis', icon: Waves, color: 'var(--color-accent-blue)' },
-    'faust-acid-bass-303': { label: 'Acid Bass', icon: Zap, color: 'var(--color-accent-coral)' },
-    'faust-supersaw-unison': { label: 'Supersaw', icon: Waves, color: 'var(--color-accent-purple)' },
-    'faust-morphing-synth': { label: 'Morphing Synth', icon: Waves, color: 'var(--color-accent-blue)' },
-    'faust-additive': { label: 'Additive Synth', icon: Music, color: 'var(--color-accent-teal)' },
-};
-const DEFAULT_META: InstrumentMeta = { label: 'Instrument', icon: Mic2, color: 'var(--color-accent-purple)' };
 
 // ── Categorization ──
 type ParamCategory = { title: string; match: (name: string) => boolean; primary: boolean };
@@ -90,8 +72,6 @@ const Param = ({
 );
 
 const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
-    const meta = INSTRUMENT_META[device.type ?? ''] ?? DEFAULT_META;
-    const Icon = meta.icon;
     const categories = categorizeParams(parameters);
 
     const change = (id: string, v: number): void => {
@@ -127,25 +107,6 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
 
     return (
         <div className="space-y-3">
-            {/* Identity header */}
-            <div
-                className="flex items-center gap-2 px-1 py-2 rounded-md"
-                style={{ background: `color-mix(in srgb, ${meta.color} 8%, transparent)` }}
-            >
-                <div
-                    className="flex items-center justify-center size-8 rounded"
-                    style={{ background: `color-mix(in srgb, ${meta.color} 15%, transparent)` }}
-                >
-                    <Icon className="size-4" style={{ color: meta.color }} />
-                </div>
-                <div className="flex flex-col min-w-0">
-                    <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: meta.color }}>
-                        {meta.label}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground truncate">{device.name ?? device.type}</span>
-                </div>
-            </div>
-
             {/* Interactive visualizations based on available parameters */}
             {hasEnvelope ? (
                 <div>

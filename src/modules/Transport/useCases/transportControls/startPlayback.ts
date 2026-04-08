@@ -5,8 +5,14 @@ import { resumeEngine } from '#/modules/AudioEngine/useCases/engineAccess';
 import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 
-export const startPlayback = inject({ getTransportState, updateTransportState })(
-    ({ getTransportState, updateTransportState }) =>
+export const startPlayback = inject({
+    getTransportState,
+    updateTransportState,
+    resumeEngine,
+    ensureTrackStrips,
+    startPlayheadScheduler,
+})(
+    ({ getTransportState, updateTransportState, resumeEngine, ensureTrackStrips, startPlayheadScheduler }) =>
         function startPlayback(): void {
             const state = getTransportState();
             if (!state) {

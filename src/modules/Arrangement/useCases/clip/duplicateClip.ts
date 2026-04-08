@@ -3,8 +3,8 @@ import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrack
 import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation/duplicateClipAutomation';
 import { addClip } from './addClip';
 
-export const duplicateClip = inject({ getTrackState })(
-    ({ getTrackState }) =>
+export const duplicateClip = inject({ getTrackState, addClip, duplicateClipAutomation })(
+    ({ getTrackState, addClip, duplicateClipAutomation }) =>
         function duplicateClip(clipId: string): void {
             const state = getTrackState();
             if (!state) {

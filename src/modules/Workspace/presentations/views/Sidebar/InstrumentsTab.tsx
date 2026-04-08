@@ -249,19 +249,70 @@ export const InstrumentsTab = ({
     // If searching, flatten all results into one list
     if (isCategoryRoot && query) {
         const allResults = [...soundPresets, ...filteredUser];
-        
+
         const renderPremiumInstrument = (id: string) => {
             switch (id) {
-                case 'fermenter': return <InstrumentCard icon={Music2} label="Fermenter" badge="Synth" description="Wavetable + VA oscillators · TPT filter · Mod matrix" onClick={handleAddFermenterTrack} theme={FERMENTER_THEME} />;
-                case 'toaster': return <InstrumentCard icon={Drum} label="Toaster" badge="Drums" description="808/909 synth engines · Step sequencer · 16 pads" onClick={handleAddToasterTrack} theme={TOASTER_THEME} />;
-                case 'levain': return <InstrumentCard icon={Music} label="Levain" badge="Orchestra" description="Sample playback · Legato · Expression · Multi-mic" onClick={handleAddLevainTrack} theme={LEVAIN_THEME} />;
-                case 'crumbs': return <InstrumentCard icon={Disc3} label="Crumbs" badge="Sample" description="Quick · Drum · Slice · Warp — drag & drop any audio" onClick={handleAddCrumbsTrack} theme={CRUMBS_THEME} />;
-                case 'grand-boule': return <InstrumentCard icon={Piano} label="Grand Boule" badge="Piano" description="Physical modeling · 88 keys · Modal synthesis · Pedals" onClick={handleAddGrandBouleTrack} theme={GRAND_BOULE_THEME} />;
-                default: return null;
+                case 'fermenter':
+                    return (
+                        <InstrumentCard
+                            icon={Music2}
+                            label="Fermenter"
+                            badge="Synth"
+                            description="Wavetable + VA oscillators · TPT filter · Mod matrix"
+                            onClick={handleAddFermenterTrack}
+                            theme={FERMENTER_THEME}
+                        />
+                    );
+                case 'toaster':
+                    return (
+                        <InstrumentCard
+                            icon={Drum}
+                            label="Toaster"
+                            badge="Drums"
+                            description="808/909 synth engines · Step sequencer · 16 pads"
+                            onClick={handleAddToasterTrack}
+                            theme={TOASTER_THEME}
+                        />
+                    );
+                case 'levain':
+                    return (
+                        <InstrumentCard
+                            icon={Music}
+                            label="Levain"
+                            badge="Orchestra"
+                            description="Sample playback · Legato · Expression · Multi-mic"
+                            onClick={handleAddLevainTrack}
+                            theme={LEVAIN_THEME}
+                        />
+                    );
+                case 'crumbs':
+                    return (
+                        <InstrumentCard
+                            icon={Disc3}
+                            label="Crumbs"
+                            badge="Sample"
+                            description="Quick · Drum · Slice · Warp — drag & drop any audio"
+                            onClick={handleAddCrumbsTrack}
+                            theme={CRUMBS_THEME}
+                        />
+                    );
+                case 'grand-boule':
+                    return (
+                        <InstrumentCard
+                            icon={Piano}
+                            label="Grand Boule"
+                            badge="Piano"
+                            description="Physical modeling · 88 keys · Modal synthesis · Pedals"
+                            onClick={handleAddGrandBouleTrack}
+                            theme={GRAND_BOULE_THEME}
+                        />
+                    );
+                default:
+                    return null;
             }
         };
 
-        const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule'].filter(id => {
+        const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule'].filter((id) => {
             const name = id.replace('-', ' ');
             return name.toLowerCase().includes(query) || (id === 'crumbs' && 'sampler'.includes(query));
         });
@@ -273,9 +324,14 @@ export const InstrumentsTab = ({
                 <SearchSummary count={totalCount} query={query} className="px-1 py-0.5" />
                 {totalCount > 0 ? (
                     <>
-                        {premiumMatches.map(id => {
+                        {premiumMatches.map((id) => {
                             const card = renderPremiumInstrument(id);
-                            if (card) return <div key={id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">{card}</div>;
+                            if (card)
+                                return (
+                                    <div key={id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
+                                        {card}
+                                    </div>
+                                );
                             return null;
                         })}
                         {allResults.map((preset) => (
@@ -392,6 +448,12 @@ export const InstrumentsTab = ({
                 />
             </div>
 
+            <DawSectionDivider
+                label="Standard grain"
+                className="mb-1 px-1"
+                labelClassName="font-bold text-[var(--color-accent-cyan)]"
+                lineClassName="bg-[var(--color-accent-cyan)]/15"
+            />
             {/* Sound preset category groups */}
             {INSTRUMENT_GROUPS.map((group) => {
                 const groupCats = group.categories.filter((cat) => categoriesWithPresets.includes(cat));

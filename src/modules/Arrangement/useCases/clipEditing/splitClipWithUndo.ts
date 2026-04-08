@@ -13,8 +13,8 @@ import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
  * original endBeat, name, and fadeOut (the properties splitClip changes).
  * Redo: re-runs the split from the now-restored original.
  */
-export const splitClipWithUndo = inject({ getTrackState, updateClip })(
-    ({ getTrackState, updateClip }) =>
+export const splitClipWithUndo = inject({ getTrackState, updateClip, splitClip, removeClip, pushUndoEntry })(
+    ({ getTrackState, updateClip, splitClip, removeClip, pushUndoEntry }) =>
         function splitClipWithUndo(clipId: string, splitBeat: number): void {
             const origClip = getTrackState()
                 ?.tracks.flatMap((t) => t.clips)

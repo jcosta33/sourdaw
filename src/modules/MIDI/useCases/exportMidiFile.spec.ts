@@ -1,34 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Track } from '#/modules/Arrangement/models/Track';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { exportMidiClip } from './exportMidiFile';
 
-vi.mock('#/modules/Arrangement/useCases/getAllTracks', () => ({
-    getAllTracks: vi.fn(),
-}));
-
-const midiCell = vi.hoisted(() => ({
-    value: null as {
-        notesByClipId: Record<string, { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]>;
-        ccByClipId: Record<string, unknown[]>;
-    } | null,
-}));
-
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
-    midiStore: midiCell,
-}));
-
 describe('exportMidiClip', () => {
-    beforeEach(() => {
-        vi.mocked(getAllTracks).mockReset();
-        midiCell.value = null;
-    });
-
     it('should not download when there are no tracks', () => {
         const downloadBlob = vi.fn();
-        vi.mocked(getAllTracks).mockReturnValue([]);
-        injectDependencies(exportMidiClip, { downloadBlob });
+        const getAllTracks = vi.fn(() => []);
+        const getMidiStoreState = vi.fn(() => ({
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        }));
+        injectDependencies(exportMidiClip, { downloadBlob, getAllTracks, getMidiStoreState });
 
         exportMidiClip('c1');
 
@@ -43,9 +27,9 @@ describe('exportMidiClip', () => {
             kind: 'midi' as const,
             clips: [],
         } as unknown as Track;
-        vi.mocked(getAllTracks).mockReturnValue([track]);
-        midiCell.value = null;
-        injectDependencies(exportMidiClip, { downloadBlob });
+        const getAllTracks = vi.fn(() => [track]);
+        const getMidiStoreState = vi.fn(() => null);
+        injectDependencies(exportMidiClip, { downloadBlob, getAllTracks, getMidiStoreState });
 
         exportMidiClip('c1');
 
@@ -75,15 +59,16 @@ describe('exportMidiClip', () => {
             clips: [clip],
         } as unknown as Track;
 
-        vi.mocked(getAllTracks).mockReturnValue([track]);
-        midiCell.value = {
+        const getAllTracks = vi.fn(() => [track]);
+        const getMidiStoreState = vi.fn(() => ({
             notesByClipId: {
                 c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
             },
             ccByClipId: {},
-        };
+            pitchBendByClipId: {},
+        }));
 
-        injectDependencies(exportMidiClip, { downloadBlob });
+        injectDependencies(exportMidiClip, { downloadBlob, getAllTracks, getMidiStoreState });
 
         exportMidiClip('c1');
 
