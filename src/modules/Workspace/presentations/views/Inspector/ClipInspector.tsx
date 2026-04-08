@@ -5,13 +5,15 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
-import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
-import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
-import { setClipFade } from '#/modules/Arrangement/useCases/clipEditing/setClipFade';
-import { setClipGain } from '#/modules/Arrangement/useCases/clipEditing/setClipGain';
-import { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
-import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
-import { setClipFollowAction } from '#/modules/Arrangement/useCases/clipEditing/setClipFollowAction';
+import {
+    trimClipStart,
+    trimClipEnd,
+    setClipFade,
+    setClipGain,
+    setClipColor,
+    renameClip,
+    setClipFollowAction,
+} from '#/modules/Arrangement';
 import { type Clip } from '../../../models/TrackViewTypes';
 import { CLIP_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';

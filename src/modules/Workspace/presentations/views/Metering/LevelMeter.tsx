@@ -2,8 +2,7 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { getTrackPeakLevel } from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { getMasterPeakLevel } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getTrackPeakLevel, getMasterPeakLevel } from '#/modules/AudioEngine';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 
 type LevelMeterProps = {

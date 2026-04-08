@@ -6,15 +6,14 @@ import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync } from 'luc
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles';
 import { useTracks } from '../hooks/useTracks';
-import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
-import { getPlatformPlugins } from '#/modules/Arrangement/useCases/getPlatformPlugins';
+import { decodeAudioFile, getPlatformPlugins } from '#/modules/Arrangement';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';
 import { EffectsTab } from './Sidebar/EffectsTab';
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 import { MacrosPanel } from './Sidebar/MacrosPanel';
-import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views/LibraryBrowser';
+import { LibraryBrowser } from '#/modules/SampleLibrary';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
 import { RailTabBar } from '../components/Sidebar/RailTabBar';
 

@@ -1,7 +1,6 @@
 import { type ReactElement } from 'react';
-import { getBuiltinPlugins } from '#/modules/Arrangement/useCases/getBuiltinPlugins';
+import { getBuiltinPlugins, bypassDevice } from '#/modules/Arrangement';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
-import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { type Device } from '../../../models/TrackViewTypes';
 import { resolveDeviceLayout } from './deviceLayoutRegistry';

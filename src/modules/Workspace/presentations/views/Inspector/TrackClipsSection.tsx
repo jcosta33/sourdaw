@@ -5,8 +5,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Check, X, Sparkles } from 'lucide-react';
 import { type Track } from '../../../models/TrackViewTypes';
-import { acceptGhostClip } from '#/modules/Arrangement/useCases/clip/acceptGhostClip';
-import { dismissGhostClip } from '#/modules/Arrangement/useCases/clip/dismissGhostClip';
+import { acceptGhostClip, dismissGhostClip } from '#/modules/Arrangement';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { MetaText } from '../../components/Inspector/MetaText';
 

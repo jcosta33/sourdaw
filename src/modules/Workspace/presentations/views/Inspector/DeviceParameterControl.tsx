@@ -3,13 +3,15 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
-import { MidiLearnButton } from '#/modules/Arrangement/presentations/views/MidiLearnButton';
+import { MidiLearnButton, setDeviceParameter } from '#/modules/Arrangement';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
-import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import {
+    addAutomationLane,
+    removeAutomationLane,
+    automationStore,
+    type AutomationStoreState,
+} from '#/modules/Automation';
 import { useStore } from '#/infra/store/useStore';
-import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
 import { type Device } from '../../../models/TrackViewTypes';
 
 type DeviceParameterControlProps = {

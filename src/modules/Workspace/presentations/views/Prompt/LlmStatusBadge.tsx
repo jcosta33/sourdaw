@@ -1,16 +1,17 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap, Check } from 'lucide-react';
 
-import { isLlmAvailable, resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
-import { unloadEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
 import {
+    isLlmAvailable,
+    resolveBackend,
+    unloadEngine,
     NATIVE_MODEL_INFO,
     CLOUD_MODEL_INFO,
     WEBLLM_MODELS,
     type ModelInfo,
     getActiveModelId,
-} from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
+    type LlmEngineStatus
+} from '#/modules/AiRuntime';
 import { Button } from '#/components/ui/button';
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';

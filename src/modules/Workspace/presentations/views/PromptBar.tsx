@@ -24,11 +24,8 @@ import {
     Users,
     AlertTriangle,
 } from 'lucide-react';
-import { toggleAiHistoryPanel } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
-import { type FuzzyResult } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { describeAction } from '#/modules/Command/useCases/actionLabels';
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { type PresetCategory } from '#/modules/AiRuntime/models/presetActions/registry';
+import { toggleAiHistoryPanel, type FuzzyResult, type PresetCategory } from '#/modules/AiRuntime';
+import { describeAction, type AppAction } from '#/modules/Command';
 import { usePromptExecution, type SelectionTag } from '../hooks/usePromptExecution';
 import { LlmStatusBadge } from './Prompt/LlmStatusBadge';
 

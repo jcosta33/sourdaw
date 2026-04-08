@@ -6,24 +6,24 @@ import { type ReactElement, useRef } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
-import { removeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/removeMidiNote';
-import { moveMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/moveMidiNote';
-import { setNoteVelocity } from '#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity';
-import { humanizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes';
-import { quantizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNotes';
-import { transposeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes';
-import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
-import { copySelectedNotes } from '#/modules/Arrangement/useCases/clipboard/copySelectedNotes';
-import { pasteNotes } from '#/modules/Arrangement/useCases/clipboard/pasteNotes';
-import { strumNotes, restoreStrumOriginals } from '#/modules/MIDI/useCases/strumNotes';
+import { pushUndoEntry } from '#/modules/Command';
 import {
+    addMidiNote,
+    removeMidiNote,
+    moveMidiNote,
+    setNoteVelocity,
+    humanizeNotes,
+    quantizeNotes,
+    transposeNotes,
+    getNotesForClip,
+    strumNotes,
+    restoreStrumOriginals,
     extractGrooveFromClip,
     applyGrooveToClip,
     restoreGrooveOriginals,
-} from '#/modules/MIDI/useCases/grooveExtraction';
-import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
+} from '#/modules/MIDI';
+import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 

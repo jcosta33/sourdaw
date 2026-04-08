@@ -4,12 +4,15 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
-import { getBuiltinPlugins } from '#/modules/Arrangement/useCases/getBuiltinPlugins';
-import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automation/toggleAutomationVisibility';
-import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
+import { getBuiltinPlugins } from '#/modules/Arrangement';
+import {
+    addAutomationLane,
+    toggleAutomationVisibility,
+    removeAutomationLane,
+    automationStore,
+    type AutomationStoreState,
+} from '#/modules/Automation';
 import { useStore } from '#/infra/store/useStore';
-import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 

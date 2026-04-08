@@ -11,7 +11,7 @@ import { useSelectionLabel } from '../hooks/useSelectionLabel';
 import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggles';
 import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
-import { llmStatusStore, type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
+import { llmStatusStore, type LlmEngineStatus } from '#/modules/AiRuntime';
 import { History, Users } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';

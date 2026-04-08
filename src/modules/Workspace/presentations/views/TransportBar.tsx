@@ -5,7 +5,7 @@ import { useTransportState } from '../hooks/useTransportState';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
 import { useUndoState } from '../hooks/useUndoState';
 import { useProjectState } from '../hooks/useProjectState';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 import { type Track } from '../../models/TrackViewTypes';
 import { TransportControls } from './Transport/TransportControls';
 import { AutoScrollToggle } from './Transport/AutoScrollToggle';
@@ -18,8 +18,7 @@ import { ProjectName } from './Transport/ProjectName';
 import { PromptBar } from './PromptBar';
 import { ToolSelector } from './ToolSelector';
 import { TempoEditor } from './TempoEditor';
-import { RecentProjectsMenu } from '#/modules/Project/presentations/views/RecentProjectsMenu';
-import { ArrangementSelector } from '#/modules/Project/presentations/views/ArrangementSelector';
+import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];

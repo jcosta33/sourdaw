@@ -2,11 +2,9 @@ import { type ReactElement } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
-import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
+import { trackStore, type TrackStoreState, selectTrack } from '#/modules/Arrangement';
+import { getAllSidechainRoutes, type SidechainRoute } from '#/modules/Routing';
 import { type Track } from '../../models/TrackViewTypes';
-import { type SidechainRoute } from '#/modules/Routing/useCases/sidechain';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };

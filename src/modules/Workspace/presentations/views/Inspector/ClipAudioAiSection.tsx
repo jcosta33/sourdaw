@@ -5,16 +5,17 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
 import { type Clip } from '../../../models/TrackViewTypes';
-import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip';
-import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
-import { polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases/polyphonicAudioToMidi';
-import { insertPolyphonicMidiNotes } from '#/modules/AudioAnalysis/useCases/insertPolyphonicMidiNotes';
-import { detectDominantPitch } from '#/modules/AudioAnalysis/useCases/pitchDetection';
-import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
-import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration';
+import {
+    polyphonicAudioToMidi,
+    insertPolyphonicMidiNotes,
+    detectDominantPitch,
+    summarizeFeatures,
+    audioToMidi,
+} from '#/modules/AudioAnalysis';
+import { audioBufferCache } from '#/modules/AudioEngine';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { notifyAiChange } from '#/modules/AiRuntime/useCases/notifyAiChange';
+import { notifyAiChange } from '#/modules/AiRuntime';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 
 type ClipAudioAiSectionProps = {

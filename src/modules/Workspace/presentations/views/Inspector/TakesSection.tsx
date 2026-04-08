@@ -3,10 +3,13 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setCompRegion } from '#/modules/Arrangement/useCases/comping/setCompRegion';
-import { selectTake } from '#/modules/Arrangement/useCases/comping/selectTake';
-import { flattenComp } from '#/modules/Arrangement/useCases/comping/flattenComp';
+import {
+    takeLaneStore,
+    type TakeLaneStoreState,
+    setCompRegion,
+    selectTake,
+    flattenComp,
+} from '#/modules/Arrangement';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { MetaText } from '../../components/Inspector/MetaText';
 

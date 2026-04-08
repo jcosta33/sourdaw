@@ -7,7 +7,7 @@ import {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,
     handleDeleteTrackAlternative,
-} from '#/modules/Command/useCases/trackAlternativeHandlers';
+} from '#/modules/Command';
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 

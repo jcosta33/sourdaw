@@ -2,10 +2,8 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { type TimeDisplayMode } from '../../../models/WorkspaceState';
 import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { playheadPositionRef, transportStore, defaultTransportState } from '#/modules/Transport';
 import { useStore } from '#/infra/store/useStore';
-import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { TransportSegmentedReadout } from '../../components/Transport/TransportSegmentedReadout';
 
 type PlayheadDisplayProps = {

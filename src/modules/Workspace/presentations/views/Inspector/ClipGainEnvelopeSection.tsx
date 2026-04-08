@@ -3,11 +3,13 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Activity, Plus, RotateCcw } from 'lucide-react';
-import { getClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/getClipGainEnvelope';
-import { toggleClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/toggleClipGainEnvelope';
-import { addGainEnvelopePoint } from '#/modules/Arrangement/useCases/clipGainEnvelope/addGainEnvelopePoint';
-import { removeGainEnvelopePoint } from '#/modules/Arrangement/useCases/clipGainEnvelope/removeGainEnvelopePoint';
-import { resetClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/resetClipGainEnvelope';
+import {
+    getClipGainEnvelope,
+    toggleClipGainEnvelope,
+    addGainEnvelopePoint,
+    removeGainEnvelopePoint,
+    resetClipGainEnvelope,
+} from '#/modules/Arrangement';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
 

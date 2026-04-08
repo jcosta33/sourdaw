@@ -9,7 +9,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
-import { CHORD_TYPE_KEYS, type ChordType } from '#/modules/MIDI/useCases/chordStamps';
+import { CHORD_TYPE_KEYS, type ChordType } from '#/modules/MIDI';
 
 type PianoRollToolbarProps = {
     gridSnap: number;

@@ -12,10 +12,16 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
-import { macroStore, type MacroStoreState } from '#/modules/Command/stores/macroStore';
-import { startMacroRecording, stopMacroRecording, type Macro } from '#/modules/Command/useCases/macro/recording';
-import { playMacro } from '#/modules/Command/useCases/macro/playback';
-import { deleteMacro, renameMacro } from '#/modules/Command/useCases/macro/management';
+import {
+    macroStore,
+    type MacroStoreState,
+    startMacroRecording,
+    stopMacroRecording,
+    type Macro,
+    playMacro,
+    deleteMacro,
+    renameMacro,
+} from '#/modules/Command';
 import { cn } from '#/helpers/Styles/cn';
 
 const defaultState: MacroStoreState = { macros: [], recording: false, currentRecording: [] };

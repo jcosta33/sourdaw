@@ -2,9 +2,12 @@ import { type ReactElement, useState } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { Button } from '#/components/ui/button';
 import { Snowflake, Zap } from 'lucide-react';
-import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
-import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce/freezeTrack';
+import {
+    renameTrack,
+    setTrackColor,
+    freezeTrack,
+    unfreezeTrack,
+} from '#/modules/Arrangement';
 import { type Track } from '../../../models/TrackViewTypes';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
