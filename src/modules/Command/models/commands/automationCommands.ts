@@ -1,6 +1,6 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '#/modules/Automation';
 
 /** Automation commands — scale, invert, thin automation points. */
 export const automationCommands: CommandEntry[] = [

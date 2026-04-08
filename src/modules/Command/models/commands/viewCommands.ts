@@ -1,16 +1,15 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { getSelectedClipId } from '../../useCases/selectionHelpers';
-import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
-import { zoomToFit, zoomToSelection } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
+import { zoomTimeline, addMarker } from '#/modules/Arrangement';
 import {
+    zoomToFit,
+    zoomToSelection,
     toggleSidebar,
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { addMarker } from '#/modules/Arrangement/useCases/marker/markerOperations';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
+} from '#/modules/Workspace';
+import { transportStore, playheadPositionRef } from '#/modules/Transport';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 /** View commands — zoom, panels, workspace modes, tools, markers. */

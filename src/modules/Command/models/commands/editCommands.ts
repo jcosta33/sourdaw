@@ -1,8 +1,6 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
-import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
-import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
+import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement';
 import { selectAllClips, deselectAllClips } from '#/modules/Command/useCases/editActionHandlers';
 
 /** Edit commands — undo, redo, copy, cut, paste, select/deselect all. */

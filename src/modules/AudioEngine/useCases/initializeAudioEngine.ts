@@ -1,8 +1,6 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
-import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
-import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost/builtinDescriptors';
-import { initWAMEnvironment } from '#/modules/Plugin/useCases/wamPluginHost/hostOperations';
-import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine/builtinDSP';
+import { getTransportStoreValue } from '#/modules/Transport';
+import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin';
 import { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export async function initializeAudioEngine(): Promise<void> {

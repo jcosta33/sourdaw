@@ -7,20 +7,21 @@ import {
     PEER_COLORS,
 } from '../../models/CollaborationTypes';
 import { createCollaborationError } from '../../errors/CollaborationError';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { transportStore } from '#/modules/Transport';
+import { trackStore } from '#/modules/Arrangement';
+import { audioBufferCache, getAudioContext } from '#/modules/AudioEngine';
 
-import { setupProjectionBridge } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
-import { branchStore } from '#/modules/CrdtDocument/stores/branchStore';
-import { subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases/subscribeToCrdtChanges';
-import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
-import { createCrdtDoc } from '#/modules/CrdtDocument/useCases/createCrdtDoc';
-import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
-import { removeCrdtDoc } from '#/modules/CrdtDocument/useCases/removeCrdtDoc';
-import { mutateCrdtDoc } from '#/modules/CrdtDocument/useCases/mutateCrdtDoc';
-import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
+import {
+    setupProjectionBridge,
+    branchStore,
+    subscribeToCrdtChanges,
+    getCrdtDoc,
+    createCrdtDoc,
+    hasCrdtDoc,
+    removeCrdtDoc,
+    mutateCrdtDoc,
+    persistCrdtProject,
+} from '#/modules/CrdtDocument';
 import { collaborationStore } from '../../stores/collaborationStore';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AutomergeSync } from '../automergeSync';
