@@ -2,13 +2,17 @@ import { type ReactElement, useRef } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { addClip, addTrack, decodeAudioFile, importMidiFile, pasteClip } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations';
 import { executeAppAction } from '#/modules/Command';
 import { isTauri } from '#/helpers/tauriBridge';
 import { trackStore, markerStore } from '#/modules/Arrangement';
 import { transportStore } from '#/modules/Transport';
+import { decodeAudioFile } from '#/modules/AudioEngine';
+import { importMidiFile } from '#/modules/MIDI';
+import { addClip } from '../../useCases/clip/addClip';
+import { pasteClip } from '../../useCases/clipboard/pasteClip';
+import { addTrack } from '../../useCases/addTrack';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 // ── Marker color presets ──────────────────────────────────────────────

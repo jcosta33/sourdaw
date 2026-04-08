@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { setSend as engineSetSend } from '#/modules/Routing/useCases/busControls';
+import { setSend as engineSetSend } from '#/modules/Routing';
 
 export const setSend = inject({ getTrackById, updateTrack })(
     ({ getTrackById, updateTrack }) =>

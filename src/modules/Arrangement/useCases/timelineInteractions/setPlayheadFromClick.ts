@@ -1,4 +1,4 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { getTransportState, updateTransportState } from '#/modules/Transport';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 
 export function setPlayheadFromClick(canvasX: number): void {

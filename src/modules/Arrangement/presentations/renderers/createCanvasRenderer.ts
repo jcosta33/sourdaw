@@ -1,7 +1,6 @@
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
+import { transportStore, timeSignatureMapStore } from '#/modules/Transport';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { drawClip } from './clipDrawing';
 

@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation/duplicateClipAutomation';
+import { getTransportState } from '#/modules/Transport';
+import { duplicateClipAutomation } from '#/modules/Automation';
 import { addClip } from './addClip';
 
 export const duplicateClipToNextBar = inject({ getTrackState })(

@@ -1,6 +1,6 @@
 import { findClipById } from '#/modules/Arrangement/services/findClipById';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
+import { midiStore } from '#/modules/MIDI';
+import { getWorkspaceState } from '#/modules/Workspace';
 import { setClipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export function copySelectedClip(): void {

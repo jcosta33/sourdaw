@@ -1,12 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
+import { transportStore, playheadPositionRef } from '#/modules/Transport';
 import { timelineViewStore } from '../stores/timelineViewStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
+import { midiStore } from '#/modules/MIDI';
+import { workspaceStore, preferencesStore, TRACK_HEIGHT_VALUES } from '#/modules/Workspace';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
-import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 

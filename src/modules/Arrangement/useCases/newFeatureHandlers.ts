@@ -1,14 +1,12 @@
-import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler } from '#/modules/Command';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import {
     generateDrumFill,
     generateAllTransitionFills,
 } from '#/modules/Arrangement/useCases/fillTransitionGeneration/generation';
-import { compareToReference } from '#/modules/AudioAnalysis/useCases/referenceMixComparison/compareMixes';
-import { toggleMono } from '#/modules/AudioEngine/useCases/controlRoom/toggleMono';
-import { toggleDim } from '#/modules/AudioEngine/useCases/controlRoom/toggleDim';
-import { switchMonitor } from '#/modules/AudioEngine/useCases/controlRoom/switchMonitor';
-import { generateMentorLessons } from '#/modules/AiRuntime/useCases/musicMentor/generateLessons';
+import { compareToReference } from '#/modules/AudioAnalysis';
+import { toggleMono, toggleDim, switchMonitor } from '#/modules/AudioEngine';
+import { generateMentorLessons } from '#/modules/AiRuntime';
 
 export const newFeatureHandlers: Record<string, ActionHandler<any>> = {
     generateFill: {

@@ -7,17 +7,13 @@
 import { type RefObject } from 'react';
 import { hitTestClip, hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
 import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
-import {
-    splitClip,
-    addClip,
-    removeClip,
-    addAutomationPoint,
-    addAutomationLane,
-    pushUndoEntry,
-} from '../../useCases/timelineViewActions';
-import { selectTrack } from '../../useCases/timelineViewActions';
+import { splitClip } from '../../useCases/clipEditing/splitClip';
+import { addClip } from '../../useCases/clip/addClip';
+import { removeClip } from '../../useCases/clip/removeClip';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore, addAutomationPoint, addAutomationLane } from '#/modules/Automation';
+import { pushUndoEntry } from '#/modules/Command';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
 import { timelineViewStore } from '../../stores/timelineViewStore';

@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { workspaceStore } from '#/modules/Workspace';
+import { automationStore } from '#/modules/Automation';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../../automationConstants';
 

@@ -1,5 +1,5 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { audioBufferCache } from '#/modules/AudioEngine';
+import { getTransportState } from '#/modules/Transport';
 import { findNearestZeroCrossing } from '#/modules/Arrangement/transformers/clipDspTransformers';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 

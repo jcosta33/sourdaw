@@ -1,11 +1,11 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { automationStore } from '#/modules/Automation';
+import { midiStore } from '#/modules/MIDI';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { undoRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
+import { undoRippleDelete } from '#/modules/Workspace';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

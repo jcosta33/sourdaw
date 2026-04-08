@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '#/modules/MIDI';
 import { setNoteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export function copySelectedNotes(clipId: string, noteIds: string[]): void {

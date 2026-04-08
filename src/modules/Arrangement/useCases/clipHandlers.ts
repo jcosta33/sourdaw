@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
 import { moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
@@ -23,16 +23,18 @@ import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copyS
 import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
 import { setClipLoop, setClipLoopLength } from '#/modules/Arrangement/useCases/clipLoop';
-import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
-import { detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
-import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/MIDI/useCases/arpeggiator';
+import { audioToMidi, detectTempo, detectKey } from '#/modules/AudioAnalysis';
+import {
+    arpeggiate,
+    type ArpPattern,
+    type ArpRate,
+    midiStore,
+} from '#/modules/MIDI';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Arrangement/useCases/timeOperations';
 import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { rippleDeleteClips, planRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
+import { rippleDeleteClips, planRippleDelete } from '#/modules/Workspace';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
+import { automationStore } from '#/modules/Automation';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 
 export const deleteTime = inject({ getTrackState, setTrackState })(

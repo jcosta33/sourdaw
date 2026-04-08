@@ -10,19 +10,6 @@ import { hitTestClip, hitTestTrack } from '../../useCases/timelineInteractions/h
 import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
 import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
-import {
-    selectTrack,
-    setWorkspaceMode,
-    addClip,
-    removeClip,
-    moveClip,
-    removeAutomationPoint,
-    batchAddAutomationPoints,
-    pushUndoEntry,
-    setLoopRegion,
-    trimClipStart,
-    trimClipEnd,
-} from '../../useCases/timelineViewActions';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import {
     workspaceStore,
@@ -33,7 +20,16 @@ import {
     selectClip,
 } from '#/modules/Workspace';
 import { trackStore } from '#/modules/Arrangement';
-import { toggleLoop, getTransportState } from '#/modules/Transport';
+import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport';
+import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation';
+import { pushUndoEntry } from '#/modules/Command';
+import { setWorkspaceMode } from '#/modules/Workspace';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
+import { addClip } from '../../useCases/clip/addClip';
+import { removeClip } from '../../useCases/clip/removeClip';
+import { moveClip } from '../../useCases/clip/moveClip';
+import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
+import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';

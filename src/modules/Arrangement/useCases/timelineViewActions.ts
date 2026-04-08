@@ -18,7 +18,6 @@ import { renameClip as _renameClip } from '#/modules/Arrangement/useCases/clipEd
 import { muteClip as _muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
 import { trimClipStart as _trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
 import { trimClipEnd as _trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
-
 export const splitClip = (...args: Parameters<typeof _splitClip>) => _splitClip(...args);
 export const splitClipWithUndo = (...args: Parameters<typeof _splitClipWithUndo>) => _splitClipWithUndo(...args);
 export const normalizeClip = (...args: Parameters<typeof _normalizeClip>) => _normalizeClip(...args);
@@ -58,8 +57,7 @@ export const pasteClip = (...args: Parameters<typeof _pasteClip>) => _pasteClip(
 import { selectTrack as _selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
 import { addTrack as _addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addDevice as _addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { exportMidiClip as _exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
-import { importMidiFile as _importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
+import { exportMidiClip as _exportMidiClip, importMidiFile as _importMidiFile } from '#/modules/MIDI';
 import { stripSilence as _stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
 
 export const selectTrack = (...args: Parameters<typeof _selectTrack>) => _selectTrack(...args);
@@ -70,10 +68,12 @@ export const importMidiFile: typeof _importMidiFile = (...args) => _importMidiFi
 export const stripSilence = (...args: Parameters<typeof _stripSilence>) => _stripSilence(...args);
 
 // ── Track: automation ─────────────────────────────────────────────
-import { addAutomationPoint as _addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
-import { addAutomationLane as _addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { removeAutomationPoint as _removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { batchAddAutomationPoints as _batchAddAutomationPoints } from '#/modules/Automation/useCases/automation/batchAddAutomationPoints';
+import {
+    addAutomationPoint as _addAutomationPoint,
+    addAutomationLane as _addAutomationLane,
+    removeAutomationPoint as _removeAutomationPoint,
+    batchAddAutomationPoints as _batchAddAutomationPoints,
+} from '#/modules/Automation';
 
 export const addAutomationPoint: typeof _addAutomationPoint = (...args) => _addAutomationPoint(...args);
 export const addAutomationLane: typeof _addAutomationLane = (...args) => _addAutomationLane(...args);
@@ -82,30 +82,28 @@ export const batchAddAutomationPoints: typeof _batchAddAutomationPoints = (...ar
     _batchAddAutomationPoints(...args);
 
 // ── AiRuntime ─────────────────────────────────────────────────────
-import { detectTempo as _detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
-import { detectKey as _detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
+import { detectTempo as _detectTempo, detectKey as _detectKey } from '#/modules/AudioAnalysis';
 
 export const detectTempo: typeof _detectTempo = (...args) => _detectTempo(...args);
 export const detectKey: typeof _detectKey = (...args) => _detectKey(...args);
 
 // ── AudioEngine ───────────────────────────────────────────────────
-import { decodeAudioFile as _decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
+import { decodeAudioFile as _decodeAudioFile } from '#/modules/AudioEngine';
 
 export const decodeAudioFile: typeof _decodeAudioFile = (...args) => _decodeAudioFile(...args);
 
 // ── Command ───────────────────────────────────────────────────────
-import { pushUndoEntry as _pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { executeAppAction as _executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { pushUndoEntry as _pushUndoEntry, executeAppAction as _executeAppAction } from '#/modules/Command';
 
 export const pushUndoEntry: typeof _pushUndoEntry = (...args) => _pushUndoEntry(...args);
 export const executeAppAction = (...args: Parameters<typeof _executeAppAction>) => _executeAppAction(...args);
 
 // ── Workspace ─────────────────────────────────────────────────────
-import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
+import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace';
 
 export const setWorkspaceMode = (...args: Parameters<typeof _setWorkspaceMode>) => _setWorkspaceMode(...args);
 
 // ── Transport ─────────────────────────────────────────────────────
-import { setLoopRegion as _setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
+import { setLoopRegion as _setLoopRegion } from '#/modules/Transport';
 
 export const setLoopRegion = (...args: Parameters<typeof _setLoopRegion>) => _setLoopRegion(...args);

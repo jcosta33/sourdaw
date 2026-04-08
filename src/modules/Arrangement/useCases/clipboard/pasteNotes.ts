@@ -1,7 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore, createMidiNote } from '#/modules/MIDI';
 import { type MidiNote } from '#/modules/Arrangement/models/MidiNoteViewTypes';
-import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
 import { noteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export const pasteNotes = inject({ createMidiNote })(

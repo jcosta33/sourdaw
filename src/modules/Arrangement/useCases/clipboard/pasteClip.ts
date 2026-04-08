@@ -1,11 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { getTransportState, playheadPositionRef } from '#/modules/Transport';
+import { midiStore, createMidiNote } from '#/modules/MIDI';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { type MidiNote } from '#/modules/Arrangement/models/MidiNoteViewTypes';
-import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
 import { clipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export const pasteClip = inject({ getTrackState })(
