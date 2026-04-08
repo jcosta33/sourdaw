@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { isAppError } from '#/infra/errors/isAppError';
 import { getLlmEngine } from '../repositories/webLlm/engineLifecycle';
@@ -92,7 +93,51 @@ The prompt bar at the bottom accepts natural language. Examples:
 - When referring to tracks, clips, or devices, use their names from the project context
 - If asked something unrelated to music production or this DAW, respond helpfully but start with: "You know there are better tools for this type of question, right?" then answer briefly anyway`;
 
-export async function sendChatMessage(userText: string): Promise<void> {
+export const sendChatMessage = inject({
+    createAiRuntimeError,
+    isAppError,
+    getLlmEngine,
+    streamNativeCompletion,
+    isNativeEngineReady,
+    isCloudAvailable,
+    streamCloudChatCompletion,
+    resolveBackend,
+    chatStore,
+    appendChatMessage,
+    updateChatMessage,
+    setChatGenerating,
+    getProjectContext,
+    parsePromptToActions,
+    executeAppAction,
+    generateGroupId,
+    describeAction,
+    pushAiActionGroup,
+    notifyAiChange,
+    setActiveAborter,
+})(
+    ({
+        createAiRuntimeError,
+        isAppError,
+        getLlmEngine,
+        streamNativeCompletion,
+        isNativeEngineReady,
+        isCloudAvailable,
+        streamCloudChatCompletion,
+        resolveBackend,
+        chatStore,
+        appendChatMessage,
+        updateChatMessage,
+        setChatGenerating,
+        getProjectContext,
+        parsePromptToActions,
+        executeAppAction,
+        generateGroupId,
+        describeAction,
+        pushAiActionGroup,
+        notifyAiChange,
+        setActiveAborter,
+    }) =>
+        async function sendChatMessage(userText: string): Promise<void> {
     const backend = resolveBackend();
 
     // Verify the appropriate engine is available
@@ -337,4 +382,5 @@ export async function sendChatMessage(userText: string): Promise<void> {
         setActiveAborter(null);
         setChatGenerating(false);
     }
-}
+        }
+);

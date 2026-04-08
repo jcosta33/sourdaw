@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { saveCurrentAsPreset, getUserPresets } from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { loadPresetToTrack, createTrackFromPreset } from '#/modules/Arrangement/useCases/preset/presetLoading';
@@ -10,10 +11,10 @@ function findPresetById(presetId: string) {
     return getUserPresets().find((p) => p.id === presetId) ?? null;
 }
 
-export const presetHandlers = {
-    loadPreset: {
-        execute: (a) => {
-            const preset = findPresetById(a.payload.presetId);
+export const executeLoadPreset = inject({ getUserPresets, loadPresetToTrack, createTrackFromPreset })(
+    ({ getUserPresets, loadPresetToTrack, createTrackFromPreset }) =>
+        function executeLoadPreset(a: Extract<AppAction, 'loadPreset'>): void {
+            const preset = getUserPresets().find((p) => p.id === a.payload.presetId) ?? null;
             if (!preset) {
                 return;
             }
@@ -23,17 +24,12 @@ export const presetHandlers = {
             } else {
                 createTrackFromPreset(preset);
             }
-        },
-        describe: (a) => {
-            const preset = findPresetById(a.payload.presetId);
-            const label = preset ? `Load preset "${preset.name}"` : `Load preset ${a.payload.presetId}`;
-            return { label };
-        },
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'loadPreset'>>,
+        }
+);
 
-    savePreset: {
-        execute: (a) => {
+export const executeSavePreset = inject({ getTrackStoreState, saveCurrentAsPreset })(
+    ({ getTrackStoreState, saveCurrentAsPreset }) =>
+        function executeSavePreset(a: Extract<AppAction, 'savePreset'>): void {
             const state = getTrackStoreState();
             const track = state?.tracks.find((t) => t.id === a.payload.trackId);
             if (!track) {
@@ -49,7 +45,22 @@ export const presetHandlers = {
                     parameterValues: d.parameterValues,
                 })),
             });
+        }
+);
+
+export const presetHandlers = {
+    loadPreset: {
+        execute: executeLoadPreset,
+        describe: (a) => {
+            const preset = findPresetById(a.payload.presetId);
+            const label = preset ? `Load preset "${preset.name}"` : `Load preset ${a.payload.presetId}`;
+            return { label };
         },
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'loadPreset'>>,
+
+    savePreset: {
+        execute: executeSavePreset,
         describe: (a) => {
             const track = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
             return { label: `Save preset "${a.payload.name}" from ${track?.name ?? 'track'}` };

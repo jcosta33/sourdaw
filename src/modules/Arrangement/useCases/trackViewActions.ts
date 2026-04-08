@@ -1,6 +1,36 @@
 /**
- * Track View Actions — re-exports for cross-module calls from Track presentation views.
+ * Track View Actions — use case wrappers for cross-module calls from Track presentation views.
+ *
+ * Each export uses `inject()` so tests can substitute collaborators via `injectDependencies`.
  */
-export { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
-export { getAudioDevices, type AudioDeviceInfo } from '#/modules/AudioEngine/useCases/audioDeviceSelection';
-export { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
+
+import { inject } from '#/infra/di/inject';
+import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace/useCases/setWorkspaceMode';
+import {
+    type AudioDeviceInfo,
+    getAudioDevices as getAudioDevicesImpl,
+} from '#/modules/AudioEngine/useCases/audioDeviceSelection';
+import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine/useCases/decodeAudioFile';
+
+export type { AudioDeviceInfo };
+
+export const setWorkspaceMode = inject({ setWorkspaceModeImpl })(
+    ({ setWorkspaceModeImpl }) =>
+        function setWorkspaceMode(...args: Parameters<typeof setWorkspaceModeImpl>) {
+            return setWorkspaceModeImpl(...args);
+        }
+);
+
+export const getAudioDevices = inject({ getAudioDevicesImpl })(
+    ({ getAudioDevicesImpl }) =>
+        async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
+            return getAudioDevicesImpl();
+        }
+);
+
+export const decodeAudioFile = inject({ decodeAudioFileImpl })(
+    ({ decodeAudioFileImpl }) =>
+        function decodeAudioFile(...args: Parameters<typeof decodeAudioFileImpl>) {
+            return decodeAudioFileImpl(...args);
+        }
+);

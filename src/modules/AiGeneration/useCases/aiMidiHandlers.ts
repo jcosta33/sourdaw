@@ -10,6 +10,7 @@
  * - stripSilence: Remove silent sections based on amplitude threshold
  */
 
+import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
@@ -17,8 +18,12 @@ import { setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/setNotesFo
 import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
-import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCases/audioAnalysis';
+import { stripSilence as stripSilenceFromClip } from '#/modules/Arrangement/useCases/stripSilence';
+import {
+    detectTempo as detectClipTempo,
+    detectKey as detectClipKey,
+    audioToMidi as runAudioToMidiConversion,
+} from '#/modules/Arrangement/useCases/audioAnalysis';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration/inference';
@@ -47,7 +52,10 @@ function formatNotesForLlm(
         .join(' ');
 }
 
+type ToolCallsFn = typeof generateToolCalls;
+
 async function llmGenerateNotes(
+    runToolCalls: ToolCallsFn,
     instruction: string,
     existingNotes: Array<{ pitch: number; startBeat: number; duration: number; velocity: number }>,
     clipId: string
@@ -72,7 +80,7 @@ ${noteContext}
 
 Generate the MIDI notes now. Output ONLY the tool call.`;
 
-    const results = await generateToolCalls(systemPrompt, userMessage);
+    const results = await runToolCalls(systemPrompt, userMessage);
     const addNotesCall = results.find((r) => r.name === 'addNotes');
     if (addNotesCall && Array.isArray(addNotesCall.arguments.notes)) {
         return addNotesCall.arguments.notes as Array<{
@@ -86,9 +94,9 @@ Generate the MIDI notes now. Output ONLY the tool call.`;
     return [];
 }
 
-export const aiMidiHandlers = {
-    addNotes: {
-        execute: (a) => {
+export const executeAddNotes = inject({ addMidiNote, logger })(
+    ({ addMidiNote, logger }) =>
+        function executeAddNotes(a: Extract<AppAction, 'addNotes'>): void {
             const notes = a.payload.notes;
             if (!Array.isArray(notes) || notes.length === 0) {
                 return;
@@ -101,13 +109,12 @@ export const aiMidiHandlers = {
                 addMidiNote(a.payload.clipId, pitch, start, dur, vel);
             }
             logger.info(`[AI MIDI] Added ${String(notes.length)} notes to clip ${a.payload.clipId}`);
-        },
-        describe: (a) => ({ label: `Add ${String(a.payload.notes.length)} MIDI notes` }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addNotes'>>,
+        }
+);
 
-    completeMidi: {
-        execute: async (a) => {
+export const executeCompleteMidi = inject({ generateToolCalls, getNotesForClip, addMidiNote, logger })(
+    ({ generateToolCalls: runToolCalls, getNotesForClip, addMidiNote, logger }) =>
+        async function executeCompleteMidi(a: Extract<AppAction, 'completeMidi'>): Promise<void> {
             const existing = getNotesForClip(a.payload.clipId);
             const bars = a.payload.bars ?? 4;
             const direction = a.payload.direction ?? 'forward';
@@ -119,26 +126,30 @@ export const aiMidiHandlers = {
                     ? `Continue this melody/pattern for ${String(bars)} more bars (${String(bars * 4)} beats), starting from beat ${String(maxBeat)}. Match the style, rhythm, and key of the existing notes.`
                     : `Write ${String(bars)} bars of content BEFORE beat 0 as a lead-in/intro, matching the style.`;
 
-            const notes = await llmGenerateNotes(instruction, existing, a.payload.clipId);
+            const notes = await llmGenerateNotes(runToolCalls, instruction, existing, a.payload.clipId);
             for (const note of notes) {
                 addMidiNote(a.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
             }
             logger.info(`[AI MIDI] Completed ${String(notes.length)} notes (${direction})`);
-        },
-        describe: () => ({ label: 'AI: complete MIDI phrase' }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'completeMidi'>>,
+        }
+);
 
-    variationMidi: {
-        execute: async (a) => {
+export const executeVariationMidi = inject({
+    generateToolCalls,
+    getNotesForClip,
+    createMidiNote,
+    setNotesForClip,
+    logger,
+})(
+    ({ generateToolCalls: runToolCalls, getNotesForClip, createMidiNote, setNotesForClip, logger }) =>
+        async function executeVariationMidi(a: Extract<AppAction, 'variationMidi'>): Promise<void> {
             const existing = getNotesForClip(a.payload.clipId);
             const amount = a.payload.amount ?? 0.3;
 
             const pct = Math.round(amount * 100);
             const instruction = `Create a variation of these notes. Change ~${String(pct)}% of them — alter some pitches, shift some rhythms, or change velocities, but keep the overall feel and key. Output the COMPLETE set of notes for the clip (replacing all existing notes). The variation should sound like a B-section or alternate take.`;
 
-            const notes = await llmGenerateNotes(instruction, existing, a.payload.clipId);
-            // Replace all existing notes with the variation
+            const notes = await llmGenerateNotes(runToolCalls, instruction, existing, a.payload.clipId);
             const newNotes = notes.map((note) =>
                 createMidiNote(
                     Math.max(0, Math.min(127, Math.round(note.pitch))),
@@ -151,17 +162,15 @@ export const aiMidiHandlers = {
             logger.info(
                 `[AI MIDI] Generated variation with ${String(newNotes.length)} notes (replaced ${String(existing.length)} existing)`
             );
-        },
-        describe: () => ({ label: 'AI: create MIDI variation' }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'variationMidi'>>,
+        }
+);
 
-    generateBassline: {
-        execute: async (a) => {
+export const executeGenerateBassline = inject({ generateToolCalls, getNotesForClip, addMidiNote, logger, addTrack })(
+    ({ generateToolCalls: runToolCalls, getNotesForClip, addMidiNote, logger, addTrack }) =>
+        async function executeGenerateBassline(a: Extract<AppAction, 'generateBassline'>): Promise<void> {
             const referenceNotes = getNotesForClip(a.payload.clipId);
             const style = a.payload.style ?? 'root-fifth';
 
-            // Find or create target track
             let targetId = a.payload.trackId;
             if (!targetId) {
                 const newTrack = addTrack({ name: `Bass (${style})`, kind: 'midi' });
@@ -173,58 +182,49 @@ export const aiMidiHandlers = {
 
             const instruction = `Generate a ${style} bassline that harmonically fits these chord/melody notes. The bass should be in octave 2-3 (MIDI 36-59). Use a "${style}" pattern. Output the bass notes using addNotes.`;
 
-            const notes = await llmGenerateNotes(instruction, referenceNotes, a.payload.clipId);
+            const notes = await llmGenerateNotes(runToolCalls, instruction, referenceNotes, a.payload.clipId);
             for (const note of notes) {
                 addMidiNote(a.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
             }
             logger.info(`[AI MIDI] Generated ${style} bassline with ${String(notes.length)} notes`);
-        },
-        describe: (a) => ({ label: `AI: generate ${a.payload.style ?? 'root-fifth'} bassline` }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateBassline'>>,
+        }
+);
 
-    // ── Audio analysis (DSP-based, no model needed) ──────────────────────
-
-    detectTempo: {
-        execute: async (a) => {
-            const bpm = await detectTempo(a.payload.clipId);
+export const executeDetectTempoAiMidi = inject({ detectClipTempo, logger })(
+    ({ detectClipTempo: runDetectTempo, logger }) =>
+        async function executeDetectTempoAiMidi(a: Extract<AppAction, 'detectTempo'>): Promise<void> {
+            const bpm = await runDetectTempo(a.payload.clipId);
             logger.info(`[Analysis] Tempo detected for clip ${a.payload.clipId}: ~${String(bpm)} BPM`);
-        },
-        describe: () => ({ label: 'Detect tempo' }),
-        undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'detectTempo'>>,
+        }
+);
 
-    detectKey: {
-        execute: async (a) => {
-            const key = await detectKey(a.payload.clipId);
+export const executeDetectKeyAiMidi = inject({ detectClipKey, logger })(
+    ({ detectClipKey: runDetectKey, logger }) =>
+        async function executeDetectKeyAiMidi(a: Extract<AppAction, 'detectKey'>): Promise<void> {
+            const key = await runDetectKey(a.payload.clipId);
             logger.info(`[Analysis] Key detected for clip ${a.payload.clipId}: ${String(key)}`);
-        },
-        describe: () => ({ label: 'Detect key' }),
-        undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'detectKey'>>,
+        }
+);
 
-    stripSilence: {
-        execute: (a) => {
-            stripSilence(a.payload.clipId, a.payload.threshold || -40);
+export const executeStripSilenceAiMidi = inject({ stripSilenceFromClip, logger })(
+    ({ stripSilenceFromClip: runStripSilence, logger }) =>
+        function executeStripSilenceAiMidi(a: Extract<AppAction, 'stripSilence'>): void {
+            runStripSilence(a.payload.clipId, a.payload.threshold || -40);
             logger.info(`[Analysis] Strip silence executed for clip ${a.payload.clipId}`);
-        },
-        describe: () => ({ label: 'Strip silence' }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'stripSilence'>>,
+        }
+);
 
-    audioToMidi: {
-        execute: async (a) => {
-            await audioToMidi(a.payload.clipId);
+export const executeAudioToMidiAiMidi = inject({ runAudioToMidiConversion, logger })(
+    ({ runAudioToMidiConversion: runConversion, logger }) =>
+        async function executeAudioToMidiAiMidi(a: Extract<AppAction, 'audioToMidi'>): Promise<void> {
+            await runConversion(a.payload.clipId);
             logger.info(`[Analysis] Audio-to-MIDI mapped for clip ${a.payload.clipId}`);
-        },
-        describe: () => ({ label: 'Convert audio to MIDI' }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'audioToMidi'>>,
+        }
+);
 
-    // ── AI Audio Generation (Stable Audio Open) ─────────────────────────
-
-    generateAudio: {
-        execute: async (a) => {
+export const executeGenerateAudioAiMidi = inject({ addTrack, addClip, logger, audioBufferCache })(
+    ({ addTrack, addClip, logger, audioBufferCache: bufferCache }) =>
+        async function executeGenerateAudioAiMidi(a: Extract<AppAction, 'generateAudio'>): Promise<void> {
             const { generateAudio: genAudio, isAudioGenerationAvailable } =
                 await import('#/modules/AudioAnalysis/useCases/audioAi');
 
@@ -251,14 +251,11 @@ export const aiMidiHandlers = {
                     `[Audio AI] Generated ${String(audioBuffer.duration.toFixed(1))}s of audio (${String(audioBuffer.sampleRate)}Hz)`
                 );
 
-                // Store the generated audio buffer in the cache
                 const bufferId = crypto.randomUUID();
-                audioBufferCache.set(bufferId, audioBuffer);
+                bufferCache.set(bufferId, audioBuffer);
 
-                // Calculate duration in beats (assume current project tempo, fallback 120 BPM)
                 const durationBeats = Math.max(1, Math.ceil(audioBuffer.duration * 2));
 
-                // Create a clip on the target track
                 const promptLabel = a.payload.prompt.slice(0, 40);
                 addClip({
                     trackId,
@@ -275,21 +272,19 @@ export const aiMidiHandlers = {
             } catch (error) {
                 logger.warn(`[Audio AI] Generation failed: ${String(error)}`);
             }
-        },
-        describe: (a) => ({ label: `AI: generate audio "${a.payload.prompt.slice(0, 30)}"` }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateAudio'>>,
+        }
+);
 
-    stemSeparate: {
-        execute: async (a) => {
+export const executeStemSeparate = inject({ addTrack, addClip, logger, audioBufferCache, trackStore })(
+    ({ addTrack, addClip, logger, audioBufferCache: bufferCache, trackStore: tracks }) =>
+        async function executeStemSeparate(a: Extract<AppAction, 'stemSeparate'>): Promise<void> {
             const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
 
             const stems = a.payload.stems ?? ['all'];
             logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);
 
             try {
-                // 1. Get audio buffer from clip
-                const state = trackStore.value;
+                const state = tracks.value;
                 const track = state?.tracks.find((t) => t.clips.some((c) => c.id === a.payload.clipId));
                 if (!track) {
                     logger.warn('[Audio AI] Clip not found');
@@ -300,19 +295,16 @@ export const aiMidiHandlers = {
                     logger.warn('[Audio AI] Clip has no audio buffer');
                     return;
                 }
-                const sourceBuffer = audioBufferCache.get(clip.audioBufferId);
+                const sourceBuffer = bufferCache.get(clip.audioBufferId);
                 if (!sourceBuffer) {
                     logger.warn('[Audio AI] Audio buffer not found in cache');
                     return;
                 }
 
-                // 2. Convert AudioBuffer to WAV ArrayBuffer for transport
                 const wavData = audioBufferToWav(sourceBuffer);
 
-                // 3. Send to Demucs server
                 const stemResults = await doSeparateStems(wavData, stems);
 
-                // 4. Create new tracks for each stem with clips
                 const durationBeats = clip.endBeat - clip.startBeat;
                 for (const [stemName, stemBuffer] of Object.entries(stemResults)) {
                     const stemTrack = addTrack({ name: `${clip.name} — ${stemName}`, kind: 'audio' });
@@ -320,7 +312,7 @@ export const aiMidiHandlers = {
                         continue;
                     }
                     const stemBufferId = crypto.randomUUID();
-                    audioBufferCache.set(stemBufferId, stemBuffer);
+                    bufferCache.set(stemBufferId, stemBuffer);
                     addClip({
                         trackId: stemTrack.id,
                         startBeat: clip.startBeat,
@@ -335,13 +327,70 @@ export const aiMidiHandlers = {
             } catch (error) {
                 logger.warn(`[Audio AI] Stem separation failed: ${String(error)}`);
             }
-        },
+        }
+);
+
+export const aiMidiHandlers = {
+    addNotes: {
+        execute: executeAddNotes,
+        describe: (a) => ({ label: `Add ${String(a.payload.notes.length)} MIDI notes` }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'addNotes'>>,
+
+    completeMidi: {
+        execute: executeCompleteMidi,
+        describe: () => ({ label: 'AI: complete MIDI phrase' }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'completeMidi'>>,
+
+    variationMidi: {
+        execute: executeVariationMidi,
+        describe: () => ({ label: 'AI: create MIDI variation' }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'variationMidi'>>,
+
+    generateBassline: {
+        execute: executeGenerateBassline,
+        describe: (a) => ({ label: `AI: generate ${a.payload.style ?? 'root-fifth'} bassline` }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'generateBassline'>>,
+
+    detectTempo: {
+        execute: executeDetectTempoAiMidi,
+        describe: () => ({ label: 'Detect tempo' }),
+        undoable: false,
+    } satisfies ActionHandler<Extract<AppAction, 'detectTempo'>>,
+
+    detectKey: {
+        execute: executeDetectKeyAiMidi,
+        describe: () => ({ label: 'Detect key' }),
+        undoable: false,
+    } satisfies ActionHandler<Extract<AppAction, 'detectKey'>>,
+
+    stripSilence: {
+        execute: executeStripSilenceAiMidi,
+        describe: () => ({ label: 'Strip silence' }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'stripSilence'>>,
+
+    audioToMidi: {
+        execute: executeAudioToMidiAiMidi,
+        describe: () => ({ label: 'Convert audio to MIDI' }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'audioToMidi'>>,
+
+    generateAudio: {
+        execute: executeGenerateAudioAiMidi,
+        describe: (a) => ({ label: `AI: generate audio "${a.payload.prompt.slice(0, 30)}"` }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'generateAudio'>>,
+
+    stemSeparate: {
+        execute: executeStemSeparate,
         describe: () => ({ label: 'AI: separate stems' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'stemSeparate'>>,
 };
-
-// ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
  * Encode an AudioBuffer as a 16-bit PCM WAV ArrayBuffer.
@@ -364,12 +413,10 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
     const arrayBuffer = new ArrayBuffer(headerLength + dataLength);
     const view = new DataView(arrayBuffer);
 
-    // RIFF header
     writeString(view, 0, 'RIFF');
     view.setUint32(4, 36 + dataLength, true);
     writeString(view, 8, 'WAVE');
 
-    // fmt chunk
     writeString(view, 12, 'fmt ');
     view.setUint32(16, 16, true);
     view.setUint16(20, format, true);
@@ -379,7 +426,6 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
     view.setUint16(32, numChannels * (bitsPerSample / 8), true);
     view.setUint16(34, bitsPerSample, true);
 
-    // data chunk
     writeString(view, 36, 'data');
     view.setUint32(40, dataLength, true);
 

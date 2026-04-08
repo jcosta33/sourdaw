@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
@@ -20,9 +21,15 @@ type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A 
  * `undoable: false` — these actions are only invoked by the undo machinery itself
  * and must not create their own undo entries.
  */
-export const restoreHandlers = {
-    restoreTrack: {
-        execute: (a) => {
+export const executeRestoreTrack = inject({
+    getTrackStoreState,
+    setTrackState,
+    automationStore,
+    midiStore,
+    takeLaneStore,
+})(
+    ({ getTrackStoreState, setTrackState, automationStore, midiStore, takeLaneStore }) =>
+        function executeRestoreTrack(a: Extract<AppAction, 'restoreTrack'>): void {
             const {
                 trackSnapshot,
                 automationLaneSnapshots,
@@ -62,13 +69,12 @@ export const restoreHandlers = {
                     takeLaneStore.set({ lanes: [...takes.lanes, ...(takeLaneSnapshots as never[])] });
                 }
             }
-        },
-        describe: () => ({ label: 'Restore track' }),
-        undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'restoreTrack'>>,
+        }
+);
 
-    restoreClip: {
-        execute: (a) => {
+export const executeRestoreClip = inject({ updateTrack, undoRippleDelete, midiStore })(
+    ({ updateTrack, undoRippleDelete, midiStore }) =>
+        function executeRestoreClip(a: Extract<AppAction, 'restoreClip'>): void {
             const {
                 clipId,
                 trackId,
@@ -99,7 +105,18 @@ export const restoreHandlers = {
                         : midi.pitchBendByClipId,
                 });
             }
-        },
+        }
+);
+
+export const restoreHandlers = {
+    restoreTrack: {
+        execute: executeRestoreTrack,
+        describe: () => ({ label: 'Restore track' }),
+        undoable: false,
+    } satisfies ActionHandler<Extract<AppAction, 'restoreTrack'>>,
+
+    restoreClip: {
+        execute: executeRestoreClip,
         describe: () => ({ label: 'Restore clip' }),
         undoable: false,
     } satisfies ActionHandler<Extract<AppAction, 'restoreClip'>>,

@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
@@ -6,15 +7,14 @@ import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStore
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
-export const aiOrganizationHandlers = {
-    autoOrganizeProject: {
-        execute: async (a) => {
+export const executeAutoOrganizeProject = inject({ getTrackStoreState, renameTrack, setTrackColor, groupTracks })(
+    ({ getTrackStoreState, renameTrack, setTrackColor, groupTracks }) =>
+        async function executeAutoOrganizeProject(a: Extract<AppAction, 'autoOrganizeProject'>): Promise<void> {
             const trackState = getTrackStoreState();
             if (!trackState) {
                 return;
             }
 
-            // Group requested folders to avoid creating duplicates
             const folderGroups = new Map<string, string[]>();
 
             for (const update of a.payload.tracks) {
@@ -33,11 +33,15 @@ export const aiOrganizationHandlers = {
                 }
             }
 
-            // Execute track grouping
             for (const [folderName, trackIds] of folderGroups.entries()) {
                 groupTracks(trackIds, folderName);
             }
-        },
+        }
+);
+
+export const aiOrganizationHandlers = {
+    autoOrganizeProject: {
+        execute: executeAutoOrganizeProject,
         describe: () => ({ label: 'Auto-Organize Project' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'autoOrganizeProject'>>,

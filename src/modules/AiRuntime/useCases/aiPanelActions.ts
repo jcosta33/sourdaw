@@ -4,6 +4,7 @@
  * use cases directly.
  */
 
+import { inject } from '#/infra/di/inject';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { undo } from '#/modules/Command/useCases/undoRedo';
 import { toggleChatPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
@@ -13,16 +14,25 @@ import { toggleChatPanel } from '#/modules/Workspace/useCases/togglePanel/panelT
 type AppAction = Parameters<typeof executeAppAction>[0];
 
 /** Execute an app action (delegates to Command module). */
-export function runAppAction(action: AppAction): Promise<void> | void {
-    return executeAppAction(action);
-}
+export const runAppAction = inject({ executeAppAction })(
+    ({ executeAppAction }) =>
+        function runAppAction(action: AppAction): Promise<void> | void {
+            return executeAppAction(action);
+        }
+);
 
 /** Undo the last action (delegates to Command module). */
-export function undoLastAction(): void {
-    undo();
-}
+export const undoLastAction = inject({ undo })(
+    ({ undo }) =>
+        function undoLastAction(): void {
+            undo();
+        }
+);
 
 /** Toggle the chat panel (delegates to Workspace module). */
-export function toggleChat(): void {
-    toggleChatPanel();
-}
+export const toggleChat = inject({ toggleChatPanel })(
+    ({ toggleChatPanel }) =>
+        function toggleChat(): void {
+            toggleChatPanel();
+        }
+);

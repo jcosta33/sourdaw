@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { applyDrumPatternToTrack } from '#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack';
 import { type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern/algorithm';
@@ -52,15 +53,23 @@ const VALID_CHORD_STYLES: ReadonlySet<string> = new Set([
 
 const VALID_VOICINGS: ReadonlySet<string> = new Set(['close', 'open', 'spread', 'power']);
 
-function resolveOrCreateMidiTrack(trackId: string | undefined, fallbackName: string): string | null {
+type MidiTrackDeps = {
+    getTrackStoreState: typeof getTrackStoreState;
+    addTrack: typeof addTrack;
+};
+
+function resolveOrCreateMidiTrack(
+    trackId: string | undefined,
+    fallbackName: string,
+    deps: MidiTrackDeps
+): string | null {
     if (trackId) {
         return trackId;
     }
 
-    const state = getTrackStoreState();
+    const state = deps.getTrackStoreState();
     const selectedId = state?.selectedTrackId;
 
-    // Use selected track if it's a MIDI track
     if (selectedId) {
         const selected = state?.tracks.find((t) => t.id === selectedId);
         if (selected && selected.kind === 'midi') {
@@ -68,29 +77,34 @@ function resolveOrCreateMidiTrack(trackId: string | undefined, fallbackName: str
         }
     }
 
-    // Fall back to first existing MIDI track
     const firstMidi = state?.tracks.find((t) => t.kind === 'midi');
     if (firstMidi) {
         return firstMidi.id;
     }
 
-    // Create a new one only if none exist
-    const newTrack = addTrack({ name: fallbackName, kind: 'midi' });
+    const newTrack = deps.addTrack({ name: fallbackName, kind: 'midi' });
     return newTrack?.id ?? null;
 }
 
-/** Get the current playhead position as start beat for new clips. */
-function getPlayheadBeat(): number {
-    const transport = getTransportState();
+function getPlayheadBeat(deps: { getTransportState: typeof getTransportState }): number {
+    const transport = deps.getTransportState();
     return transport?.playheadPosition ?? 0;
 }
 
-export const generationHandlers = {
-    generateDrumPattern: {
-        execute: (a) => {
+export const executeGenerateDrumPattern = inject({
+    getTrackStoreState,
+    addTrack,
+    getTransportState,
+    applyDrumPatternToTrack,
+})(
+    ({ getTrackStoreState, addTrack, getTransportState, applyDrumPatternToTrack }) =>
+        function executeGenerateDrumPattern(a: Extract<AppAction, 'generateDrumPattern'>): void {
             const style = VALID_DRUM_STYLES.has(a.payload.style) ? (a.payload.style as DrumPatternStyle) : 'rock';
 
-            const trackId = resolveOrCreateMidiTrack(a.payload.trackId, `Drums (${style})`);
+            const trackId = resolveOrCreateMidiTrack(a.payload.trackId, `Drums (${style})`, {
+                getTrackStoreState,
+                addTrack,
+            });
             if (!trackId) {
                 return;
             }
@@ -102,15 +116,19 @@ export const generationHandlers = {
                     bars: a.payload.bars,
                     density: a.payload.density,
                 },
-                getPlayheadBeat()
+                getPlayheadBeat({ getTransportState })
             );
-        },
-        describe: (a) => ({ label: `Generate ${a.payload.style} drum pattern` }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateDrumPattern'>>,
+        }
+);
 
-    generateMelody: {
-        execute: (a) => {
+export const executeGenerateMelody = inject({
+    getTrackStoreState,
+    addTrack,
+    getTransportState,
+    applyMelodyToTrack,
+})(
+    ({ getTrackStoreState, addTrack, getTransportState, applyMelodyToTrack }) =>
+        function executeGenerateMelody(a: Extract<AppAction, 'generateMelody'>): void {
             const style = VALID_MELODY_STYLES.has(a.payload.style)
                 ? (a.payload.style as 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient')
                 : 'simple';
@@ -119,7 +137,10 @@ export const generationHandlers = {
 
             const key = typeof a.payload.key === 'number' ? Math.max(0, Math.min(11, a.payload.key)) : 0;
 
-            const trackId = resolveOrCreateMidiTrack(a.payload.trackId, `Melody (${style})`);
+            const trackId = resolveOrCreateMidiTrack(a.payload.trackId, `Melody (${style})`, {
+                getTrackStoreState,
+                addTrack,
+            });
             if (!trackId) {
                 return;
             }
@@ -132,15 +153,19 @@ export const generationHandlers = {
                     scale,
                     bars: a.payload.bars,
                 },
-                getPlayheadBeat()
+                getPlayheadBeat({ getTransportState })
             );
-        },
-        describe: (a) => ({ label: `Generate ${a.payload.style} melody` }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateMelody'>>,
+        }
+);
 
-    generateChordProgression: {
-        execute: (a) => {
+export const executeGenerateChordProgression = inject({
+    getTrackStoreState,
+    addTrack,
+    getTransportState,
+    applyChordProgressionToTrack,
+})(
+    ({ getTrackStoreState, addTrack, getTransportState, applyChordProgressionToTrack }) =>
+        function executeGenerateChordProgression(a: Extract<AppAction, 'generateChordProgression'>): void {
             const style: ChordProgressionStyle = VALID_CHORD_STYLES.has(a.payload.style)
                 ? (a.payload.style as ChordProgressionStyle)
                 : 'pop';
@@ -153,7 +178,10 @@ export const generationHandlers = {
                 ? (a.payload.voicing as ChordVoicing)
                 : 'close';
 
-            const trackId = resolveOrCreateMidiTrack(a.payload.trackId, `Chords (${style})`);
+            const trackId = resolveOrCreateMidiTrack(a.payload.trackId, `Chords (${style})`, {
+                getTrackStoreState,
+                addTrack,
+            });
             if (!trackId) {
                 return;
             }
@@ -167,29 +195,56 @@ export const generationHandlers = {
                     bars: a.payload.bars,
                     voicing,
                 },
-                getPlayheadBeat()
+                getPlayheadBeat({ getTransportState })
             );
-        },
-        describe: (a) => ({ label: `Generate ${a.payload.style} chord progression` }),
-        undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateChordProgression'>>,
+        }
+);
 
-    extractGroove: {
-        execute: (a) => {
+export const executeExtractGroove = inject({ extractGroove })(
+    ({ extractGroove }) =>
+        function executeExtractGroove(a: Extract<AppAction, 'extractGroove'>): void {
             extractGroove(a.payload.clipId);
-        },
-        describe: () => ({ label: 'Extract groove template' }),
-        undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'extractGroove'>>,
+        }
+);
 
-    applyGroove: {
-        execute: (a) => {
+export const executeApplyGroove = inject({ getGrooveById, applyGroove })(
+    ({ getGrooveById, applyGroove }) =>
+        function executeApplyGroove(a: Extract<AppAction, 'applyGroove'>): void {
             const template = getGrooveById(a.payload.grooveId);
             if (!template) {
                 return;
             }
             applyGroove(a.payload.clipId, template, a.payload.amount);
-        },
+        }
+);
+
+export const generationHandlers = {
+    generateDrumPattern: {
+        execute: executeGenerateDrumPattern,
+        describe: (a) => ({ label: `Generate ${a.payload.style} drum pattern` }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'generateDrumPattern'>>,
+
+    generateMelody: {
+        execute: executeGenerateMelody,
+        describe: (a) => ({ label: `Generate ${a.payload.style} melody` }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'generateMelody'>>,
+
+    generateChordProgression: {
+        execute: executeGenerateChordProgression,
+        describe: (a) => ({ label: `Generate ${a.payload.style} chord progression` }),
+        undoable: true,
+    } satisfies ActionHandler<Extract<AppAction, 'generateChordProgression'>>,
+
+    extractGroove: {
+        execute: executeExtractGroove,
+        describe: () => ({ label: 'Extract groove template' }),
+        undoable: false,
+    } satisfies ActionHandler<Extract<AppAction, 'extractGroove'>>,
+
+    applyGroove: {
+        execute: executeApplyGroove,
         describe: (a) => ({ label: `Apply groove "${a.payload.grooveId}"` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'applyGroove'>>,

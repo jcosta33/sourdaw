@@ -5,107 +5,317 @@
  * The presentations layer cannot import use cases from other modules
  * directly. This module-local use case delegates to each cross-module
  * use case so presentation files only import from within Timeline.
+ *
+ * Each export uses `inject()` so tests can substitute collaborators via
+ * `injectDependencies` without `vi.mock` on whole modules.
  */
 
-// ── Track: clip editing ───────────────────────────────────────────
-import { splitClip as _splitClip } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
-import { splitClipWithUndo as _splitClipWithUndo } from '#/modules/Arrangement/useCases/clipEditing/splitClipWithUndo';
-import { normalizeClip as _normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
-import { reverseClip as _reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
-import { lockClip as _lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
-import { setClipColor as _setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
-import { renameClip as _renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
-import { muteClip as _muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
-import { trimClipStart as _trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
-import { trimClipEnd as _trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
+import { inject } from '#/infra/di/inject';
 
-export const splitClip = (...args: Parameters<typeof _splitClip>) => _splitClip(...args);
-export const splitClipWithUndo = (...args: Parameters<typeof _splitClipWithUndo>) => _splitClipWithUndo(...args);
-export const normalizeClip = (...args: Parameters<typeof _normalizeClip>) => _normalizeClip(...args);
-export const reverseClip = (...args: Parameters<typeof _reverseClip>) => _reverseClip(...args);
-export const lockClip = (...args: Parameters<typeof _lockClip>) => _lockClip(...args);
-export const setClipColor = (...args: Parameters<typeof _setClipColor>) => _setClipColor(...args);
-export const renameClip = (...args: Parameters<typeof _renameClip>) => _renameClip(...args);
-export const muteClip = (...args: Parameters<typeof _muteClip>) => _muteClip(...args);
-export const trimClipStart = (...args: Parameters<typeof _trimClipStart>) => _trimClipStart(...args);
-export const trimClipEnd = (...args: Parameters<typeof _trimClipEnd>) => _trimClipEnd(...args);
+// ── Track: clip editing ───────────────────────────────────────────
+import { splitClip as splitClipImpl } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
+import { splitClipWithUndo as splitClipWithUndoImpl } from '#/modules/Arrangement/useCases/clipEditing/splitClipWithUndo';
+import { normalizeClip as normalizeClipImpl } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
+import { reverseClip as reverseClipImpl } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
+import { lockClip as lockClipImpl } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
+import { setClipColor as setClipColorImpl } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
+import { renameClip as renameClipImpl } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
+import { muteClip as muteClipImpl } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
+import { trimClipStart as trimClipStartImpl } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
+import { trimClipEnd as trimClipEndImpl } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
 
 // ── Track: clip operations ────────────────────────────────────────
-import { addClip as _addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { removeClip as _removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { duplicateClip as _duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
-import { duplicateClipToNextBar as _duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
-import { moveClipPreview as _moveClipPreview } from '#/modules/Arrangement/useCases/clip/moveClipPreview';
-import { moveClip as _moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
-
-export const addClip = (...args: Parameters<typeof _addClip>) => _addClip(...args);
-export const removeClip = (...args: Parameters<typeof _removeClip>) => _removeClip(...args);
-export const duplicateClip = (...args: Parameters<typeof _duplicateClip>) => _duplicateClip(...args);
-export const duplicateClipToNextBar = (...args: Parameters<typeof _duplicateClipToNextBar>) => _duplicateClipToNextBar(...args);
-export const moveClipPreview = (...args: Parameters<typeof _moveClipPreview>) => _moveClipPreview(...args);
-export const moveClip = (...args: Parameters<typeof _moveClip>) => _moveClip(...args);
+import { addClip as addClipImpl } from '#/modules/Arrangement/useCases/clip/addClip';
+import { removeClip as removeClipImpl } from '#/modules/Arrangement/useCases/clip/removeClip';
+import { duplicateClip as duplicateClipImpl } from '#/modules/Arrangement/useCases/clip/duplicateClip';
+import { duplicateClipToNextBar as duplicateClipToNextBarImpl } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
+import { moveClipPreview as moveClipPreviewImpl } from '#/modules/Arrangement/useCases/clip/moveClipPreview';
+import { moveClip as moveClipImpl } from '#/modules/Arrangement/useCases/clip/moveClip';
 
 // ── Track: clipboard ──────────────────────────────────────────────
-import { copySelectedClip as _copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
-import { cutSelectedClip as _cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
-import { pasteClip as _pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
-
-export const copySelectedClip: typeof _copySelectedClip = (...args) => _copySelectedClip(...args);
-export const cutSelectedClip: typeof _cutSelectedClip = (...args) => _cutSelectedClip(...args);
-export const pasteClip = (...args: Parameters<typeof _pasteClip>) => _pasteClip(...args);
+import { copySelectedClip as copySelectedClipImpl } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
+import { cutSelectedClip as cutSelectedClipImpl } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
+import { pasteClip as pasteClipImpl } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
 
 // ── Track: general ────────────────────────────────────────────────
-import { selectTrack as _selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
-import { addTrack as _addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addDevice as _addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { exportMidiClip as _exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
-import { importMidiFile as _importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
-import { stripSilence as _stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
-
-export const selectTrack = (...args: Parameters<typeof _selectTrack>) => _selectTrack(...args);
-export const addTrack = (...args: Parameters<typeof _addTrack>) => _addTrack(...args);
-export const addDevice = (...args: Parameters<typeof _addDevice>) => _addDevice(...args);
-export const exportMidiClip = (...args: Parameters<typeof _exportMidiClip>) => _exportMidiClip(...args);
-export const importMidiFile: typeof _importMidiFile = (...args) => _importMidiFile(...args);
-export const stripSilence = (...args: Parameters<typeof _stripSilence>) => _stripSilence(...args);
+import { selectTrack as selectTrackImpl } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
+import { addTrack as addTrackImpl } from '#/modules/Arrangement/useCases/addTrack';
+import { addDevice as addDeviceImpl } from '#/modules/Arrangement/useCases/device/addDevice';
+import { exportMidiClip as exportMidiClipImpl } from '#/modules/MIDI/useCases/exportMidiFile';
+import { importMidiFile as importMidiFileImpl } from '#/modules/MIDI/useCases/importMidiFile';
+import { stripSilence as stripSilenceImpl } from '#/modules/Arrangement/useCases/stripSilence';
 
 // ── Track: automation ─────────────────────────────────────────────
-import { addAutomationPoint as _addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
-import { addAutomationLane as _addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { removeAutomationPoint as _removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { batchAddAutomationPoints as _batchAddAutomationPoints } from '#/modules/Automation/useCases/automation/batchAddAutomationPoints';
+import { addAutomationPoint as addAutomationPointImpl } from '#/modules/Automation/useCases/automation/addAutomationPoint';
+import { addAutomationLane as addAutomationLaneImpl } from '#/modules/Automation/useCases/automation/addAutomationLane';
+import { removeAutomationPoint as removeAutomationPointImpl } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
+import { batchAddAutomationPoints as batchAddAutomationPointsImpl } from '#/modules/Automation/useCases/automation/batchAddAutomationPoints';
 
-export const addAutomationPoint: typeof _addAutomationPoint = (...args) => _addAutomationPoint(...args);
-export const addAutomationLane: typeof _addAutomationLane = (...args) => _addAutomationLane(...args);
-export const removeAutomationPoint: typeof _removeAutomationPoint = (...args) => _removeAutomationPoint(...args);
-export const batchAddAutomationPoints: typeof _batchAddAutomationPoints = (...args) =>
-    _batchAddAutomationPoints(...args);
-
-// ── AiRuntime ─────────────────────────────────────────────────────
-import { detectTempo as _detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
-import { detectKey as _detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
-
-export const detectTempo: typeof _detectTempo = (...args) => _detectTempo(...args);
-export const detectKey: typeof _detectKey = (...args) => _detectKey(...args);
+// ── AudioAnalysis ─────────────────────────────────────────────────
+import { detectTempo as detectTempoImpl } from '#/modules/AudioAnalysis/useCases/tempoDetection';
+import { detectKey as detectKeyImpl } from '#/modules/AudioAnalysis/useCases/keyDetection';
 
 // ── AudioEngine ───────────────────────────────────────────────────
-import { decodeAudioFile as _decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
-
-export const decodeAudioFile: typeof _decodeAudioFile = (...args) => _decodeAudioFile(...args);
+import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine/useCases/decodeAudioFile';
 
 // ── Command ───────────────────────────────────────────────────────
-import { pushUndoEntry as _pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { executeAppAction as _executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-
-export const pushUndoEntry: typeof _pushUndoEntry = (...args) => _pushUndoEntry(...args);
-export const executeAppAction = (...args: Parameters<typeof _executeAppAction>) => _executeAppAction(...args);
+import { pushUndoEntry as pushUndoEntryImpl } from '#/modules/Command/useCases/pushUndoEntry';
+import { executeAppAction as executeAppActionImpl } from '#/modules/Command/useCases/executeAppAction';
 
 // ── Workspace ─────────────────────────────────────────────────────
-import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
-
-export const setWorkspaceMode = (...args: Parameters<typeof _setWorkspaceMode>) => _setWorkspaceMode(...args);
+import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace/useCases/setWorkspaceMode';
 
 // ── Transport ─────────────────────────────────────────────────────
-import { setLoopRegion as _setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
+import { setLoopRegion as setLoopRegionImpl } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
 
-export const setLoopRegion = (...args: Parameters<typeof _setLoopRegion>) => _setLoopRegion(...args);
+export const splitClip = inject({ splitClipImpl })(
+    ({ splitClipImpl }) =>
+        function splitClip(...args: Parameters<typeof splitClipImpl>) {
+            return splitClipImpl(...args);
+        }
+);
+
+export const splitClipWithUndo = inject({ splitClipWithUndoImpl })(
+    ({ splitClipWithUndoImpl }) =>
+        function splitClipWithUndo(...args: Parameters<typeof splitClipWithUndoImpl>) {
+            return splitClipWithUndoImpl(...args);
+        }
+);
+
+export const normalizeClip = inject({ normalizeClipImpl })(
+    ({ normalizeClipImpl }) =>
+        function normalizeClip(...args: Parameters<typeof normalizeClipImpl>) {
+            return normalizeClipImpl(...args);
+        }
+);
+
+export const reverseClip = inject({ reverseClipImpl })(
+    ({ reverseClipImpl }) =>
+        function reverseClip(...args: Parameters<typeof reverseClipImpl>) {
+            return reverseClipImpl(...args);
+        }
+);
+
+export const lockClip = inject({ lockClipImpl })(
+    ({ lockClipImpl }) =>
+        function lockClip(...args: Parameters<typeof lockClipImpl>) {
+            return lockClipImpl(...args);
+        }
+);
+
+export const setClipColor = inject({ setClipColorImpl })(
+    ({ setClipColorImpl }) =>
+        function setClipColor(...args: Parameters<typeof setClipColorImpl>) {
+            return setClipColorImpl(...args);
+        }
+);
+
+export const renameClip = inject({ renameClipImpl })(
+    ({ renameClipImpl }) =>
+        function renameClip(...args: Parameters<typeof renameClipImpl>) {
+            return renameClipImpl(...args);
+        }
+);
+
+export const muteClip = inject({ muteClipImpl })(
+    ({ muteClipImpl }) =>
+        function muteClip(...args: Parameters<typeof muteClipImpl>) {
+            return muteClipImpl(...args);
+        }
+);
+
+export const trimClipStart = inject({ trimClipStartImpl })(
+    ({ trimClipStartImpl }) =>
+        function trimClipStart(...args: Parameters<typeof trimClipStartImpl>) {
+            return trimClipStartImpl(...args);
+        }
+);
+
+export const trimClipEnd = inject({ trimClipEndImpl })(
+    ({ trimClipEndImpl }) =>
+        function trimClipEnd(...args: Parameters<typeof trimClipEndImpl>) {
+            return trimClipEndImpl(...args);
+        }
+);
+
+export const addClip = inject({ addClipImpl })(
+    ({ addClipImpl }) =>
+        function addClip(...args: Parameters<typeof addClipImpl>) {
+            return addClipImpl(...args);
+        }
+);
+
+export const removeClip = inject({ removeClipImpl })(
+    ({ removeClipImpl }) =>
+        function removeClip(...args: Parameters<typeof removeClipImpl>) {
+            return removeClipImpl(...args);
+        }
+);
+
+export const duplicateClip = inject({ duplicateClipImpl })(
+    ({ duplicateClipImpl }) =>
+        function duplicateClip(...args: Parameters<typeof duplicateClipImpl>) {
+            return duplicateClipImpl(...args);
+        }
+);
+
+export const duplicateClipToNextBar = inject({ duplicateClipToNextBarImpl })(
+    ({ duplicateClipToNextBarImpl }) =>
+        function duplicateClipToNextBar(...args: Parameters<typeof duplicateClipToNextBarImpl>) {
+            return duplicateClipToNextBarImpl(...args);
+        }
+);
+
+export const moveClipPreview = inject({ moveClipPreviewImpl })(
+    ({ moveClipPreviewImpl }) =>
+        function moveClipPreview(...args: Parameters<typeof moveClipPreviewImpl>) {
+            return moveClipPreviewImpl(...args);
+        }
+);
+
+export const moveClip = inject({ moveClipImpl })(
+    ({ moveClipImpl }) =>
+        function moveClip(...args: Parameters<typeof moveClipImpl>) {
+            return moveClipImpl(...args);
+        }
+);
+
+export const copySelectedClip = inject({ copySelectedClipImpl })(
+    ({ copySelectedClipImpl }) =>
+        function copySelectedClip(...args: Parameters<typeof copySelectedClipImpl>) {
+            return copySelectedClipImpl(...args);
+        }
+);
+
+export const cutSelectedClip = inject({ cutSelectedClipImpl })(
+    ({ cutSelectedClipImpl }) =>
+        function cutSelectedClip(...args: Parameters<typeof cutSelectedClipImpl>) {
+            return cutSelectedClipImpl(...args);
+        }
+);
+
+export const pasteClip = inject({ pasteClipImpl })(
+    ({ pasteClipImpl }) =>
+        function pasteClip(...args: Parameters<typeof pasteClipImpl>) {
+            return pasteClipImpl(...args);
+        }
+);
+
+export const selectTrack = inject({ selectTrackImpl })(
+    ({ selectTrackImpl }) =>
+        function selectTrack(...args: Parameters<typeof selectTrackImpl>) {
+            return selectTrackImpl(...args);
+        }
+);
+
+export const addTrack = inject({ addTrackImpl })(
+    ({ addTrackImpl }) =>
+        function addTrack(...args: Parameters<typeof addTrackImpl>) {
+            return addTrackImpl(...args);
+        }
+);
+
+export const addDevice = inject({ addDeviceImpl })(
+    ({ addDeviceImpl }) =>
+        function addDevice(...args: Parameters<typeof addDeviceImpl>) {
+            return addDeviceImpl(...args);
+        }
+);
+
+export const exportMidiClip = inject({ exportMidiClipImpl })(
+    ({ exportMidiClipImpl }) =>
+        function exportMidiClip(...args: Parameters<typeof exportMidiClipImpl>) {
+            return exportMidiClipImpl(...args);
+        }
+);
+
+export const importMidiFile = inject({ importMidiFileImpl })(
+    ({ importMidiFileImpl }) =>
+        function importMidiFile(...args: Parameters<typeof importMidiFileImpl>) {
+            return importMidiFileImpl(...args);
+        }
+);
+
+export const stripSilence = inject({ stripSilenceImpl })(
+    ({ stripSilenceImpl }) =>
+        function stripSilence(...args: Parameters<typeof stripSilenceImpl>) {
+            return stripSilenceImpl(...args);
+        }
+);
+
+export const addAutomationPoint = inject({ addAutomationPointImpl })(
+    ({ addAutomationPointImpl }) =>
+        function addAutomationPoint(...args: Parameters<typeof addAutomationPointImpl>) {
+            return addAutomationPointImpl(...args);
+        }
+);
+
+export const addAutomationLane = inject({ addAutomationLaneImpl })(
+    ({ addAutomationLaneImpl }) =>
+        function addAutomationLane(...args: Parameters<typeof addAutomationLaneImpl>) {
+            return addAutomationLaneImpl(...args);
+        }
+);
+
+export const removeAutomationPoint = inject({ removeAutomationPointImpl })(
+    ({ removeAutomationPointImpl }) =>
+        function removeAutomationPoint(...args: Parameters<typeof removeAutomationPointImpl>) {
+            return removeAutomationPointImpl(...args);
+        }
+);
+
+export const batchAddAutomationPoints = inject({ batchAddAutomationPointsImpl })(
+    ({ batchAddAutomationPointsImpl }) =>
+        function batchAddAutomationPoints(...args: Parameters<typeof batchAddAutomationPointsImpl>) {
+            return batchAddAutomationPointsImpl(...args);
+        }
+);
+
+export const detectTempo = inject({ detectTempoImpl })(
+    ({ detectTempoImpl }) =>
+        function detectTempo(...args: Parameters<typeof detectTempoImpl>) {
+            return detectTempoImpl(...args);
+        }
+);
+
+export const detectKey = inject({ detectKeyImpl })(
+    ({ detectKeyImpl }) =>
+        function detectKey(...args: Parameters<typeof detectKeyImpl>) {
+            return detectKeyImpl(...args);
+        }
+);
+
+export const decodeAudioFile = inject({ decodeAudioFileImpl })(
+    ({ decodeAudioFileImpl }) =>
+        function decodeAudioFile(...args: Parameters<typeof decodeAudioFileImpl>) {
+            return decodeAudioFileImpl(...args);
+        }
+);
+
+export const pushUndoEntry = inject({ pushUndoEntryImpl })(
+    ({ pushUndoEntryImpl }) =>
+        function pushUndoEntry(...args: Parameters<typeof pushUndoEntryImpl>) {
+            return pushUndoEntryImpl(...args);
+        }
+);
+
+export const executeAppAction = inject({ executeAppActionImpl })(
+    ({ executeAppActionImpl }) =>
+        function executeAppAction(...args: Parameters<typeof executeAppActionImpl>) {
+            return executeAppActionImpl(...args);
+        }
+);
+
+export const setWorkspaceMode = inject({ setWorkspaceModeImpl })(
+    ({ setWorkspaceModeImpl }) =>
+        function setWorkspaceMode(...args: Parameters<typeof setWorkspaceModeImpl>) {
+            return setWorkspaceModeImpl(...args);
+        }
+);
+
+export const setLoopRegion = inject({ setLoopRegionImpl })(
+    ({ setLoopRegionImpl }) =>
+        function setLoopRegion(...args: Parameters<typeof setLoopRegionImpl>) {
+            return setLoopRegionImpl(...args);
+        }
+);
