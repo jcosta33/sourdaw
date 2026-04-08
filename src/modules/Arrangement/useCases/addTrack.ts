@@ -6,8 +6,8 @@ import { eventBus } from '#/app/registerDependencies';
 
 type AddTrackInput = { id?: string; name: string; kind: TrackKind };
 
-export const addTrack = inject({ eventBus })(
-    ({ eventBus }) =>
+export const addTrack = inject({ eventBus, getTrackState, setTrackState })(
+    ({ eventBus, getTrackState, setTrackState }) =>
         function addTrack(input: AddTrackInput): Track | null {
             const state = getTrackState();
             if (!state) {

@@ -26,7 +26,7 @@ let cachedSession: OrtSession | null = null;
 /**
  * Resample audio using OfflineAudioContext.
  */
-async function resampleBuffer(buffer: AudioBuffer, targetRate: number): Promise<AudioBuffer> {
+export async function resampleBuffer(buffer: AudioBuffer, targetRate: number): Promise<AudioBuffer> {
     if (buffer.sampleRate === targetRate) {
         return buffer;
     }

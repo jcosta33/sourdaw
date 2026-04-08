@@ -62,6 +62,7 @@ export const ProofLimiterSection = ({
                             step={0.1}
                             defaultValue={-1}
                             size="md"
+                            tone="cyan"
                         />
                         <span className="text-[7px] text-muted-foreground">Ceiling</span>
                         <span className="text-[6px] text-muted-foreground font-mono">
@@ -81,6 +82,7 @@ export const ProofLimiterSection = ({
                             step={1}
                             defaultValue={100}
                             size="md"
+                            tone="cyan"
                         />
                         <span className="text-[7px] text-muted-foreground">Release</span>
                         <span className="text-[6px] text-muted-foreground font-mono">
@@ -100,6 +102,7 @@ export const ProofLimiterSection = ({
                             step={0.5}
                             defaultValue={5}
                             size="md"
+                            tone="cyan"
                         />
                         <span className="text-[7px] text-muted-foreground">Lookahead</span>
                         <span className="text-[6px] text-muted-foreground font-mono">

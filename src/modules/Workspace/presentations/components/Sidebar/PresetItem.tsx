@@ -32,7 +32,7 @@ export const PresetItem = ({
 
     return (
         <div
-            className="group flex flex-col gap-1 rounded-md px-2 py-2 border border-transparent transition-colors hover:bg-surface-raised hover:border-border/40 cursor-pointer"
+            className="group flex flex-col gap-1.5 rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 cursor-pointer mb-1.5 shadow-sm"
             onClick={onClick}
             onContextMenu={onContextMenu}
             title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
@@ -45,7 +45,7 @@ export const PresetItem = ({
                         onStop={preview.stop}
                     />
                 </div>
-                <span className="flex-1 text-[11px] font-medium text-foreground/90 truncate drop-shadow-sm">
+                <span className="flex-1 text-[12px] font-semibold text-foreground/90 truncate drop-shadow-sm">
                     {preset.name}
                 </span>
                 {!hideCategory ? (

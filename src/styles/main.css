@@ -538,7 +538,7 @@
 @utility crust-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 16% 0%, rgba(201, 160, 122, 0.14), transparent 24%),
+        radial-gradient(circle at 16% 0%, rgba(184, 136, 104, 0.14), transparent 24%),
         radial-gradient(circle at 88% 0%, rgba(184, 136, 104, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -551,7 +551,7 @@
 @utility crust-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(201, 160, 122, 0.06), transparent 20%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(184, 136, 104, 0.06), transparent 20%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -689,8 +689,8 @@
 @utility proof-chamber-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 14% 0%, rgba(127, 184, 196, 0.12), transparent 24%),
-        radial-gradient(circle at 84% 0%, rgba(170, 135, 200, 0.08), transparent 20%),
+        radial-gradient(circle at 14% 0%, rgba(196, 170, 95, 0.12), transparent 24%),
+        radial-gradient(circle at 84% 0%, rgba(201, 160, 122, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -702,7 +702,7 @@
 @utility proof-chamber-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(127, 184, 196, 0.05), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(196, 170, 95, 0.05), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -715,7 +715,7 @@
 @utility toaster-faceplate {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
-        radial-gradient(circle at 14% 0%, rgba(224, 136, 96, 0.14), transparent 24%),
+        radial-gradient(circle at 14% 0%, rgba(201, 160, 122, 0.14), transparent 24%),
         radial-gradient(circle at 82% 0%, rgba(96, 200, 224, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -728,7 +728,7 @@
 @utility toaster-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(224, 136, 96, 0.05), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(201, 160, 122, 0.05), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 18px;
@@ -741,7 +741,7 @@
 @utility toaster-step-label {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.01)),
-        linear-gradient(90deg, rgba(224, 136, 96, 0.05), transparent), var(--color-bg-panelInset);
+        linear-gradient(90deg, rgba(201, 160, 122, 0.05), transparent), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.04),
@@ -877,7 +877,7 @@
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
         radial-gradient(circle at 16% 0%, rgba(168, 155, 196, 0.14), transparent 24%),
-        radial-gradient(circle at 88% 0%, rgba(201, 160, 122, 0.08), transparent 20%),
+        radial-gradient(circle at 88% 0%, rgba(184, 136, 104, 0.08), transparent 20%),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:

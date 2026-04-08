@@ -67,6 +67,7 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                                 step={0.01}
                                 defaultValue={i === 0 ? 0 : 1}
                                 size="md"
+                                tone="cyan"
                             />
                             <span className="text-[7px] text-muted-foreground font-mono">
                                 {patch.imgBandWidth[i]! === 0
@@ -102,6 +103,7 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                         step={1}
                         defaultValue={80}
                         size="sm"
+                        tone="cyan"
                     />
                     <span className="text-[6px] text-muted-foreground font-mono">
                         {patch.imgMonoBassFreq.toFixed(0)} Hz

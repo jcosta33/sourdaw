@@ -2,6 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { getWorkspaceState } from '../../repositories/workspace';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { eventBus } from '#/app/registerDependencies';
+import { type ZoomToSelectionPayload } from '#/modules/Workspace/events/WorkspaceEvents';
 
 export const zoomToFit = inject({ eventBus })(
     ({ eventBus }) =>
@@ -10,8 +11,8 @@ export const zoomToFit = inject({ eventBus })(
         }
 );
 
-export const zoomToSelection = inject({ eventBus })(
-    ({ eventBus }) =>
+export const zoomToSelection = inject({ eventBus, getWorkspaceState })(
+    ({ eventBus, getWorkspaceState }) =>
         function zoomToSelection(): void {
             const ws = getWorkspaceState();
             const state = trackStore.value;
@@ -53,5 +54,26 @@ export const cycleAutomationVisibility = inject({ eventBus })(
     ({ eventBus }) =>
         function cycleAutomationVisibility(): void {
             eventBus.emit('panel.showAutomation', undefined);
+        }
+);
+
+export const onZoomToFit = inject({ eventBus })(
+    ({ eventBus }) =>
+        function onZoomToFit(handler: () => void): () => void {
+            return eventBus.on('zoom.toFit', handler);
+        }
+);
+
+export const onZoomToSelection = inject({ eventBus })(
+    ({ eventBus }) =>
+        function onZoomToSelection(handler: (payload: ZoomToSelectionPayload) => void): () => void {
+            return eventBus.on('zoom.toSelection', handler);
+        }
+);
+
+export const onScrollToPlayhead = inject({ eventBus })(
+    ({ eventBus }) =>
+        function onScrollToPlayhead(handler: () => void): () => void {
+            return eventBus.on('zoom.scrollToPlayhead', handler);
         }
 );

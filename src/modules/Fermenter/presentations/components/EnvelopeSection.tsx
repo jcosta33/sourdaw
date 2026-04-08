@@ -106,6 +106,7 @@ export const EnvelopeSection = ({
                                 step={key === 'Sustain' ? 0.01 : 0.005}
                                 defaultValue={key === 'Sustain' ? 0.7 : 0.2}
                                 size="lg"
+                                tone="sage"
                             />
                             <span className="text-[7px] text-muted-foreground">{label}</span>
                             <span className="text-[6px] text-muted-foreground/50 font-mono">{fmt}</span>

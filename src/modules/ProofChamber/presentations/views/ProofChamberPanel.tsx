@@ -96,7 +96,7 @@ function SectionCard({
             title={title}
             detail={detail ? <ChamberLed>{detail}</ChamberLed> : undefined}
             detailMode="badge"
-            titleClassName="text-[var(--color-accent-cyan)]/72"
+            titleClassName="text-[var(--color-accent-amber)]/72"
         >
             {children}
         </DawPluginSectionCard>
@@ -291,7 +291,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
                 <header className="proof-chamber-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
                     <div className="space-y-1">
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/72">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]/72">
                             Reverb stage
                         </div>
                         <div className="text-[14px] font-semibold text-white/92">

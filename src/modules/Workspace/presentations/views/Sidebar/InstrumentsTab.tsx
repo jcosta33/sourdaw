@@ -249,21 +249,47 @@ export const InstrumentsTab = ({
     // If searching, flatten all results into one list
     if (isCategoryRoot && query) {
         const allResults = [...soundPresets, ...filteredUser];
+        
+        const renderPremiumInstrument = (id: string) => {
+            switch (id) {
+                case 'fermenter': return <InstrumentCard icon={Music2} label="Fermenter" badge="Synth" description="Wavetable + VA oscillators · TPT filter · Mod matrix" onClick={handleAddFermenterTrack} theme={FERMENTER_THEME} />;
+                case 'toaster': return <InstrumentCard icon={Drum} label="Toaster" badge="Drums" description="808/909 synth engines · Step sequencer · 16 pads" onClick={handleAddToasterTrack} theme={TOASTER_THEME} />;
+                case 'levain': return <InstrumentCard icon={Music} label="Levain" badge="Orchestra" description="Sample playback · Legato · Expression · Multi-mic" onClick={handleAddLevainTrack} theme={LEVAIN_THEME} />;
+                case 'crumbs': return <InstrumentCard icon={Disc3} label="Crumbs" badge="Sample" description="Quick · Drum · Slice · Warp — drag & drop any audio" onClick={handleAddCrumbsTrack} theme={CRUMBS_THEME} />;
+                case 'grand-boule': return <InstrumentCard icon={Piano} label="Grand Boule" badge="Piano" description="Physical modeling · 88 keys · Modal synthesis · Pedals" onClick={handleAddGrandBouleTrack} theme={GRAND_BOULE_THEME} />;
+                default: return null;
+            }
+        };
+
+        const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule'].filter(id => {
+            const name = id.replace('-', ' ');
+            return name.toLowerCase().includes(query) || (id === 'crumbs' && 'sampler'.includes(query));
+        });
+
+        const totalCount = allResults.length + premiumMatches.length;
+
         return (
-            <div className="flex flex-col gap-1 animate-in fade-in duration-150">
-                <SearchSummary count={allResults.length} query={query} className="px-1 py-0.5" />
-                {allResults.length > 0 ? (
-                    allResults.map((preset) => (
-                        <PresetItem
-                            key={preset.id}
-                            preset={preset}
-                            selectedTrackId={selectedTrackId}
-                            favorites={favorites}
-                            onToggleFavorite={onToggleFavorite}
-                            onClick={() => handlePresetClick(preset)}
-                            preview={preview}
-                        />
-                    ))
+            <div className="flex flex-col gap-1.5 animate-in fade-in duration-100">
+                <SearchSummary count={totalCount} query={query} className="px-1 py-0.5" />
+                {totalCount > 0 ? (
+                    <>
+                        {premiumMatches.map(id => {
+                            const card = renderPremiumInstrument(id);
+                            if (card) return <div key={id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">{card}</div>;
+                            return null;
+                        })}
+                        {allResults.map((preset) => (
+                            <PresetItem
+                                key={preset.id}
+                                preset={preset}
+                                selectedTrackId={selectedTrackId}
+                                favorites={favorites}
+                                onToggleFavorite={onToggleFavorite}
+                                onClick={() => handlePresetClick(preset)}
+                                preview={preview}
+                            />
+                        ))}
+                    </>
                 ) : (
                     <EmptyState message="No instruments found." />
                 )}
@@ -366,104 +392,6 @@ export const InstrumentsTab = ({
                 />
             </div>
 
-            {/* ── Preset Pantry ── */}
-            <DawSectionDivider
-                label="Simple Loaves"
-                className="mb-1 mt-1 px-1"
-                labelClassName="text-muted-foreground/50"
-                lineClassName="bg-border/15"
-            />
-
-            {/* My Presets & Save */}
-            <div className="flex items-center gap-1 mb-2">
-                <DawPickerRow
-                    compact
-                    className="flex-1 px-2 py-1.5"
-                    startSlot={<Star className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />}
-                    heading="My Presets"
-                    description={`${filteredUser.length} saved`}
-                    endSlot={
-                        <div className="flex items-center gap-1">
-                            <span className="text-[9px] text-muted-foreground">{filteredUser.length}</span>
-                            <ChevronRight className="size-3 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                        </div>
-                    }
-                    onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
-                />
-
-                {selectedTrack ? (
-                    <>
-                        {!showSaveForm ? (
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                className="h-7 w-7 border border-transparent hover:border-border/30 text-muted-foreground hover:text-foreground"
-                                onClick={() => setShowSaveForm(true)}
-                                title={`Save "${selectedTrack.name}" as preset`}
-                            >
-                                <Save className="size-3" aria-hidden="true" />
-                            </Button>
-                        ) : null}
-                    </>
-                ) : null}
-            </div>
-
-            {/* Save form (inline) */}
-            {showSaveForm && selectedTrack ? (
-                <div className="space-y-1.5 px-1 py-1 rounded-md bg-surface-raised border border-border/40 animate-in fade-in duration-200 mb-2">
-                    <div className="flex items-center gap-1">
-                        <Input
-                            type="text"
-                            placeholder="Preset name…"
-                            value={saveFormName}
-                            onChange={(e) => setSaveFormName(e.target.value)}
-                            className="h-6 text-xs flex-1 bg-surface-base border-border/50"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    handleSavePreset();
-                                }
-                            }}
-                            autoFocus
-                        />
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="h-6 w-6"
-                            onClick={() => {
-                                setShowSaveForm(false);
-                                setSaveFormName('');
-                            }}
-                            aria-label="Cancel"
-                        >
-                            <X className="size-3" />
-                        </Button>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <DawCompactSelect
-                            value={saveFormCategory}
-                            onChange={(e) => setSaveFormCategory(e.target.value as SoundPresetCategory)}
-                            tone="inset"
-                            className="flex-1 px-1 text-[10px]"
-                        >
-                            {PRESET_CATEGORIES.map((cat) => (
-                                <option key={cat} value={cat}>
-                                    {cat}
-                                </option>
-                            ))}
-                        </DawCompactSelect>
-                        <Button
-                            variant="default"
-                            size="xs"
-                            className="text-[10px] h-6 px-2"
-                            onClick={handleSavePreset}
-                            disabled={!saveFormName.trim()}
-                        >
-                            Save
-                        </Button>
-                    </div>
-                </div>
-            ) : null}
-
             {/* Sound preset category groups */}
             {INSTRUMENT_GROUPS.map((group) => {
                 const groupCats = group.categories.filter((cat) => categoriesWithPresets.includes(cat));
@@ -473,7 +401,7 @@ export const InstrumentsTab = ({
 
                 return (
                     <div key={group.label} className="mb-2">
-                        <div className="flex flex-col gap-0">
+                        <div className="flex flex-col gap-1.5">
                             {groupCats.map((cat) => {
                                 const presetsInCat = soundPresets.filter((p) => p.category === cat);
                                 const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
@@ -504,6 +432,104 @@ export const InstrumentsTab = ({
                     </div>
                 );
             })}
+
+            {/* My Presets & Save */}
+            <DawSectionDivider
+                label="User Library"
+                className="mb-3 mt-4 px-1"
+                labelClassName="font-bold text-[var(--color-accent-orange)]"
+                lineClassName="bg-[var(--color-accent-orange)]/15"
+            />
+            <div className="flex items-center gap-1 mb-2">
+                <DawPickerRow
+                    compact
+                    className="flex-1 px-2 py-1.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 shadow-sm"
+                    startSlot={<Star className="size-4 text-[var(--color-accent-peach)]" aria-hidden="true" />}
+                    heading="My Presets"
+                    description={`${filteredUser.length} saved`}
+                    endSlot={
+                        <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                                {filteredUser.length}
+                            </span>
+                            <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                        </div>
+                    }
+                    onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
+                />
+
+                {selectedTrack ? (
+                    <>
+                        {!showSaveForm ? (
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                className="h-9 w-9 border border-border/20 bg-surface-raised hover:border-border/40 text-muted-foreground hover:text-foreground shadow-sm"
+                                onClick={() => setShowSaveForm(true)}
+                                title={`Save "${selectedTrack.name}" as preset`}
+                            >
+                                <Save className="size-4" aria-hidden="true" />
+                            </Button>
+                        ) : null}
+                    </>
+                ) : null}
+            </div>
+
+            {/* Save form (inline) */}
+            {showSaveForm && selectedTrack ? (
+                <div className="space-y-1.5 px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2">
+                    <div className="flex items-center gap-1">
+                        <Input
+                            type="text"
+                            placeholder="Preset name…"
+                            value={saveFormName}
+                            onChange={(e) => setSaveFormName(e.target.value)}
+                            className="h-7 text-xs flex-1 bg-surface-default border-border/50 focus-visible:border-border/80"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleSavePreset();
+                                }
+                            }}
+                            autoFocus
+                        />
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="h-7 w-7 hover:bg-surface-overlay"
+                            onClick={() => {
+                                setShowSaveForm(false);
+                                setSaveFormName('');
+                            }}
+                            aria-label="Cancel"
+                        >
+                            <X className="size-3.5" />
+                        </Button>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                        <DawCompactSelect
+                            value={saveFormCategory}
+                            onChange={(e) => setSaveFormCategory(e.target.value as SoundPresetCategory)}
+                            tone="inset"
+                            className="flex-1 px-1 text-[11px] h-7 bg-surface-default"
+                        >
+                            {PRESET_CATEGORIES.map((cat) => (
+                                <option key={cat} value={cat}>
+                                    {cat}
+                                </option>
+                            ))}
+                        </DawCompactSelect>
+                        <Button
+                            variant="default"
+                            size="xs"
+                            className="text-[11px] h-7 px-3 bg-[var(--color-accent-orange)] text-orange-950 hover:bg-[var(--color-accent-orange)]/90"
+                            onClick={handleSavePreset}
+                            disabled={!saveFormName.trim()}
+                        >
+                            Save
+                        </Button>
+                    </div>
+                </div>
+            ) : null}
 
             {/* Blank track shortcut */}
             <div className="border-t border-border/20 pt-2 mt-1">

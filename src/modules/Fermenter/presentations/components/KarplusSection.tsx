@@ -32,6 +32,7 @@ export const KarplusSection = ({
                     step={0.01}
                     defaultValue={0.5}
                     size="xl"
+                    tone="sage"
                 />
                 <span className="text-[8px] text-muted-foreground">Damping</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{(damping * 100).toFixed(0)}%</span>
@@ -45,6 +46,7 @@ export const KarplusSection = ({
                     step={0.01}
                     defaultValue={0.7}
                     size="xl"
+                    tone="sage"
                 />
                 <span className="text-[8px] text-muted-foreground">Brightness</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{(brightness * 100).toFixed(0)}%</span>

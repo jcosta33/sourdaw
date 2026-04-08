@@ -115,6 +115,7 @@ export const OscillatorSection = ({
                     defaultValue={0.8}
                     size="lg"
                     label="Level"
+                    tone="sage"
                 />
                 <RotaryKnob
                     paramId="oscCoarse"
@@ -126,6 +127,7 @@ export const OscillatorSection = ({
                     defaultValue={0}
                     size="lg"
                     label="Coarse"
+                    tone="sage"
                 />
                 <RotaryKnob
                     paramId="oscFine"
@@ -137,6 +139,7 @@ export const OscillatorSection = ({
                     defaultValue={0}
                     size="lg"
                     label="Fine"
+                    tone="sage"
                 />
                 {showPW ? (
                     <RotaryKnob
@@ -149,6 +152,7 @@ export const OscillatorSection = ({
                         defaultValue={0.5}
                         size="lg"
                         label="PW"
+                        tone="sage"
                     />
                 ) : null}
             </div>
@@ -165,6 +169,7 @@ export const OscillatorSection = ({
                     defaultValue={0}
                     size="md"
                     label="Noise"
+                    tone="sage"
                 />
                 <div className="flex gap-0.5 pb-2">
                     {NOISE_COLOR_NAMES.map((name, i) => (

@@ -1,51 +1,55 @@
+import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 import { snapSplitBeatToZeroCrossing } from '#/modules/Arrangement/services/snapSplitBeatToZeroCrossing';
 
-export function splitClip(clipId: string, splitBeat: number): void {
-    const state = getTrackState();
-    if (!state) {
-        return;
-    }
-
-    setTrackState({
-        ...state,
-        tracks: state.tracks.map((t) => {
-            const clip = t.clips.find((c) => c.id === clipId);
-            if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
-                return t;
+export const splitClip = inject({ getTrackState, setTrackState, getNextClipId })(
+    ({ getTrackState, setTrackState, getNextClipId }) =>
+        function splitClip(clipId: string, splitBeat: number): void {
+            const state = getTrackState();
+            if (!state) {
+                return;
             }
 
-            const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
+            setTrackState({
+                ...state,
+                tracks: state.tracks.map((t) => {
+                    const clip = t.clips.find((c) => c.id === clipId);
+                    if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
+                        return t;
+                    }
 
-            if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
-                return t;
-            }
+                    const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
 
-            const leftClip: Clip = {
-                ...clip,
-                endBeat: adjustedSplitBeat,
-                name: `${clip.name} (L)`,
-                fadeOutBeats: 0,
-            };
+                    if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
+                        return t;
+                    }
 
-            const rightClip: Clip = {
-                ...clip,
-                id: getNextClipId(),
-                name: `${clip.name} (R)`,
-                startBeat: adjustedSplitBeat,
-                endBeat: clip.endBeat,
-                fadeInBeats: 0,
-                fadeOutBeats: clip.fadeOutBeats,
-                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
-            };
+                    const leftClip: Clip = {
+                        ...clip,
+                        endBeat: adjustedSplitBeat,
+                        name: `${clip.name} (L)`,
+                        fadeOutBeats: 0,
+                    };
 
-            return {
-                ...t,
-                clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
-            };
-        }),
-    });
-}
+                    const rightClip: Clip = {
+                        ...clip,
+                        id: getNextClipId(),
+                        name: `${clip.name} (R)`,
+                        startBeat: adjustedSplitBeat,
+                        endBeat: clip.endBeat,
+                        fadeInBeats: 0,
+                        fadeOutBeats: clip.fadeOutBeats,
+                        audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
+                    };
+
+                    return {
+                        ...t,
+                        clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
+                    };
+                }),
+            });
+        }
+);

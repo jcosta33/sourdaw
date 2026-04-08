@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { updateTrack } from '../repositories/track/updateTrack';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
@@ -34,47 +35,67 @@ function syncToasterPadParam(trackId: string, paramName: string, value: number):
     }
 }
 
-function maybeRecordAutomation(trackId: string, parameterId: string, value: number): void {
+function maybeRecordAutomation(
+    trackByIdFn: typeof getTrackById,
+    trackId: string,
+    parameterId: string,
+    value: number
+): void {
     const transport = getTransportState();
     if (!transport?.isPlaying) return;
 
-    const track = getTrackById(trackId);
+    const track = trackByIdFn(trackId);
     if (!track || !RECORDING_MODES.has(track.automationMode)) return;
 
     recordAutomationValue(trackId, parameterId, value, transport.playheadPosition);
 }
 
-export function setTrackGain(trackId: string, gain: number): void {
-    const clamped = Math.max(0, Math.min(1, gain));
-    updateTrack(trackId, (t) => ({ ...t, gain: clamped }));
-    engineSetTrackGain(trackId, clamped);
-    syncToasterPadParam(trackId, 'volume', clamped);
-    maybeRecordAutomation(trackId, 'gain', clamped);
-}
+export const setTrackGain = inject({ getTrackById, updateTrack })(
+    ({ getTrackById, updateTrack }) =>
+        function setTrackGain(trackId: string, gain: number): void {
+            const clamped = Math.max(0, Math.min(1, gain));
+            updateTrack(trackId, (t) => ({ ...t, gain: clamped }));
+            engineSetTrackGain(trackId, clamped);
+            syncToasterPadParam(trackId, 'volume', clamped);
+            maybeRecordAutomation(getTrackById, trackId, 'gain', clamped);
+        }
+);
 
-export function setTrackPan(trackId: string, pan: number): void {
-    const clamped = Math.max(-50, Math.min(50, pan));
-    updateTrack(trackId, (t) => ({ ...t, pan: clamped }));
-    engineSetTrackPan(trackId, clamped);
-    syncToasterPadParam(trackId, 'pan', clamped / 50); // Scale to -1.0..1.0 for engine
-    maybeRecordAutomation(trackId, 'pan', clamped);
-}
+export const setTrackPan = inject({ getTrackById, updateTrack })(
+    ({ getTrackById, updateTrack }) =>
+        function setTrackPan(trackId: string, pan: number): void {
+            const clamped = Math.max(-50, Math.min(50, pan));
+            updateTrack(trackId, (t) => ({ ...t, pan: clamped }));
+            engineSetTrackPan(trackId, clamped);
+            syncToasterPadParam(trackId, 'pan', clamped / 50); // Scale to -1.0..1.0 for engine
+            maybeRecordAutomation(getTrackById, trackId, 'pan', clamped);
+        }
+);
 
-export function setTrackColor(trackId: string, color: string): void {
-    updateTrack(trackId, (t) => ({ ...t, color }));
-}
+export const setTrackColor = inject({ updateTrack })(
+    ({ updateTrack }) =>
+        function setTrackColor(trackId: string, color: string): void {
+            updateTrack(trackId, (t) => ({ ...t, color }));
+        }
+);
 
-export function setTrackNotes(trackId: string, notes: string): void {
-    updateTrack(trackId, (t) => ({ ...t, notes }));
-}
+export const setTrackNotes = inject({ updateTrack })(
+    ({ updateTrack }) =>
+        function setTrackNotes(trackId: string, notes: string): void {
+            updateTrack(trackId, (t) => ({ ...t, notes }));
+        }
+);
 
-export function setInputMonitoring(trackId: string, mode: InputMonitoring): void {
-    updateTrack(trackId, (t) => ({ ...t, inputMonitoring: mode }));
+export const setInputMonitoring = inject({ updateTrack })(
+    ({ updateTrack }) =>
+        function setInputMonitoring(trackId: string, mode: InputMonitoring): void {
+            updateTrack(trackId, (t) => ({ ...t, inputMonitoring: mode }));
 
-    // Actually start/stop the microphone stream on the audio engine.
-    if (mode === 'on') {
-        startInputMonitoring(trackId);
-    } else {
-        stopInputMonitoring();
-    }
-}
+            // Actually start/stop the microphone stream on the audio engine.
+            if (mode === 'on') {
+                startInputMonitoring(trackId);
+            } else {
+                stopInputMonitoring();
+            }
+        }
+);

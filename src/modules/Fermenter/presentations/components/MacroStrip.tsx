@@ -25,6 +25,7 @@ export const MacroStrip = ({ values, onChange, compact }: MacroStripProps): Reac
                 defaultValue={0.5}
                 size={compact ? 'sm' : 'md'}
                 label={label}
+                tone="sage"
             />
         ))}
     </div>

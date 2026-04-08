@@ -594,7 +594,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             <div className="flex min-w-0 flex-1 flex-col gap-2.5">
                 <header className="fermenter-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
                     <div className="space-y-1">
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70">
                             {LEVELS.find((level) => level.id === uiLevel)?.eyebrow ?? 'Voice'}
                         </div>
                         <div className="text-[13px] font-semibold text-foreground">Fermenter</div>

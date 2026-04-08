@@ -5,7 +5,7 @@ import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggle
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { useStore } from '#/infra/store/useStore';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { TransportSegmentedReadout } from '../../components/Transport/TransportSegmentedReadout';
 
 type PlayheadDisplayProps = {

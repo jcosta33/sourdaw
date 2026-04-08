@@ -12,3 +12,4 @@ export {
     setMpeEnabled,
     resetMidiState,
 } from '../repositories/webMidi/lifecycle';
+export { webMidiStore } from '../repositories/webMidi/store';

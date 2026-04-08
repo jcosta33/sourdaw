@@ -7,7 +7,7 @@ import { voiceStatusStore } from '#/modules/AiRuntime/stores/voiceStatusStore';
 import { useStore } from '#/infra/store/useStore';
 import { isSpeechRecognitionAvailable } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
 import { isTauri } from '#/helpers/tauriBridge';
-import { eventBus } from '#/app/registerDependencies';
+import { toggleVoiceInput } from '#/modules/AiRuntime/useCases/voiceToggle';
 
 const isVoiceAvailable = (): boolean => isSpeechRecognitionAvailable() || isTauri();
 
@@ -21,7 +21,7 @@ export const VoiceButton = (): ReactElement | null => {
     const active = voice.isListening || voice.transcribing;
 
     const handleClick = () => {
-        eventBus.emit('voice.toggle', { active: undefined });
+        toggleVoiceInput();
     };
 
     return (

@@ -2,7 +2,7 @@ import { type ReactElement, useState, useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
-import { eventBus } from '#/app/registerDependencies';
+import { onNotification } from '../../useCases/onNotification';
 export { notifyUser } from '#/helpers/Notification/notifyUser';
 
 export type AppNotification = {
@@ -16,7 +16,7 @@ export const NotificationToast = (): ReactElement | null => {
     const [items, setItems] = useState<AppNotification[]>([]);
 
     useEffect(() => {
-        return eventBus.on('ui.notify', ({ message, level }) => {
+        return onNotification(({ message, level }) => {
             const notification: AppNotification = {
                 id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 message,

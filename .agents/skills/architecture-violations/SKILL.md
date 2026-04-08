@@ -177,19 +177,52 @@ If you cannot complete the refactor in the current session, leave the annotation
 
 ---
 
-## 5. Contract Folders
+## 5. Module Boundary: `index.ts`
 
-Only the agreed public surfaces may be imported across modules.
+The **only** file other modules may import from is the module's root `index.ts`.
 
-In the legacy architecture, these contract folders are:
+```text
+src/modules/ModuleName/index.ts   ← sole cross-module import target
+```
+
+`index.ts` may only re-export from three internal folders:
 
 ```text
 useCases/              → business operations + exported DTOs
 events/                → typed event payload types (plain objects in AppEvents map)
-errors/                → AppError values (created via createAppError from #/infra/errors)
 stores/                → Store<T> instances (business-layer, cross-module)
-presentations/views/   → composable UI entry points
 ```
+
+Everything else — `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/`, `engine/`, `runtime/`, `worklets/`, `errors/` — is private to the module. If it needs to be consumed externally, it must be explicitly re-exported from `index.ts` (and only if it originates in `useCases/`, `events/`, or `stores/`).
+
+### Importing cross-module
+
+```ts
+// CORRECT — import from module root index.ts
+import { addTrack, trackStore } from '#/modules/Arrangement';
+
+// FORBIDDEN — direct folder access from outside the module
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+```
+
+### Writing `index.ts`
+
+```ts
+// src/modules/Arrangement/index.ts — curated, not a barrel file
+export { addTrack } from './useCases/addTrack';
+export { removeTrack } from './useCases/removeTrack';
+export { trackStore } from './stores/trackStore';
+export type { TrackAddedEvent } from './events/TrackAddedEvent';
+
+// FORBIDDEN inside index.ts
+export { Track } from './models/Track';           // models/ is private
+export { getTrackById } from './repositories/...'; // repositories/ is private
+```
+
+### `index.ts` is not a barrel file
+
+`index.ts` is a curated list of intentionally public things. Most files in a module should not appear in `index.ts`. If you find yourself re-exporting everything just to pass the validator, that is fake compliance. Only export what external consumers demonstrably need.
 
 ---
 
@@ -219,6 +252,17 @@ The signature `() => string` is the contract. The repository is free to change i
 
 ### 6.2 What is forbidden
 
+**Importing cross-module directly into a folder instead of through `index.ts`:**
+
+```ts
+// FORBIDDEN — bypasses the module boundary
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+
+// CORRECT — goes through the module's public surface
+import { addTrack, trackStore } from '#/modules/Arrangement';
+```
+
 **Re-exporting a repository function through a use-case file:**
 
 ```ts
@@ -229,13 +273,18 @@ export * from '../repositories/automergeRepository';
 
 This creates no boundary. The consumer imports the repository symbol verbatim, under a different path. If the repository signature changes, every consumer breaks. There is no translation, no contract, no ownership change across the file.
 
-This pattern is non-compliant even if:
+**Re-exporting non-contract internals from `index.ts`:**
 
-- `deps:validate` passes (the path is an allowed public folder)
-- the symbol name is the same as the one the consumer already uses
-- there is "nothing to add" to the body
+```ts
+// FORBIDDEN — index.ts may only re-export from useCases/, events/, stores/
+export { Track } from './models/Track';
+export { getTrackById } from './repositories/track/getTrackById';
+export { TrackNotFoundError } from './errors/TrackNotFoundError';
+```
 
-If there is nothing to add, define a proper typed function that calls the repo. The function _is_ the boundary.
+These patterns are non-compliant even if `deps:validate` passes — a fake public surface does not become a real one just because the path resolves.
+
+If there is nothing to add to a use-case body, define a proper typed function that calls the repo. The function _is_ the boundary.
 
 ### 6.3 When repo return types are not pure models
 

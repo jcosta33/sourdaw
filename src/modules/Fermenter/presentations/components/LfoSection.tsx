@@ -121,6 +121,7 @@ export const LfoSection = ({
                     step={0.1}
                     defaultValue={0}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Rate</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{rate.toFixed(1)}Hz</span>
@@ -135,6 +136,7 @@ export const LfoSection = ({
                 defaultValue={0}
                 size="lg"
                 label="→ Pitch"
+                tone="sage"
             />
             <RotaryKnob
                 paramId="lfoFilterAmount"
@@ -146,6 +148,7 @@ export const LfoSection = ({
                 defaultValue={0}
                 size="lg"
                 label="→ Filter"
+                tone="sage"
             />
         </div>
     </div>

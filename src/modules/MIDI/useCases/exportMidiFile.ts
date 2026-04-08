@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { midiStore } from '../stores/midiStore';
 import { downloadBlob } from '../repositories/downloadFile';
@@ -78,43 +79,46 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     return trackBytes;
 }
 
-export function exportMidiClip(clipId: string): void {
-    const tracks = getAllTracks();
-    const midi = midiStore.value;
-    if (tracks.length === 0 || !midi) {
-        return;
-    }
+export const exportMidiClip = inject({ downloadBlob })(
+    ({ downloadBlob }) =>
+        function exportMidiClip(clipId: string): void {
+            const tracks = getAllTracks();
+            const midi = midiStore.value;
+            if (tracks.length === 0 || !midi) {
+                return;
+            }
 
-    let clipName = 'export';
-    const clipStartBeat = 0;
-    for (const track of tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) {
-            clipName = clip.name || track.name;
-            break;
+            let clipName = 'export';
+            const clipStartBeat = 0;
+            for (const track of tracks) {
+                const clip = track.clips.find((c) => c.id === clipId);
+                if (clip) {
+                    clipName = clip.name || track.name;
+                    break;
+                }
+            }
+
+            const notes = midi.notesByClipId[clipId] ?? [];
+            const ccs = midi.ccByClipId[clipId] ?? [];
+
+            if (notes.length === 0 && ccs.length === 0) {
+                return;
+            }
+
+            const trackData = buildTrackEvents(notes, ccs, clipStartBeat, clipName);
+
+            const headerChunk = [
+                ...writeString('MThd'),
+                ...write32(6),
+                ...write16(0),
+                ...write16(1),
+                ...write16(TICKS_PER_BEAT),
+            ];
+
+            const trackChunk = [...writeString('MTrk'), ...write32(trackData.length), ...trackData];
+
+            const bytes = new Uint8Array([...headerChunk, ...trackChunk]);
+            const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+            downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
         }
-    }
-
-    const notes = midi.notesByClipId[clipId] ?? [];
-    const ccs = midi.ccByClipId[clipId] ?? [];
-
-    if (notes.length === 0 && ccs.length === 0) {
-        return;
-    }
-
-    const trackData = buildTrackEvents(notes, ccs, clipStartBeat, clipName);
-
-    const headerChunk = [
-        ...writeString('MThd'),
-        ...write32(6),
-        ...write16(0),
-        ...write16(1),
-        ...write16(TICKS_PER_BEAT),
-    ];
-
-    const trackChunk = [...writeString('MTrk'), ...write32(trackData.length), ...trackData];
-
-    const bytes = new Uint8Array([...headerChunk, ...trackChunk]);
-    const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
-    downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
-}
+);

@@ -65,6 +65,7 @@ export const FmSection = ({
                                 step={0.5}
                                 defaultValue={i + 1}
                                 size="sm"
+                                tone="sage"
                             />
                             <span className="text-[7px] text-muted-foreground/60 font-mono">{ratio.toFixed(1)}×</span>
                             <RotaryKnob
@@ -76,6 +77,7 @@ export const FmSection = ({
                                 step={0.01}
                                 defaultValue={1}
                                 size="sm"
+                                tone="sage"
                             />
                             <span className="text-[7px] text-muted-foreground/60 font-mono">
                                 {Math.round(level * 100)}%
@@ -97,6 +99,7 @@ export const FmSection = ({
                         step={0.01}
                         defaultValue={0}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[8px] text-muted-foreground">Feedback</span>
                 </div>
@@ -110,6 +113,7 @@ export const FmSection = ({
                         step={0.01}
                         defaultValue={1}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[8px] text-muted-foreground">Depth</span>
                 </div>

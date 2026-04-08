@@ -1,15 +1,19 @@
+import { inject } from '#/infra/di/inject';
 import { getTransportState } from '#/modules/Transport/repositories/transport';
 
-export function togglePlayback(): void {
-    const state = getTransportState();
-    if (!state) {
-        return;
-    }
+export const togglePlayback = inject({ getTransportState })(
+    ({ getTransportState }) =>
+        function togglePlayback(): void {
+            const state = getTransportState();
+            if (!state) {
+                return;
+            }
 
-    if (state.isPlaying) {
-        // Dynamic import to avoid circular dependency
-        import('./pausePlayback').then(({ pausePlayback }) => pausePlayback());
-    } else {
-        import('./startPlayback').then(({ startPlayback }) => startPlayback());
-    }
-}
+            if (state.isPlaying) {
+                // Dynamic import to avoid circular dependency
+                import('./pausePlayback').then(({ pausePlayback }) => pausePlayback());
+            } else {
+                import('./startPlayback').then(({ startPlayback }) => startPlayback());
+            }
+        }
+);

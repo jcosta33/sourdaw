@@ -1,38 +1,42 @@
+import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { mapAllTracks } from '#/modules/Arrangement/repositories/track/mapAllTracks';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 
-export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): void {
-    const state = getTrackState();
-    if (!state) {
-        return;
-    }
-
-    let clipA: Clip | undefined;
-    let clipB: Clip | undefined;
-    for (const track of state.tracks) {
-        clipA = clipA ?? track.clips.find((c) => c.id === clipAId);
-        clipB = clipB ?? track.clips.find((c) => c.id === clipBId);
-    }
-    if (!clipA || !clipB) {
-        return;
-    }
-
-    const halfLen = durationBeats / 2;
-    const newClipAEnd = clipA.endBeat + halfLen;
-    const newClipBStart = Math.max(0, clipB.startBeat - halfLen);
-    const actualOverlap = newClipAEnd - newClipBStart;
-
-    mapAllTracks((t) => ({
-        ...t,
-        clips: t.clips.map((c) => {
-            if (c.id === clipAId) {
-                return { ...c, endBeat: newClipAEnd, fadeOutBeats: actualOverlap };
+export const crossfadeClips = inject({ getTrackState, mapAllTracks })(
+    ({ getTrackState, mapAllTracks }) =>
+        function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): void {
+            const state = getTrackState();
+            if (!state) {
+                return;
             }
-            if (c.id === clipBId) {
-                return { ...c, startBeat: newClipBStart, fadeInBeats: actualOverlap };
+
+            let clipA: Clip | undefined;
+            let clipB: Clip | undefined;
+            for (const track of state.tracks) {
+                clipA = clipA ?? track.clips.find((c) => c.id === clipAId);
+                clipB = clipB ?? track.clips.find((c) => c.id === clipBId);
             }
-            return c;
-        }),
-    }));
-}
+            if (!clipA || !clipB) {
+                return;
+            }
+
+            const halfLen = durationBeats / 2;
+            const newClipAEnd = clipA.endBeat + halfLen;
+            const newClipBStart = Math.max(0, clipB.startBeat - halfLen);
+            const actualOverlap = newClipAEnd - newClipBStart;
+
+            mapAllTracks((t) => ({
+                ...t,
+                clips: t.clips.map((c) => {
+                    if (c.id === clipAId) {
+                        return { ...c, endBeat: newClipAEnd, fadeOutBeats: actualOverlap };
+                    }
+                    if (c.id === clipBId) {
+                        return { ...c, startBeat: newClipBStart, fadeInBeats: actualOverlap };
+                    }
+                    return c;
+                }),
+            }));
+        }
+);

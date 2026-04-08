@@ -35,6 +35,7 @@ export const UnisonSection = ({
                         step={1}
                         defaultValue={1}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[9px] text-muted-foreground">Voices</span>
                     <span className="text-[8px] text-muted-foreground/60 font-mono">{voices}</span>
@@ -49,6 +50,7 @@ export const UnisonSection = ({
                         step={1}
                         defaultValue={15}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[9px] text-muted-foreground">Detune</span>
                     <span className="text-[8px] text-muted-foreground/60 font-mono">{Math.round(detune)}ct</span>
@@ -63,6 +65,7 @@ export const UnisonSection = ({
                         step={0.01}
                         defaultValue={0.7}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[9px] text-muted-foreground">Spread</span>
                     <span className="text-[8px] text-muted-foreground/60 font-mono">{Math.round(spread * 100)}%</span>

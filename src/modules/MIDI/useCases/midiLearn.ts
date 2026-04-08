@@ -27,7 +27,7 @@ const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number }> 
     fermenterGlobalParam: { min: 0, max: 1 },
 };
 
-function scaleMidiValue(raw: number, min: number, max: number): number {
+export function scaleMidiValue(raw: number, min: number, max: number): number {
     return min + (raw / 127) * (max - min);
 }
 

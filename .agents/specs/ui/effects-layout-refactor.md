@@ -70,10 +70,11 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 
 ### Decision: Handling Premium Plugins
 
-**Chosen:** Map premium plugins to `EFFECT_GROUPS` categories based on their function (e.g., `proof` goes to EQ & Filter / Dynamics) so they are discoverable in standard lists, while retaining their unique `InstrumentCard` rendering if desired by the design system.
+**Chosen:** Map premium plugins to `EFFECT_GROUPS` categories based on their function (e.g., `proof` goes to EQ & Filter / Dynamics) so they are discoverable in standard lists. To maintain their visual prominence and carefully chosen colors, we will render them using their existing `InstrumentCard` (or a visually identical treatment) *inside* their respective semantic category folders, pinned to the top of the list, rather than isolated at the top of the entire tab.
 
 **Considered and rejected:**
-- *Removing premium cards entirely:* Rejected because premium plugins likely need visual prominence.
+- *Removing premium cards entirely:* Rejected because premium plugins need visual prominence.
+- *Standard rows for premium plugins:* Rejected because the existing colors and visual weight were carefully picked and must be preserved.
 
 ---
 

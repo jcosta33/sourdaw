@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { Cpu, Power } from 'lucide-react';
-import { eventBus } from '#/app/registerDependencies';
+import { onMidiNoteOn, onMidiNoteOff, onMidiPedalCc } from '../../useCases/midiEventSubscribers';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -124,7 +124,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     // notes played on a physical controller (e.g. Akai).
     useEffect(() => {
         const unsubs = [
-            eventBus.on('midi.noteOn', ({ midiNote, velocity }) => {
+            onMidiNoteOn(({ midiNote, velocity }) => {
                 setLastVelocity(Math.round(velocity * 127));
                 setActiveNotes((prev) => {
                     const next = new Map(prev);
@@ -132,7 +132,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     return next;
                 });
             }),
-            eventBus.on('midi.noteOff', ({ midiNote }) => {
+            onMidiNoteOff(({ midiNote }) => {
                 setActiveNotes((prev) => {
                     if (!prev.has(midiNote)) {
                         return prev;
@@ -142,7 +142,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     return next;
                 });
             }),
-            eventBus.on('midi.pedalCc', ({ cc, value }) => {
+            onMidiPedalCc(({ cc, value }) => {
                 const s = grandBouleStore.value;
                 if (s === null) return;
                 if (cc === 64) {

@@ -47,7 +47,7 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Frequency shaping, cuts & boosts',
         icon: BarChart3,
         color: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
-        categories: ['eq', 'filter'],
+        categories: ['eq', 'filter', 'proof'],
     },
     {
         id: 'dynamics',
@@ -55,7 +55,7 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Compression, limiting & gating',
         icon: Activity,
         color: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
-        categories: ['compressor', 'sidechain-compressor', 'limiter', 'gate', 'expander', 'de-esser'],
+        categories: ['compressor', 'sidechain-compressor', 'limiter', 'gate', 'expander', 'de-esser', 'gluten', 'crust'],
     },
     {
         id: 'time-space',
@@ -63,7 +63,7 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Reverb, delay & modulation FX',
         icon: Waves,
         color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
-        categories: ['reverb', 'delay', 'chorus', 'flanger', 'phaser', 'tremolo', 'echo'],
+        categories: ['reverb', 'delay', 'chorus', 'flanger', 'phaser', 'tremolo', 'echo', 'dutch-oven'],
     },
     {
         id: 'distortion',
@@ -71,7 +71,7 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Overdrive, saturation & waveshaping',
         icon: Zap,
         color: 'bg-[var(--color-state-danger)]/20 text-[var(--color-state-danger)]',
-        categories: ['distortion', 'bitcrusher', 'saturation', 'overdrive'],
+        categories: ['distortion', 'bitcrusher', 'saturation', 'overdrive', 'grinder', 'bacteria'],
     },
     {
         id: 'utility',
@@ -79,7 +79,7 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Gain, panning & routing tools',
         icon: Settings2,
         color: 'bg-gray-500/20 text-gray-400',
-        categories: ['gain', 'autopan', 'auto-pan', 'meter', 'dc', 'widener'],
+        categories: ['gain', 'autopan', 'auto-pan', 'meter', 'dc', 'widener', 'native-scoring'],
     },
 ];
 
@@ -137,15 +137,15 @@ export const NavCard = ({
     <DawChooserCard
         compact
         dimmed={dimmed}
-        className="group rounded-md px-2 py-2"
+        className="group relative overflow-hidden bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay hover:to-surface-raised px-2 py-3 mb-1.5 rounded-lg shadow-sm"
         title={label}
         description={description}
         badge={badge}
         startSlot={
             <div
-                className={`flex h-7 w-7 items-center justify-center rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}
+                className={`flex h-8 w-8 items-center justify-center rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}
             >
-                <Icon className="size-3.5" aria-hidden="true" />
+                <Icon className="size-4" aria-hidden="true" />
             </div>
         }
         endSlot={
@@ -170,7 +170,7 @@ export const EffectItem = ({
     selectedTrackId: string | null;
 }): ReactElement => (
     <div
-        className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-surface-raised border border-transparent hover:border-border/30 transition-all cursor-grab active:cursor-grabbing group"
+        className="group flex flex-col justify-center rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden mb-1.5 shadow-sm"
         draggable
         onDragStart={(e) => {
             e.dataTransfer.setData(
@@ -193,19 +193,26 @@ export const EffectItem = ({
             }
         }}
     >
-        <div className="flex-1 min-w-0">
-            <span className="text-[11px] font-medium text-foreground/90 leading-tight block truncate">
-                {plugin.name}
-            </span>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 ml-1">
-            <span className="text-[9px] text-muted-foreground/60 tabular-nums">{plugin.parameters.length}p</span>
-            {selectedTrackId ? (
-                <Plus
-                    className="size-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-hidden="true"
-                />
-            ) : null}
+        <div className="flex items-center justify-between">
+            <div className="flex flex-col min-w-0">
+                <span className="text-[12px] font-semibold text-foreground/90 leading-tight block truncate drop-shadow-sm">
+                    {plugin.name}
+                </span>
+                <span className="text-[10px] text-muted-foreground/70 mt-0.5 capitalize">
+                    {plugin.category || 'Effect'}
+                </span>
+            </div>
+            <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
+                {selectedTrackId ? (
+                    <Plus
+                        className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-hidden="true"
+                    />
+                ) : null}
+                <span className="text-[9px] font-medium text-muted-foreground/60 tabular-nums bg-surface-base/50 px-1 rounded">
+                    {plugin.parameters.length} params
+                </span>
+            </div>
         </div>
     </div>
 );

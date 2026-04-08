@@ -53,6 +53,7 @@ export const WarpSection = ({
                             step={0.01}
                             defaultValue={0}
                             size="lg"
+                            tone="sage"
                         />
                         <span className="text-[7px] text-muted-foreground">Amount</span>
                     </div>
@@ -87,6 +88,7 @@ export const WarpSection = ({
                             step={1}
                             defaultValue={0}
                             size="lg"
+                            tone="sage"
                         />
                         <span className="text-[7px] text-muted-foreground">Rate</span>
                         <span className="text-[6px] text-muted-foreground/50 font-mono">
@@ -106,6 +108,7 @@ export const WarpSection = ({
                             step={0.01}
                             defaultValue={0}
                             size="lg"
+                            tone="sage"
                         />
                         <span className="text-[7px] text-muted-foreground">Depth</span>
                     </div>

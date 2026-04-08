@@ -29,12 +29,12 @@ export const FERMENTER_THEME: InstrumentCardTheme = {
 };
 
 export const TOASTER_THEME: InstrumentCardTheme = {
-    button: 'border-[var(--color-accent-red)]/30 bg-gradient-to-br from-[var(--color-accent-red)]/10 via-surface-raised to-[var(--color-accent-red)]/5 hover:border-[var(--color-accent-red)]/50 hover:from-[var(--color-accent-red)]/15',
+    button: 'border-[var(--color-accent-peach)]/30 bg-gradient-to-br from-[var(--color-accent-peach)]/10 via-surface-raised to-[var(--color-accent-peach)]/5 hover:border-[var(--color-accent-peach)]/50 hover:from-[var(--color-accent-peach)]/15',
     iconBox:
-        'bg-[var(--color-accent-red)]/20 border-[var(--color-accent-red)]/20 shadow-[0_0_12px_rgba(196,144,144,0.15)]',
-    iconColor: 'text-[var(--color-accent-red)]',
-    badgeColor: 'bg-[var(--color-accent-red)]/20 text-[var(--color-accent-red)]',
-    glow: 'bg-[var(--color-accent-red)]/8',
+        'bg-[var(--color-accent-peach)]/20 border-[var(--color-accent-peach)]/20 shadow-[0_0_12px_rgba(201,160,122,0.15)]',
+    iconColor: 'text-[var(--color-accent-peach)]',
+    badgeColor: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
+    glow: 'bg-[var(--color-accent-peach)]/8',
 };
 
 export const LEVAIN_THEME: InstrumentCardTheme = {
@@ -134,11 +134,11 @@ export const GRAND_BOULE_THEME: InstrumentCardTheme = {
 };
 
 export const CRUST_THEME: InstrumentCardTheme = {
-    button: 'border-[var(--color-accent-peach)]/30 bg-gradient-to-br from-[var(--color-accent-peach)]/10 via-surface-raised to-[var(--color-accent-peach)]/5 hover:border-[var(--color-accent-peach)]/50 hover:from-[var(--color-accent-peach)]/15',
-    iconBox: 'bg-[var(--color-accent-peach)]/20 border-[var(--color-accent-peach)]/20 shadow-[0_0_12px_rgba(201,160,122,0.15)]',
-    iconColor: 'text-[var(--color-accent-peach)]',
-    badgeColor: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
-    glow: 'bg-[var(--color-accent-peach)]/8',
+    button: 'border-[var(--color-accent-copper)]/30 bg-gradient-to-br from-[var(--color-accent-copper)]/10 via-surface-raised to-[var(--color-accent-copper)]/5 hover:border-[var(--color-accent-copper)]/50 hover:from-[var(--color-accent-copper)]/15',
+    iconBox: 'bg-[var(--color-accent-copper)]/20 border-[var(--color-accent-copper)]/20 shadow-[0_0_12px_rgba(184,136,104,0.15)]',
+    iconColor: 'text-[var(--color-accent-copper)]',
+    badgeColor: 'bg-[var(--color-accent-copper)]/20 text-[var(--color-accent-copper)]',
+    glow: 'bg-[var(--color-accent-copper)]/8',
 };
 
 export const InstrumentCard = ({

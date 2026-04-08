@@ -85,7 +85,7 @@ Every `it` block starts with `should` or `should not`, followed by a concise des
 The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typescript-module.md §4.10`). Tests for injectable functions **must** use the companion test helpers rather than `vi.mock()`:
 
 - **`inject(deps)(factory)`** — `#/infra/di/inject` — curried DI wrapper. The first call takes a dependency map, the second takes a factory that receives resolved deps. The wrapped function carries `.dependencies`, `.factory`, and `.token` as metadata for tests.
-- **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — resets the `Container` and registers a **complete** set of mocks against the subject's dependencies. Throws if a dependency is missing from `mocks` or if `mocks` contains a key the subject doesn't have. Returns the subject for chaining.
+- **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — calls `Container.clear()` and registers a **complete** set of mocks against the subject's dependencies. Throws if a dependency is missing from `mocks` or if `mocks` contains a key the subject doesn't have. Returns the subject for chaining.
 - **`spy<T>(overrides?)`** — `#/infra/di/testing/spy` — creates a typed spy. Every accessed method is a `vi.fn()` typed to the original signature — no casts needed. Optional `overrides` pre-seed specific methods or properties (function overrides stay assertable as `vi.fn()`).
 
 ### When to use which
@@ -94,7 +94,7 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                              |
 | An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                       |
-| An internal module that is NOT wrapped with `inject()`          | `vi.mock()` as a fallback — but prefer refactoring the subject to use `inject()` |
+| An internal module that is NOT wrapped with `inject()`          | Refactor the subject to use `inject()` — do not add new `vi.mock()` shims for app collaborators |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
 
@@ -146,7 +146,7 @@ describe('addTrack', () => {
 
 Notes on this shape:
 
-- `injectDependencies` calls `Container.reset()` before registering mocks and throws if any dependency is missing a mock — tests cannot accidentally leak state or forget a dep.
+- `injectDependencies` calls `Container.clear()` before registering mocks and throws if any dependency is missing a mock — tests cannot accidentally leak state or forget a dep.
 - `spy<T>()` returns a typed object where every accessed method is a `vi.fn()` typed to the original signature. `trackRepo.setState.toHaveBeenCalledWith(...)` works with no cast.
 - Inline overrides (`{ getState: () => (...) }`) are wrapped in `vi.fn(impl)` automatically — they still record calls, they just have a default implementation.
 - Every test builds fresh spies. No `beforeEach` is needed for container or spy cleanup.
@@ -213,7 +213,7 @@ describe('addTrack', () => {
 Notes:
 
 - Event payloads are plain objects — assert on the string key and payload shape directly.
-- `injectDependencies` resets the Container and validates the mock map — no `beforeEach` reset is needed.
+- `injectDependencies` clears DI state and validates the mock map — no `beforeEach` container cleanup is needed for injectables.
 - If `addTrack` is not yet wrapped with `inject()`, that refactor comes _with_ the test. See `docs/architecture/03-typescript-module.md §4.10`.
 
 ### 6.2 Repositories — Tauri IPC
@@ -598,34 +598,20 @@ The spy gives you typed `eventBus.emit` and `eventBus.on` as `Mock`s directly. R
 
 Alternatively, use `createEventBus()` from `#/infra/events/createEventBus` for a real bus in integration-style tests, paired with `recordEvents()` from `#/infra/events/testing/recordEvents` to capture emitted events.
 
-For code that is not yet wrapped with `inject()` and reads the event bus at module scope, use `vi.mock('#/app/bootstrap', ...)` as a temporary bridge — but migrate the subject to `inject()` when the opportunity arises.
+Subjects that need collaborators must be wrapped with `inject()` so tests can supply mocks via `injectDependencies()` (§5).
 
-### 7.3 DI Container handling
+### 7.3 DI container and `injectDependencies()`
 
-For injectables wrapped with `inject()`, use `injectDependencies()` (§5). It:
+For injectables, use `injectDependencies()` (§5). It:
 
-1. Calls `Container.reset()`.
-2. Validates that every dependency on the subject has a matching mock.
-3. Registers each mock against the correct token.
+1. Calls `Container.clear()` to reset container-backed state used by the DI layer.
+2. Validates that every key in the subject’s `inject()` dependency map has a matching mock.
+3. Registers each mock in the internal `testOverrides` map keyed by the **original** dependency reference (the same object identity the injectable uses in its map).
 4. Returns the subject for chaining.
 
-Tests do not need manual container management and must not call `Container.reset()` themselves when using `injectDependencies`.
+Do not hand-manage `Container` in tests when testing `inject()`-wrapped functions — `injectDependencies()` is the single supported path.
 
-For the rare code that reads dependencies from `Container.getInstance()` directly (legacy / not yet migrated to `inject()`), reset and re-register manually before each test:
-
-```typescript
-import { Container } from '#/infra/di/Container';
-import { Logger } from '#/helpers/Logger/Logger';
-import { spy } from '#/infra/di/testing/spy';
-
-beforeEach(() => {
-    const container = Container.getInstance();
-    container.reset();
-    container.register(Logger, spy<Logger>());
-});
-```
-
-In dev/test, `Container.get()` throws when a token is missing (strict mode). Tests should fail loudly if a dependency isn't wired — don't rely on the production lazy-proxy fallback.
+If you must test code that resolves a **class token** via `Container.get()` (e.g. infra unit tests), use `Container.clear()` in `afterEach` and `Container.register()` / `Container.set()` as appropriate for that isolated test file — see `src/infra/di/Container.spec.ts`.
 
 ### 7.4 AudioContext mock
 

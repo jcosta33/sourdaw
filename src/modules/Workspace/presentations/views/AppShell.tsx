@@ -7,7 +7,22 @@ import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
-import { eventBus } from '#/app/registerDependencies';
+import {
+    onPanelShowFermenter,
+    onPanelShowToaster,
+    onPanelShowLevain,
+    onPanelShowDutchOven,
+    onPanelShowGluten,
+    onPanelShowBacteria,
+    onPanelShowGrinder,
+    onPanelShowProof,
+    onPanelShowYeast,
+    onPanelShowScoring,
+    onPanelShowCrust,
+    onPanelShowCrumbs,
+    onPanelShowGrandBoule,
+    onPanelShowAutomation,
+} from '../../useCases/panels/devicePanels';
 import { clamp } from '#/helpers/Math/clamp';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
@@ -175,7 +190,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for automation tab activation (from 'A' key)
     useEffect(() => {
-        return eventBus.on('panel.showAutomation', () => {
+        return onPanelShowAutomation(() => {
             setBottomTab('automation');
             if (!mixerOpen) {
                 openMixer();
@@ -202,7 +217,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for fermenter panel open (from inspector device click)
     useEffect(() => {
-        return eventBus.on('panel.showFermenter', (payload) => {
+        return onPanelShowFermenter((payload) => {
             closeAllDevicePanels();
             setFermenterDeviceId(payload.deviceId);
         });
@@ -210,7 +225,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for toaster panel open (from inspector device click)
     useEffect(() => {
-        return eventBus.on('panel.showToaster', (payload) => {
+        return onPanelShowToaster((payload) => {
             closeAllDevicePanels();
             setToasterDeviceId(payload.deviceId);
         });
@@ -218,7 +233,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for levain panel open (from inspector device click)
     useEffect(() => {
-        return eventBus.on('panel.showLevain', () => {
+        return onPanelShowLevain(() => {
             closeAllDevicePanels();
             setLevainOpen(true);
         });
@@ -226,7 +241,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Dutch Oven panel open (from inspector device click)
     useEffect(() => {
-        return eventBus.on('panel.showDutchOven', (payload) => {
+        return onPanelShowDutchOven((payload) => {
             closeAllDevicePanels();
             setProofChamberDeviceId(payload.deviceId);
         });
@@ -234,7 +249,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Gluten panel open (from inspector device click)
     useEffect(() => {
-        return eventBus.on('panel.showGluten', (payload) => {
+        return onPanelShowGluten((payload) => {
             closeAllDevicePanels();
             setGlutenDeviceId(payload.deviceId);
         });
@@ -242,7 +257,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Bacteria panel open
     useEffect(() => {
-        return eventBus.on('panel.showBacteria', (payload) => {
+        return onPanelShowBacteria((payload) => {
             closeAllDevicePanels();
             setBacteriaDeviceId(payload.deviceId);
         });
@@ -250,7 +265,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Grinder panel open
     useEffect(() => {
-        return eventBus.on('panel.showGrinder', (payload) => {
+        return onPanelShowGrinder((payload) => {
             closeAllDevicePanels();
             setGrinderDeviceId(payload.deviceId);
         });
@@ -258,7 +273,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Proof mastering suite panel open
     useEffect(() => {
-        return eventBus.on('panel.showProof', (payload) => {
+        return onPanelShowProof((payload) => {
             closeAllDevicePanels();
             setProofDeviceId(payload.deviceId);
         });
@@ -266,14 +281,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Yeast MIDI FX panel open
     useEffect(() => {
-        return eventBus.on('panel.showYeast', () => {
+        return onPanelShowYeast(() => {
             closeAllDevicePanels();
             setYeastOpen(true);
         });
     }, []);
 
     useEffect(() => {
-        return eventBus.on('panel.showScoring', (payload) => {
+        return onPanelShowScoring((payload) => {
             closeAllDevicePanels();
             setScoringDeviceId(payload.deviceId);
         });
@@ -281,7 +296,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Crust limiter panel open
     useEffect(() => {
-        return eventBus.on('panel.showCrust', (payload) => {
+        return onPanelShowCrust((payload) => {
             closeAllDevicePanels();
             setCrustDeviceId(payload.deviceId);
         });
@@ -289,7 +304,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Crumbs panel open
     useEffect(() => {
-        return eventBus.on('panel.showCrumbs', (payload) => {
+        return onPanelShowCrumbs((payload) => {
             closeAllDevicePanels();
             setSamplerDeviceId(payload.deviceId);
         });
@@ -297,7 +312,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Grand Boule panel open (from sidebar instrument click)
     useEffect(() => {
-        return eventBus.on('panel.showGrandBoule', (payload) => {
+        return onPanelShowGrandBoule((payload) => {
             closeAllDevicePanels();
             setGrandBouleDeviceId(payload.deviceId);
         });

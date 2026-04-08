@@ -10,7 +10,7 @@ const defaultMidiLearnState: MidiLearnState = {
     learningTarget: null,
 };
 
-type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage';
+type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage' | 'copper';
 
 const TONE_COLORS: Record<Tone, string> = {
     neutral: 'rgba(255, 255, 255, 0.5)',
@@ -24,6 +24,7 @@ const TONE_COLORS: Record<Tone, string> = {
     rose: 'rgba(192, 96, 112, 0.62)',
     indigo: 'rgba(74, 96, 160, 0.62)',
     sage: 'rgba(138, 168, 138, 0.62)',
+    copper: 'rgba(184, 136, 104, 0.62)',
 };
 
 type RotaryKnobProps = {

@@ -72,6 +72,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                             step={1}
                             defaultValue={freq}
                             size="sm"
+                            tone="cyan"
                         />
                         <span className="text-[6px] text-muted-foreground font-mono">
                             {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : `${freq.toFixed(0)}`}
@@ -111,6 +112,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                                 step={0.5}
                                 defaultValue={-20}
                                 size="sm"
+                                tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Thr</span>
 
@@ -122,6 +124,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                                 step={0.5}
                                 defaultValue={2}
                                 size="sm"
+                                tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Ratio</span>
 
@@ -133,6 +136,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                                 step={1}
                                 defaultValue={10}
                                 size="sm"
+                                tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Atk</span>
 
@@ -144,6 +148,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                                 step={1}
                                 defaultValue={100}
                                 size="sm"
+                                tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Rel</span>
                         </div>

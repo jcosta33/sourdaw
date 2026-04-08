@@ -4,34 +4,27 @@
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
-// Aligned to the DDD module architecture:
+// Module boundary model:
 //
-// Public cross-module contract folders:
-//   - errors/
-//   - events/
-//   - useCases/
-//   - stores/
-//   - presentations/views/
+//   Each module MUST expose a root index.ts as its sole public surface.
+//   All cross-module imports must target <module>/index.ts — direct imports
+//   into useCases/, events/, stores/, or any other folder are forbidden.
 //
-// Private module internals:
-//   - models/
-//   - validators/
-//   - services/
-//   - repositories/
-//   - transformers/
-//   - presentations/hooks/
-//   - presentations/stores/
-//   - presentations/context/
-//   - presentations/components/
-//   - presentations/renderers/
-//   - engine/
-//   - runtime/
-//   - worklets/
+//   index.ts may only re-export from:
+//     - useCases/
+//     - events/
+//     - stores/
+//
+//   All other module folders are private — including models/, repositories/,
+//   services/, validators/, transformers/, presentations/, engine/, worklets/.
+//
+// Intra-module dependency direction:
+//   presentations/ → useCases → repositories / stores / validators / services
 //
 // Notes:
 // - This config enforces the TARGET architecture.
-// - Temporary migration shims can be allowed via narrow exceptions during migration,
-//   but those should be added consciously and removed later.
+// - Temporary migration shims can be allowed via narrow exceptions during
+//   migration, but those should be added consciously and removed later.
 // ----------------------------------------------------------------------------
 
 // ------------------------------
@@ -45,16 +38,9 @@ const STORY_FILE_RE = '[.]stories[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 // Group 2 = module name
 const MODULE_ROOT = '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+)/';
 
-// Public cross-module surface
-const MODULE_CONTRACT_FOLDERS = '(errors/|events/|useCases/|stores/|presentations/views/)';
-
 // Private presentation subfolders
 const PRIVATE_PRESENTATION_FOLDERS =
     '(presentations/hooks/|presentations/stores/|presentations/context/|presentations/components/|presentations/renderers/)';
-
-// Private domain/internal folders
-const PRIVATE_INTERNAL_FOLDERS =
-    '(models/|validators/|services/|repositories/|transformers/|engine/|runtime/|worklets/)';
 
 const MODULE_PRESENTATION_PATH_NOT = [
     '^src/modules/[^/]+/presentations/',
@@ -71,19 +57,21 @@ module.exports = {
         // Cross-module boundaries
         // --------------------------------------------------------------------
         {
-            name: 'no-cross-module-internals',
+            name: 'cross-module-index-only',
             severity: 'error',
             comment:
-                'Across DDD modules, only contract folders are public: errors/, events/, useCases/, stores/, and presentations/views/. ' +
-                'All other module folders are private.',
+                'All cross-module imports must target the destination module\'s root index.ts. ' +
+                'Direct imports into useCases/, events/, stores/, models/, repositories/, presentations/, ' +
+                'or any other internal folder are forbidden from outside the module. ' +
+                'Only <module>/index.ts is the public surface.',
             from: {
                 path: MODULE_ROOT,
             },
             to: {
                 path: '^src/modules/',
                 pathNot: [
-                    '^$1$2', // same module may import its own internals
-                    `^${MODULE_ROOT.slice(1)}${MODULE_CONTRACT_FOLDERS}`, // public cross-module contract
+                    '^$1$2', // same module may import its own internals freely
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/index(?:\\.ts)?$', // any module root index.ts
                     '^src/shared/',
                     '^src/helpers/',
                 ],
@@ -91,28 +79,19 @@ module.exports = {
         },
 
         {
-            name: 'no-cross-module-private-presentation',
+            name: 'module-index-contract-only',
             severity: 'error',
             comment:
-                'Only presentations/views/ is public across modules. hooks/, stores/, context/, components/, and renderers/ are private.',
+                'Module index.ts is the public contract surface. ' +
+                'It may only re-export from useCases/, events/, and stores/ within the same module. ' +
+                'Importing from models/, repositories/, services/, validators/, transformers/, ' +
+                'presentations/, engine/, runtime/, or worklets/ is forbidden.',
             from: {
-                path: MODULE_ROOT,
+                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
             },
             to: {
-                path: '^$1(?!$2)[^/]+/' + PRIVATE_PRESENTATION_FOLDERS,
-            },
-        },
-
-        {
-            name: 'no-cross-module-private-internals',
-            severity: 'error',
-            comment:
-                'models/, validators/, services/, repositories/, transformers/, engine/, runtime/, and worklets/ are module-private.',
-            from: {
-                path: MODULE_ROOT,
-            },
-            to: {
-                path: '^$1(?!$2)[^/]+/' + PRIVATE_INTERNAL_FOLDERS,
+                path: '^$1/',
+                pathNot: ['^$1/(useCases|events|stores)/'],
             },
         },
 
@@ -224,42 +203,6 @@ module.exports = {
         },
 
         {
-            name: 'validators-are-private',
-            severity: 'error',
-            comment: 'validators/ are module-private invariant helpers and must not be imported across modules.',
-            from: {
-                path: MODULE_ROOT,
-            },
-            to: {
-                path: '^$1(?!$2)[^/]+/validators/.+' + SOURCE_FILE_RE,
-            },
-        },
-
-        {
-            name: 'services-are-private',
-            severity: 'error',
-            comment: 'services/ are module-private domain helpers and must not be imported across modules.',
-            from: {
-                path: MODULE_ROOT,
-            },
-            to: {
-                path: '^$1(?!$2)[^/]+/services/.+' + SOURCE_FILE_RE,
-            },
-        },
-
-        {
-            name: 'transformers-are-private',
-            severity: 'error',
-            comment: 'transformers/ are module-private mapping functions and must not be imported across modules.',
-            from: {
-                path: MODULE_ROOT,
-            },
-            to: {
-                path: '^$1(?!$2)[^/]+/transformers/.+' + SOURCE_FILE_RE,
-            },
-        },
-
-        {
             name: 'transformers-must-stay-pure',
             severity: 'error',
             comment:
@@ -275,31 +218,6 @@ module.exports = {
         // --------------------------------------------------------------------
         // Engine / runtime / worklets
         // --------------------------------------------------------------------
-        {
-            name: 'engine-private-cross-module',
-            severity: 'error',
-            comment:
-                'engine/ is private to the owning module. Access engine behavior through public use cases or stores.',
-            from: {
-                path: MODULE_ROOT,
-            },
-            to: {
-                path: '^$1(?!$2)[^/]+/engine/.+' + SOURCE_FILE_RE,
-            },
-        },
-
-        {
-            name: 'runtime-private-cross-module',
-            severity: 'error',
-            comment: 'runtime/ is private to the owning module and must not be imported across modules.',
-            from: {
-                path: MODULE_ROOT,
-            },
-            to: {
-                path: '^$1(?!$2)[^/]+/runtime/.+' + SOURCE_FILE_RE,
-            },
-        },
-
         {
             name: 'worklets-no-module-runtime-imports',
             severity: 'error',
@@ -375,13 +293,17 @@ module.exports = {
         {
             name: 'application-to-modules-public-surface-only',
             severity: 'error',
-            comment: 'application/ may only depend on module contract folders, src/shared/, and src/helpers/.',
+            comment: 'application/ may only depend on module root index.ts files, src/shared/, and src/helpers/.',
             from: {
                 path: '^application/',
             },
             to: {
                 path: '^src/modules/',
-                pathNot: ['^src/shared/', '^src/helpers/', `^${MODULE_ROOT.slice(1)}${MODULE_CONTRACT_FOLDERS}`],
+                pathNot: [
+                    '^src/shared/',
+                    '^src/helpers/',
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/index(?:\\.ts)?$',
+                ],
             },
         },
 

@@ -49,7 +49,7 @@ const SectionCard = ({
         className="sampler-window"
         title={title}
         detail={detail}
-        titleClassName="text-[var(--color-accent-peach)]/70"
+        titleClassName="text-[var(--color-accent-lavender)]/70"
     >
         {children}
     </DawPluginSectionCard>
@@ -121,8 +121,8 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
             }}
         >
             {isDragOver ? (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[26px] border-2 border-dashed border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/5">
-                    <span className="text-sm font-medium text-[var(--color-accent-peach)]">Drop sample here</span>
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[26px] border-2 border-dashed border-[var(--color-accent-lavender)] bg-[var(--color-accent-lavender)]/5">
+                    <span className="text-sm font-medium text-[var(--color-accent-lavender)]">Drop sample here</span>
                 </div>
             ) : null}
             <div className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
@@ -230,11 +230,11 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
 
                     <SectionCard title="Status">
                         <div className="flex items-center gap-3">
-                            <DawPluginLed tone="peach" className="flex items-center gap-1">
+                            <DawPluginLed tone="lavender" className="flex items-center gap-1">
                                 <Cpu className="size-3" />
                                 {activeVoices} voices
                             </DawPluginLed>
-                            <DawPluginLed tone="peach" className="flex items-center gap-1">
+                            <DawPluginLed tone="lavender" className="flex items-center gap-1">
                                 <Volume2 className="size-3" />
                                 {isLoading ? 'Loading...' : 'Ready'}
                             </DawPluginLed>

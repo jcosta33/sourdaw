@@ -46,9 +46,9 @@ export const ProofChamber = ({ instanceId }: { instanceId: string }): ReactEleme
                 <DawPluginSectionCard
                     className="proof-chamber-window"
                     title="Dutch oven"
-                    detail={<DawPluginLed tone="cyan">{engineState.algorithm}</DawPluginLed>}
+                    detail={<DawPluginLed tone="amber">{engineState.algorithm}</DawPluginLed>}
                     detailMode="badge"
-                    titleClassName="text-[var(--color-accent-cyan)]/72"
+                    titleClassName="text-[var(--color-accent-amber)]/72"
                 >
                     <div>
                         <div className="text-[18px] font-semibold text-white/92">Legacy chamber</div>

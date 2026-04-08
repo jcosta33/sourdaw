@@ -153,6 +153,53 @@ runtime/
 
 These are private unless explicitly promoted to the contract surface.
 
+## 3.3 `index.ts` — the module boundary
+
+Every module must expose a root `index.ts` as its **sole cross-module import target**.
+
+```text
+ModuleName/
+  index.ts          ← only file other modules may import from
+  useCases/
+  events/
+  stores/
+  ...               ← all private
+```
+
+### Rules
+
+1. **All cross-module imports must target `<module>/index.ts`** — direct imports to `useCases/`, `events/`, `stores/`, or any other folder from outside the module are forbidden.
+2. **`index.ts` may only re-export from `useCases/`, `events/`, and `stores/`** — it must not import from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/`, `engine/`, `runtime/`, or `worklets/`.
+3. **`index.ts` is a curated surface, not a barrel file** — only export what external consumers genuinely need. Omitting things is correct.
+
+### Why `index.ts` instead of direct folder access
+
+Previously, cross-module imports targeted specific folders directly (`useCases/`, `stores/`, etc.). That approach had two problems:
+
+- Any file in any public folder became implicitly part of the contract, making the surface unbounded.
+- Consumers bypassed the module's curation — they could reach internal utilities that happened to live in a contract folder.
+
+With `index.ts`, the module author explicitly controls what is public. Consumers import from one stable location regardless of how the module reorganizes its internals.
+
+### Example
+
+```ts
+// src/modules/Arrangement/index.ts
+export { addTrack } from './useCases/addTrack';
+export { removeTrack } from './useCases/removeTrack';
+export { trackStore } from './stores/trackStore';
+export type { TrackAddedEvent } from './events/TrackAddedEvent';
+```
+
+```ts
+// Another module — correct
+import { addTrack, trackStore } from '#/modules/Arrangement';
+
+// Another module — FORBIDDEN (direct folder access)
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+```
+
 ---
 
 ## 4. Core architectural concepts
@@ -531,13 +578,9 @@ Use cases and other injectable functions declare their dependencies explicitly u
 
 ### Why `inject()`
 
-Use cases need to call repositories, event buses, loggers, and other services. Three options exist for getting those references:
+Use cases and service repositories get collaborators only through **`inject(deps)(factory)`**: declare dependencies as a map in the first call; the factory receives them and returns the public function. Resolution happens **at call time** (not import time). Tests substitute deps with **`injectDependencies()`** from `#/infra/di/testing/injectDependencies`.
 
-- **Direct imports** — the function imports its collaborators by name. Simple, but impossible to swap in tests without module-level mocking.
-- **`Container.getInstance().get(Token)`** — call the container from inside the function. Works, but scatters resolution logic and makes dependencies implicit. Also: if called at module top-level, the read races with bootstrap order.
-- **`inject(deps)(factory)`** — curried DI wrapper. Declare dependencies as a map in the first call; the factory in the second call receives them as an argument. Dependencies are explicit, testable, and resolved from the container **at call time** (not import time). TypeScript gets two inference sites for better type resolution.
-
-`inject()` is the preferred pattern. It is what `injectDependencies()` (the test helper) expects, and it sidesteps the import-time-ordering trap.
+Do not wire application collaborators by **bare static imports** of repos or other use cases, or by **`Container.get()`** at module scope — that hides dependencies and breaks the test harness. See `docs/01-dependency-injection.md`.
 
 ### Shape
 
@@ -742,21 +785,21 @@ They should not become business logic containers.
 
 ## 5. Public vs private folders
 
-## 5.1 Public contract folders
+## 5.1 The public surface
 
-These may be imported by other modules:
+The only file other modules may import from is the module's root `index.ts`.
+
+`index.ts` may only re-export from three internal folders:
 
 ```text
-errors/
-events/
-useCases/
-stores/
-presentations/views/
+useCases/    → business operations
+events/      → typed domain event payloads
+stores/      → shared business-layer state
 ```
 
 ## 5.2 Private folders
 
-These are module-private unless explicitly promoted later:
+Everything else is private. No other module may import from:
 
 ```text
 models/
@@ -769,10 +812,13 @@ presentations/stores/
 presentations/context/
 presentations/components/
 presentations/renderers/
+presentations/views/
 engine/
 runtime/
 worklets/
 ```
+
+Even `errors/` and `presentations/views/` — previously considered public contract folders — are now internal. If a module needs to expose an error type or a view, it re-exports from `index.ts`.
 
 ---
 
@@ -834,7 +880,7 @@ Never the reverse.
 
 ## 7. Cross-module interaction patterns
 
-Modules should communicate through a narrow set of approved patterns.
+Modules should communicate through a narrow set of approved patterns. All of them go through the target module’s `index.ts`.
 
 ## 7.1 Pattern A: direct use-case call
 
@@ -844,10 +890,9 @@ Use when:
 - a return value matters
 - the dependency is intentional and acceptable
 
-Example:
-
 ```typescript
-import { getRoutingForTrack } from '#/modules/Routing/useCases/getRoutingForTrack';
+// Import from the module’s index.ts, not from useCases/ directly
+import { getRoutingForTrack } from ‘#/modules/Routing’;
 ```
 
 ## 7.2 Pattern B: event-driven interaction
@@ -858,10 +903,8 @@ Use when:
 - the emitter should not care who reacts
 - the occurrence has business meaning
 
-Example:
-
 ```typescript
-void eventBus.emit('track.added', { trackId, name, kind });
+void eventBus.emit(‘track.added’, { trackId, name, kind });
 ```
 
 ## 7.3 Pattern C: shared store / selector read
@@ -872,18 +915,23 @@ Use when:
 - no write is required
 - the read is stable and intentional
 
-Example:
-
 ```typescript
+// Store exported from module index.ts
+import { transportStore } from ‘#/modules/Transport’;
 const transport = transportStore.value;
 ```
 
-## 7.4 Pattern D: view composition via `presentations/views/`
+## 7.4 Pattern D: view composition
 
 Use when:
 
 - one module includes another module’s UI entry point
 - the dependency is presentational, not business-layer
+
+```typescript
+// Views re-exported from index.ts
+import { ArrangementView } from ‘#/modules/Arrangement’;
+```
 
 ---
 

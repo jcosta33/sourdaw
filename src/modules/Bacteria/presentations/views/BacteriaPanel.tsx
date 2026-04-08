@@ -198,7 +198,7 @@ const SectionHeader = ({
 }): ReactElement => (
     <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
                 {eyebrow}
             </div>
             <div className="text-[13px] font-semibold tracking-[0.02em] text-foreground">{title}</div>
@@ -341,7 +341,7 @@ const PresetRail = ({
                                     key={preset.id}
                                     type="button"
                                     className={`bacteria-window flex w-full flex-col items-start gap-1 px-3 py-2 text-left ${
-                                        active ? 'border-[var(--color-accent-cyan)]/35' : ''
+                                        active ? 'border-[var(--color-accent-mint-bright)]/35' : ''
                                     }`}
                                     onClick={() => loadBacteriaPatchWithAudio(deviceId, preset.patch)}
                                 >
@@ -1771,7 +1771,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
             <div className="flex min-w-0 flex-1 flex-col gap-2.5">
                 <header className="bacteria-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
                     <div className="space-y-1">
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
                             {activeLevel.eyebrow}
                         </div>
                         <div className="text-[13px] font-semibold text-foreground">Bacteria</div>

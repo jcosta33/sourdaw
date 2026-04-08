@@ -56,6 +56,7 @@ const Knob = ({
             step={step}
             defaultValue={defaultValue}
             size="sm"
+            tone="lavender"
         />
         <div className="text-center">
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
@@ -86,7 +87,7 @@ export const SamplerControls = ({
             {/* Mode switcher */}
             <div className="flex items-center gap-1.5">
                 {MODES.map((m) => (
-                    <DawPluginChip key={m} active={mode === m} tone="peach" size="sm" onClick={() => onModeChange(m)}>
+                    <DawPluginChip key={m} active={mode === m} tone="lavender" size="sm" onClick={() => onModeChange(m)}>
                         {m.charAt(0).toUpperCase() + m.slice(1)}
                     </DawPluginChip>
                 ))}

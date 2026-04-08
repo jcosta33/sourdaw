@@ -1,49 +1,60 @@
+import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 import { shiftClipAutomation } from '#/modules/Automation/useCases/automation/shiftClipAutomation';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud/shiftClipMidiNotes';
 
-export function moveClip(clipId: string, targetTrackId: string, startBeat: number, originalStartBeat?: number): void {
-    const state = getTrackState();
-    if (!state) {
-        return;
-    }
+export const moveClip = inject({ getTrackState, setTrackState })(
+    ({ getTrackState, setTrackState }) =>
+        function moveClip(
+            clipId: string,
+            targetTrackId: string,
+            startBeat: number,
+            originalStartBeat?: number
+        ): void {
+            const state = getTrackState();
+            if (!state) {
+                return;
+            }
 
-    let movedClip: Clip | undefined;
-    let oldStartBeat: number | undefined;
-    const tracksWithoutClip = state.tracks.map((t) => {
-        const clip = t.clips.find((c) => c.id === clipId);
-        if (clip) {
-            oldStartBeat = clip.startBeat;
-            movedClip = {
-                ...clip,
-                trackId: targetTrackId,
-                startBeat,
-                endBeat: startBeat + (clip.endBeat - clip.startBeat),
-            };
+            let movedClip: Clip | undefined;
+            let oldStartBeat: number | undefined;
+            const tracksWithoutClip = state.tracks.map((t) => {
+                const clip = t.clips.find((c) => c.id === clipId);
+                if (clip) {
+                    oldStartBeat = clip.startBeat;
+                    movedClip = {
+                        ...clip,
+                        trackId: targetTrackId,
+                        startBeat,
+                        endBeat: startBeat + (clip.endBeat - clip.startBeat),
+                    };
+                }
+                return { ...t, clips: t.clips.filter((c) => c.id !== clipId) };
+            });
+
+            if (!movedClip || oldStartBeat === undefined) {
+                return;
+            }
+
+            setTrackState({
+                ...state,
+                tracks: tracksWithoutClip.map((t) =>
+                    t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t
+                ),
+            });
+
+            // Automation: shift from the original drag start (preview doesn't shift automation)
+            const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);
+            if (automationDelta !== 0) {
+                shiftClipAutomation(clipId, automationDelta);
+            }
+
+            // MIDI: shift by the total delta from the clip's current position (preview no longer shifts incrementally)
+            const midiDelta = startBeat - oldStartBeat;
+            if (midiDelta !== 0) {
+                shiftClipMidiNotes(clipId, midiDelta);
+            }
         }
-        return { ...t, clips: t.clips.filter((c) => c.id !== clipId) };
-    });
-
-    if (!movedClip || oldStartBeat === undefined) {
-        return;
-    }
-
-    setTrackState({
-        ...state,
-        tracks: tracksWithoutClip.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t)),
-    });
-
-    // Automation: shift from the original drag start (preview doesn't shift automation)
-    const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);
-    if (automationDelta !== 0) {
-        shiftClipAutomation(clipId, automationDelta);
-    }
-
-    // MIDI: shift by the total delta from the clip's current position (preview no longer shifts incrementally)
-    const midiDelta = startBeat - oldStartBeat;
-    if (midiDelta !== 0) {
-        shiftClipMidiNotes(clipId, midiDelta);
-    }
-}
+);

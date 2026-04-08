@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { eventBus } from '#/app/registerDependencies';
+import { showAutomationPanel } from '#/modules/Workspace/useCases/panels/devicePanels';
 import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
 import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
@@ -46,7 +46,7 @@ export const useAppKeyboardShortcuts = ({ onOpenExport, onOpenPreferences }: Sho
             }
             if (mod && e.shiftKey && e.key === 'a') {
                 e.preventDefault();
-                eventBus.emit('panel.showAutomation', undefined);
+                showAutomationPanel();
             }
             if (mod && e.key === 'j') {
                 e.preventDefault();

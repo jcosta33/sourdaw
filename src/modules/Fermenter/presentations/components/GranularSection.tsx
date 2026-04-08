@@ -35,6 +35,7 @@ export const GranularSection = ({
                     step={1}
                     defaultValue={20}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Density</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{Math.round(density)}g/s</span>
@@ -48,6 +49,7 @@ export const GranularSection = ({
                     step={1}
                     defaultValue={50}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Size</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{Math.round(size)}ms</span>
@@ -61,6 +63,7 @@ export const GranularSection = ({
                     step={0.01}
                     defaultValue={0}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Position</span>
             </div>
@@ -73,6 +76,7 @@ export const GranularSection = ({
                     step={0.01}
                     defaultValue={0.1}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Spray</span>
             </div>
@@ -85,6 +89,7 @@ export const GranularSection = ({
                     step={0.1}
                     defaultValue={0}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Pitch ±</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{pitchVar.toFixed(1)}st</span>
@@ -98,6 +103,7 @@ export const GranularSection = ({
                     step={0.01}
                     defaultValue={0.5}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Spread</span>
             </div>

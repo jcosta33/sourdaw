@@ -45,6 +45,7 @@ export const SamplerSection = ({ mode, start, end, onParam }: SamplerSectionProp
                     step={0.01}
                     defaultValue={0}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[8px] text-muted-foreground">Start</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(start * 100)}%</span>
@@ -58,6 +59,7 @@ export const SamplerSection = ({ mode, start, end, onParam }: SamplerSectionProp
                     step={0.01}
                     defaultValue={1}
                     size="lg"
+                    tone="sage"
                 />
                 <span className="text-[8px] text-muted-foreground">End</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(end * 100)}%</span>

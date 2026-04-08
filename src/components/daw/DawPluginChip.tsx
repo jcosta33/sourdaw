@@ -3,7 +3,7 @@ import { cn } from '#/helpers/Styles/cn';
 
 type DawPluginChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
     active?: boolean;
-    tone?: 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage';
+    tone?: 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage' | 'copper';
     size?: 'xs' | 'sm';
     shape?: 'pill' | 'soft';
     caps?: boolean;
@@ -22,6 +22,7 @@ const ACTIVE_TONE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['tone']>, s
     rose: 'border-[var(--color-accent-rose)]/60 bg-[var(--color-accent-rose)]/14 text-[var(--color-accent-rose)]',
     indigo: 'border-[var(--color-accent-indigo)]/60 bg-[var(--color-accent-indigo)]/12 text-[var(--color-accent-indigo)]',
     sage: 'border-[var(--color-accent-sage)]/60 bg-[var(--color-accent-sage)]/12 text-[var(--color-accent-sage)]',
+    copper: 'border-[var(--color-accent-copper)]/60 bg-[var(--color-accent-copper)]/12 text-[var(--color-accent-copper)]',
 };
 
 const SIZE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['size']>, string> = {

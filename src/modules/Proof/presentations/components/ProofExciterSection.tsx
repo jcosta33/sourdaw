@@ -89,6 +89,7 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                                 step={0.01}
                                 defaultValue={0.2}
                                 size="sm"
+                                tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Drive</span>
 
@@ -101,6 +102,7 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                                 step={0.01}
                                 defaultValue={0.3}
                                 size="sm"
+                                tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Blend</span>
                         </div>

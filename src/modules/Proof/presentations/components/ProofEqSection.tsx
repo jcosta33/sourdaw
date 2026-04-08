@@ -88,6 +88,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             step={1}
                             defaultValue={band.freq}
                             size="sm"
+                            tone="cyan"
                         />
                         <span className="text-[6px] text-muted-foreground font-mono">
                             {band.freq >= 1000 ? `${(band.freq / 1000).toFixed(1)}k` : `${band.freq.toFixed(0)}`}
@@ -105,6 +106,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             step={0.5}
                             defaultValue={0}
                             size="sm"
+                            tone="cyan"
                         />
                         <span className="text-[6px] text-muted-foreground font-mono">
                             {band.gain > 0 ? '+' : ''}
@@ -122,6 +124,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             max={10}
                             step={0.1}
                             defaultValue={1}
+                            tone="cyan"
                             size="sm"
                         />
                         <span className="text-[6px] text-muted-foreground font-mono">Q{band.q.toFixed(1)}</span>

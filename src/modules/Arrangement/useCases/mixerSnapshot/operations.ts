@@ -3,6 +3,7 @@
  * Save, recall, and manage mixer state snapshots for A/B comparison and scene recall.
  */
 
+import { inject } from '#/infra/di/inject';
 import { createStore } from '#/infra/store/createStore';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -20,107 +21,116 @@ export const mixerSnapshotStore = createStore<MixerSnapshotState>({
 /**
  * Capture the current mixer state as a named snapshot.
  */
-export function saveMixerSnapshot(name: string): MixerSnapshot | null {
-    const state = getTrackState();
-    if (!state) {
-        return null;
-    }
+export const saveMixerSnapshot = inject({ getTrackState })(
+    ({ getTrackState }) =>
+        function saveMixerSnapshot(name: string): MixerSnapshot | null {
+            const state = getTrackState();
+            if (!state) {
+                return null;
+            }
 
-    const snapshot: MixerSnapshot = {
-        id: `snap-${crypto.randomUUID().slice(0, 8)}`,
-        name,
-        createdAt: Date.now(),
-        channels: state.tracks.map((t) => ({
-            trackId: t.id,
-            gain: t.gain,
-            pan: t.pan,
-            muted: t.muted,
-            soloed: t.soloed,
-        })),
-    };
+            const snapshot: MixerSnapshot = {
+                id: `snap-${crypto.randomUUID().slice(0, 8)}`,
+                name,
+                createdAt: Date.now(),
+                channels: state.tracks.map((t) => ({
+                    trackId: t.id,
+                    gain: t.gain,
+                    pan: t.pan,
+                    muted: t.muted,
+                    soloed: t.soloed,
+                })),
+            };
 
-    const current = mixerSnapshotStore.value;
-    if (!current) {
-        return snapshot;
-    }
-    mixerSnapshotStore.set({ snapshots: [...current.snapshots, snapshot] });
-    return snapshot;
-}
+            const current = mixerSnapshotStore.value;
+            if (!current) {
+                return snapshot;
+            }
+            mixerSnapshotStore.set({ snapshots: [...current.snapshots, snapshot] });
+            return snapshot;
+        }
+);
 
 /**
  * Recall a snapshot — applies its mixer settings to all matching tracks.
  * Returns the previous state for undo support.
  */
-export function recallMixerSnapshot(snapshotId: string): MixerChannelSnapshot[] | null {
-    const snaps = mixerSnapshotStore.value?.snapshots ?? [];
-    const snapshot = snaps.find((s) => s.id === snapshotId);
-    if (!snapshot) {
-        return null;
-    }
-
-    const state = getTrackState();
-    if (!state) {
-        return null;
-    }
-
-    const previousState: MixerChannelSnapshot[] = state.tracks.map((t) => ({
-        trackId: t.id,
-        gain: t.gain,
-        pan: t.pan,
-        muted: t.muted,
-        soloed: t.soloed,
-    }));
-
-    const channelMap = new Map(snapshot.channels.map((c) => [c.trackId, c]));
-
-    setTrackState({
-        ...state,
-        tracks: state.tracks.map((t) => {
-            const saved = channelMap.get(t.id);
-            if (!saved) {
-                return t;
+export const recallMixerSnapshot = inject({ getTrackState, setTrackState })(
+    ({ getTrackState, setTrackState }) =>
+        function recallMixerSnapshot(snapshotId: string): MixerChannelSnapshot[] | null {
+            const snaps = mixerSnapshotStore.value?.snapshots ?? [];
+            const snapshot = snaps.find((s) => s.id === snapshotId);
+            if (!snapshot) {
+                return null;
             }
-            return {
-                ...t,
-                gain: saved.gain,
-                pan: saved.pan,
-                muted: saved.muted,
-                soloed: saved.soloed,
-            };
-        }),
-    });
 
-    return previousState;
-}
+            const state = getTrackState();
+            if (!state) {
+                return null;
+            }
+
+            const previousState: MixerChannelSnapshot[] = state.tracks.map((t) => ({
+                trackId: t.id,
+                gain: t.gain,
+                pan: t.pan,
+                muted: t.muted,
+                soloed: t.soloed,
+            }));
+
+            const channelMap = new Map(snapshot.channels.map((c) => [c.trackId, c]));
+
+            setTrackState({
+                ...state,
+                tracks: state.tracks.map((t) => {
+                    const saved = channelMap.get(t.id);
+                    if (!saved) {
+                        return t;
+                    }
+                    return {
+                        ...t,
+                        gain: saved.gain,
+                        pan: saved.pan,
+                        muted: saved.muted,
+                        soloed: saved.soloed,
+                    };
+                }),
+            });
+
+            return previousState;
+        }
+);
 
 /**
  * Restore a previous mixer state (undo helper).
  */
-export function restoreMixerChannels(channels: MixerChannelSnapshot[]): void {
-    const state = getTrackState();
-    if (!state) {
-        return;
-    }
-
-    const channelMap = new Map(channels.map((c) => [c.trackId, c]));
-
-    setTrackState({
-        ...state,
-        tracks: state.tracks.map((t) => {
-            const saved = channelMap.get(t.id);
-            if (!saved) {
-                return t;
+export const restoreMixerChannels = inject({ getTrackState, setTrackState })(
+    ({ getTrackState, setTrackState }) =>
+        function restoreMixerChannels(channels: MixerChannelSnapshot[]): void {
+            const state = getTrackState();
+            if (!state) {
+                return;
             }
-            return {
-                ...t,
-                gain: saved.gain,
-                pan: saved.pan,
-                muted: saved.muted,
-                soloed: saved.soloed,
-            };
-        }),
-    });
-}
+
+            const channelMap = new Map(channels.map((c) => [c.trackId, c]));
+
+            setTrackState({
+                ...state,
+                tracks: state.tracks.map((t) => {
+                    const saved = channelMap.get(t.id);
+                    if (!saved) {
+                        return t;
+                    }
+                    return {
+                        ...t,
+                        gain: saved.gain,
+                        pan: saved.pan,
+                        muted: saved.muted,
+                        soloed: saved.soloed,
+                    };
+                }),
+            });
+        }
+);
 
 /**
  * Get all saved mixer snapshots.

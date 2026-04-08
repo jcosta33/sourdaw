@@ -11,8 +11,7 @@ import { getPlatformPlugins } from '#/modules/Arrangement/useCases/getPlatformPl
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';
-import { ColorTab } from './Sidebar/ColorTab';
-import { StageTab } from './Sidebar/StageTab';
+import { EffectsTab } from './Sidebar/EffectsTab';
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 import { MacrosPanel } from './Sidebar/MacrosPanel';
 import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views/LibraryBrowser';
@@ -45,23 +44,21 @@ type SidebarProps = {
 /** User-imported samples only — no placeholder data */
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
-const TAB_ITEMS: { id: 'instruments' | 'color' | 'stage' | 'library' | 'macros'; label: string; Icon: typeof Music }[] =
+const TAB_ITEMS: { id: 'instruments' | 'effects' | 'library' | 'macros'; label: string; Icon: typeof Music }[] =
     [
         { id: 'instruments', label: 'Instruments', Icon: Music },
-        { id: 'color', label: 'Color', Icon: Zap },
-        { id: 'stage', label: 'Stage', Icon: Waves },
+        { id: 'effects', label: 'Effects', Icon: Waves },
         { id: 'library', label: 'Library', Icon: FileAudio },
         { id: 'macros', label: 'Macros', Icon: Zap },
     ];
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'color' | 'stage' | 'macros'>('instruments');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('instruments');
     const [libSubTab, setLibSubTab] = useState<'mine' | 'find' | 'folders'>('folders');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
-        color: [{ id: 'color', title: 'Color' }],
-        stage: [{ id: 'stage', title: 'Stage' }],
+        effects: [{ id: 'effects', title: 'Effects' }],
         macros: [{ id: 'macros', title: 'Macros' }],
     });
 
@@ -286,21 +283,8 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                         />
                     ) : null}
 
-                    {currentRoute.id.startsWith('color') ? (
-                        <ColorTab
-                            plugins={filteredPlugins}
-                            selectedTrackId={selectedTrackId}
-                            searchQuery={searchQuery}
-                            currentRoute={currentRoute}
-                            pushRoute={pushRoute}
-                            favorites={favorites}
-                            onToggleFavorite={toggleFavorite}
-                            preview={preview}
-                        />
-                    ) : null}
-
-                    {currentRoute.id.startsWith('stage') ? (
-                        <StageTab
+                    {currentRoute.id.startsWith('effects') ? (
+                        <EffectsTab
                             plugins={filteredPlugins}
                             selectedTrackId={selectedTrackId}
                             searchQuery={searchQuery}

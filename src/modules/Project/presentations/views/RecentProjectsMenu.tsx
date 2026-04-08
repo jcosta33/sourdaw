@@ -26,7 +26,7 @@ import { saveProject } from '../../useCases/projectPersistence/saveProject';
 import { exportProjectFile, importProjectFile } from '../../useCases/projectPersistence/fileIO';
 import { TemplateChooser } from './TemplateChooser';
 import { pickFiles } from '../../useCases/fileDialog';
-import { eventBus } from '#/app/registerDependencies';
+import { openExportDialog } from '#/modules/Workspace/useCases/dialogs';
 
 const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();
@@ -114,7 +114,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleExportAudio = () => {
         setOpen(false);
-        eventBus.emit('dialog.openExport', undefined);
+        openExportDialog();
     };
 
     const handleExportProject = () => {

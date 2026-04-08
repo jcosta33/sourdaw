@@ -22,7 +22,7 @@ import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { eventBus } from '#/app/registerDependencies';
+import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 
@@ -133,9 +133,9 @@ export const TimelineSurface = (): ReactElement => {
         };
 
         const unsubs = [
-            eventBus.on('zoom.toFit', handleZoomToFit),
-            eventBus.on('zoom.toSelection', handleZoomToSelection),
-            eventBus.on('zoom.scrollToPlayhead', handleScrollToPlayhead),
+            onZoomToFit(handleZoomToFit),
+            onZoomToSelection(handleZoomToSelection),
+            onScrollToPlayhead(handleScrollToPlayhead),
         ];
         return () => unsubs.forEach((unsub) => unsub());
     }, []);

@@ -127,6 +127,7 @@ export const FilterSection = ({
                         step={10}
                         defaultValue={5000}
                         size="xl"
+                        tone="sage"
                     />
                     <span className="text-[7px] text-muted-foreground">Cutoff</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">
@@ -143,6 +144,7 @@ export const FilterSection = ({
                         step={0.1}
                         defaultValue={1}
                         size="xl"
+                        tone="sage"
                     />
                     <span className="text-[7px] text-muted-foreground">Reso</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">{resonance.toFixed(1)}</span>
@@ -157,6 +159,7 @@ export const FilterSection = ({
                     defaultValue={0}
                     size="lg"
                     label="Drive"
+                    tone="sage"
                 />
                 <RotaryKnob
                     paramId="filterEnvAmount"
@@ -168,6 +171,7 @@ export const FilterSection = ({
                     defaultValue={0.5}
                     size="lg"
                     label="Env"
+                    tone="sage"
                 />
                 <RotaryKnob
                     paramId="filterKeytrack"
@@ -179,6 +183,7 @@ export const FilterSection = ({
                     defaultValue={0}
                     size="lg"
                     label="Key"
+                    tone="sage"
                 />
             </div>
         </div>

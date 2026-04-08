@@ -15,4 +15,12 @@ describe('Separator', () => {
         const node = container.querySelector('[data-slot="separator"]');
         expect(node).toHaveAttribute('data-orientation', 'vertical');
     });
+
+    it('should support non-decorative semantics', () => {
+        const { container } = render(<Separator decorative={false} />);
+        const node = container.querySelector('[data-slot="separator"]');
+        expect(node).toBeInTheDocument();
+        expect(node).toHaveAttribute('data-orientation', 'horizontal');
+        expect(node).toHaveAttribute('role', 'separator');
+    });
 });

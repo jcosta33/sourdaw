@@ -26,7 +26,7 @@ import { aiStore, type AiState } from '#/modules/AiGeneration/stores/aiStore';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
 import { linkStatusStore, type LinkStatus, defaultLinkStatus } from '#/modules/AudioEngine/stores/linkStatusStore';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
-import { eventBus } from '#/app/registerDependencies';
+import { openPreferencesDialog } from '#/modules/Workspace/useCases/dialogs';
 
 type PanelTogglesProps = {
     sidebarOpen: boolean;
@@ -185,7 +185,7 @@ export const PanelToggles = ({
                         variant="ghost"
                         size="icon-sm"
                         aria-label="Open Preferences"
-                        onClick={() => void eventBus.emit('dialog.openPreferences', undefined)}
+                        onClick={openPreferencesDialog}
                     >
                         <Settings2 className="size-3.5" aria-hidden="true" />
                     </Button>

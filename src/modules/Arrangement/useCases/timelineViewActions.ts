@@ -19,16 +19,16 @@ import { muteClip as _muteClip } from '#/modules/Arrangement/useCases/clipEditin
 import { trimClipStart as _trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
 import { trimClipEnd as _trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
 
-export const splitClip: typeof _splitClip = (...args) => _splitClip(...args);
-export const splitClipWithUndo: typeof _splitClipWithUndo = (...args) => _splitClipWithUndo(...args);
-export const normalizeClip: typeof _normalizeClip = (...args) => _normalizeClip(...args);
-export const reverseClip: typeof _reverseClip = (...args) => _reverseClip(...args);
-export const lockClip: typeof _lockClip = (...args) => _lockClip(...args);
-export const setClipColor: typeof _setClipColor = (...args) => _setClipColor(...args);
-export const renameClip: typeof _renameClip = (...args) => _renameClip(...args);
-export const muteClip: typeof _muteClip = (...args) => _muteClip(...args);
-export const trimClipStart: typeof _trimClipStart = (...args) => _trimClipStart(...args);
-export const trimClipEnd: typeof _trimClipEnd = (...args) => _trimClipEnd(...args);
+export const splitClip = (...args: Parameters<typeof _splitClip>) => _splitClip(...args);
+export const splitClipWithUndo = (...args: Parameters<typeof _splitClipWithUndo>) => _splitClipWithUndo(...args);
+export const normalizeClip = (...args: Parameters<typeof _normalizeClip>) => _normalizeClip(...args);
+export const reverseClip = (...args: Parameters<typeof _reverseClip>) => _reverseClip(...args);
+export const lockClip = (...args: Parameters<typeof _lockClip>) => _lockClip(...args);
+export const setClipColor = (...args: Parameters<typeof _setClipColor>) => _setClipColor(...args);
+export const renameClip = (...args: Parameters<typeof _renameClip>) => _renameClip(...args);
+export const muteClip = (...args: Parameters<typeof _muteClip>) => _muteClip(...args);
+export const trimClipStart = (...args: Parameters<typeof _trimClipStart>) => _trimClipStart(...args);
+export const trimClipEnd = (...args: Parameters<typeof _trimClipEnd>) => _trimClipEnd(...args);
 
 // ── Track: clip operations ────────────────────────────────────────
 import { addClip as _addClip } from '#/modules/Arrangement/useCases/clip/addClip';
@@ -38,12 +38,12 @@ import { duplicateClipToNextBar as _duplicateClipToNextBar } from '#/modules/Arr
 import { moveClipPreview as _moveClipPreview } from '#/modules/Arrangement/useCases/clip/moveClipPreview';
 import { moveClip as _moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
 
-export const addClip: typeof _addClip = (...args) => _addClip(...args);
-export const removeClip: typeof _removeClip = (...args) => _removeClip(...args);
-export const duplicateClip: typeof _duplicateClip = (...args) => _duplicateClip(...args);
-export const duplicateClipToNextBar: typeof _duplicateClipToNextBar = (...args) => _duplicateClipToNextBar(...args);
-export const moveClipPreview: typeof _moveClipPreview = (...args) => _moveClipPreview(...args);
-export const moveClip: typeof _moveClip = (...args) => _moveClip(...args);
+export const addClip = (...args: Parameters<typeof _addClip>) => _addClip(...args);
+export const removeClip = (...args: Parameters<typeof _removeClip>) => _removeClip(...args);
+export const duplicateClip = (...args: Parameters<typeof _duplicateClip>) => _duplicateClip(...args);
+export const duplicateClipToNextBar = (...args: Parameters<typeof _duplicateClipToNextBar>) => _duplicateClipToNextBar(...args);
+export const moveClipPreview = (...args: Parameters<typeof _moveClipPreview>) => _moveClipPreview(...args);
+export const moveClip = (...args: Parameters<typeof _moveClip>) => _moveClip(...args);
 
 // ── Track: clipboard ──────────────────────────────────────────────
 import { copySelectedClip as _copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
@@ -52,7 +52,7 @@ import { pasteClip as _pasteClip } from '#/modules/Arrangement/useCases/clipboar
 
 export const copySelectedClip: typeof _copySelectedClip = (...args) => _copySelectedClip(...args);
 export const cutSelectedClip: typeof _cutSelectedClip = (...args) => _cutSelectedClip(...args);
-export const pasteClip: typeof _pasteClip = (...args) => _pasteClip(...args);
+export const pasteClip = (...args: Parameters<typeof _pasteClip>) => _pasteClip(...args);
 
 // ── Track: general ────────────────────────────────────────────────
 import { selectTrack as _selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
@@ -62,12 +62,12 @@ import { exportMidiClip as _exportMidiClip } from '#/modules/MIDI/useCases/expor
 import { importMidiFile as _importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { stripSilence as _stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
 
-export const selectTrack: typeof _selectTrack = (...args) => _selectTrack(...args);
+export const selectTrack = (...args: Parameters<typeof _selectTrack>) => _selectTrack(...args);
 export const addTrack = (...args: Parameters<typeof _addTrack>) => _addTrack(...args);
-export const addDevice: typeof _addDevice = (...args) => _addDevice(...args);
-export const exportMidiClip: typeof _exportMidiClip = (...args) => _exportMidiClip(...args);
+export const addDevice = (...args: Parameters<typeof _addDevice>) => _addDevice(...args);
+export const exportMidiClip = (...args: Parameters<typeof _exportMidiClip>) => _exportMidiClip(...args);
 export const importMidiFile: typeof _importMidiFile = (...args) => _importMidiFile(...args);
-export const stripSilence: typeof _stripSilence = (...args) => _stripSilence(...args);
+export const stripSilence = (...args: Parameters<typeof _stripSilence>) => _stripSilence(...args);
 
 // ── Track: automation ─────────────────────────────────────────────
 import { addAutomationPoint as _addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
@@ -103,9 +103,9 @@ export const executeAppAction = (...args: Parameters<typeof _executeAppAction>) 
 // ── Workspace ─────────────────────────────────────────────────────
 import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
 
-export const setWorkspaceMode: typeof _setWorkspaceMode = (...args) => _setWorkspaceMode(...args);
+export const setWorkspaceMode = (...args: Parameters<typeof _setWorkspaceMode>) => _setWorkspaceMode(...args);
 
 // ── Transport ─────────────────────────────────────────────────────
 import { setLoopRegion as _setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
 
-export const setLoopRegion: typeof _setLoopRegion = (...args) => _setLoopRegion(...args);
+export const setLoopRegion = (...args: Parameters<typeof _setLoopRegion>) => _setLoopRegion(...args);

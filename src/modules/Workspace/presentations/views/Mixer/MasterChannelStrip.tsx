@@ -5,7 +5,7 @@ import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
 import { setMasterGain } from '#/modules/Transport/useCases/setMasterGain';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 
 import { MixerLevelReadout } from './MixerLevelReadout';
 

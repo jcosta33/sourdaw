@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { eventBus } from '#/app/registerDependencies';
+import { onVoiceToggle } from '../../useCases/voiceToggle';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri as isTauriAvailable } from '#/helpers/tauriBridge';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
@@ -291,7 +291,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     // ── External toggle event ───────────────────────────────────────────
 
     useEffect(() => {
-        return eventBus.on('voice.toggle', (payload) => {
+        return onVoiceToggle((payload) => {
             if (payload && typeof payload.active === 'boolean') {
                 if (payload.active && !isListeningRef.current) {
                     startListening();

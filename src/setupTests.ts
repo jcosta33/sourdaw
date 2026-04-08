@@ -70,9 +70,10 @@ const canvas2dStub = {
     direction: 'inherit',
 } as unknown as CanvasRenderingContext2D;
 
+// @ts-expect-error — jsdom stub covers only the '2d' path; the overloaded return type is intentionally incomplete
 HTMLCanvasElement.prototype.getContext = function getContext(this: HTMLCanvasElement, contextId: string) {
     if (contextId === '2d') {
-        canvas2dStub.canvas = this;
+        (canvas2dStub as { canvas: HTMLCanvasElement }).canvas = this;
         return canvas2dStub;
     }
     return null;

@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { type Device } from '../../models/Track';
@@ -8,28 +9,31 @@ function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-export function addExternalDevice(trackId: string, pluginId: string, pluginName: string): Device | null {
-    const state = getTrackState();
-    if (!state) {
-        return null;
-    }
+export const addExternalDevice = inject({ getTrackState, updateTrack })(
+    ({ getTrackState, updateTrack }) =>
+        function addExternalDevice(trackId: string, pluginId: string, pluginName: string): Device | null {
+            const state = getTrackState();
+            if (!state) {
+                return null;
+            }
 
-    const instanceId = `${pluginId}-${String(Date.now())}`;
+            const instanceId = `${pluginId}-${String(Date.now())}`;
 
-    const device: Device = {
-        id: nextDeviceIdStr(),
-        name: pluginName,
-        type: 'external-plugin',
-        bypassed: false,
-        parameterValues: {},
-        externalPluginId: pluginId,
-        externalInstanceId: instanceId,
-    };
+            const device: Device = {
+                id: nextDeviceIdStr(),
+                name: pluginName,
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: pluginId,
+                externalInstanceId: instanceId,
+            };
 
-    updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
+            updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
 
-    addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
-    loadPlugin(pluginId, instanceId);
+            addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
+            loadPlugin(pluginId, instanceId);
 
-    return device;
-}
+            return device;
+        }
+);

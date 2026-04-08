@@ -7,8 +7,8 @@ import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 
-export const removeTrack = inject({ eventBus })(
-    ({ eventBus }) =>
+export const removeTrack = inject({ eventBus, getTrackState, setTrackState, getTrackById })(
+    ({ eventBus, getTrackState, setTrackState, getTrackById }) =>
         function removeTrack(trackId: string): void {
             const state = getTrackState();
             if (!state) {

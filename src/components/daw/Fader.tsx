@@ -1,7 +1,7 @@
 import { type ReactElement, type PointerEvent, useState, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage';
+type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage' | 'copper';
 
 const TONE_CLASS_NAMES: Record<Tone, string> = {
     neutral: 'bg-white/50',
@@ -15,6 +15,7 @@ const TONE_CLASS_NAMES: Record<Tone, string> = {
     rose: 'bg-[var(--color-accent-rose)]',
     indigo: 'bg-[var(--color-accent-indigo)]',
     sage: 'bg-[var(--color-accent-sage)]',
+    copper: 'bg-[var(--color-accent-copper)]',
 };
 
 type FaderProps = {

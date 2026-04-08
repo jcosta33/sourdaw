@@ -22,4 +22,24 @@ describe('DragResizeHandle', () => {
         fireEvent.mouseUp(document);
         expect(onResize).toHaveBeenCalledWith(-10);
     });
+
+    it('should use vertical axis for top side', () => {
+        const onResize = vi.fn();
+        const { container } = render(<DragResizeHandle side="top" onResize={onResize} />);
+        const handle = container.firstChild as HTMLElement;
+        fireEvent.mouseDown(handle, { clientX: 0, clientY: 100 });
+        fireEvent.mouseMove(document, { clientX: 0, clientY: 90 });
+        fireEvent.mouseUp(document);
+        expect(onResize).toHaveBeenCalled();
+    });
+
+    it('should use vertical axis for bottom side', () => {
+        const onResize = vi.fn();
+        const { container } = render(<DragResizeHandle side="bottom" onResize={onResize} />);
+        const handle = container.firstChild as HTMLElement;
+        fireEvent.mouseDown(handle, { clientX: 0, clientY: 100 });
+        fireEvent.mouseMove(document, { clientX: 0, clientY: 110 });
+        fireEvent.mouseUp(document);
+        expect(onResize).toHaveBeenCalled();
+    });
 });

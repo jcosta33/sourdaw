@@ -104,6 +104,7 @@ export const LayerStack = ({
                     step={0.01}
                     defaultValue={1}
                     size="sm"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Level</span>
             </div>
@@ -116,6 +117,7 @@ export const LayerStack = ({
                     step={0.01}
                     defaultValue={0}
                     size="sm"
+                    tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Pan</span>
             </div>

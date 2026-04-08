@@ -6,6 +6,7 @@
  * Transport/repositories/transportRepository directly.
  */
 
+import { inject } from '#/infra/di/inject';
 import {
     getTransportState as repoGetTransportState,
     updateTransportState as repoUpdateTransportState,
@@ -19,14 +20,20 @@ export { defaultTransportState };
 export type { TransportState, TempoChange, TimeSignatureChange };
 
 /** Get the current transport state snapshot. */
-export function getTransportState(): TransportState | null {
-    return repoGetTransportState();
-}
+export const getTransportState = inject({ repoGetTransportState })(
+    ({ repoGetTransportState }) =>
+        function getTransportState(): TransportState | null {
+            return repoGetTransportState();
+        }
+);
 
 /** Get the raw transport store value (for direct snapshot access). */
-export function getTransportStoreValue(): TransportState | null {
-    return repoGetTransportState();
-}
+export const getTransportStoreValue = inject({ repoGetTransportState })(
+    ({ repoGetTransportState }) =>
+        function getTransportStoreValue(): TransportState | null {
+            return repoGetTransportState();
+        }
+);
 
 /** Get tempo map store state snapshot. */
 export function getTempoMapState(): { changes: TempoChange[] } | null {
@@ -39,6 +46,9 @@ export function getTempoAtBeat(changes: TempoChange[], beat: number, defaultTemp
 }
 
 /** Patch the transport state. */
-export function updateTransportState(patch: Partial<TransportState>): void {
-    repoUpdateTransportState(patch);
-}
+export const updateTransportState = inject({ repoUpdateTransportState })(
+    ({ repoUpdateTransportState }) =>
+        function updateTransportState(patch: Partial<TransportState>): void {
+            repoUpdateTransportState(patch);
+        }
+);

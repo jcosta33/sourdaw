@@ -91,7 +91,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         <div className="crust-faceplate flex h-full min-h-0 flex-col gap-2.5 overflow-hidden p-2.5 text-foreground">
             <header className="crust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
                 <div className="space-y-1">
-                    <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-peach)]/70">
+                    <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-copper)]/70">
                         Loudness desk
                     </div>
                     <div className="text-[13px] font-semibold text-foreground">Crust</div>
@@ -102,7 +102,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <DawPluginChip
                             key={level}
                             active={patch.uiLevel === level}
-                            tone="peach"
+                            tone="copper"
                             size="sm"
                             onClick={() => setCrustUiLevel(level)}
                         >
@@ -170,7 +170,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <div className="truncate text-foreground">{streamingLabel}</div>
                         </div>
                         <div className="text-right">
-                            <div className="font-mono text-[10px] text-[var(--color-accent-peach)]">
+                            <div className="font-mono text-[10px] text-[var(--color-accent-copper)]">
                                 {lufsTarget !== null ? `${lufsTarget} LUFS` : 'Custom'}
                             </div>
                         </div>
@@ -216,7 +216,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 </div>
 
                 <div className="ml-auto flex items-center gap-2">
-                    <DawPluginLed tone="peach">
+                    <DawPluginLed tone="copper">
                         {normalizationLoss > 0.25 ? `Watch ${normalizationLoss.toFixed(1)} dB` : 'On target'}
                     </DawPluginLed>
                     <div className="text-right">
@@ -346,7 +346,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
                 <DawPluginChip
                     active={patch.truePeak}
-                    tone="peach"
+                    tone="copper"
                     size="sm"
                     onClick={() => handleSetParam('truePeak', !patch.truePeak)}
                 >
@@ -359,7 +359,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <DawPluginChip
                                 key={option}
                                 active={patch.oversampling === option}
-                                tone="peach"
+                                tone="copper"
                                 size="sm"
                                 onClick={() => handleSetParam('oversampling', option)}
                             >
@@ -372,7 +372,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 <div className="ml-auto flex flex-wrap gap-1.5">
                     <DawPluginChip
                         active={patch.unityGain}
-                        tone="peach"
+                        tone="copper"
                         size="sm"
                         onClick={() => handleSetParam('unityGain', !patch.unityGain)}
                     >
@@ -380,13 +380,13 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     </DawPluginChip>
                     <DawPluginChip
                         active={patch.deltaListen}
-                        tone="peach"
+                        tone="copper"
                         size="sm"
                         onClick={() => handleSetParam('deltaListen', !patch.deltaListen)}
                     >
                         Delta
                     </DawPluginChip>
-                    <DawPluginChip type="button" tone="peach" size="sm" onClick={() => resetCrustMeters()}>
+                    <DawPluginChip type="button" tone="copper" size="sm" onClick={() => resetCrustMeters()}>
                         Reset
                     </DawPluginChip>
                 </div>

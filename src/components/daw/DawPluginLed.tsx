@@ -2,7 +2,7 @@ import { type HTMLAttributes, type ReactElement } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
 type DawPluginLedProps = HTMLAttributes<HTMLDivElement> & {
-    tone?: 'amber' | 'peach' | 'cyan' | 'mint' | 'lavender' | 'danger' | 'neutral' | 'rose' | 'indigo' | 'sage';
+    tone?: 'amber' | 'peach' | 'cyan' | 'mint' | 'lavender' | 'danger' | 'neutral' | 'rose' | 'indigo' | 'sage' | 'copper';
 };
 
 const TONE_CLASS_NAMES: Record<NonNullable<DawPluginLedProps['tone']>, string> = {
@@ -17,6 +17,7 @@ const TONE_CLASS_NAMES: Record<NonNullable<DawPluginLedProps['tone']>, string> =
     rose: 'border-[var(--color-accent-rose)]/30 bg-[var(--color-accent-rose)]/12 text-[var(--color-accent-rose)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_20px_rgba(192,96,112,0.08)]',
     indigo: 'border-[var(--color-accent-indigo)]/30 bg-[var(--color-accent-indigo)]/12 text-[var(--color-accent-indigo)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_20px_rgba(74,96,160,0.08)]',
     sage: 'border-[var(--color-accent-sage)]/30 bg-[var(--color-accent-sage)]/12 text-[var(--color-accent-sage)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_20px_rgba(138,168,138,0.08)]',
+    copper: 'border-[var(--color-accent-copper)]/30 bg-[var(--color-accent-copper)]/12 text-[var(--color-accent-copper)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_20px_rgba(184,136,104,0.08)]',
 };
 
 export const DawPluginLed = ({ tone = 'amber', className, children, ...props }: DawPluginLedProps): ReactElement => (

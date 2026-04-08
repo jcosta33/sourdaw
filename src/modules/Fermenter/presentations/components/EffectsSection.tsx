@@ -86,6 +86,7 @@ const K = ({
         defaultValue={defaultValue}
         size="lg"
         label={label}
+        tone="sage"
     />
 );
 
@@ -420,6 +421,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.01}
                                 defaultValue={1}
                                 size="xl"
+                                tone="sage"
                             />
                             <span className="text-[9px] text-muted-foreground">Width</span>
                             <span className="text-[8px] text-muted-foreground/50 font-mono">
@@ -436,6 +438,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.01}
                                 defaultValue={1}
                                 size="xl"
+                                tone="sage"
                             />
                             <span className="text-[9px] text-muted-foreground font-medium">Master</span>
                             <span className="text-[8px] text-muted-foreground/50 font-mono">

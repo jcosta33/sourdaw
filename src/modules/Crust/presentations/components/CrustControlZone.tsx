@@ -74,7 +74,7 @@ const Knob = ({
     def: number;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-0.5">
-        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={def} size="sm" />
+        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={def} size="sm" tone="copper" />
         <span className="text-[7px] text-muted-foreground/60 leading-none">{label}</span>
         {unit !== undefined ? (
             <span className="text-[6px] font-mono text-muted-foreground/40">{fmtKnob(value, unit)}</span>
@@ -284,7 +284,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             />
         }
         className="rounded-[14px] border border-white/8 bg-[linear-gradient(180deg,rgba(212,136,58,0.12),rgba(0,0,0,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-        titleClassName="text-[var(--color-accent-amber)]"
+        titleClassName="text-[var(--color-accent-copper)]"
     >
         <div className="flex items-center gap-2">
             <div className="flex flex-wrap gap-0.5">

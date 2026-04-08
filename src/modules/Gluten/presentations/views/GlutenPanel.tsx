@@ -33,7 +33,7 @@ const TOPOLOGY_META: Record<
     vca: {
         label: 'VCA',
         icon: Zap,
-        color: 'var(--color-accent-peach)',
+        color: 'var(--color-accent-lavender)',
         description: 'Clean glue and disciplined pull.',
         detail: 'Bus duty',
     },
@@ -238,7 +238,7 @@ const ControlCard = ({
         className="gluten-window"
         title={title}
         detail={detail}
-        titleClassName="text-[var(--color-accent-peach)]/68"
+        titleClassName="text-[var(--color-accent-lavender)]/68"
     >
         {children}
     </DawPluginSectionCard>
@@ -342,7 +342,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 <DawPluginRail className="gluten-window p-3" scrollable={false}>
                     <div className="flex items-start justify-between gap-3">
                         <div className="space-y-1">
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/68">
+                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                 Presets
                             </div>
                             <div className="text-[15px] font-semibold text-foreground">Gluten</div>
@@ -405,7 +405,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
                     <div className="flex items-start justify-between gap-3">
                         <div className="space-y-2">
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/68">
+                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                 Dynamics cockpit
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{patch.name}</div>
@@ -483,7 +483,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     <div className="gluten-window flex min-h-0 shrink-0 flex-col gap-3 p-3">
                         <div className="flex items-start justify-between gap-3">
                             <div className="space-y-1">
-                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/68">
+                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                     Quick moves
                                 </div>
                                 <div className="text-[13px] font-semibold text-foreground">

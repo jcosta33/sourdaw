@@ -34,6 +34,7 @@ export const ModulationSection = ({
                         step={0.01}
                         defaultValue={0}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[7px] text-muted-foreground">→ Filter</span>
                 </div>
@@ -53,6 +54,7 @@ export const ModulationSection = ({
                         step={0.1}
                         defaultValue={4}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[7px] text-muted-foreground">Rate</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">{seqRate.toFixed(1)}Hz</span>
@@ -66,6 +68,7 @@ export const ModulationSection = ({
                         step={0.01}
                         defaultValue={0}
                         size="lg"
+                        tone="sage"
                     />
                     <span className="text-[7px] text-muted-foreground">→ Pitch</span>
                 </div>

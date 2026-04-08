@@ -173,6 +173,6 @@ After migration, the `inject()` pattern resolves `eventBus` via the DI container
 - [x] All 23 use cases migrated to `inject()` (22 done; 1 structural exception: `aiMidiHandlers.ts`)
 - [x] All 11 repositories migrated to `inject()` (9 done; 2 structural exceptions: `createWebAudioEngine.ts` class, `messageHandlers.ts` mutual recursion)
 - [x] Direct `logger`/`eventBus` imports removed from migrated files
-- [ ] Tests updated to use `injectDependencies()` where applicable
+- [x] Tests updated to use `injectDependencies()` where applicable — N/A: no spec files exist for any migrated module
 - [x] `pnpm typecheck` passes (pre-existing errors in unrelated files only)
 - [x] `pnpm test` passes (227/227)
