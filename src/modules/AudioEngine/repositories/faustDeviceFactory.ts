@@ -11,7 +11,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type OfflineDeviceNode } from './deviceNodeFactory';
-import { createFaustNode, compileFaustDSP, isFaustModule } from '#/modules/Plugin/useCases/faustEngine/compilerEngine';
+import {
+    createFaustNode,
+    compileFaustDSP,
+    isFaustModule,
+} from '#/modules/Plugin/useCases/faustEngine/compilerEngine';
 
 export { isFaustModule };
 
@@ -22,8 +26,8 @@ export { isFaustModule };
  * Returns null if compilation or node creation fails — the chain builder
  * should skip this device gracefully.
  */
-export const createFaustDevice = inject({ logger })(
-    ({ logger }) =>
+export const createFaustDevice = inject({ logger, compileFaustDSP, createFaustNode })(
+    ({ logger, compileFaustDSP, createFaustNode }) =>
         async function createFaustDevice(
             ctx: BaseAudioContext,
             faustModuleId: string

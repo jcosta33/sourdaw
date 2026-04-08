@@ -1,3 +1,7 @@
+/**
+ * Transport MIDI scheduling (playhead tick). Static imports: playhead hot path; not `inject()`-wrapped.
+ * See `docs/01-dependency-injection.md` and `docs/architecture/03-typescript-module.md` §4.10.
+ */
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { tempoMapStore } from '../../stores/tempoMapStore';

@@ -80,11 +80,22 @@ describe('recentProjects injectables', () => {
         vi.mocked(readNamedProjectJson).mockReturnValue(null);
 
         const logger = createMock<Logger>();
-        injectDependencies(loadRecentProject, { logger });
+        const stopPlaybackMock = vi.fn();
+        injectDependencies(loadRecentProject, {
+            logger,
+            stopPlayback: stopPlaybackMock,
+            resetAudioGraph: vi.fn(),
+            getAudioContext: vi.fn(),
+            hydrateModuleStoresFromProjectData: vi.fn(),
+            clearUndoHistory: vi.fn(),
+            verifyAudioBufferReferences: vi.fn(),
+            audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
+        });
 
         const ok = await loadRecentProject('missing-key');
 
         expect(ok).toBe(false);
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('No project data found'));
+        expect(stopPlaybackMock).not.toHaveBeenCalled();
     });
 });

@@ -1,6 +1,10 @@
 /**
  * MIDI message handlers: noteOn, noteOff, CC, channel pressure, pitch bend.
  * Handles both live monitoring (oscillator playback) and recording (note creation).
+ *
+ * Repository-layer adapter with many use-case collaborators; not refactored to `inject()` here.
+ * See `docs/01-dependency-injection.md` and `docs/architecture/03-typescript-module.md` §4.10.
+ * Future improvement: narrow `MidiMessagePorts` facade injected at `createWebAudioEngine` wire-up.
  */
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';

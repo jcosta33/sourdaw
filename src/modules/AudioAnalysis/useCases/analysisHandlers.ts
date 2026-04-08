@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { analyzeMix } from '#/modules/AudioAnalysis/useCases/analyzeMix';
 import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
@@ -5,9 +6,9 @@ import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
-export const analysisHandlers = {
-    analyzeMix: {
-        execute: async () => {
+export const executeAnalyzeMixAction = inject({ getMixAnalysisStoreValue, setMixAnalysisStoreValue, analyzeMix })(
+    ({ getMixAnalysisStoreValue, setMixAnalysisStoreValue, analyzeMix }) =>
+        async function executeAnalyzeMixAction(): Promise<void> {
             const state = getMixAnalysisStoreValue();
             if (!state) {
                 return;
@@ -21,13 +22,17 @@ export const analysisHandlers = {
             } catch {
                 setMixAnalysisStoreValue({ ...state, isAnalyzing: false });
             }
-        },
-        describe: () => ({ label: 'Analyze mix' }),
-        undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'analyzeMix'>>,
+        }
+);
 
-    autoFixMix: {
-        execute: async () => {
+export const executeAutoFixMixAction = inject({
+    getMixAnalysisStoreValue,
+    setMixAnalysisStoreValue,
+    analyzeMix,
+    executeAppAction,
+})(
+    ({ getMixAnalysisStoreValue, setMixAnalysisStoreValue, analyzeMix, executeAppAction }) =>
+        async function executeAutoFixMixAction(): Promise<void> {
             const state = getMixAnalysisStoreValue();
             if (!state) {
                 return;
@@ -65,7 +70,18 @@ export const analysisHandlers = {
             } catch {
                 setMixAnalysisStoreValue({ ...state, isAnalyzing: false });
             }
-        },
+        }
+);
+
+export const analysisHandlers = {
+    analyzeMix: {
+        execute: executeAnalyzeMixAction,
+        describe: () => ({ label: 'Analyze mix' }),
+        undoable: false,
+    } satisfies ActionHandler<Extract<AppAction, 'analyzeMix'>>,
+
+    autoFixMix: {
+        execute: executeAutoFixMixAction,
         describe: () => ({ label: 'Auto-fix mix issues' }),
         undoable: false,
     } satisfies ActionHandler<Extract<AppAction, 'autoFixMix'>>,

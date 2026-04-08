@@ -54,8 +54,26 @@ export const removeFromRecentProjects = inject({ logger })(
         }
 );
 
-export const loadRecentProject = inject({ logger })(
-    ({ logger }) =>
+export const loadRecentProject = inject({
+    logger,
+    stopPlayback,
+    resetAudioGraph,
+    getAudioContext,
+    hydrateModuleStoresFromProjectData,
+    clearUndoHistory,
+    verifyAudioBufferReferences,
+    audioBufferCache,
+})(
+    ({
+        logger,
+        stopPlayback,
+        resetAudioGraph,
+        getAudioContext,
+        hydrateModuleStoresFromProjectData,
+        clearUndoHistory,
+        verifyAudioBufferReferences,
+        audioBufferCache,
+    }) =>
         async function loadRecentProject(key: string): Promise<boolean> {
             try {
                 const raw = readNamedProjectJson(key);

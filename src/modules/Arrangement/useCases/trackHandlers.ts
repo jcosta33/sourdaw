@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { setTrackInput } from '#/modules/Arrangement/useCases/setTrackInput';
@@ -38,21 +39,264 @@ import {
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 
+type ExtractAction<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+
+export const executeAddTrack = inject({ addTrack })(
+    ({ addTrack }) =>
+        function executeAddTrack(a: ExtractAction<AppAction, 'addTrack'>): void {
+            addTrack(a.payload);
+        }
+);
+
+export const executeRemoveTrack = inject({ removeTrack })(
+    ({ removeTrack }) =>
+        function executeRemoveTrack(a: ExtractAction<AppAction, 'removeTrack'>): void {
+            removeTrack(a.payload.trackId);
+        }
+);
+
+export const executeRemoveAllTracks = inject({ getTrackStoreState, removeTrack })(
+    ({ getTrackStoreState, removeTrack }) =>
+        function executeRemoveAllTracks(): void {
+            const state = getTrackStoreState();
+            if (state) {
+                for (const t of state.tracks) {
+                    removeTrack(t.id);
+                }
+            }
+        }
+);
+
+export const executeRenameTrack = inject({ renameTrack })(
+    ({ renameTrack }) =>
+        function executeRenameTrack(a: ExtractAction<AppAction, 'renameTrack'>): void {
+            renameTrack(a.payload.trackId, a.payload.name);
+        }
+);
+
+export const executeSelectTrack = inject({ selectTrack })(
+    ({ selectTrack }) =>
+        function executeSelectTrack(a: ExtractAction<AppAction, 'selectTrack'>): void {
+            selectTrack(a.payload.trackId);
+        }
+);
+
+export const executeMuteTrack = inject({ muteTrack })(
+    ({ muteTrack }) =>
+        function executeMuteTrack(a: ExtractAction<AppAction, 'muteTrack'>): void {
+            muteTrack(a.payload.trackId, a.payload.muted);
+        }
+);
+
+export const executeSoloTrack = inject({ soloTrack })(
+    ({ soloTrack }) =>
+        function executeSoloTrack(a: ExtractAction<AppAction, 'soloTrack'>): void {
+            soloTrack(a.payload.trackId, a.payload.soloed);
+        }
+);
+
+export const executeArmTrack = inject({ armTrack })(
+    ({ armTrack }) =>
+        function executeArmTrack(a: ExtractAction<AppAction, 'armTrack'>): void {
+            armTrack(a.payload.trackId, a.payload.armed);
+        }
+);
+
+export const executeFreezeTrack = inject({ freezeTrack })(
+    ({ freezeTrack }) =>
+        async function executeFreezeTrack(a: ExtractAction<AppAction, 'freezeTrack'>): Promise<void> {
+            await freezeTrack(a.payload.trackId);
+        }
+);
+
+export const executeUnfreezeTrack = inject({ unfreezeTrack })(
+    ({ unfreezeTrack }) =>
+        function executeUnfreezeTrack(a: ExtractAction<AppAction, 'unfreezeTrack'>): void {
+            unfreezeTrack(a.payload.trackId);
+        }
+);
+
+export const executeBounceInPlace = inject({ bounceInPlace })(
+    ({ bounceInPlace }) =>
+        function executeBounceInPlace(a: ExtractAction<AppAction, 'bounceInPlace'>): void {
+            bounceInPlace(a.payload.trackId);
+        }
+);
+
+export const executeDuplicateTrack = inject({ duplicateTrack })(
+    ({ duplicateTrack }) =>
+        function executeDuplicateTrack(a: ExtractAction<AppAction, 'duplicateTrack'>): void {
+            duplicateTrack(a.payload.trackId);
+        }
+);
+
+export const executeReorderTrack = inject({ reorderTrack })(
+    ({ reorderTrack }) =>
+        function executeReorderTrack(a: ExtractAction<AppAction, 'reorderTrack'>): void {
+            reorderTrack(a.payload.trackId, a.payload.newIndex);
+        }
+);
+
+export const executeSetTrackGain = inject({ setTrackGain, engineSetTrackGain })(
+    ({ setTrackGain, engineSetTrackGain }) =>
+        function executeSetTrackGain(a: ExtractAction<AppAction, 'setTrackGain'>): void {
+            setTrackGain(a.payload.trackId, a.payload.gain);
+            engineSetTrackGain(a.payload.trackId, a.payload.gain);
+        }
+);
+
+export const executeSetTrackPan = inject({ setTrackPan, engineSetTrackPan })(
+    ({ setTrackPan, engineSetTrackPan }) =>
+        function executeSetTrackPan(a: ExtractAction<AppAction, 'setTrackPan'>): void {
+            setTrackPan(a.payload.trackId, a.payload.pan);
+            engineSetTrackPan(a.payload.trackId, a.payload.pan);
+        }
+);
+
+export const executeSetTrackColor = inject({ setTrackColor })(
+    ({ setTrackColor }) =>
+        function executeSetTrackColor(a: ExtractAction<AppAction, 'setTrackColor'>): void {
+            setTrackColor(a.payload.trackId, a.payload.color);
+        }
+);
+
+export const executeCreateBus = inject({ addTrack })(
+    ({ addTrack }) =>
+        function executeCreateBus(a: ExtractAction<AppAction, 'createBus'>): void {
+            addTrack({ name: a.payload.name, kind: 'bus' });
+        }
+);
+
+export const executeCreateFolder = inject({ createFolder })(
+    ({ createFolder }) =>
+        function executeCreateFolder(a: ExtractAction<AppAction, 'createFolder'>): void {
+            createFolder(a.payload.name);
+        }
+);
+
+export const executeHideTrack = inject({ hideTrack })(
+    ({ hideTrack }) =>
+        function executeHideTrack(a: ExtractAction<AppAction, 'hideTrack'>): void {
+            hideTrack(a.payload.trackId, a.payload.hidden);
+        }
+);
+
+export const executeDisableTrack = inject({ disableTrack })(
+    ({ disableTrack }) =>
+        function executeDisableTrack(a: ExtractAction<AppAction, 'disableTrack'>): void {
+            disableTrack(a.payload.trackId, a.payload.disabled);
+        }
+);
+
+export const executeSetTrackHeight = inject({ setTrackHeight })(
+    ({ setTrackHeight }) =>
+        function executeSetTrackHeight(a: ExtractAction<AppAction, 'setTrackHeight'>): void {
+            setTrackHeight(a.payload.trackId, a.payload.height);
+        }
+);
+
+export const executeSetTrackOutput = inject({ setTrackOutput })(
+    ({ setTrackOutput }) =>
+        function executeSetTrackOutput(a: ExtractAction<AppAction, 'setTrackOutput'>): void {
+            setTrackOutput(a.payload.trackId, a.payload.outputId);
+        }
+);
+
+export const executeSetAutomationMode = inject({ setAutomationMode })(
+    ({ setAutomationMode }) =>
+        function executeSetAutomationMode(a: ExtractAction<AppAction, 'setAutomationMode'>): void {
+            setAutomationMode(a.payload.trackId, a.payload.mode);
+        }
+);
+
+export const executeFoldTrack = inject({ foldTrack })(
+    ({ foldTrack }) =>
+        function executeFoldTrack(a: ExtractAction<AppAction, 'foldTrack'>): void {
+            foldTrack(a.payload.trackId, a.payload.folded);
+        }
+);
+
+export const executeGroupTracks = inject({ groupTracks })(
+    ({ groupTracks }) =>
+        function executeGroupTracks(a: ExtractAction<AppAction, 'groupTracks'>): void {
+            groupTracks(a.payload.trackIds, a.payload.name);
+        }
+);
+
+export const executeUngroupTracks = inject({ ungroupTracks })(
+    ({ ungroupTracks }) =>
+        function executeUngroupTracks(a: ExtractAction<AppAction, 'ungroupTracks'>): void {
+            ungroupTracks(a.payload.groupId);
+        }
+);
+
+export const executeToggleSoloSafe = inject({ toggleSoloSafe })(
+    ({ toggleSoloSafe }) =>
+        function executeToggleSoloSafe(a: ExtractAction<AppAction, 'toggleSoloSafe'>): void {
+            toggleSoloSafe(a.payload.trackId);
+        }
+);
+
+export const executeSetTrackNotes = inject({ setTrackNotes })(
+    ({ setTrackNotes }) =>
+        function executeSetTrackNotes(a: ExtractAction<AppAction, 'setTrackNotes'>): void {
+            setTrackNotes(a.payload.trackId, a.payload.notes);
+        }
+);
+
+export const executeSetTrackInput = inject({ setTrackInput })(
+    ({ setTrackInput }) =>
+        function executeSetTrackInput(a: ExtractAction<AppAction, 'setTrackInput'>): void {
+            setTrackInput(a.payload.trackId, a.payload.inputId);
+        }
+);
+
+export const executeClearSolos = inject({ clearSolos })(
+    ({ clearSolos }) =>
+        function executeClearSolos(): void {
+            clearSolos();
+        }
+);
+
+export const executeZoomTracksVertical = inject({ zoomTracksVertical })(
+    ({ zoomTracksVertical }) =>
+        function executeZoomTracksVertical(a: ExtractAction<AppAction, 'zoomTracksVertical'>): void {
+            zoomTracksVertical(a.payload.delta);
+        }
+);
+
+export const executeConsolidateAllTracks = inject({ getTrackStoreState, bounceInPlace })(
+    ({ getTrackStoreState, bounceInPlace }) =>
+        async function executeConsolidateAllTracks(): Promise<void> {
+            const state = getTrackStoreState();
+            if (!state) {
+                return;
+            }
+            for (const track of state.tracks) {
+                if ((track.kind === 'audio' || track.kind === 'midi') && track.clips.length > 0) {
+                    await bounceInPlace(track.id);
+                }
+            }
+        }
+);
+
+export const executeBounceToNewTrack = inject({ bounceToNewTrack })(
+    ({ bounceToNewTrack }) =>
+        async function executeBounceToNewTrack(a: ExtractAction<AppAction, 'bounceToNewTrack'>): Promise<void> {
+            await bounceToNewTrack(a.payload.trackId);
+        }
+);
 
 export const trackHandlers = {
     addTrack: {
-        execute: (a) => {
-            addTrack(a.payload);
-        },
+        execute: executeAddTrack,
         describe: (a) => ({ label: `Add ${a.payload.kind} track "${a.payload.name}"` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'addTrack'>>,
 
     removeTrack: {
-        execute: (a) => {
-            removeTrack(a.payload.trackId);
-        },
+        execute: executeRemoveTrack,
         describe: (a) => {
             // Snapshot everything that removeTrack will delete, so the inverse
             // action (`restoreTrack`) can replay it. Runs pre-execute.
@@ -110,38 +354,25 @@ export const trackHandlers = {
     } satisfies ActionHandler<Extract<AppAction, 'removeTrack'>>,
 
     removeAllTracks: {
-        execute: () => {
-            const state = getTrackStoreState();
-            if (state) {
-                for (const t of state.tracks) {
-                    removeTrack(t.id);
-                }
-            }
-        },
+        execute: executeRemoveAllTracks,
         describe: () => ({ label: 'Remove all tracks' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'removeAllTracks'>>,
 
     renameTrack: {
-        execute: (a) => {
-            renameTrack(a.payload.trackId, a.payload.name);
-        },
+        execute: executeRenameTrack,
         describe: (a) => ({ label: `Rename track to "${a.payload.name}"` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'renameTrack'>>,
 
     selectTrack: {
-        execute: (a) => {
-            selectTrack(a.payload.trackId);
-        },
+        execute: executeSelectTrack,
         describe: () => ({ label: 'Select track' }),
         undoable: false,
     } satisfies ActionHandler<Extract<AppAction, 'selectTrack'>>,
 
     muteTrack: {
-        execute: (a) => {
-            muteTrack(a.payload.trackId, a.payload.muted);
-        },
+        execute: executeMuteTrack,
         describe: (a) => ({
             label: a.payload.muted ? 'Mute track' : 'Unmute track',
             inverseAction: { type: 'muteTrack', payload: { trackId: a.payload.trackId, muted: !a.payload.muted } },
@@ -150,9 +381,7 @@ export const trackHandlers = {
     } satisfies ActionHandler<Extract<AppAction, 'muteTrack'>>,
 
     soloTrack: {
-        execute: (a) => {
-            soloTrack(a.payload.trackId, a.payload.soloed);
-        },
+        execute: executeSoloTrack,
         describe: (a) => ({
             label: a.payload.soloed ? 'Solo track' : 'Unsolo track',
             inverseAction: { type: 'soloTrack', payload: { trackId: a.payload.trackId, soloed: !a.payload.soloed } },
@@ -161,58 +390,43 @@ export const trackHandlers = {
     } satisfies ActionHandler<Extract<AppAction, 'soloTrack'>>,
 
     armTrack: {
-        execute: (a) => {
-            armTrack(a.payload.trackId, a.payload.armed);
-        },
+        execute: executeArmTrack,
         describe: (a) => ({ label: a.payload.armed ? 'Arm track' : 'Disarm track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'armTrack'>>,
 
     freezeTrack: {
-        execute: async (a) => {
-            await freezeTrack(a.payload.trackId);
-        },
+        execute: executeFreezeTrack,
         describe: () => ({ label: 'Freeze track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'freezeTrack'>>,
 
     unfreezeTrack: {
-        execute: (a) => {
-            unfreezeTrack(a.payload.trackId);
-        },
+        execute: executeUnfreezeTrack,
         describe: () => ({ label: 'Unfreeze track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'unfreezeTrack'>>,
 
     bounceInPlace: {
-        execute: (a) => {
-            bounceInPlace(a.payload.trackId);
-        },
+        execute: executeBounceInPlace,
         describe: () => ({ label: 'Bounce in place' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'bounceInPlace'>>,
 
     duplicateTrack: {
-        execute: (a) => {
-            duplicateTrack(a.payload.trackId);
-        },
+        execute: executeDuplicateTrack,
         describe: () => ({ label: 'Duplicate track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'duplicateTrack'>>,
 
     reorderTrack: {
-        execute: (a) => {
-            reorderTrack(a.payload.trackId, a.payload.newIndex);
-        },
+        execute: executeReorderTrack,
         describe: () => ({ label: 'Reorder track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'reorderTrack'>>,
 
     setTrackGain: {
-        execute: (a) => {
-            setTrackGain(a.payload.trackId, a.payload.gain);
-            engineSetTrackGain(a.payload.trackId, a.payload.gain);
-        },
+        execute: executeSetTrackGain,
         describe: (a) => {
             const prev = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
             return {
@@ -226,10 +440,7 @@ export const trackHandlers = {
     } satisfies ActionHandler<Extract<AppAction, 'setTrackGain'>>,
 
     setTrackPan: {
-        execute: (a) => {
-            setTrackPan(a.payload.trackId, a.payload.pan);
-            engineSetTrackPan(a.payload.trackId, a.payload.pan);
-        },
+        execute: executeSetTrackPan,
         describe: (a) => {
             const prev = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
             return {
@@ -243,9 +454,7 @@ export const trackHandlers = {
     } satisfies ActionHandler<Extract<AppAction, 'setTrackPan'>>,
 
     setTrackColor: {
-        execute: (a) => {
-            setTrackColor(a.payload.trackId, a.payload.color);
-        },
+        execute: executeSetTrackColor,
         describe: (a) => {
             const prev = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
             return {
@@ -259,97 +468,73 @@ export const trackHandlers = {
     } satisfies ActionHandler<Extract<AppAction, 'setTrackColor'>>,
 
     createBus: {
-        execute: (a) => {
-            addTrack({ name: a.payload.name, kind: 'bus' });
-        },
+        execute: executeCreateBus,
         describe: (a) => ({ label: `Create bus "${a.payload.name}"` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'createBus'>>,
 
     createFolder: {
-        execute: (a) => {
-            createFolder(a.payload.name);
-        },
+        execute: executeCreateFolder,
         describe: (a) => ({ label: `Create folder "${a.payload.name}"` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'createFolder'>>,
 
     hideTrack: {
-        execute: (a) => {
-            hideTrack(a.payload.trackId, a.payload.hidden);
-        },
+        execute: executeHideTrack,
         describe: (a) => ({ label: a.payload.hidden ? 'Hide track' : 'Show track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'hideTrack'>>,
 
     disableTrack: {
-        execute: (a) => {
-            disableTrack(a.payload.trackId, a.payload.disabled);
-        },
+        execute: executeDisableTrack,
         describe: (a) => ({ label: a.payload.disabled ? 'Disable track' : 'Enable track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'disableTrack'>>,
 
     setTrackHeight: {
-        execute: (a) => {
-            setTrackHeight(a.payload.trackId, a.payload.height);
-        },
+        execute: executeSetTrackHeight,
         describe: () => ({ label: 'Set track height' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'setTrackHeight'>>,
 
     setTrackOutput: {
-        execute: (a) => {
-            setTrackOutput(a.payload.trackId, a.payload.outputId);
-        },
+        execute: executeSetTrackOutput,
         describe: () => ({ label: 'Set track output' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'setTrackOutput'>>,
 
     setAutomationMode: {
-        execute: (a) => {
-            setAutomationMode(a.payload.trackId, a.payload.mode);
-        },
+        execute: executeSetAutomationMode,
         describe: (a) => ({ label: `Set automation mode: ${a.payload.mode}` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'setAutomationMode'>>,
 
     foldTrack: {
-        execute: (a) => {
-            foldTrack(a.payload.trackId, a.payload.folded);
-        },
+        execute: executeFoldTrack,
         describe: (a) => ({ label: a.payload.folded ? 'Fold track' : 'Unfold track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'foldTrack'>>,
 
     groupTracks: {
-        execute: (a) => {
-            groupTracks(a.payload.trackIds, a.payload.name);
-        },
+        execute: executeGroupTracks,
         describe: (a) => ({ label: `Group tracks: "${a.payload.name}"` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'groupTracks'>>,
 
     ungroupTracks: {
-        execute: (a) => {
-            ungroupTracks(a.payload.groupId);
-        },
+        execute: executeUngroupTracks,
         describe: () => ({ label: 'Ungroup tracks' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'ungroupTracks'>>,
 
     toggleSoloSafe: {
-        execute: (a) => {
-            toggleSoloSafe(a.payload.trackId);
-        },
+        execute: executeToggleSoloSafe,
         describe: () => ({ label: 'Toggle solo safe' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'toggleSoloSafe'>>,
 
     setTrackNotes: {
-        execute: (a) => {
-            setTrackNotes(a.payload.trackId, a.payload.notes);
-        },
+        execute: executeSetTrackNotes,
         describe: () => {
             return { label: 'Set track notes' };
         },
@@ -357,49 +542,31 @@ export const trackHandlers = {
     } satisfies ActionHandler<Extract<AppAction, 'setTrackNotes'>>,
 
     setTrackInput: {
-        execute: (a) => {
-            setTrackInput(a.payload.trackId, a.payload.inputId);
-        },
+        execute: executeSetTrackInput,
         describe: () => ({ label: 'Set track input' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'setTrackInput'>>,
 
     clearSolos: {
-        execute: () => {
-            clearSolos();
-        },
+        execute: executeClearSolos,
         describe: () => ({ label: 'Clear all solos' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'clearSolos'>>,
 
     zoomTracksVertical: {
-        execute: (a) => {
-            zoomTracksVertical(a.payload.delta);
-        },
+        execute: executeZoomTracksVertical,
         describe: (a) => ({ label: `Zoom tracks vertical ${a.payload.delta > 0 ? 'in' : 'out'}` }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'zoomTracksVertical'>>,
 
     consolidateAllTracks: {
-        execute: async () => {
-            const state = getTrackStoreState();
-            if (!state) {
-                return;
-            }
-            for (const track of state.tracks) {
-                if ((track.kind === 'audio' || track.kind === 'midi') && track.clips.length > 0) {
-                    await bounceInPlace(track.id);
-                }
-            }
-        },
+        execute: executeConsolidateAllTracks,
         describe: () => ({ label: 'Consolidate all tracks' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'consolidateAllTracks'>>,
 
     bounceToNewTrack: {
-        execute: async (a) => {
-            await bounceToNewTrack(a.payload.trackId);
-        },
+        execute: executeBounceToNewTrack,
         describe: () => ({ label: 'Bounce to new track' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'bounceToNewTrack'>>,
