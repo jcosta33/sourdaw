@@ -59,6 +59,12 @@ pub struct NoteHumanization {
     pub vibrato_rate_scale: f32,
     /// Vibrato depth variation (fraction, centered on 1.0).
     pub vibrato_depth_scale: f32,
+    /// Vibrato starting phase in [0, 1). Always randomized regardless of
+    /// the humanize amount — ensemble realism (spec §4.2) requires that
+    /// individual players have decorrelated vibrato phases even when no
+    /// other humanization is in effect, otherwise the section sounds like
+    /// one player chorused, with audible flanging.
+    pub vibrato_phase: f32,
     /// Sample start offset in samples (for round-robin variation).
     pub start_offset: u32,
 }
@@ -71,6 +77,7 @@ impl Default for NoteHumanization {
             dynamic_scale: 1.0,
             vibrato_rate_scale: 1.0,
             vibrato_depth_scale: 1.0,
+            vibrato_phase: 0.0,
             start_offset: 0,
         }
     }
@@ -100,8 +107,16 @@ impl Humanizer {
 
     /// Generate humanization offsets for a new note.
     pub fn generate(&mut self) -> NoteHumanization {
+        // Vibrato phase is always randomized (ensemble decorrelation, spec
+        // §4.2) — even at humanize=0 the section needs decorrelated vibrato
+        // phases to avoid the chorus-flange artifact.
+        let phase = self.rng.next_f32();
+
         if self.amount < 0.001 {
-            return NoteHumanization::default();
+            return NoteHumanization {
+                vibrato_phase: phase,
+                ..NoteHumanization::default()
+            };
         }
 
         let a = self.amount;
@@ -112,6 +127,7 @@ impl Humanizer {
             dynamic_scale: 1.0 + self.rng.next_bipolar() * self.config.dynamic_max * a,
             vibrato_rate_scale: 1.0 + self.rng.next_bipolar() * self.config.vibrato_var_max * a,
             vibrato_depth_scale: 1.0 + self.rng.next_bipolar() * self.config.vibrato_var_max * a,
+            vibrato_phase: phase,
             start_offset: (self.rng.next_f32() * 64.0 * a) as u32,
         }
     }

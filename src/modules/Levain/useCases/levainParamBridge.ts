@@ -15,6 +15,7 @@ import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement';
 type LevainDevice = {
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
+    setInstrument?: (instrumentId: string) => void;
 };
 
 type LevainBridgeDeps = {
@@ -63,6 +64,9 @@ function createLevainBridge(deps: LevainBridgeDeps) {
     }
 
     function loadSamplesForInstrument(instrumentId: string): void {
+        // Tell the engine which instrument it now is, so the realism layer
+        // (body modes, sympathetic strings, breath/bow noise) reconfigures.
+        activeDevice?.setInstrument?.(instrumentId);
         if (!activePort) {
             return;
         }

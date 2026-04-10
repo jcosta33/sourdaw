@@ -14,6 +14,7 @@ pub mod humanize;
 pub mod legato;
 pub mod mic;
 pub mod performance;
+pub mod realism;
 pub mod release;
 pub mod types;
 pub mod voice;
@@ -45,6 +46,13 @@ impl LevainInstance {
     /// Set a named parameter value.
     pub fn set_param(&mut self, name: &str, value: f32) {
         self.engine.set_param(name, value);
+    }
+
+    /// Tell the engine which instrument id is now loaded (e.g. `violin-1`,
+    /// `cello`, `trumpet`). The realism layer uses this to pick its body
+    /// resonance modes, sympathetic strings, and breath/bow noise colour.
+    pub fn set_instrument(&mut self, instrument_id: &str) {
+        self.engine.set_instrument(instrument_id);
     }
 
     /// Process a MIDI note on event.
