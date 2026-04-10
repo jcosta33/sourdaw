@@ -121,6 +121,9 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'cc':
                 inst.handle_cc(msg.cc, msg.value);
                 break;
+            case 'setInstrument':
+                inst.set_instrument(msg.instrumentId);
+                break;
             case 'bypass':
                 this._bypassed = msg.bypassed;
                 break;
