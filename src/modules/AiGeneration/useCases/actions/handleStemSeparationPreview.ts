@@ -1,7 +1,7 @@
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 import { isAppError } from '#/infra/errors/isAppError';
-import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { separateStems } from '#/modules/AudioAnalysis';
+import { audioBufferCache, isTauri } from '#/modules/AudioEngine';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
@@ -61,7 +61,6 @@ export async function handleStemSeparationPreview(clipId: string) {
         const start = performance.now();
 
         if (isTauri()) {
-            const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
             const buffer = audioBufferCache.get(clipId);
             if (!buffer) {
                 throw createAiGenerationError('Audio buffer not found for clip');
@@ -81,7 +80,6 @@ export async function handleStemSeparationPreview(clipId: string) {
                 durationMs: Math.round(performance.now() - start),
             });
         } else {
-            const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
             const buffer = audioBufferCache.get(clipId);
             if (!buffer) {
                 throw createAiGenerationError('Audio buffer not found for clip');

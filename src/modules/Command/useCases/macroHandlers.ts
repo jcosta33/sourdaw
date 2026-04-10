@@ -1,4 +1,4 @@
-import { type ActionHandler } from '../models/ActionHandler';
+import { type ActionHandler } from './commandQueries';
 import { startMacroRecording, stopMacroRecording } from '../useCases/macro/recording';
 import { playMacro } from '../useCases/macro/playback';
 import { deleteMacro } from '../useCases/macro/management';

@@ -26,9 +26,8 @@ import { getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
-import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createUndoEntry, generateGroupId } from '#/modules/Command/useCases/commandQueries';
-import { saveSnapshot } from '#/modules/CrdtDocument/useCases/saveSnapshot';
+import { createUndoEntry, generateGroupId, pushUndo } from '#/modules/Command';
+import { saveSnapshot } from '#/modules/CrdtDocument';
 
 export type DsoEditResult = {
     success: boolean;

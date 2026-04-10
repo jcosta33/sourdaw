@@ -8,24 +8,38 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
-import {
-    aiActionHistoryStore,
-    toggleAiHistoryPanel,
-    clearAiHistory,
-    type AiActionGroup,
-} from '#/modules/AiRuntime/stores/aiActionHistoryStore';
-import {
-    actionHistoryStore,
-    clearActionHistory,
-    type ActionHistoryEntry,
-} from '#/modules/CrdtDocument/stores/actionHistoryStore';
-import { revertAiActionGroup } from '#/modules/AiRuntime/useCases/aiHistoryActions';
-import { revertAction, canRevertAction } from '#/modules/CrdtDocument/useCases/revertAction';
+import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
+import { actionHistoryStore, canRevertAction, clearActionHistory, revertAction } from '#/modules/CrdtDocument';
 
-const defaultAiState = { groups: [] as AiActionGroup[], panelOpen: false };
-const defaultHistoryState = { entries: [] as ActionHistoryEntry[] };
+type AiActionEntryView =
+    | { kind: 'appAction'; actionType: string; label: string }
+    | { kind: 'jsonEdit'; label: string };
 
-type HistoryItem = { kind: 'ai'; group: AiActionGroup } | { kind: 'action'; entry: ActionHistoryEntry };
+type AiActionGroupView = {
+    id: string;
+    prompt: string;
+    actions: AiActionEntryView[];
+    groupId: string;
+    timestamp: number;
+    reverted: boolean;
+};
+
+type ActionHistoryEntryView = {
+    id: string;
+    label: string;
+    actionKind: string;
+    action: { type: string; payload?: unknown };
+    inverseAction: { type: string; payload?: unknown } | null;
+    source: 'manual' | 'prompt' | 'voice' | 'ai';
+    timestamp: number;
+    reverted: boolean;
+};
+
+const defaultAiState = { groups: [] as AiActionGroupView[], panelOpen: false };
+const defaultHistoryState = { entries: [] as ActionHistoryEntryView[] };
+
+type HistoryItem = { kind: 'ai'; group: AiActionGroupView } | { kind: 'action'; entry: ActionHistoryEntryView };
 
 /**
  * Unified Action History — shows all user and AI actions in chronological order.
@@ -120,7 +134,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
     );
 };
 
-const AiGroupItem = ({ group }: { group: AiActionGroup }): ReactElement => {
+const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
     const [expanded, setExpanded] = useState(false);
 
     return (
@@ -170,7 +184,7 @@ const AiGroupItem = ({ group }: { group: AiActionGroup }): ReactElement => {
     );
 };
 
-const ActionItem = ({ entry }: { entry: ActionHistoryEntry }): ReactElement => {
+const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement => {
     const revertable = canRevertAction(entry);
 
     return (

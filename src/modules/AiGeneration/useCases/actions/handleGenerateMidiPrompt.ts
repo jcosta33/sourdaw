@@ -1,13 +1,10 @@
-import { generateMidiAI, type GeneratedNote, isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud/batchAddMidiNotes';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';
+import { createCallbackUndoEntry, pushUndo } from '#/modules/Command';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine';
+import { addClip, addTrack, trackStore } from '#/modules/Arrangement';
+import { batchAddMidiNotes, midiStore } from '#/modules/MIDI';
+import { getTransportState } from '#/modules/Transport';
+import { workspaceStore } from '#/modules/Workspace';
+import { type AiGeneratedMidiNote } from '../../models/AiGeneratedMidiNote';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
@@ -16,7 +13,7 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });
     try {
         const start = performance.now();
-        let finalNotes: GeneratedNote[] = [];
+        let finalNotes: AiGeneratedMidiNote[] = [];
 
         if (isTauri()) {
             const seedNotes: Array<[number, number, number, number]> = [

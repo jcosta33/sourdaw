@@ -5,9 +5,8 @@
  * updates to avoid flooding the MessagePort during rapid knob dragging.
  */
 
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { updateDeviceParam } from '#/modules/AudioEngine';
+import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement';
 import { type FermenterPatch } from '../models/FermenterPatch';
 import { loadFermenterPatch, setFermenterParam } from '../stores/fermenterStore';
 

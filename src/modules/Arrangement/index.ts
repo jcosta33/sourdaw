@@ -196,8 +196,6 @@ export { toggleSoloSafe } from './useCases/toggleTrackState/toggleSoloSafe';
 
 // ── UseCases: Track View / Zoom ────────────────────────────────────────────
 
-export { setWorkspaceMode, getAudioDevices, decodeAudioFile } from './useCases/trackViewActions';
-export type { AudioDeviceInfo } from './useCases/trackViewActions';
 export { zoomTracksVertical } from './useCases/trackZoom';
 
 // ── UseCases: Track Template ───────────────────────────────────────────────

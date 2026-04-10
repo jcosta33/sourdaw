@@ -1,7 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
-import { type AppAction } from '../models/AppAction';
+import { getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement';
+import { type AppAction } from './commandQueries';
 // Types inferred from the store state returned by getTrackStoreState — no cross-module model import (AGENTS.md §95).
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];

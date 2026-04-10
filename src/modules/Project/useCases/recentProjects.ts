@@ -1,13 +1,12 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 import { type ProjectData, RECENT_PROJECTS_KEY } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
 import { readNamedProjectJson, writeProjectJson } from '../repositories/project/storageOperations';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import { audioBufferCache, getAudioContext, resetAudioGraph } from '#/modules/AudioEngine';
+import { stopPlayback } from '#/modules/Command';
 import {
     hydrateModuleStoresFromProjectData,
     clearUndoHistory,

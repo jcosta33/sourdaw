@@ -60,13 +60,13 @@ export const projectCommands: CommandEntry[] = [
         description: 'Import a .sourdaw project file',
         category: 'Project',
         action: async () => {
-            const { pickFiles } = await import('#/modules/Project/useCases/fileDialog');
+            const { pickFiles } = await import('#/modules/Project');
             const files = await pickFiles({
                 filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
                 multiple: false,
             });
             if (files && files.length > 0) {
-                const { importProjectFile } = await import('#/modules/Project/useCases/projectPersistence/fileIO');
+                const { importProjectFile } = await import('#/modules/Project');
                 await importProjectFile(files[0]!);
             }
         },

@@ -1,12 +1,36 @@
 import { createStore } from '#/infra/store/createStore';
-import { type KneadTrackState } from '../models/KneadBlob';
 
-interface KneadStoreState {
+export type NoteBlob = {
+    id: string;
+    startTime: number;
+    endTime: number;
+    pitchCenterCents: number;
+    pitchCurveCents: number[];
+    voicedConfidence: number;
+    driftPercent: number;
+    vibratoDepthPercent: number;
+    vibratoRateHz: number;
+    formantShiftCents: number;
+    gainDb: number;
+    muted: boolean;
+};
+
+export type KneadTrackState = {
+    trackId: string;
+    blobs: NoteBlob[];
+    retuneSpeedMs: number;
+    toleranceCents: number;
+    toleranceTimeMs: number;
+    humanizePercent: number;
+    formantPreserve: boolean;
+};
+
+export type KneadStoreState = {
     activeTrackId: string | null;
     tracks: Record<string, KneadTrackState>;
     isAnalyzing: boolean;
     analysisProgress: number;
-}
+};
 
 export const kneadStore = createStore<KneadStoreState>({
     initialData: {

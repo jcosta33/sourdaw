@@ -3,17 +3,12 @@
  * so that AiRuntime presentation views never import another module's
  * use cases directly.
  */
-
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { undo } from '#/modules/Command/useCases/undoRedo';
-import { toggleChatPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-
-// AiRuntime-local shape (AGENTS.md §95 — derive from Command's public use-case signature
-// rather than importing the AppAction union directly). Passed through opaquely.
-type AppAction = Parameters<typeof executeAppAction>[0];
+import { type RuntimeAction } from '../models/RuntimeAction';
+import { executeAppAction, undo } from '#/modules/Command';
+import { toggleChatPanel } from '#/modules/Workspace';
 
 /** Execute an app action (delegates to Command module). */
-export function runAppAction(action: AppAction): Promise<void> | void {
+export function runAppAction(action: RuntimeAction): Promise<void> | void {
     return executeAppAction(action);
 }
 

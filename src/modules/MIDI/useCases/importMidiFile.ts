@@ -1,14 +1,15 @@
 import { createMidiError } from '../errors/MidiError';
-import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import {
+    getTrackStoreState as getTrackState,
+    setTrackState,
+    trackStore,
+    createTrack,
+    getNextClipId,
+} from '#/modules/Arrangement';
 import { midiStore } from '../stores/midiStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
-import { getNextClipId } from '#/modules/Arrangement/useCases/getNextClipId';
 import { type Clip } from '../models/TrackViewTypes';
 import { type MidiNote } from '../models/MidiNote';
-import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';
+import { pushUndo, createCallbackUndoEntry } from '#/modules/Command';
 
 type ParsedTrack = {
     name: string;

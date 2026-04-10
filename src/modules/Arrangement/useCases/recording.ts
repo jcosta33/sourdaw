@@ -5,7 +5,7 @@ import { updateTrack } from '../repositories/track/updateTrack';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTransportState } from '#/modules/Transport';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { type Clip } from '../models/Track';
+import { type Clip } from '../stores/trackStore';
 import { addTakeLane } from '#/modules/Arrangement/useCases/comping/addTakeLane';
 import { addTake } from '#/modules/Arrangement/useCases/comping/addTake';
 import { getTakeLaneForTrack } from '#/modules/Arrangement/useCases/comping/getTakeLaneForTrack';

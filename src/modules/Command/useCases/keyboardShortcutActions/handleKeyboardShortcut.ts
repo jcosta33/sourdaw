@@ -10,18 +10,18 @@ import {
 } from './trackShortcuts';
 import { setEditingTool, zoomToFit, zoomToSelection } from './workspaceShortcuts';
 
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
-import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../selectionHelpers';
-import { cycleAutomationVisibility } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
 import {
+    workspaceStore,
+    cycleAutomationVisibility,
     toggleCommandPalette,
     selectAllClips,
     clearClipSelection,
     toggleWorkspaceMode,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { type EditingTool, TOOL_SHORTCUTS } from '#/modules/Workspace/useCases/workspaceQueries';
+    type EditingTool,
+    TOOL_SHORTCUTS,
+} from '#/modules/Workspace';
+import { trackStore, zoomTimeline } from '#/modules/Arrangement';
+import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../selectionHelpers';
 import { eventBus } from '#/app/registerDependencies';
 
 const ZOOM_STEP = 4;

@@ -1,11 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import {
-    automationStore,
-    type AutomationStoreState,
-    addAutomationLane,
-    toggleLaneCollapsed,
-} from '#/modules/Automation';
+import { automationStore, addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { AutomationLaneRow } from './AutomationLaneRow';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationControls';
@@ -24,6 +19,10 @@ type TrackAutomationSectionProps = {
     pixelsPerBeat: number;
     scrollX: number;
     containerWidth: number;
+};
+
+type TrackAutomationState = {
+    lanes: AutomationLane[];
 };
 
 const SPARKLINE_HEIGHT = 24;
@@ -82,7 +81,7 @@ export const TrackAutomationSection = ({
 }: TrackAutomationSectionProps): ReactElement => {
     const [isExpanded, setIsExpanded] = useState(true);
 
-    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
+    const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
     const trackLanes = autoState.lanes.filter((l) => l.trackId === trackId && !l.clipId);
     const availableParams = getAutomatableParams(trackId, devices);

@@ -1,16 +1,31 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { saveCurrentAsPreset, getUserPresets } from '#/modules/Arrangement/useCases/preset/presetStorage';
-import { loadPresetToTrack, createTrackFromPreset } from '#/modules/Arrangement/useCases/preset/presetLoading';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { type SoundPresetCategory } from '#/modules/Arrangement/models/SoundPreset';
+import { saveCurrentAsPreset, getUserPresets } from './preset/presetStorage';
+import { loadPresetToTrack, createTrackFromPreset } from './preset/presetLoading';
+import { getTrackStoreState } from './getTrackStoreState';
+import { type SoundPresetCategory } from '../models/SoundPreset';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type PresetAction =
+    | { type: 'loadPreset'; payload: { presetId: string; trackId?: string } }
+    | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } };
+
+type PresetHandlerResult = {
+    label: string;
+};
+
+type PresetHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => PresetHandlerResult;
+    undoable: boolean;
+};
+
+type PresetHandlers = {
+    [ActionType in PresetAction['type']]: PresetHandler<Extract<PresetAction, { type: ActionType }>>;
+};
 
 function findPresetById(presetId: string) {
     return getUserPresets().find((p) => p.id === presetId) ?? null;
 }
 
-export const presetHandlers = {
+export const presetHandlers: PresetHandlers = {
     loadPreset: {
         execute: (a) => {
             const preset = findPresetById(a.payload.presetId);
@@ -30,7 +45,7 @@ export const presetHandlers = {
             return { label };
         },
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'loadPreset'>>,
+    },
 
     savePreset: {
         execute: (a) => {
@@ -55,5 +70,5 @@ export const presetHandlers = {
             return { label: `Save preset "${a.payload.name}" from ${track?.name ?? 'track'}` };
         },
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'savePreset'>>,
+    },
 };

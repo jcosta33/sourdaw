@@ -1,6 +1,7 @@
 import { isTauri } from '#/helpers/tauriBridge';
 import { isCloudAvailable } from '../../repositories/cloudLlm/keyManagement';
-import { type AiBackend } from '#/modules/AiRuntime/models/LlmOrchestrationTypes';
+
+type AiBackend = 'native' | 'webllm' | 'cloud' | 'none';
 
 /**
  * Resolve the primary backend for DSO edit planning.

@@ -1,14 +1,35 @@
-import {
-    createSidechainRoute,
-    type SidechainRoute,
-    wireSidechainRoute,
-    unwireSidechainRoute,
-} from '#/modules/AudioEngine';
+import { wireSidechainRoute, unwireSidechainRoute } from '#/modules/AudioEngine';
 
 import { sidechainStore } from '../stores/sidechainStore';
 import { SidechainCycleError } from '../errors/RoutingErrors';
 
-export type { SidechainRoute };
+export type SidechainRoute = {
+    id: string;
+    sourceTrackId: string;
+    targetTrackId: string;
+    targetDeviceId: string;
+    targetParameterId: string;
+    gain: number;
+};
+
+let nextSidechainId = 1;
+
+function createSidechainRoute(
+    sourceTrackId: string,
+    targetTrackId: string,
+    targetDeviceId: string,
+    targetParameterId: string = 'threshold',
+    gain: number = 1
+): SidechainRoute {
+    return {
+        id: `sidechain-${nextSidechainId++}`,
+        sourceTrackId,
+        targetTrackId,
+        targetDeviceId,
+        targetParameterId,
+        gain,
+    };
+}
 
 export function addSidechainRoute(
     sourceTrackId: string,

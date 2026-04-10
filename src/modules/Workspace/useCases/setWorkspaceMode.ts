@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { type WorkspaceMode } from '../models/WorkspaceState';
 import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
+import { type WorkspaceMode } from './workspaceQueries';
 
 export const setWorkspaceMode = inject({ getWorkspaceState, updateWorkspaceState })(
     ({ getWorkspaceState, updateWorkspaceState }) =>

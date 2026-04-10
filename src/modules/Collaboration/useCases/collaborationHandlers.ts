@@ -1,11 +1,34 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import {
     createSession,
     joinSession,
     leaveSession,
 } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type CollaborationHandlerDescription = {
+    label: string;
+    inverseAction?: unknown;
+};
+
+type CollaborationHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => CollaborationHandlerDescription;
+    undoable: boolean;
+};
+
+type CreateCollabSessionAction = {
+    type: 'createCollabSession';
+    payload: { name: string };
+};
+
+type JoinCollabSessionAction = {
+    type: 'joinCollabSession';
+    payload: { inviteString: string; peerName: string };
+};
+
+type LeaveCollabSessionAction = {
+    type: 'leaveCollabSession';
+    payload?: undefined;
+};
 
 export const collaborationHandlers = {
     createCollabSession: {
@@ -14,7 +37,7 @@ export const collaborationHandlers = {
         },
         describe: () => ({ label: 'Create collaboration session' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'createCollabSession'>>,
+    } satisfies CollaborationHandler<CreateCollabSessionAction>,
 
     joinCollabSession: {
         execute: async (a) => {
@@ -22,7 +45,7 @@ export const collaborationHandlers = {
         },
         describe: () => ({ label: 'Join collaboration session' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'joinCollabSession'>>,
+    } satisfies CollaborationHandler<JoinCollabSessionAction>,
 
     leaveCollabSession: {
         execute: () => {
@@ -30,5 +53,5 @@ export const collaborationHandlers = {
         },
         describe: () => ({ label: 'Leave collaboration session' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'leaveCollabSession'>>,
+    } satisfies CollaborationHandler<LeaveCollabSessionAction>,
 };

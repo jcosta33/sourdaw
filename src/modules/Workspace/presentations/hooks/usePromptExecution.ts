@@ -6,27 +6,23 @@ import {
     isComplexPrompt,
     getProjectContext,
     searchPresets,
-    type FuzzyResult,
     getAvailablePresets,
+    resolvePresetActions,
     onPromptInjection,
     notifyAiChange,
     isLlmAvailable,
     initEngine,
     llmStatusStore,
     pushAiActionGroup,
-    type AiActionGroup,
-    type IntentResult,
-    type PresetContext,
 } from '#/modules/AiRuntime';
 import {
     executeAppAction,
     generateGroupId,
-    type AppAction,
     describeAction,
 } from '#/modules/Command';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement';
-import { defaultWorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 import { workspaceStore } from '#/modules/Workspace';
+import { defaultWorkspaceState } from '../../models/WorkspaceState';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 
@@ -39,14 +35,49 @@ export type SelectionTag = {
     icon: 'track' | 'clip' | 'clips';
 };
 
+type PromptPresetCategory =
+    | 'Transport'
+    | 'Track'
+    | 'Clip'
+    | 'MIDI'
+    | 'Device'
+    | 'Workspace'
+    | 'Mix'
+    | 'Generate'
+    | 'File'
+    | 'Automation'
+    | 'Collaboration';
+
+export type PromptFuzzyResult = {
+    preset: {
+        id: string;
+        label: string;
+        category: PromptPresetCategory;
+        isDestructive: boolean;
+    };
+    score: number;
+};
+
+type PromptAction = Awaited<ReturnType<typeof parsePromptToActions>>['actions'][number];
+
+type PromptPreview = {
+    actions: PromptAction[];
+    confidence: number;
+    rawText: string;
+    requiresConfirmation: boolean;
+    _jsonEditApplied?: boolean;
+    _jsonEditSummaries?: string[];
+    _jsonEditAttempted?: boolean;
+};
+
 // ── Hook return type ────────────────────────────────────────────────────
 
 export type PromptExecutionState = {
     value: string;
     setValue: (v: string) => void;
     isProcessing: boolean;
-    preview: IntentResult | null;
-    fuzzyResults: FuzzyResult[];
+    preview: PromptPreview | null;
+    fuzzyResults: PromptFuzzyResult[];
     selectedIndex: number;
     selectionTags: SelectionTag[];
     isFocused: boolean;
@@ -60,7 +91,7 @@ export type PromptExecutionState = {
 
     handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
     handleSubmit: (e: FormEvent) => void;
-    executePreset: (result: FuzzyResult) => Promise<void>;
+    executePreset: (result: PromptFuzzyResult) => Promise<void>;
     confirmPreview: () => Promise<void>;
     cancelPreview: () => void;
     cancelProcessing: () => void;
@@ -75,8 +106,8 @@ export type PromptExecutionState = {
 export const usePromptExecution = (): PromptExecutionState => {
     const [value, setValue] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [preview, setPreview] = useState<IntentResult | null>(null);
-    const [fuzzyResults, setFuzzyResults] = useState<FuzzyResult[]>([]);
+    const [preview, setPreview] = useState<PromptPreview | null>(null);
+    const [fuzzyResults, setFuzzyResults] = useState<PromptFuzzyResult[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(-1);
     const [dismissedTags, setDismissedTags] = useState<Set<string>>(new Set());
     const [isFocused, setIsFocused] = useState(false);
@@ -115,7 +146,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     }
 
     // ── Build preset context ────────────────────────────────────────────
-    const presetContext: PresetContext = {
+    const presetContext = {
         selectedTrackId: selectedTrackId ?? undefined,
         selectedClipId: selectedClipId ?? undefined,
         selectedClipType: (() => {
@@ -171,9 +202,9 @@ export const usePromptExecution = (): PromptExecutionState => {
     }, [value, preview, isFocused, isProcessing, trackState, wsState]);
 
     // ── Execute action group ────────────────────────────────────────────
-    const executeWithGroup = async (actions: AppAction[], prompt: string): Promise<void> => {
+    const executeWithGroup = async (actions: PromptAction[], prompt: string): Promise<void> => {
         const group = generateGroupId(prompt);
-        const executedLabels: Array<{ action: AppAction; label: string }> = [];
+        const executedLabels: Array<{ action: PromptAction; label: string }> = [];
 
         for (const action of actions) {
             await executeAppAction(action, { ...group, source: 'prompt' });
@@ -181,10 +212,14 @@ export const usePromptExecution = (): PromptExecutionState => {
         }
 
         if (actions.length > 0) {
-            const historyGroup: AiActionGroup = {
+            const historyGroup = {
                 id: group.groupId,
                 prompt,
-                actions: executedLabels.map((l) => ({ kind: 'appAction', action: l.action, label: l.label })),
+                actions: executedLabels.map((l) => ({
+                    kind: 'appAction' as const,
+                    actionType: l.action.type,
+                    label: l.label,
+                })),
                 groupId: group.groupId,
                 timestamp: Date.now(),
                 reverted: false,
@@ -194,12 +229,14 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     // ── Execute preset directly ─────────────────────────────────────────
-    const executePreset = async (result: FuzzyResult): Promise<void> => {
-        const actionResult = result.preset.buildAction(presetContext);
-        if (!actionResult) {
+    const executePreset = async (result: PromptFuzzyResult): Promise<void> => {
+        const actions = resolvePresetActions({
+            presetId: result.preset.id,
+            context: presetContext,
+        });
+        if (actions.length === 0) {
             return;
         }
-        const actions = Array.isArray(actionResult) ? actionResult : [actionResult];
 
         if (result.preset.isDestructive) {
             setPreview({

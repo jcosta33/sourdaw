@@ -9,22 +9,55 @@
  * - detectKey: DSP-based key detection (chromagram)
  * - stripSilence: Remove silent sections based on amplitude threshold
  */
-
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
-import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
-import { setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/setNotesForClip';
-import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
-import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCases/audioAnalysis';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration/inference';
+import { generateAudio, isAudioGenerationAvailable, separateStems } from '#/modules/AudioAnalysis';
+import { audioBufferCache } from '#/modules/AudioEngine';
+import { addClip, addTrack, audioToMidi, detectKey, detectTempo, stripSilence, trackStore } from '#/modules/Arrangement';
+import { generateToolCalls } from '#/modules/AiRuntime';
+import { addMidiNote, createMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI';
 import { logger } from '#/infra/logger/appLogger';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type AiMidiHandlerDescription = {
+    label: string;
+};
+
+type AiMidiHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => AiMidiHandlerDescription;
+    undoable: boolean;
+};
+
+type AiMidiAction =
+    | {
+          type: 'addNotes';
+          payload: {
+              clipId: string;
+              notes: Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>;
+          };
+      }
+    | { type: 'completeMidi'; payload: { clipId: string; bars?: number; direction?: 'forward' | 'backward' } }
+    | { type: 'variationMidi'; payload: { clipId: string; amount?: number } }
+    | { type: 'generateBassline'; payload: { clipId: string; trackId?: string; style?: string } }
+    | { type: 'detectTempo'; payload: { clipId: string } }
+    | { type: 'detectKey'; payload: { clipId: string } }
+    | { type: 'stripSilence'; payload: { clipId: string; threshold?: number } }
+    | { type: 'audioToMidi'; payload: { clipId: string } }
+    | { type: 'generateAudio'; payload: { prompt: string; trackId?: string; durationSeconds?: number } }
+    | { type: 'stemSeparate'; payload: { clipId: string; stems?: string[] } };
+
+type AiMidiActionOf<ActionType extends AiMidiAction['type']> = Extract<AiMidiAction, { type: ActionType }>;
+
+type AiMidiHandlers = {
+    addNotes: AiMidiHandler<AiMidiActionOf<'addNotes'>>;
+    completeMidi: AiMidiHandler<AiMidiActionOf<'completeMidi'>>;
+    variationMidi: AiMidiHandler<AiMidiActionOf<'variationMidi'>>;
+    generateBassline: AiMidiHandler<AiMidiActionOf<'generateBassline'>>;
+    detectTempo: AiMidiHandler<AiMidiActionOf<'detectTempo'>>;
+    detectKey: AiMidiHandler<AiMidiActionOf<'detectKey'>>;
+    stripSilence: AiMidiHandler<AiMidiActionOf<'stripSilence'>>;
+    audioToMidi: AiMidiHandler<AiMidiActionOf<'audioToMidi'>>;
+    generateAudio: AiMidiHandler<AiMidiActionOf<'generateAudio'>>;
+    stemSeparate: AiMidiHandler<AiMidiActionOf<'stemSeparate'>>;
+};
 
 function notePitchToName(pitch: number): string {
     const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -86,7 +119,7 @@ Generate the MIDI notes now. Output ONLY the tool call.`;
     return [];
 }
 
-export const aiMidiHandlers = {
+export const aiMidiHandlers: AiMidiHandlers = {
     addNotes: {
         execute: (a) => {
             const notes = a.payload.notes;
@@ -104,7 +137,7 @@ export const aiMidiHandlers = {
         },
         describe: (a) => ({ label: `Add ${String(a.payload.notes.length)} MIDI notes` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addNotes'>>,
+    },
 
     completeMidi: {
         execute: async (a) => {
@@ -127,7 +160,7 @@ export const aiMidiHandlers = {
         },
         describe: () => ({ label: 'AI: complete MIDI phrase' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'completeMidi'>>,
+    },
 
     variationMidi: {
         execute: async (a) => {
@@ -154,7 +187,7 @@ export const aiMidiHandlers = {
         },
         describe: () => ({ label: 'AI: create MIDI variation' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'variationMidi'>>,
+    },
 
     generateBassline: {
         execute: async (a) => {
@@ -181,7 +214,7 @@ export const aiMidiHandlers = {
         },
         describe: (a) => ({ label: `AI: generate ${a.payload.style ?? 'root-fifth'} bassline` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateBassline'>>,
+    },
 
     // ── Audio analysis (DSP-based, no model needed) ──────────────────────
 
@@ -192,7 +225,7 @@ export const aiMidiHandlers = {
         },
         describe: () => ({ label: 'Detect tempo' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'detectTempo'>>,
+    },
 
     detectKey: {
         execute: async (a) => {
@@ -201,7 +234,7 @@ export const aiMidiHandlers = {
         },
         describe: () => ({ label: 'Detect key' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'detectKey'>>,
+    },
 
     stripSilence: {
         execute: (a) => {
@@ -210,7 +243,7 @@ export const aiMidiHandlers = {
         },
         describe: () => ({ label: 'Strip silence' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'stripSilence'>>,
+    },
 
     audioToMidi: {
         execute: async (a) => {
@@ -219,15 +252,12 @@ export const aiMidiHandlers = {
         },
         describe: () => ({ label: 'Convert audio to MIDI' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'audioToMidi'>>,
+    },
 
     // ── AI Audio Generation (Stable Audio Open) ─────────────────────────
 
     generateAudio: {
         execute: async (a) => {
-            const { generateAudio: genAudio, isAudioGenerationAvailable } =
-                await import('#/modules/AudioAnalysis/useCases/audioAi');
-
             if (!isAudioGenerationAvailable()) {
                 logger.warn('[Audio AI] Audio generation requires the Sourdaw desktop app');
                 return;
@@ -246,7 +276,7 @@ export const aiMidiHandlers = {
             logger.info(`[Audio AI] Generating: "${a.payload.prompt}" (${String(duration)}s)`);
 
             try {
-                const audioBuffer = await genAudio(a.payload.prompt, duration);
+                const audioBuffer = await generateAudio(a.payload.prompt, duration);
                 logger.info(
                     `[Audio AI] Generated ${String(audioBuffer.duration.toFixed(1))}s of audio (${String(audioBuffer.sampleRate)}Hz)`
                 );
@@ -278,12 +308,10 @@ export const aiMidiHandlers = {
         },
         describe: (a) => ({ label: `AI: generate audio "${a.payload.prompt.slice(0, 30)}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateAudio'>>,
+    },
 
     stemSeparate: {
         execute: async (a) => {
-            const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
-
             const stems = a.payload.stems ?? ['all'];
             logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);
 
@@ -310,7 +338,7 @@ export const aiMidiHandlers = {
                 const wavData = audioBufferToWav(sourceBuffer);
 
                 // 3. Send to Demucs server
-                const stemResults = await doSeparateStems(wavData, stems);
+                const stemResults = await separateStems(wavData, stems);
 
                 // 4. Create new tracks for each stem with clips
                 const durationBeats = clip.endBeat - clip.startBeat;
@@ -338,7 +366,7 @@ export const aiMidiHandlers = {
         },
         describe: () => ({ label: 'AI: separate stems' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'stemSeparate'>>,
+    },
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────

@@ -16,8 +16,8 @@ import {
 } from 'lucide-react';
 import { SourdawLogo } from './SourdawLogo';
 import { newProject, createFromTemplate, getTemplates } from '#/modules/Project';
-import { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
-import { addTrack, addClip, decodeAudioFile } from '#/modules/Arrangement';
+import { addTrack, addClip } from '#/modules/Arrangement';
+import { decodeAudioFile } from '#/modules/AudioEngine';
 import { importMidiFile } from '#/modules/MIDI';
 import { transportStore } from '#/modules/Transport';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
@@ -30,6 +30,15 @@ type View = 'home' | 'grid' | 'loading';
 
 export type LaunchScreenProps = {
     exiting: boolean;
+};
+
+type LaunchTemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
+
+type LaunchTemplate = {
+    id: string;
+    name: string;
+    description: string;
+    category: LaunchTemplateCategory;
 };
 
 const LOADING_QUIPS = [
@@ -59,7 +68,7 @@ const BREAD_TAGLINES = [
 
 const randomTagline = BREAD_TAGLINES[Math.floor(Math.random() * BREAD_TAGLINES.length)] ?? BREAD_TAGLINES[0]!;
 
-const CATEGORY_ORDER: Array<TemplateCategory | 'all'> = ['all', 'demo', 'music', 'podcast', 'film'];
+const CATEGORY_ORDER: Array<LaunchTemplateCategory | 'all'> = ['all', 'demo', 'music', 'podcast', 'film'];
 
 const CATEGORY_LABELS: Record<string, string> = {
     all: 'All',
@@ -149,13 +158,18 @@ const LogoBlock = (): ReactElement => (
 
 export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const [view, setView] = useState<View>('home');
-    const [activeCategory, setActiveCategory] = useState<TemplateCategory | 'all'>('all');
+    const [activeCategory, setActiveCategory] = useState<LaunchTemplateCategory | 'all'>('all');
     const [loadingName, setLoadingName] = useState('');
     const [isDragOver, setIsDragOver] = useState(false);
     const [quipIndex, setQuipIndex] = useState(0);
     const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
-    const allTemplates = getTemplates();
+    const allTemplates: LaunchTemplate[] = getTemplates().map((template) => ({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        category: template.category,
+    }));
     const filteredTemplates =
         activeCategory === 'all' ? allTemplates : allTemplates.filter((t) => t.category === activeCategory);
 
@@ -182,12 +196,12 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         }, 280);
     };
 
-    const handleOpenGrid = (category: TemplateCategory | 'all'): void => {
+    const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {
         setActiveCategory(category);
         setView('grid');
     };
 
-    const handleTemplateSelect = (template: ProjectTemplate): void => {
+    const handleTemplateSelect = (template: LaunchTemplate): void => {
         setLoadingName(template.name);
         setView('loading');
         (async () => {

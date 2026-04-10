@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { executeAppAction, type AppAction } from '#/modules/Command';
 
 import { type ActionHistoryEntry, actionHistoryStore, markEntryReverted } from '../stores/actionHistoryStore';
 
@@ -30,7 +30,7 @@ export const revertAction = async (entryId: string): Promise<boolean> => {
         return false;
     }
 
-    await executeAppAction(entry.inverseAction, {
+    await executeAppAction(entry.inverseAction as AppAction, {
         source: entry.source,
         groupLabel: `Reverted: ${entry.label}`,
     });

@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { type AppAction, type AppActionType } from '#/modules/Command/useCases/commandQueries';
+import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 
-const KNOWN_ACTION_TYPES: ReadonlySet<AppActionType> = new Set<AppActionType>([
+const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set<RuntimeActionType>([
     'addTrack',
     'removeTrack',
     'removeAllTracks',
@@ -166,7 +166,7 @@ const KNOWN_ACTION_TYPES: ReadonlySet<AppActionType> = new Set<AppActionType>([
 
 export const validateActions = inject({ logger })(
     ({ logger }) =>
-        function validateActions(actions: AppAction[]): AppAction[] {
+        function validateActions(actions: RuntimeAction[]): RuntimeAction[] {
             return actions.filter((action) => {
                 if (!KNOWN_ACTION_TYPES.has(action.type)) {
                     logger.warn(`Unknown action type rejected: ${action.type}`);

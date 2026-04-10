@@ -2,12 +2,23 @@ import { type ReactElement } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, type TrackStoreState, selectTrack } from '#/modules/Arrangement';
-import { getAllSidechainRoutes, type SidechainRoute } from '#/modules/Routing';
+import { trackStore, selectTrack } from '#/modules/Arrangement';
+import { getAllSidechainRoutes } from '#/modules/Routing';
 import { type Track } from '../../models/TrackViewTypes';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
-const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };
+type RoutingTrackState = {
+    tracks: Track[];
+    selectedTrackId: string | null;
+};
+
+type RoutingSidechainRoute = {
+    id: string;
+    sourceTrackId: string;
+    targetTrackId: string;
+};
+
+const defaultTrackState: RoutingTrackState = { tracks: [], selectedTrackId: null };
 
 const NODE_W = 100;
 const NODE_H = 32;
@@ -160,10 +171,10 @@ const ConnectionLine = ({
 };
 
 export const RoutingGraph = (): ReactElement => {
-    const state = useStore<TrackStoreState>(trackStore, defaultTrackState);
+    const state = useStore<RoutingTrackState>(trackStore, defaultTrackState);
 
     const { tracks, selectedTrackId } = state;
-    const sidechainRoutes: SidechainRoute[] = getAllSidechainRoutes();
+    const sidechainRoutes: RoutingSidechainRoute[] = getAllSidechainRoutes();
 
     const { sources, buses, master, width, height } = layoutNodes(tracks);
 

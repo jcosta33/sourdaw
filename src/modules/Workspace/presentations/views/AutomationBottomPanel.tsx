@@ -6,31 +6,54 @@ import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
 import {
     automationStore,
-    type AutomationStoreState,
     addAutomationLane,
     toggleLaneCollapsed,
     removeAutomationLane,
 } from '#/modules/Automation';
 import {
     trackStore,
-    type TrackStoreState,
     timelineViewStore,
-    type TimelineViewState,
     scrollTimeline,
     setAutomationMode,
     BeatRulerBar,
     TimelineChromeSurface,
 } from '#/modules/Arrangement';
-import { workspaceStore, type WorkspaceState } from '#/modules/Workspace';
+import { workspaceStore } from '#/modules/Workspace';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
 import { AutomationSidebarCell } from './AutomationView/AutomationSidebarCell';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationView/AutomationControls';
 import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
+import { type Track } from '../../models/TrackViewTypes';
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 
 const SPARKLINE_HEIGHT = 24;
+
+type AutomationPanelWorkspaceState = {
+    selectedClipId: string | null;
+    selectedClipIds: string[];
+    activeTool: 'select' | 'cut' | 'draw' | 'automation' | 'stretch';
+    snapValue: number;
+    trackListWidth: number;
+    trackListOpen: boolean;
+};
+
+type AutomationPanelState = {
+    lanes: AutomationLane[];
+};
+
+type AutomationTrackState = {
+    tracks: Track[];
+    selectedTrackId: string | null;
+};
+
+type AutomationTimelineState = {
+    scrollX: number;
+    scrollY: number;
+    pixelsPerBeat: number;
+    autoScrollEnabled: boolean;
+};
 
 /** Reactively track an element's width via ResizeObserver */
 function useContainerWidth(ref: RefObject<HTMLDivElement | null>): number {
@@ -98,15 +121,15 @@ export const AutomationBottomPanel = (): ReactElement => {
 
     const containerWidth = useContainerWidth(containerRef);
 
-    const trackState = useStore<TrackStoreState>(trackStore, { tracks: [], selectedTrackId: null });
-    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
-    const viewState = useStore<TimelineViewState>(timelineViewStore, {
+    const trackState = useStore<AutomationTrackState>(trackStore, { tracks: [], selectedTrackId: null });
+    const autoState = useStore<AutomationPanelState>(automationStore, { lanes: [] });
+    const viewState = useStore<AutomationTimelineState>(timelineViewStore, {
         scrollX: 0,
         scrollY: 0,
         pixelsPerBeat: 12,
         autoScrollEnabled: true,
     });
-    const ws = useStore<WorkspaceState>(workspaceStore, defaultWorkspaceState);
+    const ws = useStore<AutomationPanelWorkspaceState>(workspaceStore, defaultWorkspaceState);
 
     const selectedTrackId = trackState.selectedTrackId;
     const selectedTrack = trackState.tracks.find((t) => t.id === selectedTrackId) ?? null;

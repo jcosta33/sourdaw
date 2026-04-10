@@ -32,7 +32,7 @@ import {
     showGrinderPanel,
     showBacteriaPanel,
     showYeastPanel,
-} from '#/modules/Workspace/useCases/panels/devicePanels';
+} from '../../../useCases/panels/devicePanels';
 import {
     addDevice,
     getFactoryPresets,

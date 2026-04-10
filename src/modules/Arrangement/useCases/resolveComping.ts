@@ -1,5 +1,5 @@
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '#/modules/Arrangement/stores/trackStore';
 
 export type ResolvedClip = Clip & {
     regionStartBeat: number;

@@ -6,7 +6,7 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
-import { closeCollaborationPanel, workspaceStore, type WorkspaceState } from '#/modules/Workspace';
+import { closeCollaborationPanel, workspaceStore } from '#/modules/Workspace';
 import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
 
 import { useCollaborationState } from '../hooks/useCollaborationState';
@@ -23,9 +23,13 @@ import { CollaborationBlock } from '../components/CollaborationBlock';
 import { CollaborationStatusRow } from '../components/CollaborationStatusRow';
 import { QrInvite } from './QrInvite';
 
-const defaultWorkspaceState: WorkspaceState = {
+type CollaborationWorkspaceState = {
+    collaborationPanelOpen: boolean;
+};
+
+const defaultWorkspaceState: CollaborationWorkspaceState = {
     collaborationPanelOpen: false,
-} as WorkspaceState;
+};
 
 export const CollaborationPanel = (): ReactElement | null => {
     const workspace = useStore(workspaceStore, defaultWorkspaceState);

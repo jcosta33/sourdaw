@@ -5,13 +5,15 @@
  * system prompt that produces structured JSON note arrays.
  * Falls back to pattern-based generation if LLM output is malformed.
  */
-
-import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
-import { generateWebLlmCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { generateNativeCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { isNativeEngineReady } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { type GeneratedNote } from '#/modules/AudioEngine/useCases/audioEngineQueries';
-import { PATTERN_TEMPLATES, filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import {
+    PATTERN_TEMPLATES,
+    filterTemplates,
+    generateNativeCompletion,
+    generateWebLlmCompletion,
+    isNativeEngineReady,
+    resolveBackend,
+} from '#/modules/AiRuntime';
+import { type AiGeneratedMidiNote } from '../models/AiGeneratedMidiNote';
 
 // ── System prompt for music generation ──
 
@@ -48,13 +50,13 @@ type LlmMidiResponse = {
 
 /**
  * Generate MIDI notes using the LLM (WebLLM in browser or native mistral.rs).
- * Returns GeneratedNote[] compatible with the existing clip insertion pipeline.
+ * Returns AiGeneratedMidiNote[] compatible with the existing clip insertion pipeline.
  */
 export async function generateMidiViaLlm(
     prompt: string,
     numNotes: number = 32,
     creativity: number = 0.65
-): Promise<GeneratedNote[]> {
+): Promise<AiGeneratedMidiNote[]> {
     const userMessage = buildUserMessage(prompt, numNotes, creativity);
 
     const backend = resolveBackend();
@@ -99,7 +101,7 @@ function buildUserMessage(prompt: string, numNotes: number, creativity: number):
 - Output ONLY the JSON object, nothing else.`;
 }
 
-function parseMidiResponse(raw: string): GeneratedNote[] {
+function parseMidiResponse(raw: string): AiGeneratedMidiNote[] {
     try {
         const jsonMatch = raw.match(/\{[\s\S]*"notes"[\s\S]*\}/);
         if (!jsonMatch) {
@@ -138,7 +140,7 @@ function clamp(value: number, min: number, max: number): number {
  * When LLM output fails, try to find the closest matching template from the library
  * and generate notes from it with default parameters.
  */
-function fallbackToPatternMatch(prompt: string): GeneratedNote[] {
+function fallbackToPatternMatch(prompt: string): AiGeneratedMidiNote[] {
     const q = prompt.toLowerCase();
 
     // Try tag/name match from templates

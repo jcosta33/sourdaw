@@ -6,10 +6,35 @@
  * and can also process scheduled clip notes.
  */
 
-import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 import { getYeastRack } from '../stores/yeastStore';
 import { transportStore } from '#/modules/Transport';
 import { getAudioContext } from '#/modules/AudioEngine';
+
+export type MidiEventKind =
+    | { type: 'noteOn'; channel: number; note: number; velocity: number }
+    | { type: 'noteOff'; channel: number; note: number }
+    | { type: 'cc'; channel: number; cc: number; value: number }
+    | { type: 'pitchBend'; channel: number; value: number }
+    | { type: 'channelPressure'; channel: number; value: number };
+
+export type MidiEvent = {
+    timeSamples: number;
+    kind: MidiEventKind;
+};
+
+export type TransportInfo = {
+    sampleRate: number;
+    bpm: number;
+    ppqPosition: number;
+    isPlaying: boolean;
+    barIndex: number;
+    beatInBar: number;
+    timeSigNum: number;
+    timeSigDen: number;
+    loopEnabled: boolean;
+    loopStartPpq: number;
+    loopEndPpq: number;
+};
 
 /**
  * Process a batch of MIDI events through the Yeast rack for a specific track.

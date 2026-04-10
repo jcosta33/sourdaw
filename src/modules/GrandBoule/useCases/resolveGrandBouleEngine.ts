@@ -6,8 +6,8 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getAllTracks } from '#/modules/Arrangement';
+import { ensureTrackStrip } from '#/modules/AudioEngine';
 import {
     createDisconnectedGrandBouleEngineHandle,
     type GrandBouleEngineHandle,

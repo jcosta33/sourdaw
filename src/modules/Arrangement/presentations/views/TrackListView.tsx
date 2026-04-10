@@ -27,12 +27,12 @@ import { createFolder } from '../../useCases/folder';
 import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { removeTrack } from '../../useCases/removeTrack';
-import { setWorkspaceMode } from '../../useCases/trackViewActions';
 import {
     preferencesStore,
     defaultPreferences,
     type Preferences,
     setTrackHeight,
+    setWorkspaceMode,
 } from '#/modules/Workspace';
 import { timelineViewStore, setScrollY, type TimelineViewState } from '#/modules/Arrangement';
 import { injectPromptCommand } from '#/modules/AiRuntime';

@@ -11,10 +11,17 @@ import { useSelectionLabel } from '../hooks/useSelectionLabel';
 import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggles';
 import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
-import { llmStatusStore, type LlmEngineStatus } from '#/modules/AiRuntime';
+import { llmStatusStore } from '#/modules/AiRuntime';
 import { History, Users } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+
+type StatusBarLlmState =
+    | { state: 'idle' }
+    | { state: 'loading'; progress: number; text: string }
+    | { state: 'ready'; modelId: string }
+    | { state: 'generating' }
+    | { state: 'error'; message: string };
 
 const DiscordIcon = ({ className }: { className?: string }): ReactElement => (
     <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor" className={className}>
@@ -27,7 +34,7 @@ export const StatusBar = (): ReactElement => {
     const collab = useCollaborationState();
     const selectionLabel = useSelectionLabel();
 
-    const llmStatus = useStore<LlmEngineStatus>(llmStatusStore, { state: 'idle' });
+    const llmStatus = useStore<StatusBarLlmState>(llmStatusStore, { state: 'idle' });
 
     // ── Metric refs (written at 60 fps by useStatusBarMetrics) ───────────
     const cpuBarRef = useRef<HTMLDivElement>(null);

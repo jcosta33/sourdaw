@@ -1,12 +1,12 @@
 /**
  * Workspace keyboard shortcut delegates.
  */
-import { setEditingTool as _setEditingTool } from '#/modules/Workspace/useCases/setEditingTool';
 import {
+    setEditingTool as _setEditingTool,
     zoomToFit as _zoomToFit,
     zoomToSelection as _zoomToSelection,
-} from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
-import { type EditingTool } from '#/modules/Workspace/useCases/setEditingTool';
+    type EditingTool,
+} from '#/modules/Workspace';
 
 export const setEditingTool = (tool: EditingTool): void => _setEditingTool(tool);
 export const zoomToFit = (): void => _zoomToFit();

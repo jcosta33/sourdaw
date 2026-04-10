@@ -11,7 +11,7 @@ import {
     audioBufferToMp3,
     audioBufferToFlac,
     type OfflineRenderOptions,
-} from '#/modules/AudioEngine/useCases/offlineRender';
+} from '#/modules/AudioEngine';
 
 export type { OfflineRenderOptions };
 

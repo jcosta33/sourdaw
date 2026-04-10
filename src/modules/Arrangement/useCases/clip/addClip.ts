@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '#/modules/Arrangement/stores/trackStore';
 import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 
 export const addClip = inject({ getTrackState, updateTrack, getNextClipId })(

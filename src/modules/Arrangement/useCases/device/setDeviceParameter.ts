@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTransportState } from '#/modules/Transport';
-import { type AutomationMode } from '../../models/Track';
+import { type AutomationMode } from '../../stores/trackStore';
 import { updateDeviceParam } from '#/modules/AudioEngine';
 import { recordAutomationValue } from '#/modules/Automation';
 

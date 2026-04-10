@@ -1,4 +1,4 @@
-import { type AppAction } from './AppAction';
+import { type AppAction } from '../useCases/commandQueries';
 
 export type Macro = {
     id: string;

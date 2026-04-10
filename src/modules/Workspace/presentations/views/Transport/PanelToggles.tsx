@@ -22,15 +22,17 @@ import {
     toggleVirtualKeyboard,
 } from '../../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
-import { aiStore, type AiState, toggleAiPanel } from '#/modules/AiGeneration';
-import {
-    linkStatusStore,
-    type LinkStatus,
-    defaultLinkStatus,
-    enableLink,
-    disableLink,
-} from '#/modules/AudioEngine';
+import { aiStore, toggleAiPanel } from '#/modules/AiGeneration';
+import { linkStatusStore, defaultLinkStatus, enableLink, disableLink } from '#/modules/AudioEngine';
 import { openPreferencesDialog } from '#/modules/Workspace';
+
+type AiPanelState = {
+    isPanelOpen: boolean;
+};
+
+type LinkStatusView = {
+    enabled: boolean;
+};
 
 type PanelTogglesProps = {
     sidebarOpen: boolean;
@@ -49,8 +51,8 @@ export const PanelToggles = ({
     trackListOpen,
     virtualKeyboardOpen,
 }: PanelTogglesProps): ReactElement => {
-    const aiState = useStore<AiState>(aiStore, { isPanelOpen: false, tasks: [] });
-    const linkStatus = useStore<LinkStatus>(linkStatusStore, defaultLinkStatus);
+    const aiState = useStore<AiPanelState>(aiStore, { isPanelOpen: false });
+    const linkStatus = useStore<LinkStatusView>(linkStatusStore, defaultLinkStatus);
 
     const handleLinkToggle = (): void => {
         if (linkStatus.enabled) {

@@ -4,7 +4,7 @@ import { updateTrack } from '../repositories/track/updateTrack';
 import { getTransportState } from '#/modules/Transport';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { recordAutomationValue } from '#/modules/Automation';
-import { type AutomationMode, type InputMonitoring } from '../models/Track';
+import { type AutomationMode, type InputMonitoring } from '../stores/trackStore';
 import {
     startInputMonitoring,
     stopInputMonitoring,
@@ -12,7 +12,6 @@ import {
     setTrackPan as engineSetTrackPan,
     updateDeviceParam,
 } from '#/modules/AudioEngine';
-
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 

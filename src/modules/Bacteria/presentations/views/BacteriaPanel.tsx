@@ -17,8 +17,8 @@ import {
     loadBacteriaPatchWithAudio,
     setBacteriaBandParamWithAudio,
     setBacteriaParamWithAudio,
-    type BacteriaPatch,
 } from '../../useCases/bacteriaParamBridge';
+import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import { BACTERIA_PRESETS } from '../../useCases/bacteriaPresets';
 import { XYMorphPad } from '../components/XYMorphPad';
 import { CrossoverDisplay } from '../components/CrossoverDisplay';

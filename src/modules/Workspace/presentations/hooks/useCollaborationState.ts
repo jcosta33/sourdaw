@@ -1,7 +1,25 @@
 import { useStore } from '#/infra/store/useStore';
-import { collaborationStore, type CollaborationState } from '#/modules/Collaboration';
+import { collaborationStore } from '#/modules/Collaboration';
 
-const defaultState: CollaborationState = {
+type CollaborationViewState = {
+    isEnabled: boolean;
+    sessionId: string | null;
+    localPeerId: string | null;
+    localName: string;
+    localColor: string;
+    isHost: boolean;
+    peers: Array<{
+        id: string;
+        name: string;
+        color: string;
+        isConnected: boolean;
+        isHost: boolean;
+    }>;
+    connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
+    error: string | null;
+};
+
+const defaultState: CollaborationViewState = {
     isEnabled: false,
     sessionId: null,
     localPeerId: null,
@@ -13,6 +31,6 @@ const defaultState: CollaborationState = {
     error: null,
 };
 
-export const useCollaborationState = (): CollaborationState => {
+export const useCollaborationState = (): CollaborationViewState => {
     return useStore(collaborationStore, defaultState);
 };

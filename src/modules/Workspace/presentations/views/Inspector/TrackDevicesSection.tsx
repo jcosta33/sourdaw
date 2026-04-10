@@ -16,7 +16,6 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import {
     pluginScanStore,
-    type PluginScanState,
     defaultPluginScanState,
     openPluginGui,
 } from '#/modules/Plugin';
@@ -32,11 +31,19 @@ type TrackDevicesSectionProps = {
     onSelectDevice: (id: string) => void;
 };
 
+type PluginScanViewState = {
+    scannedPlugins: Array<{
+        id: string;
+        name: string;
+        format: string;
+    }>;
+};
+
 export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSectionProps): ReactElement => {
     const [showDeviceMenu, setShowDeviceMenu] = useState(false);
     const deviceMenuRef = useRef<HTMLDivElement>(null);
 
-    const pluginScanState = useStore<PluginScanState>(pluginScanStore, defaultPluginScanState);
+    const pluginScanState = useStore<PluginScanViewState>(pluginScanStore, defaultPluginScanState);
 
     useEffect(() => {
         if (!showDeviceMenu) {

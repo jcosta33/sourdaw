@@ -2,9 +2,18 @@
  * useProjectState — local re-implementation using projectStore (contract).
  */
 import { useStore } from '#/infra/store/useStore';
-import { projectStore, type ProjectStoreState } from '#/modules/Project';
+import { projectStore } from '#/modules/Project';
 
-const defaultState: ProjectStoreState = {
+type ProjectViewState = {
+    name: string;
+    createdAt: number;
+    updatedAt: number;
+    dirty: boolean;
+    loading: boolean;
+    initialized: boolean;
+};
+
+const defaultState: ProjectViewState = {
     name: 'Untitled Project',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -13,6 +22,6 @@ const defaultState: ProjectStoreState = {
     initialized: false,
 };
 
-export const useProjectState = (): ProjectStoreState => {
+export const useProjectState = (): ProjectViewState => {
     return useStore(projectStore, defaultState);
 };

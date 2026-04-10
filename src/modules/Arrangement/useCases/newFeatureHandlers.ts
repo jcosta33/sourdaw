@@ -1,20 +1,41 @@
-import { type ActionHandler } from '#/modules/Command';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import {
-    generateDrumFill,
-    generateAllTransitionFills,
-} from '#/modules/Arrangement/useCases/fillTransitionGeneration/generation';
+import { generateDrumFill, generateAllTransitionFills } from './fillTransitionGeneration/generation';
 import { compareToReference } from '#/modules/AudioAnalysis';
 import { toggleMono, toggleDim, switchMonitor } from '#/modules/AudioEngine';
 import { generateMentorLessons } from '#/modules/AiRuntime';
 
-export const newFeatureHandlers: Record<string, ActionHandler<any>> = {
+type GenerateFillStyle = 'simple' | 'descending' | 'sixteenth' | 'syncopated';
+
+type NewFeatureAction =
+    | { type: 'generateFill'; payload: { atBeat: number; durationBeats?: number; style?: string } }
+    | { type: 'generateAllTransitions'; payload?: undefined }
+    | { type: 'compareToReference'; payload?: undefined }
+    | { type: 'toggleControlRoomMono'; payload?: undefined }
+    | { type: 'toggleControlRoomDim'; payload?: undefined }
+    | { type: 'switchMonitor'; payload: { monitorId: string } }
+    | { type: 'getMentorTips'; payload?: undefined };
+
+type NewFeatureHandlerResult = {
+    label: string;
+};
+
+type NewFeatureHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => NewFeatureHandlerResult;
+    undoable: boolean;
+};
+
+type NewFeatureHandlers = {
+    [ActionType in NewFeatureAction['type']]: NewFeatureHandler<Extract<NewFeatureAction, { type: ActionType }>>;
+};
+
+export const newFeatureHandlers: NewFeatureHandlers = {
     generateFill: {
-        execute: async (a: { payload: { atBeat: number; durationBeats?: number; style?: string } }) => {
+        execute: async (a) => {
             const fill = generateDrumFill(
                 a.payload.atBeat,
                 a.payload.durationBeats ?? 2,
-                (a.payload.style ?? 'descending') as 'simple' | 'descending' | 'sixteenth' | 'syncopated'
+                (a.payload.style ?? 'descending') as GenerateFillStyle
             );
             notifyUser(`Generated ${fill.notes.length}-note drum fill`, 'success');
         },
@@ -60,7 +81,7 @@ export const newFeatureHandlers: Record<string, ActionHandler<any>> = {
         describe: () => ({ label: 'Toggle Dim Monitoring' }),
     },
     switchMonitor: {
-        execute: async (a: { payload: { monitorId: string } }) => {
+        execute: async (a) => {
             switchMonitor(a.payload.monitorId);
         },
         undoable: false,

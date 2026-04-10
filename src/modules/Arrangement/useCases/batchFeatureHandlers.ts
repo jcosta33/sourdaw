@@ -1,7 +1,6 @@
-import { type ActionHandler } from '#/modules/Command';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { searchSamples } from '#/modules/SoundLibrary';
-import { createCompGroup } from '#/modules/Arrangement/useCases/groupComping/compGroupOperations';
+import { createCompGroup } from './groupComping/compGroupOperations';
 import {
     togglePunchRecording,
     toggleRecord,
@@ -10,12 +9,37 @@ import {
     previousItem,
     detectProjectTempo,
 } from '#/modules/Transport';
-import { createAdjustmentLayer } from '#/modules/Arrangement/useCases/adjustmentLayer/createAdjustmentLayer';
-import type { AdjustmentEffectType } from '#/modules/Arrangement/stores/adjustmentLayer';
+import { createAdjustmentLayer } from './adjustmentLayer/createAdjustmentLayer';
+import type { AdjustmentEffectType } from '../stores/adjustmentLayer';
 
-export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
+type BatchFeatureAction =
+    | { type: 'searchSamples'; payload: { query: string } }
+    | { type: 'createCompGroup'; payload: { name: string; trackIds: string[] } }
+    | { type: 'togglePunchRecording'; payload?: undefined }
+    | { type: 'toggleLoopRecord'; payload: { slotId: string } }
+    | { type: 'triggerScene'; payload: { column: number } }
+    | { type: 'nextSetlistItem'; payload?: undefined }
+    | { type: 'previousSetlistItem'; payload?: undefined }
+    | { type: 'detectTempo'; payload?: undefined }
+    | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string } };
+
+type BatchFeatureHandlerResult = {
+    label: string;
+};
+
+type BatchFeatureHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => BatchFeatureHandlerResult;
+    undoable: boolean;
+};
+
+type BatchFeatureHandlers = {
+    [ActionType in BatchFeatureAction['type']]: BatchFeatureHandler<Extract<BatchFeatureAction, { type: ActionType }>>;
+};
+
+export const batchFeatureHandlers: BatchFeatureHandlers = {
     searchSamples: {
-        execute: async (a: { payload: { query: string } }) => {
+        execute: async (a) => {
             searchSamples(a.payload.query);
         },
         undoable: false,
@@ -25,7 +49,7 @@ export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
     // Rebuild with Worker-based sandbox before re-exposing runScript / toggleScriptEditor.
     // See dead-code-audit.md Section 10 for full security analysis.
     createCompGroup: {
-        execute: async (a: { payload: { name: string; trackIds: string[] } }) => {
+        execute: async (a) => {
             createCompGroup(a.payload.name, a.payload.trackIds);
         },
         undoable: true,
@@ -40,14 +64,14 @@ export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
         describe: () => ({ label: 'Toggle Punch Recording' }),
     },
     toggleLoopRecord: {
-        execute: async (a: { payload: { slotId: string } }) => {
+        execute: async (a) => {
             toggleRecord(a.payload.slotId);
         },
         undoable: false,
         describe: () => ({ label: 'Toggle Loop Record' }),
     },
     triggerScene: {
-        execute: async (a: { payload: { column: number } }) => {
+        execute: async (a) => {
             triggerScene(a.payload.column);
         },
         undoable: false,
@@ -81,7 +105,7 @@ export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
         describe: () => ({ label: 'Detect Tempo' }),
     },
     createAdjustmentLayer: {
-        execute: async (a: { payload: { name: string; effectType: string } }) => {
+        execute: async (a) => {
             createAdjustmentLayer(a.payload.name, a.payload.effectType as AdjustmentEffectType);
         },
         undoable: true,

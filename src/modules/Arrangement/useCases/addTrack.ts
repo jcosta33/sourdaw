@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { createTrack, type Track, type TrackKind } from '../models/Track';
+import { createTrack as createTrackModel } from '../models/Track';
+import { type Track, type TrackKind } from '../stores/trackStore';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { eventBus } from '#/app/registerDependencies';
@@ -14,7 +15,7 @@ export const addTrack = inject({ eventBus, getTrackState, setTrackState })(
                 return null;
             }
 
-            const track = createTrack(input);
+            const track = createTrackModel(input) as Track;
             setTrackState({
                 ...state,
                 tracks: [...state.tracks, track],

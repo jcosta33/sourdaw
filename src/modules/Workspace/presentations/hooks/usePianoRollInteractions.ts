@@ -26,7 +26,6 @@ import {
     setNoteVelocity,
     stampChord,
     removeNotesByIds,
-    type ChordType,
 } from '#/modules/MIDI';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { playAuditionNote } from '#/modules/AudioEngine';
@@ -45,6 +44,25 @@ type GestureEvent = UIEvent & {
     readonly rotation: number;
 };
 
+type PianoRollChordType =
+    | 'major'
+    | 'minor'
+    | 'dim'
+    | 'aug'
+    | 'sus2'
+    | 'sus4'
+    | '7'
+    | 'maj7'
+    | 'min7'
+    | 'dim7'
+    | 'aug7'
+    | '6'
+    | 'min6'
+    | '9'
+    | 'add9'
+    | 'min9'
+    | '7sus4';
+
 type InteractionArgs = {
     canvasRef: React.RefObject<HTMLCanvasElement | null>;
     clipId: string;
@@ -59,7 +77,7 @@ type InteractionArgs = {
     stepBeat: number;
     setStepBeat: Dispatch<SetStateAction<number>>;
     chordMode: boolean;
-    chordType: ChordType;
+    chordType: PianoRollChordType;
     paintMode: boolean;
     lassoMode: boolean;
     selectedNoteIds: Set<string>;

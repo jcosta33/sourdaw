@@ -17,10 +17,9 @@ import {
     encodeMp3,
     encodeFlac,
 } from '../../useCases/exportActions';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 import { isTauri } from '#/helpers/tauriBridge';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { audioBufferCache, getAudioContext } from '#/modules/AudioEngine';
 import { zipSync } from 'fflate';
 
 type ExportFormat = 'wav' | 'mp3' | 'flac';

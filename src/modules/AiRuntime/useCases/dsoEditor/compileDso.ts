@@ -5,13 +5,11 @@
  * before execution. Human-readable summaries are generated for the action history.
  */
 import { type Dso } from '../../models/DsoTypes';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
+import { addClip, addDevice, addTrack, removeTrack, setSend, trackStore } from '#/modules/Arrangement';
+import { applyChordProgressionToTrack, applyDrumPatternToTrack, applyMelodyToTrack } from '#/modules/AiGeneration';
+import { executeAppAction } from '#/modules/Command';
+import { humanizeNotes, midiStore } from '#/modules/MIDI';
+import { disableLooping, setLoopRegion, transportStore } from '#/modules/Transport';
 // Local type aliases — duplicated from AiGeneration algorithm files to avoid
 // a circular module dependency (AiGeneration already imports from AiRuntime).
 type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
@@ -802,10 +800,8 @@ async function executeSingleDso(dso: Dso): Promise<void> {
 
         case 'set_loop': {
             if (dso.enabled) {
-                const { setLoopRegion } = await import('#/modules/Transport/useCases/transportControls/setLoopRegion');
                 setLoopRegion(dso.start_beats, dso.end_beats);
             } else {
-                const { disableLooping } = await import('#/modules/Transport/useCases/setLooping');
                 disableLooping();
             }
             break;
@@ -828,7 +824,6 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'add_midi_notes': {
-            const { midiStore } = await import('#/modules/MIDI/stores/midiStore');
             const ms = midiStore.value;
             if (ms) {
                 // Find the clip's start beat so we can offset relative note positions to absolute
@@ -868,7 +863,6 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const key = noteNameToMidi(dso.key);
             const scale = toScaleType(dso.scale);
             const style = toMelodyStyle(dso.style);
-            const { applyMelodyToTrack } = await import('#/modules/AiGeneration/useCases/generateMelody/applyToTrack');
             applyMelodyToTrack(
                 dso.track_id,
                 { style, key, scale, octave: dso.octave, bars: dso.bars, density: dso.density },
@@ -881,8 +875,6 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const key = noteNameToMidi(dso.key);
             const style = toChordStyle(dso.progression);
             const voicing = toChordVoicing(dso.voicing);
-            const { applyChordProgressionToTrack } =
-                await import('#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack');
             applyChordProgressionToTrack(
                 dso.track_id,
                 { style, key, scale: 'major', bars: dso.bars, voicing },
@@ -893,8 +885,6 @@ async function executeSingleDso(dso: Dso): Promise<void> {
 
         case 'generate_drums': {
             const style = toDrumStyle(dso.style);
-            const { applyDrumPatternToTrack } =
-                await import('#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack');
             applyDrumPatternToTrack(dso.track_id, { style, bars: dso.bars, density: dso.density }, dso.start_beat ?? 0);
             break;
         }
@@ -908,13 +898,11 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'humanize_midi': {
-            const { humanizeNotes } = await import('#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes');
             humanizeNotes(dso.clip_id, dso.timing_amount, dso.velocity_amount);
             break;
         }
 
         case 'create_send': {
-            const { setSend } = await import('#/modules/Arrangement/useCases/device/sendManagement');
             setSend(dso.from_track_id, dso.to_track_id, dso.gain);
             break;
         }

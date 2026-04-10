@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackById as repoGetTrackById } from '../repositories/track/getTrackById';
-import { type Track } from '../models/Track';
+import { type Track } from '../stores/trackStore';
 
 export const getTrackById = inject({ repoGetTrackById })(
     ({ repoGetTrackById }) =>

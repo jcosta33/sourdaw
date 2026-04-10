@@ -1,4 +1,4 @@
-import { type ActionHandler } from '../models/ActionHandler';
+import { type ActionHandler } from './commandQueries';
 import { toggleUndoTree } from '../useCases/undoTree/toggleUndoTree';
 import { setNodeLabel } from '../useCases/undoTree/branchOperations';
 

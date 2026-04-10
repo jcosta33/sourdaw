@@ -1,9 +1,9 @@
 import { inject } from '#/infra/di/inject';
+import { addDeviceToStrip } from '#/modules/AudioEngine';
+import { loadPlugin } from '#/modules/Plugin';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { type Device } from '../../models/Track';
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
-import { loadPlugin } from '#/modules/Plugin/useCases/pluginLifecycle';
+import { type Device } from '../../stores/trackStore';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;

@@ -10,7 +10,8 @@ import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderMode
 import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
 
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
-import { ClipContextMenu, TimelineEmptyMenu } from './TimelineContextMenus';
+import { ClipContextMenu } from './ClipContextMenu';
+import { TimelineEmptyMenu } from './TimelineEmptyMenu';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 import {
     workspaceStore,

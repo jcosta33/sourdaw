@@ -13,9 +13,8 @@ import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { audioBufferCache, isTauri } from '#/modules/AudioEngine';
+import { audioBufferCache, decodeAudioFile, isTauri } from '#/modules/AudioEngine';
 import {
-    decodeAudioFile,
     trackStore,
     replaceClipAudioBuffer,
     normalizeClip,

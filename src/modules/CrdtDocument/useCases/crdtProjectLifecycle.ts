@@ -1,4 +1,4 @@
-import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 import {
     hasCrdtDocsInIdb,

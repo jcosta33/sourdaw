@@ -1,15 +1,15 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
-import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { undoStore } from '#/modules/Command/stores/undoStore';
+import { trackStore, markerStore, takeLaneStore } from '#/modules/Arrangement';
+import {
+    transportStore,
+    tempoMapStore,
+    timeSignatureMapStore,
+    defaultTransportState,
+} from '#/modules/Transport';
+import { automationStore } from '#/modules/Automation';
+import { midiStore } from '#/modules/MIDI';
+import { setSidechainRoutes } from '#/modules/Routing';
+import { audioBufferCache } from '#/modules/AudioEngine';
+import { undoStore } from '#/modules/Command';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type ProjectData } from '../../models/ProjectData';
 

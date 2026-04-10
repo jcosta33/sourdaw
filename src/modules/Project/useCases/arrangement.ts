@@ -1,17 +1,12 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { arrangementStore } from '../stores/arrangementStore';
-import { type ArrangementData } from '../models/ProjectData';
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import { trackStore, markerStore, takeLaneStore } from '#/modules/Arrangement';
+import { automationStore } from '#/modules/Automation';
+import { midiStore } from '#/modules/MIDI';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport';
+import { arrangementStore, type ArrangementSnapshot } from '../stores/arrangementStore';
+import { undoStore, stopPlayback } from '#/modules/Command';
 import { markDirty } from './projectPersistence/saveProject';
 
-function takeSnapshot(id: string, name: string): ArrangementData {
+function takeSnapshot(id: string, name: string): ArrangementSnapshot {
     return {
         id,
         name,
@@ -25,7 +20,7 @@ function takeSnapshot(id: string, name: string): ArrangementData {
     };
 }
 
-function loadSnapshot(data: ArrangementData): void {
+function loadSnapshot(data: ArrangementSnapshot): void {
     trackStore.set(data.tracks);
     automationStore.set(data.automation);
     midiStore.set(data.midi);
@@ -102,7 +97,7 @@ export function createArrangement(name: string): void {
 
     syncCurrentArrangementToStore(); // Save current to its slot before switching
 
-    const newArrangement: ArrangementData = {
+    const newArrangement: ArrangementSnapshot = {
         id,
         name,
         tracks: { tracks: [], selectedTrackId: null },
@@ -134,7 +129,7 @@ export function duplicateArrangement(id: string, newName?: string): void {
     }
 
     // Deep clone to avoid mutating shared object references
-    const clone = JSON.parse(JSON.stringify(sourceArrangement)) as ArrangementData;
+    const clone = JSON.parse(JSON.stringify(sourceArrangement)) as ArrangementSnapshot;
     clone.id = `arr-${crypto.randomUUID().slice(0, 8)}`;
     clone.name = newName || `${sourceArrangement.name} (Copy)`;
 

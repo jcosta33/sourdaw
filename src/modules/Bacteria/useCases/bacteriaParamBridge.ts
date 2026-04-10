@@ -285,4 +285,3 @@ export function setBacteriaBandParamWithAudio<K extends keyof BacteriaPatch['ban
         );
     }
 }
-export type { BacteriaPatch } from '../models/BacteriaPatch';

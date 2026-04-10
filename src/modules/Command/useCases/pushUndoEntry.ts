@@ -1,4 +1,4 @@
-import { createCallbackUndoEntry, type UndoSource } from '../models/UndoEntry';
+import { createCallbackUndoEntry, type UndoSource } from './commandQueries';
 import { pushUndo } from '../stores/undoStore';
 
 /**

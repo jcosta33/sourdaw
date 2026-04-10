@@ -3,13 +3,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import {
-    takeLaneStore,
-    type TakeLaneStoreState,
-    setCompRegion,
-    selectTake,
-    flattenComp,
-} from '#/modules/Arrangement';
+import { takeLaneStore, setCompRegion, selectTake, flattenComp } from '#/modules/Arrangement';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { MetaText } from '../../components/Inspector/MetaText';
 
@@ -17,8 +11,23 @@ type TakesSectionProps = {
     trackId: string;
 };
 
+type TakeLaneView = {
+    trackId: string;
+    takes: Array<{
+        id: string;
+        name: string;
+        startBeat: number;
+        endBeat: number;
+        selected: boolean;
+    }>;
+};
+
+type TakeLaneViewState = {
+    lanes: TakeLaneView[];
+};
+
 export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | null => {
-    const takeLaneState = useStore<TakeLaneStoreState>(takeLaneStore, { lanes: [] });
+    const takeLaneState = useStore<TakeLaneViewState>(takeLaneStore, { lanes: [] });
 
     const lane = takeLaneState.lanes.find((l) => l.trackId === trackId);
     if (!lane || lane.takes.length === 0) {

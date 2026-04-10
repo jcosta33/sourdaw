@@ -1,14 +1,9 @@
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { arrangementStore } from '#/modules/Project/stores/arrangementStore';
-import { projectStore } from '#/modules/Project/stores/projectStore';
-import { hydrateSidechainRoutes } from '#/modules/Routing/useCases/hydrateSidechainRoutes';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement';
+import { automationStore } from '#/modules/Automation';
+import { midiStore } from '#/modules/MIDI';
+import { arrangementStore, projectStore } from '#/modules/Project';
+import { hydrateSidechainRoutes } from '#/modules/Routing';
+import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 

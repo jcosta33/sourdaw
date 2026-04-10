@@ -1,15 +1,12 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore, addTrack as addTrackUseCase } from '#/modules/Arrangement';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { audioBufferCache, resetAudioGraph } from '#/modules/AudioEngine';
 import { removeProjectJson } from '../../repositories/project/storageOperations';
-import { addTrack as addTrackUseCase } from '#/modules/Arrangement/useCases/addTrack';
 import { clearUndoHistory, resetModuleStoresToDefault } from './helpers';
 
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
-import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
+import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument';
+import { stopPlayback } from '#/modules/Command';
 
 let stopAutoSave: (() => void) | null = null;
 

@@ -5,9 +5,7 @@
  * except for properties explicitly overridden on the instance.
  */
 
-import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
-import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import { getTrackStoreState as getTrackState, updateClip, setTrackState } from '#/modules/Arrangement';
 import { type Clip } from '../models/TrackViewTypes';
 import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 import { setNotesForClip } from './midiNoteCrud/setNotesForClip';

@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { updateClip as repoUpdateClip } from '../repositories/track/updateClip';
-import { type Clip } from '../models/Track';
+import { type Clip } from '../stores/trackStore';
 
 export const updateClip = inject({ repoUpdateClip })(
     ({ repoUpdateClip }) =>

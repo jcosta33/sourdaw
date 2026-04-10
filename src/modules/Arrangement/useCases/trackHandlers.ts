@@ -1,50 +1,115 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { setTrackInput } from '#/modules/Arrangement/useCases/setTrackInput';
-import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
+import { addTrack } from './addTrack';
+import { setTrackInput } from './setTrackInput';
+import { removeTrack } from './removeTrack';
 import { automationStore } from '#/modules/Automation';
 import { midiStore } from '#/modules/MIDI';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
-import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
-import { soloTrack } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrack';
-import { clearSolos } from '#/modules/Arrangement/useCases/toggleTrackState/clearSolos';
-import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
-import { reorderTrack } from '#/modules/Arrangement/useCases/toggleTrackState/reorderTrack';
-import { hideTrack } from '#/modules/Arrangement/useCases/toggleTrackState/hideTrack';
-import { disableTrack } from '#/modules/Arrangement/useCases/toggleTrackState/disableTrack';
-import { setTrackHeight } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackHeight';
-import { setTrackOutput } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackOutput';
-import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
-import { foldTrack } from '#/modules/Arrangement/useCases/toggleTrackState/foldTrack';
-import { groupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/groupTracks';
-import { ungroupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/ungroupTracks';
-import { toggleSoloSafe } from '#/modules/Arrangement/useCases/toggleTrackState/toggleSoloSafe';
-import { armTrack } from '#/modules/Arrangement/useCases/recording';
-import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce/freezeTrack';
-import { bounceInPlace, bounceToNewTrack } from '#/modules/Arrangement/useCases/freezeBounce/bounceOperations';
-import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
-import { createFolder } from '#/modules/Arrangement/useCases/folder';
+import { takeLaneStore } from '../stores/takeLaneStore';
+import { renameTrack } from './renameTrack';
+import { muteTrack } from './toggleTrackState/muteTrack';
+import { soloTrack } from './toggleTrackState/soloTrack';
+import { clearSolos } from './toggleTrackState/clearSolos';
+import { selectTrack } from './toggleTrackState/selectTrack';
+import { reorderTrack } from './toggleTrackState/reorderTrack';
+import { hideTrack } from './toggleTrackState/hideTrack';
+import { disableTrack } from './toggleTrackState/disableTrack';
+import { setTrackHeight } from './toggleTrackState/setTrackHeight';
+import { setTrackOutput } from './toggleTrackState/setTrackOutput';
+import { setAutomationMode } from './toggleTrackState/setAutomationMode';
+import { foldTrack } from './toggleTrackState/foldTrack';
+import { groupTracks } from './toggleTrackState/groupTracks';
+import { ungroupTracks } from './toggleTrackState/ungroupTracks';
+import { toggleSoloSafe } from './toggleTrackState/toggleSoloSafe';
+import { armTrack } from './recording';
+import { freezeTrack, unfreezeTrack } from './freezeBounce/freezeTrack';
+import { bounceInPlace, bounceToNewTrack } from './freezeBounce/bounceOperations';
+import { duplicateTrack } from './duplicateTrack';
+import { createFolder } from './folder';
 import {
     setTrackGain,
     setTrackPan,
     setTrackColor,
     setTrackNotes,
-} from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { zoomTracksVertical } from '#/modules/Arrangement/useCases/trackZoom';
+} from './setTrackGainPan';
+import { zoomTracksVertical } from './trackZoom';
 import { setTrackGain as engineSetTrackGain, setTrackPan as engineSetTrackPan } from '#/modules/AudioEngine';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getTrackStoreState } from './getTrackStoreState';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
-export const trackHandlers = {
+type RestoreTrackAction = {
+    type: 'restoreTrack';
+    payload: {
+        trackId: string;
+        trackSnapshot: unknown;
+        automationLaneSnapshots: unknown[];
+        midiNotesByClipId: Record<string, unknown>;
+        midiCcByClipId: Record<string, unknown>;
+        midiPitchBendByClipId: Record<string, unknown>;
+        takeLaneSnapshots: unknown[];
+    };
+};
+
+type TrackInverseAction = RestoreTrackAction;
+
+type TrackAction =
+    | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind } }
+    | { type: 'removeTrack'; payload: { trackId: string } }
+    | { type: 'removeAllTracks'; payload?: undefined }
+    | { type: 'renameTrack'; payload: { trackId: string; name: string } }
+    | { type: 'selectTrack'; payload: { trackId: string } }
+    | { type: 'muteTrack'; payload: { trackId: string; muted: boolean } }
+    | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
+    | { type: 'armTrack'; payload: { trackId: string; armed: boolean } }
+    | { type: 'freezeTrack'; payload: { trackId: string } }
+    | { type: 'unfreezeTrack'; payload: { trackId: string } }
+    | { type: 'bounceInPlace'; payload: { trackId: string } }
+    | { type: 'duplicateTrack'; payload: { trackId: string } }
+    | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
+    | { type: 'setTrackGain'; payload: { trackId: string; gain: number } }
+    | { type: 'setTrackPan'; payload: { trackId: string; pan: number } }
+    | { type: 'setTrackColor'; payload: { trackId: string; color: string } }
+    | { type: 'createBus'; payload: { name: string } }
+    | { type: 'createFolder'; payload: { name: string } }
+    | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
+    | { type: 'disableTrack'; payload: { trackId: string; disabled: boolean } }
+    | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
+    | { type: 'setTrackOutput'; payload: { trackId: string; outputId: string } }
+    | { type: 'setAutomationMode'; payload: { trackId: string; mode: AutomationMode } }
+    | { type: 'foldTrack'; payload: { trackId: string; folded: boolean } }
+    | { type: 'groupTracks'; payload: { trackIds: string[]; name: string } }
+    | { type: 'ungroupTracks'; payload: { groupId: string } }
+    | { type: 'toggleSoloSafe'; payload: { trackId: string } }
+    | { type: 'setTrackNotes'; payload: { trackId: string; notes: string } }
+    | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
+    | { type: 'clearSolos'; payload?: undefined }
+    | { type: 'zoomTracksVertical'; payload: { delta: number } }
+    | { type: 'consolidateAllTracks'; payload?: undefined }
+    | { type: 'bounceToNewTrack'; payload: { trackId: string } };
+
+type TrackHandlerResult = {
+    label: string;
+    inverseAction?: TrackAction | TrackInverseAction | null;
+};
+
+type TrackHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => TrackHandlerResult;
+    undoable: boolean;
+};
+
+type TrackHandlers = {
+    [ActionType in TrackAction['type']]: TrackHandler<Extract<TrackAction, { type: ActionType }>>;
+};
+
+export const trackHandlers: TrackHandlers = {
     addTrack: {
         execute: (a) => {
             addTrack(a.payload);
         },
         describe: (a) => ({ label: `Add ${a.payload.kind} track "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addTrack'>>,
+    },
 
     removeTrack: {
         execute: (a) => {
@@ -104,7 +169,7 @@ export const trackHandlers = {
             };
         },
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeTrack'>>,
+    },
 
     removeAllTracks: {
         execute: () => {
@@ -117,7 +182,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Remove all tracks' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeAllTracks'>>,
+    },
 
     renameTrack: {
         execute: (a) => {
@@ -125,7 +190,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: `Rename track to "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'renameTrack'>>,
+    },
 
     selectTrack: {
         execute: (a) => {
@@ -133,7 +198,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Select track' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'selectTrack'>>,
+    },
 
     muteTrack: {
         execute: (a) => {
@@ -144,7 +209,7 @@ export const trackHandlers = {
             inverseAction: { type: 'muteTrack', payload: { trackId: a.payload.trackId, muted: !a.payload.muted } },
         }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'muteTrack'>>,
+    },
 
     soloTrack: {
         execute: (a) => {
@@ -155,7 +220,7 @@ export const trackHandlers = {
             inverseAction: { type: 'soloTrack', payload: { trackId: a.payload.trackId, soloed: !a.payload.soloed } },
         }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'soloTrack'>>,
+    },
 
     armTrack: {
         execute: (a) => {
@@ -163,7 +228,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: a.payload.armed ? 'Arm track' : 'Disarm track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'armTrack'>>,
+    },
 
     freezeTrack: {
         execute: async (a) => {
@@ -171,7 +236,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Freeze track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'freezeTrack'>>,
+    },
 
     unfreezeTrack: {
         execute: (a) => {
@@ -179,7 +244,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Unfreeze track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'unfreezeTrack'>>,
+    },
 
     bounceInPlace: {
         execute: (a) => {
@@ -187,7 +252,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Bounce in place' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'bounceInPlace'>>,
+    },
 
     duplicateTrack: {
         execute: (a) => {
@@ -195,7 +260,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Duplicate track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'duplicateTrack'>>,
+    },
 
     reorderTrack: {
         execute: (a) => {
@@ -203,7 +268,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Reorder track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'reorderTrack'>>,
+    },
 
     setTrackGain: {
         execute: (a) => {
@@ -220,7 +285,7 @@ export const trackHandlers = {
             };
         },
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTrackGain'>>,
+    },
 
     setTrackPan: {
         execute: (a) => {
@@ -237,7 +302,7 @@ export const trackHandlers = {
             };
         },
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTrackPan'>>,
+    },
 
     setTrackColor: {
         execute: (a) => {
@@ -253,7 +318,7 @@ export const trackHandlers = {
             };
         },
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTrackColor'>>,
+    },
 
     createBus: {
         execute: (a) => {
@@ -261,7 +326,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: `Create bus "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'createBus'>>,
+    },
 
     createFolder: {
         execute: (a) => {
@@ -269,7 +334,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: `Create folder "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'createFolder'>>,
+    },
 
     hideTrack: {
         execute: (a) => {
@@ -277,7 +342,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: a.payload.hidden ? 'Hide track' : 'Show track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'hideTrack'>>,
+    },
 
     disableTrack: {
         execute: (a) => {
@@ -285,7 +350,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: a.payload.disabled ? 'Disable track' : 'Enable track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'disableTrack'>>,
+    },
 
     setTrackHeight: {
         execute: (a) => {
@@ -293,7 +358,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Set track height' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTrackHeight'>>,
+    },
 
     setTrackOutput: {
         execute: (a) => {
@@ -301,7 +366,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Set track output' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTrackOutput'>>,
+    },
 
     setAutomationMode: {
         execute: (a) => {
@@ -309,7 +374,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: `Set automation mode: ${a.payload.mode}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setAutomationMode'>>,
+    },
 
     foldTrack: {
         execute: (a) => {
@@ -317,7 +382,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: a.payload.folded ? 'Fold track' : 'Unfold track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'foldTrack'>>,
+    },
 
     groupTracks: {
         execute: (a) => {
@@ -325,7 +390,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: `Group tracks: "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'groupTracks'>>,
+    },
 
     ungroupTracks: {
         execute: (a) => {
@@ -333,7 +398,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Ungroup tracks' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'ungroupTracks'>>,
+    },
 
     toggleSoloSafe: {
         execute: (a) => {
@@ -341,7 +406,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Toggle solo safe' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleSoloSafe'>>,
+    },
 
     setTrackNotes: {
         execute: (a) => {
@@ -351,7 +416,7 @@ export const trackHandlers = {
             return { label: 'Set track notes' };
         },
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTrackNotes'>>,
+    },
 
     setTrackInput: {
         execute: (a) => {
@@ -359,7 +424,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Set track input' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTrackInput'>>,
+    },
 
     clearSolos: {
         execute: () => {
@@ -367,7 +432,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Clear all solos' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'clearSolos'>>,
+    },
 
     zoomTracksVertical: {
         execute: (a) => {
@@ -375,7 +440,7 @@ export const trackHandlers = {
         },
         describe: (a) => ({ label: `Zoom tracks vertical ${a.payload.delta > 0 ? 'in' : 'out'}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'zoomTracksVertical'>>,
+    },
 
     consolidateAllTracks: {
         execute: async () => {
@@ -391,7 +456,7 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Consolidate all tracks' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'consolidateAllTracks'>>,
+    },
 
     bounceToNewTrack: {
         execute: async (a) => {
@@ -399,5 +464,5 @@ export const trackHandlers = {
         },
         describe: () => ({ label: 'Bounce to new track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'bounceToNewTrack'>>,
+    },
 };

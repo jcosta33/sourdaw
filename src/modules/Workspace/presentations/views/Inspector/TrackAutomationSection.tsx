@@ -5,13 +5,7 @@ import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuP
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { getBuiltinPlugins } from '#/modules/Arrangement';
-import {
-    addAutomationLane,
-    toggleAutomationVisibility,
-    removeAutomationLane,
-    automationStore,
-    type AutomationStoreState,
-} from '#/modules/Automation';
+import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane, automationStore } from '#/modules/Automation';
 import { useStore } from '#/infra/store/useStore';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
@@ -20,11 +14,20 @@ type TrackAutomationSectionProps = {
     track: Track;
 };
 
+type TrackAutomationState = {
+    lanes: Array<{
+        id: string;
+        trackId: string;
+        parameterName: string;
+        visible: boolean;
+    }>;
+};
+
 export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): ReactElement => {
     const [showAutoMenu, setShowAutoMenu] = useState(false);
     const autoMenuRef = useRef<HTMLDivElement>(null);
 
-    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
+    const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
     const trackLanes = autoState.lanes.filter((l) => l.trackId === track.id);
 

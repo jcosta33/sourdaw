@@ -23,9 +23,6 @@ export { exportProjectFile, importProjectFile } from './useCases/projectPersiste
 
 // useCases/projectPersistence/helpers.ts
 export {
-    clearUndoHistory,
-    resetModuleStoresToDefault,
-    hydrateModuleStoresFromProjectData,
     verifyAudioBufferReferences,
 } from './useCases/projectPersistence/helpers';
 

@@ -8,7 +8,7 @@ export { PresenceOverlay } from './presentations/views/PresenceOverlay';
 export { collaborationStore } from './stores/collaborationStore';
 
 // useCases/collaborationQueries.ts
-export type { CollaborationState } from './useCases/collaborationQueries';
+export type { CollaborationPeer, CollaborationState, PresenceData, PresenceView } from './useCases/collaborationQueries';
 
 // useCases/collaboration/sessionManagement.ts
 export {

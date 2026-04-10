@@ -8,14 +8,14 @@ import {
     toggleReasoning,
     setChatMode,
     stopGenerating,
-} from '#/modules/AiRuntime/stores/chatStore';
-import { sendChatMessage } from '#/modules/AiRuntime/useCases/sendChatMessage';
-import { toggleChat } from '#/modules/AiRuntime/useCases/aiPanelActions';
+} from '../../stores/chatStore';
+import { sendChatMessage } from '../../useCases/sendChatMessage';
+import { toggleChat } from '../../useCases/aiPanelActions';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
-import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
+import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution';
 import { ChatComposer } from '../components/ChatComposer';
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */

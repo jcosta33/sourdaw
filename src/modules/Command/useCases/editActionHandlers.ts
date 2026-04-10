@@ -6,7 +6,7 @@
  */
 import { inject } from '#/infra/di/inject';
 import { getAllClipIds } from './selectionHelpers';
-import { updateWorkspaceState } from '#/modules/Workspace/useCases/workspaceState';
+import { updateWorkspaceState } from '#/modules/Workspace';
 
 /** Select every clip on the timeline. */
 export const selectAllClips = inject({ updateWorkspaceState })(

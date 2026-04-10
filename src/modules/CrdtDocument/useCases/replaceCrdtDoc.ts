@@ -1,5 +1,5 @@
 import { type Doc } from '@automerge/automerge';
-import { type DocId } from '../models/CrdtDocumentTypes';
+import { type DocId } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 
 export type ReplaceCrdtDocInput = {

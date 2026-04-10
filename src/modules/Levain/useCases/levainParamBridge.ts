@@ -9,8 +9,7 @@
 import { type LevainPatch } from '../models/LevainPatch';
 import { levainStore, setLevainParam, setMacro } from '../stores/levainStore';
 import { autoLoadLevainSamples } from './autoLoadSamples';
-import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement';
 
 // ---------------------------------------------------------------------------
 // Device reference cache

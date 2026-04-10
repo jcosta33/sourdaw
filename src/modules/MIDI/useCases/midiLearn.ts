@@ -6,17 +6,17 @@ import {
     type MidiMapping,
     type MidiMappingTargetType,
 } from '../stores/midiLearnStore';
-import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import {
-    setTrackGain as engineSetTrackGain,
-    setTrackPan as engineSetTrackPan,
-} from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { setFermenterParamWithAudio } from '#/modules/Fermenter/useCases/fermenterParamBridge';
-import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+    setTrackGain,
+    setTrackPan,
+    setDeviceParameter,
+    getTrackStoreState,
+    getAllTracks,
+} from '#/modules/Arrangement';
+import { setTrackGain as engineSetTrackGain, setTrackPan as engineSetTrackPan } from '#/modules/AudioEngine';
+import { setFermenterMappedParam } from '#/modules/Fermenter';
+import { recordAutomationValue } from '#/modules/Automation';
+import { getTransportState } from '#/modules/Transport';
 
 let nextMappingId = 1;
 
@@ -116,7 +116,7 @@ export const handleMidiMessage = inject({
     engineSetTrackGain,
     engineSetTrackPan,
     setDeviceParameter,
-    setFermenterParamWithAudio,
+    setFermenterMappedParam,
     getTransportState,
     recordAutomationValue,
     getAllTracks,
@@ -128,7 +128,7 @@ export const handleMidiMessage = inject({
         engineSetTrackGain,
         engineSetTrackPan,
         setDeviceParameter,
-        setFermenterParamWithAudio,
+        setFermenterMappedParam,
         getTransportState,
         recordAutomationValue,
         getAllTracks,
@@ -173,7 +173,11 @@ export const handleMidiMessage = inject({
                                 }
                             }
                             if (fermenterDeviceId) {
-                                setFermenterParamWithAudio(fermenterDeviceId, mapping.paramId as never, scaled);
+                                setFermenterMappedParam({
+                                    deviceId: fermenterDeviceId,
+                                    paramId: mapping.paramId,
+                                    value: scaled,
+                                });
                             }
 
                             const transport = getTransportState();

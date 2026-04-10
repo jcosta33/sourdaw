@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getAllTracks } from '#/modules/Arrangement';
 import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
 import { downloadBlob } from '../repositories/downloadFile';
 import { type MidiNote, type MidiCC } from '../models/MidiNote';

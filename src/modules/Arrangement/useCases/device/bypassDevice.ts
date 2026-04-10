@@ -10,7 +10,7 @@ export const bypassDevice = inject({ getTrackState, mapAllTracks })(
                 for (const track of state.tracks) {
                     if (track.devices.some((d) => d.id === deviceId)) {
                         // Forward bypass to live engine for native DSP devices
-                        import('#/modules/AudioEngine/useCases/deviceControls')
+                        import('#/modules/AudioEngine')
                             .then(({ updateDeviceBypass }) => {
                                 updateDeviceBypass(track.id, deviceId, bypassed);
                             })

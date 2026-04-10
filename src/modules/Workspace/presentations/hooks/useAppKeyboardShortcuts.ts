@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { showAutomationPanel } from '#/modules/Workspace/useCases/panels/devicePanels';
+import { showAutomationPanel } from '../../useCases/panels/devicePanels';
 import {
     copySelectedClip,
     cutSelectedClip,

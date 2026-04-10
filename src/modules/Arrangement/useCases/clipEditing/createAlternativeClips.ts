@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 import { setNotesForClip } from '#/modules/MIDI';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '#/modules/Arrangement/stores/trackStore';
 
 export const createAlternativeClips = inject({ getTrackState, updateTrack })(
     ({ getTrackState, updateTrack }) =>

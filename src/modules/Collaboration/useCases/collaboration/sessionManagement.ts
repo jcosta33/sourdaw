@@ -1,8 +1,6 @@
 import {
     type PeerId,
-    type PeerInfo,
     type PeerMessage,
-    type PresenceData,
     type SignalingMessage,
     PEER_COLORS,
 } from '../../models/CollaborationTypes';
@@ -10,6 +8,7 @@ import { createCollaborationError } from '../../errors/CollaborationError';
 import { transportStore } from '#/modules/Transport';
 import { trackStore } from '#/modules/Arrangement';
 import { audioBufferCache, getAudioContext } from '#/modules/AudioEngine';
+import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
 
 import {
     setupProjectionBridge,
@@ -197,7 +196,7 @@ const pickPeerColor = (excludeColors: string[]): string => {
     return PEER_COLORS.find((c) => !used.has(c)) ?? PEER_COLORS[0]!;
 };
 
-const getLocalPeerInfo = (): PeerInfo => {
+const getLocalPeerInfo = (): CollaborationPeer => {
     const state = collaborationStore.value!;
     return {
         id: state.localPeerId!,
@@ -402,7 +401,7 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
     // Add the joiner to our peer list
     const state = collaborationStore.value;
     if (state) {
-        const joinerInfo: PeerInfo = {
+        const joinerInfo: CollaborationPeer = {
             id: answer.peerId,
             name: answer.name,
             color: pickPeerColor([state.localColor, ...state.peers.map((p) => p.color)]),
@@ -664,7 +663,7 @@ const handlePeerDisconnected = (peerId: PeerId): void => {
     }
 };
 
-const addOrUpdatePeer = (peer: PeerInfo): void => {
+const addOrUpdatePeer = (peer: CollaborationPeer): void => {
     const state = collaborationStore.value;
     if (!state) {
         return;

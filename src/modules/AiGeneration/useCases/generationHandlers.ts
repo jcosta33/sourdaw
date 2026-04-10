@@ -1,20 +1,49 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { applyDrumPatternToTrack } from '#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack';
-import { type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern/algorithm';
-import { applyMelodyToTrack } from '#/modules/AiGeneration/useCases/generateMelody/applyToTrack';
-import { type ScaleType } from '#/modules/AiGeneration/useCases/generateMelody/algorithm';
-import { applyChordProgressionToTrack } from '#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack';
-import {
-    type ChordProgressionStyle,
-    type ChordVoicing,
-} from '#/modules/AiGeneration/useCases/generateChordProgression/algorithm';
-import { extractGroove, applyGroove } from '#/modules/AiGeneration/useCases/grooveTemplate/operations';
-import { getGrooveById } from '#/modules/AiGeneration/models/factoryGrooves';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { applyDrumPatternToTrack } from './generateDrumPattern/applyToTrack';
+import { type DrumPatternStyle } from './generateDrumPattern/algorithm';
+import { applyMelodyToTrack } from './generateMelody/applyToTrack';
+import { type ScaleType } from './generateMelody/algorithm';
+import { applyChordProgressionToTrack } from './generateChordProgression/applyToTrack';
+import { type ChordProgressionStyle, type ChordVoicing } from './generateChordProgression/algorithm';
+import { extractGroove, applyGroove } from './grooveTemplate/operations';
+import { getGrooveById } from '../models/factoryGrooves';
+import { addTrack, getTrackStoreState } from '#/modules/Arrangement';
+import { getTransportState } from '#/modules/Transport';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type GenerationHandlerDescription = {
+    label: string;
+};
+
+type GenerationHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => GenerationHandlerDescription;
+    undoable: boolean;
+};
+
+type GenerationAction =
+    | {
+          type: 'generateDrumPattern';
+          payload: { trackId?: string; style: string; bars: number; density: number };
+      }
+    | {
+          type: 'generateMelody';
+          payload: { trackId?: string; style: string; key?: number; scale?: string; bars: number };
+      }
+    | {
+          type: 'generateChordProgression';
+          payload: { trackId?: string; style: string; key?: number; scale?: string; bars: number; voicing?: string };
+      }
+    | { type: 'extractGroove'; payload: { clipId: string } }
+    | { type: 'applyGroove'; payload: { clipId: string; grooveId: string; amount: number } };
+
+type GenerationActionOf<ActionType extends GenerationAction['type']> = Extract<GenerationAction, { type: ActionType }>;
+
+type GenerationHandlers = {
+    generateDrumPattern: GenerationHandler<GenerationActionOf<'generateDrumPattern'>>;
+    generateMelody: GenerationHandler<GenerationActionOf<'generateMelody'>>;
+    generateChordProgression: GenerationHandler<GenerationActionOf<'generateChordProgression'>>;
+    extractGroove: GenerationHandler<GenerationActionOf<'extractGroove'>>;
+    applyGroove: GenerationHandler<GenerationActionOf<'applyGroove'>>;
+};
 
 const VALID_DRUM_STYLES: ReadonlySet<string> = new Set([
     'four-on-floor',
@@ -85,7 +114,7 @@ function getPlayheadBeat(): number {
     return transport?.playheadPosition ?? 0;
 }
 
-export const generationHandlers = {
+export const generationHandlers: GenerationHandlers = {
     generateDrumPattern: {
         execute: (a) => {
             const style = VALID_DRUM_STYLES.has(a.payload.style) ? (a.payload.style as DrumPatternStyle) : 'rock';
@@ -107,7 +136,7 @@ export const generationHandlers = {
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} drum pattern` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateDrumPattern'>>,
+    },
 
     generateMelody: {
         execute: (a) => {
@@ -137,7 +166,7 @@ export const generationHandlers = {
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} melody` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateMelody'>>,
+    },
 
     generateChordProgression: {
         execute: (a) => {
@@ -172,7 +201,7 @@ export const generationHandlers = {
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} chord progression` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'generateChordProgression'>>,
+    },
 
     extractGroove: {
         execute: (a) => {
@@ -180,7 +209,7 @@ export const generationHandlers = {
         },
         describe: () => ({ label: 'Extract groove template' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'extractGroove'>>,
+    },
 
     applyGroove: {
         execute: (a) => {
@@ -192,5 +221,5 @@ export const generationHandlers = {
         },
         describe: (a) => ({ label: `Apply groove "${a.payload.grooveId}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'applyGroove'>>,
+    },
 };

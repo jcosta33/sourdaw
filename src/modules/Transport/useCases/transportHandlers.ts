@@ -1,33 +1,85 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
-import { setTempo } from '#/modules/Transport/useCases/setTempo';
-import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';
-import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
-import { toggleLoop } from '#/modules/Transport/useCases/transportControls/toggleLoop';
-import { toggleMetronome } from '#/modules/Transport/useCases/transportControls/toggleMetronome';
-import { setMetronomeVolume } from '#/modules/Transport/useCases/transportControls/setMetronomeVolume';
-import { toggleRecording } from '#/modules/Transport/useCases/transportControls/toggleRecording';
-import { setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
-import { setPunchIn } from '#/modules/Transport/useCases/transportControls/setPunchIn';
-import { setPunchOut } from '#/modules/Transport/useCases/transportControls/setPunchOut';
-import { togglePunchEnabled } from '#/modules/Transport/useCases/transportControls/togglePunchEnabled';
-import { toggleCountIn } from '#/modules/Transport/useCases/transportControls/toggleCountIn';
-import { setCountInBars } from '#/modules/Transport/useCases/transportControls/setCountInBars';
-import { togglePreRoll } from '#/modules/Transport/useCases/transportControls/togglePreRoll';
-import { setPreRollBars } from '#/modules/Transport/useCases/transportControls/setPreRollBars';
-import { addTimeSignatureChange, removeTimeSignatureChange } from '#/modules/Transport/useCases/timeSignatureChanges';
+import { setTempo } from './setTempo';
+import { togglePlayback } from './transportControls/togglePlayback';
+import { stopPlayback } from './transportControls/stopPlayback';
+import { toggleLoop } from './transportControls/toggleLoop';
+import { toggleMetronome } from './transportControls/toggleMetronome';
+import { setMetronomeVolume } from './transportControls/setMetronomeVolume';
+import { toggleRecording } from './transportControls/toggleRecording';
+import { setLoopRegion } from './transportControls/setLoopRegion';
+import { seekPlayhead } from './transportControls/seekPlayhead';
+import { setPunchIn } from './transportControls/setPunchIn';
+import { setPunchOut } from './transportControls/setPunchOut';
+import { togglePunchEnabled } from './transportControls/togglePunchEnabled';
+import { toggleCountIn } from './transportControls/toggleCountIn';
+import { setCountInBars } from './transportControls/setCountInBars';
+import { togglePreRoll } from './transportControls/togglePreRoll';
+import { setPreRollBars } from './transportControls/setPreRollBars';
+import { addTimeSignatureChange, removeTimeSignatureChange } from './timeSignatureChanges';
 import { setMasterGain } from '#/modules/AudioEngine';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type TransportHandlerResult = {
+    label: string;
+};
 
-export const transportHandlers = {
+type TransportHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => TransportHandlerResult;
+    undoable: boolean;
+};
+
+type TransportAction =
+    | { type: 'setTempo'; payload: { bpm: number } }
+    | { type: 'togglePlayback'; payload?: undefined }
+    | { type: 'stopPlayback'; payload?: undefined }
+    | { type: 'toggleRecording'; payload?: undefined }
+    | { type: 'toggleLoop'; payload?: undefined }
+    | { type: 'toggleMetronome'; payload?: undefined }
+    | { type: 'setMetronomeVolume'; payload: { volume: number } }
+    | { type: 'setMasterGain'; payload: { gain: number } }
+    | { type: 'setLoopRegion'; payload: { startBeat: number; endBeat: number } }
+    | { type: 'seekPlayhead'; payload: { beat: number } }
+    | { type: 'setPunchIn'; payload: { beat: number } }
+    | { type: 'setPunchOut'; payload: { beat: number } }
+    | { type: 'togglePunch'; payload?: undefined }
+    | { type: 'toggleCountIn'; payload?: undefined }
+    | { type: 'setCountInBars'; payload: { bars: number } }
+    | { type: 'addTimeSignatureChange'; payload: { beat: number; numerator: number; denominator: number } }
+    | { type: 'removeTimeSignatureChange'; payload: { beat: number } }
+    | { type: 'togglePreRoll'; payload?: undefined }
+    | { type: 'setPreRollBars'; payload: { bars: number } };
+
+type TransportActionOf<ActionType extends TransportAction['type']> = Extract<TransportAction, { type: ActionType }>;
+
+type TransportHandlers = {
+    setTempo: TransportHandler<TransportActionOf<'setTempo'>>;
+    togglePlayback: TransportHandler<TransportActionOf<'togglePlayback'>>;
+    stopPlayback: TransportHandler<TransportActionOf<'stopPlayback'>>;
+    toggleRecording: TransportHandler<TransportActionOf<'toggleRecording'>>;
+    toggleLoop: TransportHandler<TransportActionOf<'toggleLoop'>>;
+    toggleMetronome: TransportHandler<TransportActionOf<'toggleMetronome'>>;
+    setMetronomeVolume: TransportHandler<TransportActionOf<'setMetronomeVolume'>>;
+    setMasterGain: TransportHandler<TransportActionOf<'setMasterGain'>>;
+    setLoopRegion: TransportHandler<TransportActionOf<'setLoopRegion'>>;
+    seekPlayhead: TransportHandler<TransportActionOf<'seekPlayhead'>>;
+    setPunchIn: TransportHandler<TransportActionOf<'setPunchIn'>>;
+    setPunchOut: TransportHandler<TransportActionOf<'setPunchOut'>>;
+    togglePunch: TransportHandler<TransportActionOf<'togglePunch'>>;
+    toggleCountIn: TransportHandler<TransportActionOf<'toggleCountIn'>>;
+    setCountInBars: TransportHandler<TransportActionOf<'setCountInBars'>>;
+    addTimeSignatureChange: TransportHandler<TransportActionOf<'addTimeSignatureChange'>>;
+    removeTimeSignatureChange: TransportHandler<TransportActionOf<'removeTimeSignatureChange'>>;
+    togglePreRoll: TransportHandler<TransportActionOf<'togglePreRoll'>>;
+    setPreRollBars: TransportHandler<TransportActionOf<'setPreRollBars'>>;
+};
+
+export const transportHandlers: TransportHandlers = {
     setTempo: {
         execute: (a) => {
             setTempo(a.payload.bpm);
         },
         describe: (a) => ({ label: `Set tempo to ${a.payload.bpm} BPM` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setTempo'>>,
+    },
 
     togglePlayback: {
         execute: () => {
@@ -35,7 +87,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Toggle playback' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'togglePlayback'>>,
+    },
 
     stopPlayback: {
         execute: () => {
@@ -43,7 +95,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Stop playback' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'stopPlayback'>>,
+    },
 
     toggleRecording: {
         execute: () => {
@@ -51,7 +103,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Toggle recording' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleRecording'>>,
+    },
 
     toggleLoop: {
         execute: () => {
@@ -59,7 +111,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Toggle loop' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleLoop'>>,
+    },
 
     toggleMetronome: {
         execute: () => {
@@ -67,7 +119,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Toggle metronome' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleMetronome'>>,
+    },
 
     setMetronomeVolume: {
         execute: (a) => {
@@ -75,7 +127,7 @@ export const transportHandlers = {
         },
         describe: (a) => ({ label: `Set metronome volume to ${Math.round(a.payload.volume * 100)}%` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setMetronomeVolume'>>,
+    },
 
     setMasterGain: {
         execute: (a) => {
@@ -83,7 +135,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Set master gain' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setMasterGain'>>,
+    },
 
     setLoopRegion: {
         execute: (a) => {
@@ -91,7 +143,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Set loop region' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setLoopRegion'>>,
+    },
 
     seekPlayhead: {
         execute: (a) => {
@@ -99,7 +151,7 @@ export const transportHandlers = {
         },
         describe: (a) => ({ label: `Seek to beat ${a.payload.beat}` }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'seekPlayhead'>>,
+    },
 
     setPunchIn: {
         execute: (a) => {
@@ -107,7 +159,7 @@ export const transportHandlers = {
         },
         describe: (a) => ({ label: `Set punch in at beat ${a.payload.beat}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setPunchIn'>>,
+    },
 
     setPunchOut: {
         execute: (a) => {
@@ -115,7 +167,7 @@ export const transportHandlers = {
         },
         describe: (a) => ({ label: `Set punch out at beat ${a.payload.beat}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setPunchOut'>>,
+    },
 
     togglePunch: {
         execute: () => {
@@ -123,7 +175,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Toggle punch in/out' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'togglePunch'>>,
+    },
 
     toggleCountIn: {
         execute: () => {
@@ -131,7 +183,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Toggle count-in' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleCountIn'>>,
+    },
 
     setCountInBars: {
         execute: (a) => {
@@ -139,7 +191,7 @@ export const transportHandlers = {
         },
         describe: (a) => ({ label: `Set count-in to ${a.payload.bars} bars` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setCountInBars'>>,
+    },
 
     addTimeSignatureChange: {
         execute: (a) => {
@@ -149,7 +201,7 @@ export const transportHandlers = {
             label: `Set time signature ${a.payload.numerator}/${a.payload.denominator} at beat ${a.payload.beat}`,
         }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addTimeSignatureChange'>>,
+    },
 
     removeTimeSignatureChange: {
         execute: (a) => {
@@ -157,7 +209,7 @@ export const transportHandlers = {
         },
         describe: (a) => ({ label: `Remove time signature change at beat ${a.payload.beat}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeTimeSignatureChange'>>,
+    },
 
     togglePreRoll: {
         execute: () => {
@@ -165,7 +217,7 @@ export const transportHandlers = {
         },
         describe: () => ({ label: 'Toggle pre-roll' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'togglePreRoll'>>,
+    },
 
     setPreRollBars: {
         execute: (a) => {
@@ -173,5 +225,5 @@ export const transportHandlers = {
         },
         describe: (a) => ({ label: `Set pre-roll to ${a.payload.bars} bars` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setPreRollBars'>>,
+    },
 };

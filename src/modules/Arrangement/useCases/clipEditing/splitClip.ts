@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '#/modules/Arrangement/stores/trackStore';
 import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 import { snapSplitBeatToZeroCrossing } from '#/modules/Arrangement/services/snapSplitBeatToZeroCrossing';
 

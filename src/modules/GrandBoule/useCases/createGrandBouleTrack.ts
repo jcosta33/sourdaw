@@ -6,10 +6,8 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
+import { createTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement';
+import { addDeviceToStrip } from '#/modules/AudioEngine';
 import { eventBus } from '#/app/registerDependencies';
 
 export const createGrandBouleTrack = inject({ eventBus })(

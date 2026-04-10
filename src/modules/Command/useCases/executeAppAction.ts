@@ -1,36 +1,43 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
-import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores/actionHistoryStore';
-import { type AppAction } from '../models/AppAction';
-import { type ActionHandler } from '../models/ActionHandler';
-import { createUndoEntry } from '../models/UndoEntry';
+import { setSemanticContext, clearSemanticContext, pushActionHistoryEntry } from '#/modules/CrdtDocument';
+import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
 import { pushUndo } from '../stores/undoStore';
-import { trackHandlers } from '#/modules/Arrangement/useCases/trackHandlers';
-import { clipHandlers } from '#/modules/Arrangement/useCases/clipHandlers';
-import { restoreHandlers } from '#/modules/Arrangement/useCases/restoreHandlers';
-import { transportHandlers } from '#/modules/Transport/useCases/transportHandlers';
-import { deviceHandlers } from '#/modules/Arrangement/useCases/deviceHandlers';
-import { workspaceHandlers } from '#/modules/Workspace/useCases/workspaceHandlers';
-import { automationHandlers } from '#/modules/Automation/useCases/automationHandlers';
-import { presetHandlers } from '#/modules/Arrangement/useCases/presetHandlers';
-import { generationHandlers } from '#/modules/AiGeneration/useCases/generationHandlers';
-import { stretchHandlers } from '#/modules/Arrangement/useCases/stretchHandlers';
-import { analysisHandlers } from '#/modules/AudioAnalysis/useCases/analysisHandlers';
-import { collaborationHandlers } from '#/modules/Collaboration/useCases/collaborationHandlers';
-import { pluginHostHandlers } from '#/modules/Plugin/useCases/pluginHostHandlers';
-import { aiMidiHandlers } from '#/modules/AiGeneration/useCases/aiMidiHandlers';
-import { aiOrganizationHandlers } from '#/modules/AiRuntime/useCases/aiOrganizationHandlers';
-import { chordTrackHandlers } from '#/modules/MIDI/useCases/chordTrackHandlers';
-import { scratchPadHandlers } from '#/modules/Workspace/useCases/scratchPadHandlers';
-import { patternInstanceHandlers } from '#/modules/MIDI/useCases/patternInstanceHandlers';
+import {
+    trackHandlers,
+    clipHandlers,
+    restoreHandlers,
+    deviceHandlers,
+    presetHandlers,
+    stretchHandlers,
+    newFeatureHandlers,
+    batchFeatureHandlers,
+    saveTrackAsTemplate,
+    loadTrackTemplate,
+    deleteTrackTemplate,
+    createVcaGroup,
+    assignToVca,
+    removeFromVca,
+    setVcaGain,
+} from '#/modules/Arrangement';
+import { transportHandlers } from '#/modules/Transport';
+import { workspaceHandlers, scratchPadHandlers } from '#/modules/Workspace';
+import { automationHandlers } from '#/modules/Automation';
+import { generationHandlers, aiMidiHandlers } from '#/modules/AiGeneration';
+import { analysisHandlers } from '#/modules/AudioAnalysis';
+import { collaborationHandlers } from '#/modules/Collaboration';
+import { pluginHostHandlers } from '#/modules/Plugin';
+import { aiOrganizationHandlers } from '#/modules/AiRuntime';
+import {
+    chordTrackHandlers,
+    patternInstanceHandlers,
+    setMidiOutput,
+    clearMidiOutput,
+} from '#/modules/MIDI';
 import { macroHandlers } from '../useCases/macroHandlers';
 import { undoTreeHandlers } from '../useCases/undoTreeHandlers';
-import { songStructureHandlers } from '#/modules/Project/useCases/songStructureHandlers';
-import { versionControlHandlers } from '#/modules/Project/useCases/versionControlHandlers';
-import { newFeatureHandlers } from '#/modules/Arrangement/useCases/newFeatureHandlers';
-import { batchFeatureHandlers } from '#/modules/Arrangement/useCases/batchFeatureHandlers';
-import { finalFeatureHandlers } from '#/modules/AudioEngine/useCases/finalFeatureHandlers';
+import { songStructureHandlers, versionControlHandlers } from '#/modules/Project';
+import { finalFeatureHandlers } from '#/modules/AudioEngine';
 import { recordAction } from './macro/recording';
 import {
     handleCreateTrackAlternative,
@@ -38,16 +45,6 @@ import {
     handleRenameTrackAlternative,
     handleDeleteTrackAlternative,
 } from './trackAlternativeHandlers';
-import {
-    saveTrackAsTemplate,
-    loadTrackTemplate,
-    deleteTrackTemplate,
-} from '#/modules/Arrangement/useCases/trackTemplate';
-import { createVcaGroup } from '#/modules/Arrangement/useCases/vca/createVcaGroup';
-import { assignToVca } from '#/modules/Arrangement/useCases/vca/assignToVca';
-import { removeFromVca } from '#/modules/Arrangement/useCases/vca/removeFromVca';
-import { setVcaGain } from '#/modules/Arrangement/useCases/vca/setVcaGain';
-import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
 
 const trackAlternativeHandlers: Record<string, ActionHandler<any>> = {
     createTrackAlternative: {
@@ -147,7 +144,7 @@ const midiRoutingHandlers: Record<string, ActionHandler<any>> = {
 const dsoSnapshotHandlers: Record<string, ActionHandler<any>> = {
     restoreDsoSnapshot: {
         execute: async (action) => {
-            const { restoreSnapshot } = await import('#/modules/CrdtDocument/useCases/restoreSnapshot');
+            const { restoreSnapshot } = await import('#/modules/CrdtDocument');
             restoreSnapshot(action.payload.bundle);
         },
         undoable: false,

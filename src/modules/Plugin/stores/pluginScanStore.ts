@@ -4,7 +4,20 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
-import type { ScannedPlugin } from '../repositories/pluginBridge/types';
+
+export type ScannedPlugin = {
+    id: string;
+    name: string;
+    vendor: string;
+    format: string;
+    category: string;
+    path: string;
+    version: string;
+    num_inputs: number;
+    num_outputs: number;
+    num_parameters: number;
+    has_custom_ui: boolean;
+};
 
 export type PluginScanState = {
     scannedPlugins: ScannedPlugin[];

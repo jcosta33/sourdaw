@@ -1,4 +1,4 @@
-import { type DocId } from '../models/CrdtDocumentTypes';
+import { type DocId } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 
 /**

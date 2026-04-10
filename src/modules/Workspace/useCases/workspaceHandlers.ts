@@ -1,15 +1,14 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
+import { setWorkspaceMode } from './setWorkspaceMode';
 import {
     toggleMixer,
     toggleSidebar,
     toggleInspector,
     toggleChatPanel,
     setSnapValue,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { zoomToFit, zoomToSelection } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
-import { setEditingTool } from '#/modules/Workspace/useCases/setEditingTool';
+} from './togglePanel/panelToggles';
+import { zoomToFit, zoomToSelection } from './togglePanel/zoomOperations';
+import { setEditingTool } from './setEditingTool';
 import {
     addMarker,
     removeMarker,
@@ -17,7 +16,6 @@ import {
     addSection,
     removeSection,
     renameSection,
-    type VelocityCurve,
     importAudioFile,
 } from '#/modules/Arrangement';
 import {
@@ -45,9 +43,64 @@ import {
     exportProjectFile,
     pickFiles,
 } from '#/modules/Project';
-import { type EditingTool } from '#/modules/Workspace/models/EditingTool';
+import { type EditingTool } from './workspaceQueries';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type WorkspaceActionResult = {
+    label: string;
+    inverseAction?: unknown | null;
+};
+
+type WorkspaceHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => WorkspaceActionResult;
+    undoable: boolean;
+};
+
+type VelocityCurve = 'linear' | 'exponential' | 'logarithmic' | 's-curve' | 'compress' | 'expand';
+
+type WorkspaceAction =
+    | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
+    | { type: 'openMixer'; payload?: undefined }
+    | { type: 'closeMixer'; payload?: undefined }
+    | { type: 'toggleSidebar'; payload?: undefined }
+    | { type: 'toggleInspector'; payload?: undefined }
+    | { type: 'toggleChatPanel'; payload?: undefined }
+    | { type: 'setEditingTool'; payload: { tool: string } }
+    | { type: 'addMarker'; payload: { beat: number; name: string } }
+    | { type: 'removeMarker'; payload: { markerId: string } }
+    | { type: 'setMarkerColor'; payload: { markerId: string; color: string } }
+    | { type: 'addSection'; payload: { startBeat: number; endBeat: number; name: string } }
+    | { type: 'removeSection'; payload: { sectionId: string } }
+    | { type: 'renameSection'; payload: { sectionId: string; name: string } }
+    | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
+    | {
+          type: 'addAutomationPoint';
+          payload: { laneId: string; beat: number; value: number; curve?: 'linear' | 'step' | 'exponential' };
+      }
+    | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number } }
+    | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
+    | { type: 'humanizeNotes'; payload: { clipId: string; amount: number } }
+    | { type: 'invertNotes'; payload: { clipId: string } }
+    | { type: 'retrogradeNotes'; payload: { clipId: string } }
+    | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
+    | {
+          type: 'scaleVelocities';
+          payload: { clipId: string; curve: VelocityCurve; minVelocity?: number; maxVelocity?: number };
+      }
+    | { type: 'scaleAllVelocities'; payload: { clipId: string; factor: number } }
+    | { type: 'setAllVelocities'; payload: { clipId: string; velocity: number } }
+    | { type: 'importMidiFile'; payload?: undefined }
+    | { type: 'removeAutomationPoint'; payload: { laneId: string; pointIndex: number } }
+    | { type: 'setSnapValue'; payload: { value: number } }
+    | { type: 'zoomToFit'; payload?: undefined }
+    | { type: 'zoomToSelection'; payload?: undefined }
+    | { type: 'exportProject'; payload?: undefined }
+    | { type: 'saveProject'; payload?: undefined }
+    | { type: 'newProject'; payload?: undefined }
+    | { type: 'importAudioFile'; payload?: undefined }
+    | { type: 'exportMidi'; payload: { clipId: string } };
+
+type WorkspaceActionOf<ActionType extends WorkspaceAction['type']> = Extract<WorkspaceAction, { type: ActionType }>;
 
 export const workspaceHandlers = {
     setWorkspaceMode: {
@@ -56,7 +109,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Switch view' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'setWorkspaceMode'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'setWorkspaceMode'>>,
 
     openMixer: {
         execute: () => {
@@ -64,7 +117,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Open mixer' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'openMixer'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'openMixer'>>,
 
     closeMixer: {
         execute: () => {
@@ -72,7 +125,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Close mixer' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'closeMixer'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'closeMixer'>>,
 
     toggleSidebar: {
         execute: () => {
@@ -80,7 +133,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Toggle sidebar' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleSidebar'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'toggleSidebar'>>,
 
     toggleInspector: {
         execute: () => {
@@ -88,7 +141,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Toggle inspector' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleInspector'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'toggleInspector'>>,
 
     toggleChatPanel: {
         execute: () => {
@@ -96,7 +149,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Toggle chat panel' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleChatPanel'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'toggleChatPanel'>>,
 
     setEditingTool: {
         execute: (a) => {
@@ -104,7 +157,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Set tool: ${a.payload.tool}` }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'setEditingTool'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'setEditingTool'>>,
 
     addMarker: {
         execute: (a) => {
@@ -112,7 +165,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Add marker "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addMarker'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'addMarker'>>,
 
     removeMarker: {
         execute: (a) => {
@@ -120,7 +173,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Remove marker' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeMarker'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'removeMarker'>>,
 
     setMarkerColor: {
         execute: (a) => {
@@ -128,7 +181,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Set marker color' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setMarkerColor'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'setMarkerColor'>>,
 
     addSection: {
         execute: (a) => {
@@ -136,7 +189,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Add section "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addSection'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'addSection'>>,
 
     removeSection: {
         execute: (a) => {
@@ -144,7 +197,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Remove section' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeSection'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'removeSection'>>,
 
     renameSection: {
         execute: (a) => {
@@ -152,7 +205,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Rename section to "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'renameSection'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'renameSection'>>,
 
     addAutomationLane: {
         execute: (a) => {
@@ -160,7 +213,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Add automation: ${a.payload.parameterName}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addAutomationLane'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'addAutomationLane'>>,
 
     addAutomationPoint: {
         execute: (a) => {
@@ -173,7 +226,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Add automation point' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addAutomationPoint'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'addAutomationPoint'>>,
 
     quantizeNotes: {
         execute: (a) => {
@@ -181,7 +234,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Quantize notes' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'quantizeNotes'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'quantizeNotes'>>,
 
     transposeNotes: {
         execute: (a) => {
@@ -189,7 +242,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Transpose ${a.payload.semitones > 0 ? '+' : ''}${a.payload.semitones} semitones` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'transposeNotes'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'transposeNotes'>>,
 
     humanizeNotes: {
         execute: (a) => {
@@ -197,7 +250,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Humanize notes' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'humanizeNotes'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'humanizeNotes'>>,
 
     invertNotes: {
         execute: (a) => {
@@ -205,7 +258,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Invert notes' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'invertNotes'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'invertNotes'>>,
 
     retrogradeNotes: {
         execute: (a) => {
@@ -213,7 +266,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Retrograde notes' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'retrogradeNotes'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'retrogradeNotes'>>,
 
     quantizeNoteLengths: {
         execute: (a) => {
@@ -221,7 +274,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Quantize note lengths' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'quantizeNoteLengths'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'quantizeNoteLengths'>>,
 
     scaleVelocities: {
         execute: (a) => {
@@ -234,7 +287,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Scale velocities (${a.payload.curve})` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'scaleVelocities'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'scaleVelocities'>>,
 
     scaleAllVelocities: {
         execute: (a) => {
@@ -242,7 +295,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Scale velocities ×${a.payload.factor}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'scaleAllVelocities'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'scaleAllVelocities'>>,
 
     setAllVelocities: {
         execute: (a) => {
@@ -250,7 +303,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Set all velocities to ${a.payload.velocity}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setAllVelocities'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'setAllVelocities'>>,
 
     importMidiFile: {
         execute: () => {
@@ -268,7 +321,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Import MIDI file' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'importMidiFile'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'importMidiFile'>>,
 
     removeAutomationPoint: {
         execute: (a) => {
@@ -287,7 +340,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Remove automation point' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeAutomationPoint'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'removeAutomationPoint'>>,
 
     setSnapValue: {
         execute: (a) => {
@@ -295,7 +348,7 @@ export const workspaceHandlers = {
         },
         describe: (a) => ({ label: `Set snap to ${a.payload.value}` }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'setSnapValue'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'setSnapValue'>>,
 
     zoomToFit: {
         execute: () => {
@@ -303,7 +356,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Zoom to fit' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'zoomToFit'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'zoomToFit'>>,
 
     zoomToSelection: {
         execute: () => {
@@ -311,7 +364,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Zoom to selection' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'zoomToSelection'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'zoomToSelection'>>,
 
     exportProject: {
         execute: () => {
@@ -319,7 +372,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Export project file' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'exportProject'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'exportProject'>>,
 
     saveProject: {
         execute: () => {
@@ -327,7 +380,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Save project' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'saveProject'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'saveProject'>>,
 
     newProject: {
         execute: () => {
@@ -335,7 +388,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'New project' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'newProject'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'newProject'>>,
 
     importAudioFile: {
         execute: () => {
@@ -353,7 +406,7 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Import audio file' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'importAudioFile'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'importAudioFile'>>,
 
     exportMidi: {
         execute: (a) => {
@@ -361,5 +414,5 @@ export const workspaceHandlers = {
         },
         describe: () => ({ label: 'Export MIDI' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'exportMidi'>>,
+    } satisfies WorkspaceHandler<WorkspaceActionOf<'exportMidi'>>,
 };

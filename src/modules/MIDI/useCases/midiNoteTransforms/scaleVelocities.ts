@@ -1,5 +1,5 @@
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { applyVelocityCurve, type VelocityCurve } from '#/modules/Arrangement/useCases/automationQueries';
+import { applyVelocityCurve, type VelocityCurve } from '#/modules/Arrangement';
 
 export function scaleVelocities(clipId: string, curve: VelocityCurve, minVelocity = 1, maxVelocity = 127): void {
     const state = midiStore.value;

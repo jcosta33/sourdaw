@@ -1,16 +1,36 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { setClipStretchMode, setClipStretchRatio, fitClipToBeats } from '#/modules/Arrangement/useCases/clipStretch';
+import { setClipStretchMode, setClipStretchRatio, fitClipToBeats } from './clipStretch';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type StretchHandlerDescription = {
+    label: string;
+};
 
-export const stretchHandlers = {
+type StretchHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => StretchHandlerDescription;
+    undoable: boolean;
+};
+
+type StretchAction =
+    | { type: 'setClipStretchMode'; payload: { clipId: string; mode: string } }
+    | { type: 'setClipStretchRatio'; payload: { clipId: string; ratio: number } }
+    | { type: 'fitClipToBeats'; payload: { clipId: string; targetBeats: number } };
+
+type StretchActionOf<ActionType extends StretchAction['type']> = Extract<StretchAction, { type: ActionType }>;
+
+type StretchHandlers = {
+    setClipStretchMode: StretchHandler<StretchActionOf<'setClipStretchMode'>>;
+    setClipStretchRatio: StretchHandler<StretchActionOf<'setClipStretchRatio'>>;
+    fitClipToBeats: StretchHandler<StretchActionOf<'fitClipToBeats'>>;
+};
+
+export const stretchHandlers: StretchHandlers = {
     setClipStretchMode: {
         execute: (a) => {
             setClipStretchMode(a.payload.clipId, a.payload.mode);
         },
         describe: (a) => ({ label: `Set clip stretch mode to ${a.payload.mode}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setClipStretchMode'>>,
+    },
 
     setClipStretchRatio: {
         execute: (a) => {
@@ -18,7 +38,7 @@ export const stretchHandlers = {
         },
         describe: (a) => ({ label: `Set clip stretch ratio to ${a.payload.ratio}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setClipStretchRatio'>>,
+    },
 
     fitClipToBeats: {
         execute: (a) => {
@@ -26,5 +46,5 @@ export const stretchHandlers = {
         },
         describe: (a) => ({ label: `Fit clip to ${a.payload.targetBeats} beats` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'fitClipToBeats'>>,
+    },
 };

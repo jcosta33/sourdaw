@@ -3,18 +3,24 @@
  * Handles both live monitoring (oscillator playback) and recording (note creation).
  */
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
-import { setMidiStoreState } from '#/modules/MIDI/useCases/setMidiStoreState';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getMidiLearnState } from '#/modules/MIDI/useCases/getMidiLearnState';
-import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
-import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/MIDI/useCases/midiLearn';
-import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
-import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
+import {
+    completeMidiLearn,
+    createMidiNote,
+    getMidiLearnState,
+    getMidiStoreState,
+    handleMidiMessage as applyMidiMappings,
+    setMidiStoreState,
+} from '#/modules/MIDI';
+import { getTrackStoreState } from '#/modules/Arrangement';
+import { getTransportStoreValue, playheadPositionRef } from '#/modules/Transport';
+import {
+    getDrumKitDefByIndex,
+    getSynthParamsForTrack,
+    scheduleDrumKitNote,
+    scheduleKitNote,
+    scheduleNote,
+} from '#/modules/Synth';
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
 import {
     MIDI_NOTE_ON,
     MIDI_NOTE_OFF,
@@ -25,7 +31,7 @@ import {
     type ActiveNoteData,
 } from '#/modules/AudioEngine/models/WebMidiTypes';
 import { activeNotes, channelToNote, mpeEnabled, targetTrackId } from './state';
-import { processRealtimeMidiInput } from '#/modules/Yeast/useCases/yeastSchedulingBridge';
+import { processRealtimeMidiInput } from '#/modules/Yeast';
 import { eventBus } from '#/app/registerDependencies';
 
 function secondsToBeats(seconds: number, tempo: number): number {

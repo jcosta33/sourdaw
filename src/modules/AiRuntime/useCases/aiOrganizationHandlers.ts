@@ -1,12 +1,32 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
-import { groupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/groupTracks';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getTrackStoreState, groupTracks, renameTrack, setTrackColor } from '#/modules/Arrangement';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type AiOrganizationHandlerDescription = {
+    label: string;
+};
 
-export const aiOrganizationHandlers = {
+type AiOrganizationHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => AiOrganizationHandlerDescription;
+    undoable: boolean;
+};
+
+type AutoOrganizeProjectAction = {
+    type: 'autoOrganizeProject';
+    payload: {
+        tracks: Array<{
+            trackId: string;
+            newName?: string;
+            color?: string;
+            folderName?: string;
+        }>;
+    };
+};
+
+type AiOrganizationHandlers = {
+    autoOrganizeProject: AiOrganizationHandler<AutoOrganizeProjectAction>;
+};
+
+export const aiOrganizationHandlers: AiOrganizationHandlers = {
     autoOrganizeProject: {
         execute: async (a) => {
             const trackState = getTrackStoreState();
@@ -40,5 +60,5 @@ export const aiOrganizationHandlers = {
         },
         describe: () => ({ label: 'Auto-Organize Project' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'autoOrganizeProject'>>,
+    },
 };

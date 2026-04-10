@@ -24,14 +24,16 @@ import {
     Users,
     AlertTriangle,
 } from 'lucide-react';
-import { toggleAiHistoryPanel, type FuzzyResult, type PresetCategory } from '#/modules/AiRuntime';
-import { describeAction, type AppAction } from '#/modules/Command';
-import { usePromptExecution, type SelectionTag } from '../hooks/usePromptExecution';
+import { toggleAiHistoryPanel } from '#/modules/AiRuntime';
+import { describeAction } from '#/modules/Command';
+import { usePromptExecution, type PromptFuzzyResult, type SelectionTag } from '../hooks/usePromptExecution';
 import { LlmStatusBadge } from './Prompt/LlmStatusBadge';
 
 // ── Category icons ──────────────────────────────────────────────────────
 
-const CATEGORY_ICONS: Record<PresetCategory, typeof Play> = {
+type PromptPresetCategory = PromptFuzzyResult['preset']['category'];
+
+const CATEGORY_ICONS: Record<PromptPresetCategory, typeof Play> = {
     Transport: Play,
     Track: Layers,
     Clip: Music,
@@ -80,7 +82,7 @@ const FuzzyResultItem = ({
     isSelected,
     onExecute,
 }: {
-    result: FuzzyResult;
+    result: PromptFuzzyResult;
     isSelected: boolean;
     onExecute: () => void;
 }): ReactElement => {
@@ -125,7 +127,7 @@ export const PromptBar = (): ReactElement => {
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap gap-1">
-                        {prompt.preview.actions.map((a: AppAction, i: number) => (
+                        {prompt.preview.actions.map((a, i: number) => (
                             <DawMicroBadge key={i} className="text-[10px] text-foreground">
                                 {describeAction(a)}
                             </DawMicroBadge>

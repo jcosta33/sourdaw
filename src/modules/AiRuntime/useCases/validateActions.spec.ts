@@ -3,14 +3,14 @@ import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { validateActions } from './validateActions';
 import { type Logger } from '#/helpers/Logger/Logger';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type RuntimeAction } from '../models/RuntimeAction';
 
 describe('validateActions', () => {
     it('should filter unknown action types and log a warning', () => {
         const logger = createMock<Logger>();
         injectDependencies(validateActions, { logger });
 
-        const actions = [{ type: 'notARealAction' }] as unknown as AppAction[];
+        const actions = [{ type: 'notARealAction' }] as unknown as RuntimeAction[];
         const result = validateActions(actions);
 
         expect(result).toEqual([]);
@@ -21,7 +21,7 @@ describe('validateActions', () => {
         const logger = createMock<Logger>();
         injectDependencies(validateActions, { logger });
 
-        const actions = [{ type: 'setTempo', payload: { bpm: 5 } }] as unknown as AppAction[];
+        const actions = [{ type: 'setTempo', payload: { bpm: 5 } }] as unknown as RuntimeAction[];
         expect(validateActions(actions)).toEqual([]);
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Invalid tempo'));
     });
@@ -30,7 +30,7 @@ describe('validateActions', () => {
         const logger = createMock<Logger>();
         injectDependencies(validateActions, { logger });
 
-        const valid = [{ type: 'setTempo', payload: { bpm: 120 } }] as unknown as AppAction[];
+        const valid = [{ type: 'setTempo', payload: { bpm: 120 } }] as unknown as RuntimeAction[];
         expect(validateActions(valid)).toEqual(valid);
     });
 });

@@ -19,7 +19,7 @@ vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
     addClip: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/trackViewActions', () => ({
+vi.mock('#/modules/AudioEngine', () => ({
     decodeAudioFile: vi.fn(),
 }));
 

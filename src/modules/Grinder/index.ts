@@ -1,2 +1,2 @@
 export { GrinderPanel } from './presentations/views/GrinderPanel';
-export { grinderStore } from './stores/grinderStore';
+export { updateGrinderMeters } from './stores/grinderStore';

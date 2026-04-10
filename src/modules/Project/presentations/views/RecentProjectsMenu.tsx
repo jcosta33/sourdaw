@@ -20,13 +20,14 @@ import {
     loadRecentProject,
     type RecentProjectEntry,
 } from '../../useCases/recentProjects';
-import { type TemplateCategory } from '#/modules/Project/models/ProjectTemplateTypes';
 import { newProject } from '../../useCases/projectPersistence/newProject';
 import { saveProject } from '../../useCases/projectPersistence/saveProject';
 import { exportProjectFile, importProjectFile } from '../../useCases/projectPersistence/fileIO';
 import { TemplateChooser } from './TemplateChooser';
 import { pickFiles } from '../../useCases/fileDialog';
-import { openExportDialog } from '#/modules/Workspace/useCases/dialogs';
+import { openExportDialog } from '#/modules/Workspace';
+
+type TemplateChooserCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 
 const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();
@@ -55,7 +56,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     const [open, setOpen] = useState(false);
     const [entries, setEntries] = useState<RecentProjectEntry[]>([]);
     const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
-    const [templateChooserCategory, setTemplateChooserCategory] = useState<TemplateCategory | 'all'>('all');
+    const [templateChooserCategory, setTemplateChooserCategory] = useState<TemplateChooserCategory | 'all'>('all');
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {

@@ -52,7 +52,7 @@ export type { ReplaceCrdtDocInput } from './useCases/replaceCrdtDoc';
 export { restoreSnapshot } from './useCases/restoreSnapshot';
 
 // useCases/revertAction
-export { revertAction } from './useCases/revertAction';
+export { revertAction, canRevertAction } from './useCases/revertAction';
 
 // useCases/saveSnapshot
 export { saveSnapshot } from './useCases/saveSnapshot';

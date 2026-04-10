@@ -7,6 +7,7 @@ import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { workspaceStore, selectClip, setWorkspaceMode } from '#/modules/Workspace';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { runAiActionWithToast } from '#/modules/AiRuntime';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration';
 import { trackStore } from '#/modules/Arrangement';
 import { detectTempo, detectKey } from '#/modules/AudioAnalysis';
 import { exportMidiClip } from '#/modules/MIDI';
@@ -166,11 +167,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() =>
                     runAiActionWithToast(
-                        async () => {
-                            const { handleAiDenoiseClip } =
-                                await import('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip');
-                            await handleAiDenoiseClip(clipId, 0.7);
-                        },
+                        () => handleAiDenoiseClip(clipId, 0.7),
                         {
                             startMsg: 'Denoising audio…',
                             successMsg: 'Audio denoised',

@@ -1,19 +1,39 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { startPluginScan } from '#/modules/Plugin/useCases/pluginScan/scanning';
-import { findPluginByName } from '#/modules/Plugin/useCases/pluginScan/queries';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addExternalDevice } from '#/modules/Arrangement/useCases/device/addExternalDevice';
+import { findPluginByName } from './pluginScan/queries';
+import { startPluginScan } from './pluginScan/scanning';
+import { addTrack, addExternalDevice } from '#/modules/Arrangement';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type PluginHostHandlerDescription = {
+    label: string;
+};
 
-export const pluginHostHandlers = {
+type PluginHostHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => PluginHostHandlerDescription;
+    undoable: boolean;
+};
+
+type PluginHostAction =
+    | { type: 'scanPlugins'; payload?: undefined }
+    | { type: 'loadExternalPlugin'; payload: { pluginId: string; trackId?: string } };
+
+type PluginHostActionOf<ActionType extends PluginHostAction['type']> = Extract<
+    PluginHostAction,
+    { type: ActionType }
+>;
+
+type PluginHostHandlers = {
+    scanPlugins: PluginHostHandler<PluginHostActionOf<'scanPlugins'>>;
+    loadExternalPlugin: PluginHostHandler<PluginHostActionOf<'loadExternalPlugin'>>;
+};
+
+export const pluginHostHandlers: PluginHostHandlers = {
     scanPlugins: {
         execute: async () => {
             await startPluginScan();
         },
         describe: () => ({ label: 'Scan external plugins' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'scanPlugins'>>,
+    },
 
     loadExternalPlugin: {
         execute: async (a) => {
@@ -39,5 +59,5 @@ export const pluginHostHandlers = {
         },
         describe: (a) => ({ label: `Load external plugin "${a.payload.pluginId}"` }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'loadExternalPlugin'>>,
+    },
 };

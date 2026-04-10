@@ -2,8 +2,9 @@ import { inject } from '#/infra/di/inject';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getPlatformPlugins } from '../getPlatformPlugins';
-import { type Device } from '../../models/Track';
+import { type Device } from '../../stores/trackStore';
 import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine';
+import { compileFaustDSP } from '#/modules/Plugin';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -40,8 +41,8 @@ export const addDevice = inject({ getTrackState, updateTrack })(
 
             if (plugin) {
                 if (plugin.id.startsWith('faust-')) {
-                    import('#/modules/Plugin/useCases/faustEngine/compilerEngine')
-                        .then(({ compileFaustDSP }) => compileFaustDSP(plugin.id))
+                    Promise.resolve()
+                        .then(() => compileFaustDSP(plugin.id))
                         .catch(() => {
                             // Faust compilation is best-effort — device falls back to passthrough
                         });

@@ -1,10 +1,25 @@
-import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { detectAndApplySongStructure } from '#/modules/Arrangement/useCases/songStructureDetection';
+import { detectAndApplySongStructure } from '#/modules/Arrangement';
 
-export const songStructureHandlers: Record<string, ActionHandler<any>> = {
+type ProjectHandlerResult = {
+    label: string;
+    inverseAction?: unknown | null;
+};
+
+type ProjectHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => ProjectHandlerResult;
+    undoable: boolean;
+};
+
+type DetectSongStructureAction = {
+    type: 'detectSongStructure';
+    payload: { trackId?: string };
+};
+
+export const songStructureHandlers = {
     detectSongStructure: {
-        execute: async (a: { payload: { trackId?: string } }) => {
+        execute: async (a) => {
             const sections = detectAndApplySongStructure(a.payload.trackId);
             if (sections.length === 0) {
                 notifyUser('No clips found to analyze — add some clips first', 'warning');
@@ -17,5 +32,5 @@ export const songStructureHandlers: Record<string, ActionHandler<any>> = {
         },
         undoable: true,
         describe: () => ({ label: 'Detect Song Structure' }),
-    },
+    } satisfies ProjectHandler<DetectSongStructureAction>,
 };

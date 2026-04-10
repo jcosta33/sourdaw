@@ -1,12 +1,14 @@
 /**
  * Track/Clip keyboard shortcut delegates.
  */
-import { clearSolos as _clearSolos } from '#/modules/Arrangement/useCases/toggleTrackState/clearSolos';
-import { addTrack as _addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { duplicateTrack as _duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
-import { duplicateClip as _duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
-import { duplicateClipToNextBar as _duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
-import { zoomTracksVertical as _zoomTracksVertical } from '#/modules/Arrangement/useCases/trackZoom';
+import {
+    clearSolos as _clearSolos,
+    addTrack as _addTrack,
+    duplicateTrack as _duplicateTrack,
+    duplicateClip as _duplicateClip,
+    duplicateClipToNextBar as _duplicateClipToNextBar,
+    zoomTracksVertical as _zoomTracksVertical,
+} from '#/modules/Arrangement';
 
 export const clearSolos = (): void => _clearSolos();
 export const addTrack = (opts: Parameters<typeof _addTrack>[0]): void => {

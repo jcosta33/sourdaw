@@ -5,12 +5,7 @@ import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
 import { MidiLearnButton, setDeviceParameter } from '#/modules/Arrangement';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
-import {
-    addAutomationLane,
-    removeAutomationLane,
-    automationStore,
-    type AutomationStoreState,
-} from '#/modules/Automation';
+import { addAutomationLane, removeAutomationLane, automationStore } from '#/modules/Automation';
 import { useStore } from '#/infra/store/useStore';
 import { type Device } from '../../../models/TrackViewTypes';
 
@@ -18,6 +13,14 @@ type DeviceParameterControlProps = {
     param: DeviceParameter;
     device: Device;
     trackId: string;
+};
+
+type DeviceAutomationState = {
+    lanes: Array<{
+        id: string;
+        trackId: string;
+        parameterId: string;
+    }>;
 };
 
 /** Compute a sensible step from the parameter range and type. */
@@ -49,7 +52,7 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
 }
 
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
-    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
+    const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
 
     const activeLane = autoState.lanes.find((l) => l.trackId === trackId && l.parameterId === param.id);
     const hasAutomation = !!activeLane;

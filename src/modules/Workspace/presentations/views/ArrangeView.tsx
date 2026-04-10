@@ -8,6 +8,7 @@ import {
     useLayoutEffect,
 } from 'react';
 import { useStore } from '#/infra/store/useStore';
+import { decodeAudioFile } from '#/modules/AudioEngine';
 import {
     TimelineSurface,
     TimelineMinimap,
@@ -20,7 +21,6 @@ import {
     TrackListView,
     addTrack,
     addClip,
-    decodeAudioFile,
     markerStore,
     chordTrackStore,
 } from '#/modules/Arrangement';

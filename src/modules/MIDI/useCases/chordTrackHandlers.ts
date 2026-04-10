@@ -1,15 +1,40 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { addChordEvent } from '#/modules/MIDI/useCases/chordTrack/addChordEvent';
-import { removeChordEvent } from '#/modules/MIDI/useCases/chordTrack/removeChordEvent';
-import { toggleChordTrack } from '#/modules/MIDI/useCases/chordTrack/toggleChordTrack';
-import { clearChordTrack } from '#/modules/MIDI/useCases/chordTrack/clearChordTrack';
-import { type ChordType, CHORD_TYPES } from '#/modules/MIDI/useCases/chordStamps';
+import { addChordEvent } from './chordTrack/addChordEvent';
+import { removeChordEvent } from './chordTrack/removeChordEvent';
+import { toggleChordTrack } from './chordTrack/toggleChordTrack';
+import { clearChordTrack } from './chordTrack/clearChordTrack';
+import { type ChordType, CHORD_TYPES } from './chordStamps';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type ChordTrackHandlerDescription = {
+    label: string;
+};
+
+type ChordTrackHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => ChordTrackHandlerDescription;
+    undoable: boolean;
+};
+
+type ChordTrackAction =
+    | { type: 'addChordEvent'; payload: { quality: string; root: number; beat: number; duration?: number } }
+    | { type: 'removeChordEvent'; payload: { eventId: string } }
+    | { type: 'toggleChordTrack'; payload?: { enabled?: boolean } }
+    | { type: 'clearChordTrack'; payload?: undefined };
+
+type ChordTrackActionOf<ActionType extends ChordTrackAction['type']> = Extract<
+    ChordTrackAction,
+    { type: ActionType }
+>;
+
+type ChordTrackHandlers = {
+    addChordEvent: ChordTrackHandler<ChordTrackActionOf<'addChordEvent'>>;
+    removeChordEvent: ChordTrackHandler<ChordTrackActionOf<'removeChordEvent'>>;
+    toggleChordTrack: ChordTrackHandler<ChordTrackActionOf<'toggleChordTrack'>>;
+    clearChordTrack: ChordTrackHandler<ChordTrackActionOf<'clearChordTrack'>>;
+};
 
 const VALID_CHORD_QUALITIES = new Set(Object.keys(CHORD_TYPES));
 
-export const chordTrackHandlers = {
+export const chordTrackHandlers: ChordTrackHandlers = {
     addChordEvent: {
         execute: (a) => {
             const quality = VALID_CHORD_QUALITIES.has(a.payload.quality) ? (a.payload.quality as ChordType) : 'major';
@@ -20,7 +45,7 @@ export const chordTrackHandlers = {
         },
         describe: (a) => ({ label: `Add ${a.payload.quality} chord at beat ${a.payload.beat}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addChordEvent'>>,
+    },
 
     removeChordEvent: {
         execute: (a) => {
@@ -28,7 +53,7 @@ export const chordTrackHandlers = {
         },
         describe: () => ({ label: 'Remove chord event' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeChordEvent'>>,
+    },
 
     toggleChordTrack: {
         execute: (a) => {
@@ -36,7 +61,7 @@ export const chordTrackHandlers = {
         },
         describe: () => ({ label: 'Toggle chord track' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'toggleChordTrack'>>,
+    },
 
     clearChordTrack: {
         execute: () => {
@@ -44,5 +69,5 @@ export const chordTrackHandlers = {
         },
         describe: () => ({ label: 'Clear chord track' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'clearChordTrack'>>,
+    },
 };

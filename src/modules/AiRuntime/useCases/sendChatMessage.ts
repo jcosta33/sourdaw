@@ -9,10 +9,9 @@ import { resolveBackend } from './llmOrchestration/backendResolution';
 import { chatStore, appendChatMessage, updateChatMessage, setChatGenerating } from '../stores/chatStore';
 import { getProjectContext } from './getProjectContext';
 import { type ChatMessage } from '../models/Chat';
+import { type RuntimeAction } from '../models/RuntimeAction';
 import { parsePromptToActions } from './parsePromptToActions';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { generateGroupId, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { describeAction } from '#/modules/Command/useCases/actionLabels';
+import { describeAction, executeAppAction, generateGroupId } from '#/modules/Command';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
 import { notifyAiChange } from './notifyAiChange';
 import { setActiveAborter } from '../stores/chatStore';
@@ -145,7 +144,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     isDsoAction: true,
                 });
                 const group = generateGroupId(userText);
-                const executedLabels: Array<{ action: AppAction; label: string }> = [];
+                const executedLabels: Array<{ action: RuntimeAction; label: string }> = [];
 
                 for (const action of result.actions) {
                     await executeAppAction(action, { ...group, source: 'prompt' });
@@ -155,7 +154,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 const historyGroup: AiActionGroup = {
                     id: group.groupId,
                     prompt: userText,
-                    actions: executedLabels.map((l) => ({ kind: 'appAction', action: l.action, label: l.label })),
+                    actions: executedLabels.map((l) => ({ kind: 'appAction', actionType: l.action.type, label: l.label })),
                     groupId: group.groupId,
                     timestamp: Date.now(),
                     reverted: false,

@@ -1,13 +1,7 @@
 import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
-import {
-    midiStore,
-    type MidiStoreState,
-    addPitchBend,
-    removePitchBend,
-    movePitchBend,
-} from '#/modules/MIDI';
+import { midiStore, addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI';
 import { pushUndoEntry } from '#/modules/Command';
 import { type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
 import { PITCH_BEND_CENTER } from '../../helpers/laneConstants';
@@ -19,11 +13,17 @@ type PitchBendLaneProps = {
     contentWidth: number;
 };
 
+type PitchBendLaneStoreState = {
+    notesByClipId: Record<string, unknown[]>;
+    ccByClipId: Record<string, unknown[]>;
+    pitchBendByClipId: Record<string, MidiPitchBend[]>;
+};
+
 export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [dragId, setDragId] = useState<string | null>(null);
 
-    const midiState = useStore<MidiStoreState>(midiStore, {
+    const midiState = useStore<PitchBendLaneStoreState>(midiStore, {
         notesByClipId: {},
         ccByClipId: {},
         pitchBendByClipId: {},

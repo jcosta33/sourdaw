@@ -1,28 +1,27 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
-import { duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
-import { duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
-import { splitClip } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
-import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
-import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
-import { setClipFade } from '#/modules/Arrangement/useCases/clipEditing/setClipFade';
-import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
-import { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
-import { glueClips } from '#/modules/Arrangement/useCases/clipEditing/glueClips';
-import { nudgeClip } from '#/modules/Arrangement/useCases/clipEditing/nudgeClip';
-import { setClipGain } from '#/modules/Arrangement/useCases/clipEditing/setClipGain';
-import { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
-import { lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
-import { crossfadeClips } from '#/modules/Arrangement/useCases/clipEditing/crossfadeClips';
-import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
-import { muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
-import { bounceSelection } from '#/modules/Arrangement/useCases/freezeBounce/bounceOperations';
-import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
-import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
-import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
-import { setClipLoop, setClipLoopLength } from '#/modules/Arrangement/useCases/clipLoop';
+import { addClip } from './clip/addClip';
+import { removeClip } from './clip/removeClip';
+import { moveClip } from './clip/moveClip';
+import { duplicateClip } from './clip/duplicateClip';
+import { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
+import { splitClip } from './clipEditing/splitClip';
+import { trimClipStart } from './clipEditing/trimClipStart';
+import { trimClipEnd } from './clipEditing/trimClipEnd';
+import { setClipFade } from './clipEditing/setClipFade';
+import { normalizeClip } from './clipEditing/normalizeClip';
+import { reverseClip } from './clipEditing/reverseClip';
+import { glueClips } from './clipEditing/glueClips';
+import { nudgeClip } from './clipEditing/nudgeClip';
+import { setClipGain } from './clipEditing/setClipGain';
+import { setClipColor } from './clipEditing/setClipColor';
+import { lockClip } from './clipEditing/lockClip';
+import { crossfadeClips } from './clipEditing/crossfadeClips';
+import { renameClip } from './clipEditing/renameClip';
+import { muteClip } from './clipEditing/muteClip';
+import { bounceSelection } from './freezeBounce/bounceOperations';
+import { copySelectedClip } from './clipboard/copySelectedClip';
+import { cutSelectedClip } from './clipboard/cutSelectedClip';
+import { pasteClip } from './clipboard/pasteClip';
+import { setClipLoop, setClipLoopLength } from './clipLoop';
 import { audioToMidi, detectTempo, detectKey } from '#/modules/AudioAnalysis';
 import {
     arpeggiate,
@@ -30,22 +29,98 @@ import {
     type ArpRate,
     midiStore,
 } from '#/modules/MIDI';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getTrackStoreState } from './getTrackStoreState';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Arrangement/useCases/timeOperations';
-import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
+import { deleteTime, insertTime, duplicateTimeRange } from './timeOperations';
+import { stripSilence } from './stripSilence';
 import { rippleDeleteClips, planRippleDelete } from '#/modules/Workspace';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type NormalizationMode = 'peak' | 'rms' | 'lufs';
 
-export const clipHandlers = {
+type RestoreClipAction = {
+    type: 'restoreClip';
+    payload: {
+        clipId: string;
+        trackId: string;
+        clipSnapshot: unknown;
+        ripplePlan: { removedClips: unknown[]; shiftedClips: unknown[] } | null;
+        midiNotesSnapshot: unknown | null;
+        midiCcSnapshot: unknown | null;
+        midiPitchBendSnapshot: unknown | null;
+    };
+};
+
+type ClipInverseAction = RestoreClipAction;
+
+type ClipAction =
+    | {
+          type: 'addClip';
+          payload: {
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type: 'audio' | 'midi';
+              audioBufferId?: string;
+          };
+      }
+    | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
+    | { type: 'duplicateClip'; payload: { clipId: string } }
+    | { type: 'duplicateClipToNextBar'; payload: { clipId: string } }
+    | { type: 'removeClip'; payload: { clipId: string } }
+    | { type: 'renameClip'; payload: { clipId: string; name: string } }
+    | { type: 'splitClip'; payload: { clipId: string; beat: number } }
+    | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
+    | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | { type: 'setClipFade'; payload: { clipId: string; fadeInBeats: number; fadeOutBeats: number } }
+    | { type: 'copyClip'; payload?: undefined }
+    | { type: 'cutClip'; payload?: undefined }
+    | { type: 'pasteClip'; payload?: undefined }
+    | { type: 'normalizeClip'; payload: { clipId: string; mode?: NormalizationMode; targetDb?: number } }
+    | { type: 'reverseClip'; payload: { clipId: string } }
+    | { type: 'glueClips'; payload: { clipIds: string[] } }
+    | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
+    | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats: number } }
+    | { type: 'setClipGain'; payload: { clipId: string; gain: number } }
+    | { type: 'setClipColor'; payload: { clipId: string; color: string } }
+    | { type: 'lockClip'; payload: { clipId: string; locked: boolean } }
+    | { type: 'setClipLoop'; payload: { clipId: string; enabled: boolean } }
+    | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }
+    | { type: 'consolidateSelection'; payload: { trackId: string; startBeat: number; endBeat: number } }
+    | { type: 'bounceSelection'; payload: { trackId: string; startBeat: number; endBeat: number } }
+    | { type: 'muteClip'; payload: { clipId: string; muted: boolean } }
+    | { type: 'audioToMidi'; payload: { clipId: string; trackId?: string; sensitivity?: number; mode?: string } }
+    | { type: 'deleteTime'; payload: { startBeat: number; endBeat: number } }
+    | { type: 'insertTime'; payload: { atBeat: number; durationBeats: number } }
+    | { type: 'duplicateTimeRange'; payload: { startBeat: number; endBeat: number } }
+    | { type: 'stripSilence'; payload: { clipId: string; threshold?: number; minDuration?: number } }
+    | { type: 'detectTempo'; payload: { clipId: string } }
+    | { type: 'detectKey'; payload: { clipId: string } }
+    | { type: 'arpeggiate'; payload: { clipId: string; pattern?: string; rate?: number; octaves?: number; gate?: number } };
+
+type ClipHandlerResult = {
+    label: string;
+    inverseAction?: ClipAction | ClipInverseAction | null;
+};
+
+type ClipHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => ClipHandlerResult;
+    undoable: boolean;
+};
+
+type ClipHandlers = {
+    [ActionType in ClipAction['type']]: ClipHandler<Extract<ClipAction, { type: ActionType }>>;
+};
+
+export const clipHandlers: ClipHandlers = {
     addClip: {
         execute: (a) => {
             addClip(a.payload);
         },
         describe: (a) => ({ label: `Add clip "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'addClip'>>,
+    },
 
     moveClip: {
         execute: (a) => {
@@ -53,7 +128,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Move clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'moveClip'>>,
+    },
 
     duplicateClip: {
         execute: (a) => {
@@ -61,7 +136,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Duplicate clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'duplicateClip'>>,
+    },
 
     duplicateClipToNextBar: {
         execute: (a) => {
@@ -69,7 +144,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Duplicate clip to next bar' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'duplicateClipToNextBar'>>,
+    },
 
     removeClip: {
         execute: (a) => {
@@ -143,7 +218,7 @@ export const clipHandlers = {
             };
         },
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'removeClip'>>,
+    },
 
     renameClip: {
         execute: (a) => {
@@ -151,7 +226,7 @@ export const clipHandlers = {
         },
         describe: (a) => ({ label: `Rename clip to "${a.payload.name}"` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'renameClip'>>,
+    },
 
     splitClip: {
         execute: (a) => {
@@ -159,7 +234,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Split clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'splitClip'>>,
+    },
 
     trimClipStart: {
         execute: (a) => {
@@ -167,7 +242,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Trim clip start' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'trimClipStart'>>,
+    },
 
     trimClipEnd: {
         execute: (a) => {
@@ -175,7 +250,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Trim clip end' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'trimClipEnd'>>,
+    },
 
     setClipFade: {
         execute: (a) => {
@@ -183,7 +258,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Set clip fade' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setClipFade'>>,
+    },
 
     copyClip: {
         execute: () => {
@@ -191,7 +266,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Copy clip' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'copyClip'>>,
+    },
 
     cutClip: {
         execute: () => {
@@ -199,7 +274,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Cut clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'cutClip'>>,
+    },
 
     pasteClip: {
         execute: () => {
@@ -207,7 +282,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Paste clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'pasteClip'>>,
+    },
 
     normalizeClip: {
         execute: (a) => {
@@ -215,7 +290,7 @@ export const clipHandlers = {
         },
         describe: (a) => ({ label: `Normalize clip (${a.payload.mode ?? 'peak'})` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'normalizeClip'>>,
+    },
 
     reverseClip: {
         execute: (a) => {
@@ -223,7 +298,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Reverse clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'reverseClip'>>,
+    },
 
     glueClips: {
         execute: (a) => {
@@ -231,7 +306,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Glue clips' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'glueClips'>>,
+    },
 
     nudgeClip: {
         execute: (a) => {
@@ -239,7 +314,7 @@ export const clipHandlers = {
         },
         describe: (a) => ({ label: `Nudge clip ${a.payload.beats > 0 ? 'right' : 'left'}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'nudgeClip'>>,
+    },
 
     crossfadeClips: {
         execute: (a) => {
@@ -247,7 +322,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Crossfade clips' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'crossfadeClips'>>,
+    },
 
     setClipGain: {
         execute: (a) => {
@@ -255,7 +330,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Set clip gain' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setClipGain'>>,
+    },
 
     setClipColor: {
         execute: (a) => {
@@ -263,7 +338,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Set clip color' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setClipColor'>>,
+    },
 
     lockClip: {
         execute: (a) => {
@@ -271,7 +346,7 @@ export const clipHandlers = {
         },
         describe: (a) => ({ label: a.payload.locked ? 'Lock clip' : 'Unlock clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'lockClip'>>,
+    },
 
     setClipLoop: {
         execute: (a) => {
@@ -279,7 +354,7 @@ export const clipHandlers = {
         },
         describe: (a) => ({ label: a.payload.enabled ? 'Enable clip loop' : 'Disable clip loop' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setClipLoop'>>,
+    },
 
     setClipLoopLength: {
         execute: (a) => {
@@ -287,7 +362,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Set clip loop length' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'setClipLoopLength'>>,
+    },
 
     consolidateSelection: {
         execute: async (a) => {
@@ -295,7 +370,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Consolidate selection' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'consolidateSelection'>>,
+    },
 
     bounceSelection: {
         execute: (a) => {
@@ -303,7 +378,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Bounce selection to audio' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'bounceSelection'>>,
+    },
 
     muteClip: {
         execute: (a) => {
@@ -311,7 +386,7 @@ export const clipHandlers = {
         },
         describe: (a) => ({ label: a.payload.muted ? 'Mute clip' : 'Unmute clip' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'muteClip'>>,
+    },
 
     audioToMidi: {
         execute: (a) => {
@@ -324,7 +399,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Convert audio to MIDI' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'audioToMidi'>>,
+    },
 
     deleteTime: {
         execute: (a) => {
@@ -332,7 +407,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Delete time' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'deleteTime'>>,
+    },
 
     insertTime: {
         execute: (a) => {
@@ -340,7 +415,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Insert time' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'insertTime'>>,
+    },
 
     duplicateTimeRange: {
         execute: (a) => {
@@ -348,7 +423,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Duplicate time range' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'duplicateTimeRange'>>,
+    },
 
     stripSilence: {
         execute: (a) => {
@@ -356,7 +431,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Strip silence' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'stripSilence'>>,
+    },
 
     detectTempo: {
         execute: (a) => {
@@ -374,7 +449,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Detect tempo from audio' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'detectTempo'>>,
+    },
 
     detectKey: {
         execute: (a) => {
@@ -393,7 +468,7 @@ export const clipHandlers = {
         },
         describe: () => ({ label: 'Detect key from audio' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'detectKey'>>,
+    },
 
     arpeggiate: {
         execute: (a) => {
@@ -407,5 +482,5 @@ export const clipHandlers = {
         },
         describe: (a) => ({ label: `Arpeggiate (${a.payload.pattern ?? 'up'})` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'arpeggiate'>>,
+    },
 };

@@ -1,9 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 
 export type AiActionEntry =
-    | { kind: 'appAction'; action: AppAction; label: string }
+    | { kind: 'appAction'; actionType: string; label: string }
     | { kind: 'jsonEdit'; label: string };
 
 export type AiActionGroup = {

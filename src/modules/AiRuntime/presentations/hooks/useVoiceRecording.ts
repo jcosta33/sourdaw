@@ -10,14 +10,14 @@ import { useEffect, useRef, useState } from 'react';
 import { onVoiceToggle } from '../../useCases/voiceToggle';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri as isTauriAvailable } from '#/helpers/tauriBridge';
-import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
-import { voiceStatusStore } from '#/modules/AiRuntime/stores/voiceStatusStore';
+import { injectPromptCommand } from '../../useCases/promptInjection';
+import { voiceStatusStore } from '../../stores/voiceStatusStore';
 import {
     ensureWhisperReady,
     startDictation,
     stopDictation,
     onDictationResult,
-} from '#/modules/AiRuntime/useCases/voiceDictation';
+} from '../../useCases/voiceDictation';
 
 // ── Types ───────────────────────────────────────────────────────────────
 

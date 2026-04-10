@@ -4,9 +4,9 @@
  * regex patterns, preset matching, and recipe lookups.
  */
 
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type PresetContext } from '../../models/presetActions/registry';
+import { type RuntimeAction } from '../../models/RuntimeAction';
 import { findBestMatch } from '../../services/fuzzySearch';
 
 // ── Complexity detection ────────────────────────────────────────────────
@@ -65,7 +65,7 @@ export function isComplexPrompt(normalized: string): boolean {
 
 // ── Preset matching ─────────────────────────────────────────────────────
 
-export function tryPresetMatch(normalized: string, context: PresetContext): AppAction[] {
+export function tryPresetMatch(normalized: string, context: PresetContext): RuntimeAction[] {
     if (isComplexPrompt(normalized)) {
         return [];
     }
@@ -98,7 +98,7 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
 
 // ── Parameterized patterns ──────────────────────────────────────────────
 
-export function tryParameterizedPath(normalized: string, context: ProjectContext): AppAction[] {
+export function tryParameterizedPath(normalized: string, context: ProjectContext): RuntimeAction[] {
     const selectedTrack = context.tracks.find((t) => t.id === context.selectedTrackId);
     const selectedClipId = context.selectedClipId;
 
@@ -253,7 +253,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
 
 // ── Compound fast path ──────────────────────────────────────────────────
 
-export function tryCompoundFastPath(normalized: string, context: ProjectContext): AppAction[] | null {
+export function tryCompoundFastPath(normalized: string, context: ProjectContext): RuntimeAction[] | null {
     const selectedTrack = context.tracks.find((t) => t.id === context.selectedTrackId);
 
     const multiTrackMatch = normalized.match(
@@ -269,7 +269,7 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
                   .map((n) => n.trim())
                   .filter(Boolean)
             : [];
-        const actions: AppAction[] = [];
+        const actions: RuntimeAction[] = [];
         for (let i = 0; i < count; i++) {
             const name = names[i] ?? `${kind.charAt(0).toUpperCase() + kind.slice(1)} ${i + 1}`;
             actions.push({ type: 'addTrack', payload: { name, kind } });
@@ -311,7 +311,7 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
             .split(/\s*(?:,|and)\s*/i)
             .map((d) => d.trim().toLowerCase())
             .filter(Boolean);
-        const actions: AppAction[] = [];
+        const actions: RuntimeAction[] = [];
         for (const d of devices) {
             const deviceType = deviceMap[d];
             if (deviceType) {
@@ -335,7 +335,7 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
 
 // ── Sound design recipes ────────────────────────────────────────────────
 
-export function matchSoundDesignRecipe(normalized: string, trackId: string): AppAction[] | null {
+export function matchSoundDesignRecipe(normalized: string, trackId: string): RuntimeAction[] | null {
     if (/\b(warm|warmth|warmer)\b/i.test(normalized)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
@@ -416,7 +416,7 @@ export function findTrack(context: ProjectContext, name: string): ProjectContext
  * Checks whether validated actions contain destructive operations
  * requiring user confirmation.
  */
-export function requiresConfirmation(actions: AppAction[]): boolean {
+export function requiresConfirmation(actions: RuntimeAction[]): boolean {
     return actions.some(
         (a) =>
             a.type === 'removeTrack' ||

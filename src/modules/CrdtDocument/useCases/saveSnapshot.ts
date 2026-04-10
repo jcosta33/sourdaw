@@ -1,4 +1,4 @@
-import { type DocumentBundle } from '../models/CrdtDocumentTypes';
+import { type DocumentBundle } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 
 /**

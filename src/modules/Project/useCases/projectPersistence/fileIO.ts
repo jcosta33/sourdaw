@@ -1,19 +1,19 @@
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import {
+    trackStore,
+    type TrackStoreState,
+    markerStore,
+    takeLaneStore,
+} from '#/modules/Arrangement';
+import { transportStore, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport';
+import { automationStore } from '#/modules/Automation';
+import { midiStore } from '#/modules/MIDI';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { syncCurrentArrangementToStore } from '../arrangement';
 import { type ProjectData } from '../../models/ProjectData';
 import { projectStore } from '../../stores/projectStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
-import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
+import { audioBufferCache, getAudioContext, resetAudioGraph } from '#/modules/AudioEngine';
+import { stopPlayback } from '#/modules/Command';
+import { getAllSidechainRoutes } from '#/modules/Routing';
 import { downloadProjectFile } from '../../repositories/project/downloadProjectFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { clearUndoHistory, hydrateModuleStoresFromProjectData, verifyAudioBufferReferences } from './helpers';

@@ -1,7 +1,31 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler } from '#/modules/Command';
 import { clearScratchPad, captureArrangementToScratchPad, commitScratchPadToArrangement } from '#/modules/Arrangement';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { workspaceStore } from '../stores/workspaceStore';
+
+type ScratchPadActionResult = {
+    label: string;
+};
+
+type ScratchPadHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => ScratchPadActionResult;
+    undoable: boolean;
+};
+
+type ScratchPadAction =
+    | { type: 'toggleScratchPad'; payload?: undefined }
+    | { type: 'captureScratchPad'; payload?: undefined }
+    | { type: 'commitScratchPad'; payload?: undefined }
+    | { type: 'clearScratchPad'; payload?: undefined };
+
+type ScratchPadActionOf<ActionType extends ScratchPadAction['type']> = Extract<ScratchPadAction, { type: ActionType }>;
+
+type ScratchPadHandlers = {
+    toggleScratchPad: ScratchPadHandler<ScratchPadActionOf<'toggleScratchPad'>>;
+    captureScratchPad: ScratchPadHandler<ScratchPadActionOf<'captureScratchPad'>>;
+    commitScratchPad: ScratchPadHandler<ScratchPadActionOf<'commitScratchPad'>>;
+    clearScratchPad: ScratchPadHandler<ScratchPadActionOf<'clearScratchPad'>>;
+};
 
 export const executeToggleScratchPad = inject({})(() => async function executeToggleScratchPad(): Promise<void> {
     const state = workspaceStore.value;
@@ -36,7 +60,7 @@ export const executeClearScratchPad = inject({ clearScratchPad })(
         }
 );
 
-export const scratchPadHandlers: Record<string, ActionHandler<any>> = {
+export const scratchPadHandlers: ScratchPadHandlers = {
     toggleScratchPad: {
         execute: executeToggleScratchPad,
         undoable: false,

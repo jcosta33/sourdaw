@@ -1,9 +1,8 @@
 /**
  * Grinder parameter bridge — throttles UI updates to audio engine.
  */
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { updateDeviceParam } from '#/modules/AudioEngine';
+import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement';
 import { type GrinderPatch, type GrinderPedal, migrateGrinderPatch } from '../models/GrinderPatch';
 import { loadGrinderPatch, setGrinderParam } from '../stores/grinderStore';
 

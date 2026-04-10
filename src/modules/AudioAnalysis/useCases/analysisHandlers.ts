@@ -1,10 +1,23 @@
-import { type ActionHandler, type AppAction, executeAppAction } from '#/modules/Command';
-import { analyzeMix } from '#/modules/AudioAnalysis/useCases/analyzeMix';
+import { executeAppAction } from '#/modules/Command';
+import { analyzeMix } from './analyzeMix';
 import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type AnalysisHandlerDescription = {
+    label: string;
+};
 
-export const analysisHandlers = {
+type AnalysisHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => AnalysisHandlerDescription;
+    undoable: boolean;
+};
+
+type AnalysisHandlers = {
+    analyzeMix: AnalysisHandler<{ type: 'analyzeMix'; payload?: undefined }>;
+    autoFixMix: AnalysisHandler<{ type: 'autoFixMix'; payload?: undefined }>;
+};
+
+export const analysisHandlers: AnalysisHandlers = {
     analyzeMix: {
         execute: async () => {
             const state = getMixAnalysisStoreValue();
@@ -23,7 +36,7 @@ export const analysisHandlers = {
         },
         describe: () => ({ label: 'Analyze mix' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'analyzeMix'>>,
+    },
 
     autoFixMix: {
         execute: async () => {
@@ -67,5 +80,5 @@ export const analysisHandlers = {
         },
         describe: () => ({ label: 'Auto-fix mix issues' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'autoFixMix'>>,
+    },
 };

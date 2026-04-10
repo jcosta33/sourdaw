@@ -1,13 +1,49 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
-import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { setTrackState } from '../repositories/track/setTrackState';
+import { getTrackStoreState } from './getTrackStoreState';
 import { automationStore } from '#/modules/Automation';
 import { midiStore } from '#/modules/MIDI';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
+import { takeLaneStore } from '../stores/takeLaneStore';
+import { updateTrack } from '../repositories/track/updateTrack';
 import { undoRippleDelete } from '#/modules/Workspace';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type RestoreAction =
+    | {
+          type: 'restoreTrack';
+          payload: {
+              trackSnapshot: unknown;
+              automationLaneSnapshots: unknown[];
+              midiNotesByClipId: Record<string, unknown>;
+              midiCcByClipId: Record<string, unknown>;
+              midiPitchBendByClipId: Record<string, unknown>;
+              takeLaneSnapshots: unknown[];
+          };
+      }
+    | {
+          type: 'restoreClip';
+          payload: {
+              clipId: string;
+              trackId: string;
+              clipSnapshot: unknown;
+              ripplePlan: { removedClips: unknown[]; shiftedClips: unknown[] } | null;
+              midiNotesSnapshot: unknown | null;
+              midiCcSnapshot: unknown | null;
+              midiPitchBendSnapshot: unknown | null;
+          };
+      };
+
+type RestoreHandlerResult = {
+    label: string;
+};
+
+type RestoreHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => RestoreHandlerResult;
+    undoable: boolean;
+};
+
+type RestoreHandlers = {
+    [ActionType in RestoreAction['type']]: RestoreHandler<Extract<RestoreAction, { type: ActionType }>>;
+};
 
 /**
  * Inverse-action handlers for the removeTrack / removeClip destructive commands.
@@ -20,7 +56,7 @@ type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A 
  * `undoable: false` — these actions are only invoked by the undo machinery itself
  * and must not create their own undo entries.
  */
-export const restoreHandlers = {
+export const restoreHandlers: RestoreHandlers = {
     restoreTrack: {
         execute: (a) => {
             const {
@@ -65,7 +101,7 @@ export const restoreHandlers = {
         },
         describe: () => ({ label: 'Restore track' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'restoreTrack'>>,
+    },
 
     restoreClip: {
         execute: (a) => {
@@ -102,5 +138,5 @@ export const restoreHandlers = {
         },
         describe: () => ({ label: 'Restore clip' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, 'restoreClip'>>,
+    },
 };

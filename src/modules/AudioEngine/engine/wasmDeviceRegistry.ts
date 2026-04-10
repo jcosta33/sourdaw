@@ -22,17 +22,16 @@ import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNod
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
 
-import { updateTunerTelemetry } from '#/modules/Scoring/stores/scoringStore';
-import { updateGlutenMeters } from '#/modules/Gluten/stores/glutenStore';
-import { updateBacteriaMeters } from '#/modules/Bacteria/stores/bacteriaStore';
-import { updateGrinderMeters } from '#/modules/Grinder/stores/grinderStore';
-import { updateProofMeters } from '#/modules/Proof/stores/proofStore';
-import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases/proofParamBridge';
+import { updateBacteriaMeters } from '#/modules/Bacteria';
+import { updateGlutenMeters } from '#/modules/Gluten';
+import { updateGrinderMeters } from '#/modules/Grinder';
 import {
     registerLevainDevice,
     unregisterLevainDevice as _unregisterLevainDevice,
-} from '#/modules/Levain/useCases/levainParamBridge';
-import { setEngineReady } from '#/modules/Levain/stores/levainStore';
+    setEngineReady,
+} from '#/modules/Levain';
+import { registerProofDevice, syncFullPatch, updateProofMeters } from '#/modules/Proof';
+import { updateTunerTelemetry } from '#/modules/Scoring';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

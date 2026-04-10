@@ -15,8 +15,8 @@ import {
     startPluginScan,
     createTrackForPlugin,
     loadExternalPlugin,
+    type ScannedPlugin,
 } from '#/modules/Plugin';
-import type { ScannedPlugin } from '#/modules/Plugin/useCases/pluginScan/queries';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 

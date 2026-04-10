@@ -1,7 +1,14 @@
 import { scratchPadStore } from '../../stores/scratchPadStore';
 import { createScratchPadSection } from '../../models/ScratchPadSection';
 
-export type { ScratchPadSection } from '../../models/ScratchPadSection';
+export type ScratchPadSection = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+    name: string;
+    color: string;
+    order: number;
+};
 
 export function addScratchPadSection(startBeat: number, endBeat: number, name: string, color: string): void {
     const state = scratchPadStore.value;

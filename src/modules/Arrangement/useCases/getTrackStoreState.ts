@@ -1,7 +1,5 @@
 import { trackStore } from '../stores/trackStore';
-import { type Track } from '../models/Track';
-
-type TrackStoreState = { tracks: Track[]; selectedTrackId: string | null };
+import { type TrackStoreState } from '../stores/trackStore';
 
 export function getTrackStoreState(): TrackStoreState | null {
     return trackStore.value;

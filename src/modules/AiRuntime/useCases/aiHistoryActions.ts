@@ -4,9 +4,7 @@
  * Wraps cross-module Command store and use case access so that
  * AiActionHistoryPanel.tsx doesn't import them directly.
  */
-
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { executeAppAction, undoStore } from '#/modules/Command';
 import { type AiActionGroup, markGroupReverted } from '../stores/aiActionHistoryStore';
 
 export async function revertAiActionGroup(group: AiActionGroup): Promise<void> {

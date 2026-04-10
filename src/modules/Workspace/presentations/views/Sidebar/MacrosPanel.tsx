@@ -12,22 +12,25 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
-import {
-    macroStore,
-    type MacroStoreState,
-    startMacroRecording,
-    stopMacroRecording,
-    type Macro,
-    playMacro,
-    deleteMacro,
-    renameMacro,
-} from '#/modules/Command';
+import { macroStore, startMacroRecording, stopMacroRecording, playMacro, deleteMacro, renameMacro } from '#/modules/Command';
 import { cn } from '#/helpers/Styles/cn';
 
-const defaultState: MacroStoreState = { macros: [], recording: false, currentRecording: [] };
+type MacroView = {
+    id: string;
+    name: string;
+    actions: unknown[];
+};
+
+type MacroPanelState = {
+    macros: MacroView[];
+    recording: boolean;
+    currentRecording: unknown[];
+};
+
+const defaultState: MacroPanelState = { macros: [], recording: false, currentRecording: [] };
 
 export const MacrosPanel = (): ReactElement => {
-    const state = useStore(macroStore, defaultState);
+    const state = useStore<MacroPanelState>(macroStore, defaultState);
 
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
@@ -117,7 +120,7 @@ export const MacrosPanel = (): ReactElement => {
                     </div>
                 ) : (
                     <div className="p-1 space-y-0.5">
-                        {state.macros.map((macro: Macro) => (
+                        {state.macros.map((macro: MacroView) => (
                             <div
                                 key={macro.id}
                                 className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 group transition-colors"

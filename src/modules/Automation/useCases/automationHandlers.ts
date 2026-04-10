@@ -1,21 +1,47 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { scaleAutomationValues } from '#/modules/Automation/useCases/automation/scaleAutomationValues';
-import { stretchAutomationTime } from '#/modules/Automation/useCases/automation/stretchAutomationTime';
-import { invertAutomation } from '#/modules/Automation/useCases/automation/invertAutomation';
-import { reverseAutomation } from '#/modules/Automation/useCases/automation/reverseAutomation';
-import { thinAutomationPoints } from '#/modules/Automation/useCases/automation/thinAutomationPoints';
-import { quantizeAutomationBeats } from '#/modules/Automation/useCases/automation/quantizeAutomationBeats';
+import { scaleAutomationValues } from './automation/scaleAutomationValues';
+import { stretchAutomationTime } from './automation/stretchAutomationTime';
+import { invertAutomation } from './automation/invertAutomation';
+import { reverseAutomation } from './automation/reverseAutomation';
+import { thinAutomationPoints } from './automation/thinAutomationPoints';
+import { quantizeAutomationBeats } from './automation/quantizeAutomationBeats';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+type AutomationHandlerResult = {
+    label: string;
+};
 
-export const automationHandlers = {
+type AutomationHandler<Action> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => AutomationHandlerResult;
+    undoable: boolean;
+};
+
+type AutomationAction =
+    | { type: 'scaleAutomation'; payload: { laneId: string; factor: number; anchor?: number } }
+    | { type: 'stretchAutomation'; payload: { laneId: string; factor: number; anchorBeat?: number } }
+    | { type: 'invertAutomation'; payload: { laneId: string } }
+    | { type: 'reverseAutomation'; payload: { laneId: string } }
+    | { type: 'thinAutomation'; payload: { laneId: string; tolerance?: number } }
+    | { type: 'quantizeAutomation'; payload: { laneId: string; gridSize: number } };
+
+type AutomationActionOf<ActionType extends AutomationAction['type']> = Extract<AutomationAction, { type: ActionType }>;
+
+type AutomationHandlers = {
+    scaleAutomation: AutomationHandler<AutomationActionOf<'scaleAutomation'>>;
+    stretchAutomation: AutomationHandler<AutomationActionOf<'stretchAutomation'>>;
+    invertAutomation: AutomationHandler<AutomationActionOf<'invertAutomation'>>;
+    reverseAutomation: AutomationHandler<AutomationActionOf<'reverseAutomation'>>;
+    thinAutomation: AutomationHandler<AutomationActionOf<'thinAutomation'>>;
+    quantizeAutomation: AutomationHandler<AutomationActionOf<'quantizeAutomation'>>;
+};
+
+export const automationHandlers: AutomationHandlers = {
     scaleAutomation: {
         execute: (a) => {
             scaleAutomationValues(a.payload.laneId, a.payload.factor, a.payload.anchor);
         },
         describe: (a) => ({ label: `Scale automation ×${a.payload.factor}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'scaleAutomation'>>,
+    },
 
     stretchAutomation: {
         execute: (a) => {
@@ -23,7 +49,7 @@ export const automationHandlers = {
         },
         describe: (a) => ({ label: `Stretch automation ×${a.payload.factor}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'stretchAutomation'>>,
+    },
 
     invertAutomation: {
         execute: (a) => {
@@ -31,7 +57,7 @@ export const automationHandlers = {
         },
         describe: () => ({ label: 'Invert automation' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'invertAutomation'>>,
+    },
 
     reverseAutomation: {
         execute: (a) => {
@@ -39,7 +65,7 @@ export const automationHandlers = {
         },
         describe: () => ({ label: 'Reverse automation' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'reverseAutomation'>>,
+    },
 
     thinAutomation: {
         execute: (a) => {
@@ -47,7 +73,7 @@ export const automationHandlers = {
         },
         describe: () => ({ label: 'Thin automation points' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'thinAutomation'>>,
+    },
 
     quantizeAutomation: {
         execute: (a) => {
@@ -55,5 +81,5 @@ export const automationHandlers = {
         },
         describe: (a) => ({ label: `Quantize automation to ${a.payload.gridSize} beats` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, 'quantizeAutomation'>>,
+    },
 };

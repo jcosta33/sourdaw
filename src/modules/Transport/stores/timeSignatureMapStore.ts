@@ -2,7 +2,12 @@ import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { DOC_PREFIX_ROOT } from '#/modules/CrdtDocument';
 
-import { type TimeSignatureChange } from '../models/TimeSignatureMap';
+export type TimeSignatureChange = {
+    id: string;
+    beat: number;
+    numerator: number;
+    denominator: number;
+};
 
 export type TimeSignatureMapStoreState = {
     changes: TimeSignatureChange[];

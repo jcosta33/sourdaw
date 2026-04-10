@@ -6,7 +6,6 @@ import {
     removeAutomationPoint,
     toggleAutomationVisibility,
     insertAutomationShape,
-    type AutomationShapeType,
     deleteSelectedPoints,
     getSelectionBounds,
     adjustYZoom,
@@ -16,7 +15,7 @@ import {
 import { pushUndoEntry } from '#/modules/Command';
 import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
 import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';
-import { transportStore, defaultTransportState, type TransportState } from '#/modules/Transport';
+import { transportStore, defaultTransportState } from '#/modules/Transport';
 import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement';
 import { workspaceStore } from '#/modules/Workspace';
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
@@ -38,6 +37,12 @@ type AutomationLaneRowProps = {
     pixelsPerBeat: number;
     scrollX: number;
     containerWidth: number;
+};
+
+type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
+
+type AutomationLaneTransportState = {
+    playheadPosition: number;
 };
 
 export const AutomationLaneRow = ({
@@ -62,7 +67,7 @@ export const AutomationLaneRow = ({
 
     const workspace = useStore<WorkspaceState>(workspaceStore, defaultWorkspaceState);
 
-    const transport = useStore<TransportState>(transportStore, defaultTransportState);
+    const transport = useStore<AutomationLaneTransportState>(transportStore, defaultTransportState);
 
     const isDrawMode = workspace.activeTool === 'draw';
     const curveColor = lane.color ?? trackColor ?? '#a78bfa';

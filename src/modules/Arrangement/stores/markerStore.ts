@@ -3,7 +3,20 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 const DOC_PREFIX_ROOT = 'root';
 
-import { type Marker, type ArrangementSection } from '../models/Marker';
+export type Marker = {
+    id: string;
+    beat: number;
+    name: string;
+    color: string;
+};
+
+export type ArrangementSection = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+    name: string;
+    color: string;
+};
 
 export type MarkerStoreState = {
     markers: Marker[];

@@ -2,10 +2,9 @@ import * as Automerge from '@automerge/automerge';
 
 import { createBranchError } from '../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
-import { type BranchRecord, MAIN_BRANCH_ID } from '../models/BranchTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 import { saveAllToIdb } from '../repositories/crdtPersistence';
-import { branchStore } from '../stores/branchStore';
+import { branchStore, type BranchRecord, MAIN_BRANCH_ID } from '../stores/branchStore';
 import { projectCrdtToStores } from './projection/projectProjection';
 
 /**

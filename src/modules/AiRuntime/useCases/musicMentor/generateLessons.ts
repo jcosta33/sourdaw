@@ -4,10 +4,29 @@
  * Analyzes mix decisions and generates contextual educational lessons
  * explaining WHY certain mixing techniques work.
  */
+import { trackStore } from '#/modules/Arrangement';
+import { analyzeMix } from '#/modules/AudioAnalysis';
 
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { analyzeMix } from '#/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix';
-import { type MentorCategory, type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
+type MentorCategory =
+    | 'frequency-balance'
+    | 'dynamics'
+    | 'stereo-field'
+    | 'gain-staging'
+    | 'arrangement'
+    | 'effects'
+    | 'general';
+
+type MentorLesson = {
+    id: string;
+    category: MentorCategory;
+    title: string;
+    observation: string;
+    explanation: string;
+    advice: string;
+    level: 'beginner' | 'intermediate' | 'advanced';
+    relevance: number;
+    relatedConcepts: string[];
+};
 
 let lessonCounter = 0;
 

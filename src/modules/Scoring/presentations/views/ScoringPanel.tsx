@@ -5,8 +5,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { type DisplayMode } from '../../models/ScoringState';
-import { scoringStore, getScoringState } from '../../stores/scoringStore';
+import { scoringStore, getScoringState, type DisplayMode } from '../../stores/scoringStore';
 import { setDisplayMode } from '../../useCases/setDisplayMode';
 import { setA4Reference } from '../../useCases/setA4Reference';
 
