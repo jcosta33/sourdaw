@@ -1,29 +1,33 @@
+import { inject } from '#/infra/di/inject';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
 
 import { projectStore } from '../../stores/projectStore';
 import { addToRecentProjects } from '../recentProjects';
 
-export function saveProject(): void {
-    const project = projectStore.value;
-    if (!project) {
-        return;
-    }
-
-    const updatedAt = Date.now();
-
-    persistCrdtProject()
-        .then(() => {
-            const current = projectStore.value;
-            if (current) {
-                projectStore.set({ ...current, updatedAt, dirty: false });
+export const saveProject = inject({ persistCrdtProject, addToRecentProjects })(
+    ({ persistCrdtProject, addToRecentProjects }) =>
+        function saveProject(): void {
+            const project = projectStore.value;
+            if (!project) {
+                return;
             }
-        })
-        .catch((error) => {
-            console.error('[saveProject] CRDT persistence failed:', error);
-        });
 
-    addToRecentProjects(project.name, `sourdaw:project:${project.name}`);
-}
+            const updatedAt = Date.now();
+
+            persistCrdtProject()
+                .then(() => {
+                    const current = projectStore.value;
+                    if (current) {
+                        projectStore.set({ ...current, updatedAt, dirty: false });
+                    }
+                })
+                .catch((error) => {
+                    console.error('[saveProject] CRDT persistence failed:', error);
+                });
+
+            addToRecentProjects(project.name, `sourdaw:project:${project.name}`);
+        }
+);
 
 export function renameProject(name: string): void {
     const state = projectStore.value;

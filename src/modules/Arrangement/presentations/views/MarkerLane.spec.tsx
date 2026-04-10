@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { MarkerLane } from './MarkerLane';
+import { addMarker } from '../../useCases/marker/markerOperations';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        markers: [],
-        sections: [],
-    })),
+    useStore: vi.fn(() => mockMarkerState),
 }));
 
+// Track mock state
+let mockMarkerState = { markers: [] as any[], sections: [] };
+
 vi.mock('../../stores/markerStore', () => ({
-    markerStore: {},
+    markerStore: {
+        value: { markers: [], sections: [] },
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('../../useCases/marker/markerOperations', () => ({
@@ -27,12 +33,14 @@ vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({
 }));
 
 vi.mock('./TimelineChromeSurface', () => ({
-    TimelineChromeSurface: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    TimelineChromeSurface: vi.fn(({ children, onContextMenu, ...props }: any) => (
+        <div {...props} onContextMenu={onContextMenu} data-testid="lane-surface">{children}</div>
+    )),
 }));
 
-let mockMarkerState = { markers: [], sections: [] };
-
-vi.mocked(vi.importMock('#/infra/store/useStore').useStore).mockImplementation(() => mockMarkerState);
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('MarkerLane', () => {
     beforeEach(() => {
@@ -41,12 +49,12 @@ describe('MarkerLane', () => {
     });
 
     it('should render without crashing', () => {
-        const { container } = render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        const { container } = renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         expect(container.firstChild).toBeTruthy();
     });
 
     it('should have correct aria attributes', () => {
-        render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         const region = screen.getByRole('region');
         expect(region).toHaveAttribute('aria-label', 'Timeline markers');
     });
@@ -59,48 +67,73 @@ describe('MarkerLane', () => {
             ],
             sections: [],
         };
-        render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         expect(screen.getByText('Intro')).toBeInTheDocument();
         expect(screen.getByText('Chorus')).toBeInTheDocument();
     });
 
     it('should handle context menu on lane', () => {
-        const { container } = render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
-        const lane = container.querySelector('[role="region"]');
-        fireEvent.contextMenu(lane!);
+        renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        const lane = screen.getByTestId('lane-surface');
+        
+        // Mock rect
+        lane.getBoundingClientRect = vi.fn(() => ({
+            left: 0, top: 0, width: 1000, height: 20,
+        } as any));
+
+        fireEvent.contextMenu(lane, { clientX: 100, clientY: 10 });
         expect(screen.getByText(/Add Marker at Beat/)).toBeInTheDocument();
     });
 
     it('should call addMarker when Add Marker is clicked', () => {
-        const { addMarker } = vi.importMock('#/modules/Arrangement/useCases/marker/markerOperations');
-        const { container } = render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
-        const lane = container.querySelector('[role="region"]');
-        fireEvent.contextMenu(lane!);
+        renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        const lane = screen.getByTestId('lane-surface');
+        
+        lane.getBoundingClientRect = vi.fn(() => ({
+            left: 0, top: 0, width: 1000, height: 20,
+        } as any));
+
+        fireEvent.contextMenu(lane, { clientX: 100, clientY: 10 });
         const addButton = screen.getByText(/Add Marker at Beat/);
         fireEvent.click(addButton);
         expect(addMarker).toHaveBeenCalled();
     });
 
-    it('should render marker context menu when marker is clicked', () => {
+    it('should render marker context menu when right-clicking on a marker', async () => {
         mockMarkerState = {
-            markers: [{ id: 'm1', name: 'Test Marker', beat: 8, color: 'oklch(0.40 0.07 200)' }],
+            markers: [{ id: 'm1', name: 'Test Marker', beat: 10, color: 'oklch(0.40 0.07 200)' }],
             sections: [],
         };
-        const { container } = render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
-        const marker = screen.getByText('Test Marker');
-        fireEvent.contextMenu(marker);
-        expect(screen.getByText('Rename Marker')).toBeInTheDocument();
+        renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        const lane = screen.getByTestId('lane-surface');
+        
+        // Marker is at beat 10. pixelsPerBeat is 12. 
+        // Marker X should be 120.
+        lane.getBoundingClientRect = vi.fn(() => ({
+            left: 0, top: 0, width: 1000, height: 20,
+        } as any));
+
+        fireEvent.contextMenu(lane, { 
+            clientX: 120, 
+            clientY: 10,
+            button: 2 
+        });
+        
+        // Wait for the context menu to appear
+        await waitFor(() => {
+            expect(screen.getByText('Rename Marker')).toBeInTheDocument();
+        });
         expect(screen.getByText('Color')).toBeInTheDocument();
         expect(screen.getByText('Delete Marker')).toBeInTheDocument();
     });
 
     it('should have correct height style', () => {
-        const { container } = render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        const { container } = renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         expect(container.firstChild).toHaveStyle({ height: '20px' });
     });
 
     it('should have select-none class', () => {
-        const { container } = render(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        const { container } = renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         expect(container.firstChild).toHaveClass('select-none');
     });
 });

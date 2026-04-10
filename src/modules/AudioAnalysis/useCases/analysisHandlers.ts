@@ -2,7 +2,6 @@ import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { analyzeMix } from '#/modules/AudioAnalysis/useCases/analyzeMix';
 import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
@@ -29,10 +28,10 @@ export const executeAutoFixMixAction = inject({
     getMixAnalysisStoreValue,
     setMixAnalysisStoreValue,
     analyzeMix,
-    executeAppAction,
 })(
-    ({ getMixAnalysisStoreValue, setMixAnalysisStoreValue, analyzeMix, executeAppAction }) =>
+    ({ getMixAnalysisStoreValue, setMixAnalysisStoreValue, analyzeMix }) =>
         async function executeAutoFixMixAction(): Promise<void> {
+            const { executeAppAction } = await import('#/modules/Command/useCases/executeAppAction');
             const state = getMixAnalysisStoreValue();
             if (!state) {
                 return;

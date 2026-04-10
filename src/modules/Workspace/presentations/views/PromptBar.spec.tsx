@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PromptBar } from './PromptBar';
 
+vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn(() => ({ tracks: [] })) }));
+
 describe('PromptBar', () => {
     beforeEach(() => {
         vi.clearAllMocks();

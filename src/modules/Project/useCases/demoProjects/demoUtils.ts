@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
@@ -16,18 +17,20 @@ export function note(pitch: number, start: number, duration: number, vel = 100):
     };
 }
 
-export function applyPreset(track: any, presetId: string) {
-    const preset = getFactoryPresets().find((p) => p.id === presetId);
-    if (preset && preset.devices) {
-        track.devices = preset.devices.map((d: any) => ({
-            id: `dev-${crypto.randomUUID()}`,
-            name: d.name,
-            type: d.type,
-            bypassed: false,
-            parameterValues: { ...d.parameterValues },
-        }));
-    }
-}
+export const applyPreset = inject({ getFactoryPresets })(({ getFactoryPresets: getPresets }) => {
+    return function applyPreset(track: any, presetId: string) {
+        const preset = getPresets().find((p) => p.id === presetId);
+        if (preset && preset.devices) {
+            track.devices = preset.devices.map((d: any) => ({
+                id: `dev-${crypto.randomUUID()}`,
+                name: d.name,
+                type: d.type,
+                bypassed: false,
+                parameterValues: { ...d.parameterValues },
+            }));
+        }
+    };
+});
 
 export function createAudioClip(
     trackId: string,
@@ -72,12 +75,13 @@ export function createMidiClip(trackId: string, name: string, startBeat: number,
     };
 }
 
-export async function generateDemoDrumBuffer(
-    bufferId: string,
-    beats: number,
-    bpm: number,
-    style: '4onFloor' | 'electro' | 'shaker' | 'kick' | 'snare' | 'hat'
-): Promise<void> {
+export const generateDemoDrumBuffer = inject({ audioBufferCache })(({ audioBufferCache: cache }) => {
+    return async function generateDemoDrumBuffer(
+        bufferId: string,
+        beats: number,
+        bpm: number,
+        style: '4onFloor' | 'electro' | 'shaker' | 'kick' | 'snare' | 'hat'
+    ): Promise<void> {
     try {
         const bps = bpm / 60;
         const durationSecs = beats / bps;
@@ -161,9 +165,10 @@ export async function generateDemoDrumBuffer(
         }
 
         const rendered = await ctx.startRendering();
-        audioBufferCache.set(bufferId, rendered);
+        cache.set(bufferId, rendered);
     } catch {}
-}
+    };
+});
 
 export function createNoiseBurst(
     ctx: OfflineAudioContext,
@@ -193,21 +198,38 @@ export function createNoiseBurst(
     noise.stop(time + duration + 0.1);
 }
 
-export function syncArrangement(tracks: any[]) {
-    arrangementStore.set({
-        arrangements: [
-            {
-                id: defaultArrangementId,
-                name: 'Arrangement 1',
-                tracks: { tracks, selectedTrackId: tracks.length > 0 ? tracks[0].id : null },
-                automation: automationStore.value ?? { lanes: [] },
-                midi: midiStore.value ?? { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-                tempoMap: { changes: [] },
-                timeSignatureMap: { changes: [] },
-                markers: markerStore.value ?? { markers: [], sections: [] },
-                takeLanes: { lanes: [] },
-            },
-        ],
-        activeArrangementId: defaultArrangementId,
-    });
-}
+const demoSyncArrangementDependencies = {
+    arrangementStore,
+    defaultArrangementId,
+    automationStore,
+    midiStore,
+    markerStore,
+} as const;
+
+export const syncArrangement = inject(demoSyncArrangementDependencies)(
+    ({
+        arrangementStore: arrStore,
+        defaultArrangementId: defaultArrId,
+        automationStore: automation,
+        midiStore: midi,
+        markerStore: markers,
+    }) =>
+        function syncArrangement(tracks: any[]) {
+            arrStore.set({
+                arrangements: [
+                    {
+                        id: defaultArrId,
+                        name: 'Arrangement 1',
+                        tracks: { tracks, selectedTrackId: tracks.length > 0 ? tracks[0].id : null },
+                        automation: automation.value ?? { lanes: [] },
+                        midi: midi.value ?? { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                        tempoMap: { changes: [] },
+                        timeSignatureMap: { changes: [] },
+                        markers: markers.value ?? { markers: [], sections: [] },
+                        takeLanes: { lanes: [] },
+                    },
+                ],
+                activeArrangementId: defaultArrId,
+            });
+        }
+);

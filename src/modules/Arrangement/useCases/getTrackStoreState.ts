@@ -1,8 +1,10 @@
-import { trackStore } from '../stores/trackStore';
-import { type Track } from '../models/Track';
+import { inject } from '#/infra/di/inject';
+import { trackStore, type TrackStoreState } from '../stores/trackStore';
 
-type TrackStoreState = { tracks: Track[]; selectedTrackId: string | null };
+export type { TrackStoreState };
 
-export function getTrackStoreState(): TrackStoreState | null {
-    return trackStore.value;
-}
+export const getTrackStoreState = inject({ trackStore })(({ trackStore: store }) => {
+    return function getTrackStoreState(): TrackStoreState | null {
+        return store.value;
+    };
+});

@@ -8,7 +8,7 @@ export const Route = createFileRoute('/')({
     component: IndexPage,
 });
 
-function IndexPage(): ReactElement {
+export function IndexPage(): ReactElement {
     const { mode } = useWorkspaceState();
 
     switch (mode) {

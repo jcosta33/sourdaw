@@ -16,9 +16,20 @@ vi.mock('../hooks/useVoiceRecording', () => ({
     isSpeechRecognitionAvailable: vi.fn(() => true),
 }));
 
+const { useVoiceRecording } = await import('../hooks/useVoiceRecording');
+
 describe('VoiceCommandOverlay', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
+            isListening: false,
+            transcribing: false,
+            errorText: null,
+            finalText: '',
+            interimText: '',
+            voiceMode: 'browser',
+            stopListening: vi.fn(),
+        });
     });
 
     it('should return null when not listening and no error', () => {
@@ -27,8 +38,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should render when listening', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: true,
             transcribing: false,
             errorText: null,
@@ -43,8 +53,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should render when transcribing', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: false,
             transcribing: true,
             errorText: null,
@@ -59,8 +68,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should render error state', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: false,
             transcribing: false,
             errorText: 'Microphone access denied',
@@ -75,8 +83,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should display listening text', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: true,
             transcribing: false,
             errorText: null,
@@ -91,8 +98,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should display recording text for whisper mode', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: true,
             transcribing: false,
             errorText: null,
@@ -108,8 +114,7 @@ describe('VoiceCommandOverlay', () => {
 
     it('should call stopListening when mic button is clicked', () => {
         const mockStopListening = vi.fn();
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: true,
             transcribing: false,
             errorText: null,
@@ -126,8 +131,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should display transcribed text', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: true,
             transcribing: false,
             errorText: null,
@@ -142,8 +146,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should show hint to tap mic when no error', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: true,
             transcribing: false,
             errorText: null,
@@ -158,8 +161,7 @@ describe('VoiceCommandOverlay', () => {
     });
 
     it('should have correct accessibility attributes', () => {
-        const { useVoiceRecording } = vi.importMock('../hooks/useVoiceRecording');
-        useVoiceRecording.mockReturnValue({
+        (useVoiceRecording as ReturnType<typeof vi.fn>).mockReturnValue({
             isListening: true,
             transcribing: false,
             errorText: null,

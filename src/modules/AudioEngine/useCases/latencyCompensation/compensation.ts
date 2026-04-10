@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { type TrackLatency, type LatencyReport } from '#/modules/AudioEngine/models/LatencyCompensationTypes';
@@ -37,67 +38,100 @@ function getDeviceLatencyMs(deviceType: string): number {
     return deviceLatencyMap[deviceType] ?? 0;
 }
 
-export function getTrackLatency(trackId: string): TrackLatency {
-    const state = getTrackStoreState();
-    if (!state) {
-        return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
-    }
+export const trackLatencyDependencies = {
+    getTrackStoreState,
+} as const;
 
-    const track = state.tracks.find((t) => t.id === trackId);
-    if (!track) {
-        return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
-    }
+export const getTrackLatency = inject(trackLatencyDependencies)(
+    ({ getTrackStoreState }) =>
+        function getTrackLatency(trackId: string): TrackLatency {
+            const state = getTrackStoreState();
+            if (!state) {
+                return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
+            }
 
-    let deviceLatencyMs = 0;
-    for (const device of track.devices) {
-        if (!device.bypassed) {
-            deviceLatencyMs += getDeviceLatencyMs(device.type);
+            const track = state.tracks.find((t) => t.id === trackId);
+            if (!track) {
+                return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
+            }
+
+            let deviceLatencyMs = 0;
+            for (const device of track.devices) {
+                if (!device.bypassed) {
+                    deviceLatencyMs += getDeviceLatencyMs(device.type);
+                }
+            }
+
+            return { trackId, deviceLatencyMs, totalLatencyMs: deviceLatencyMs };
         }
-    }
+);
 
-    return { trackId, deviceLatencyMs, totalLatencyMs: deviceLatencyMs };
-}
+export const maxTrackLatencyDependencies = {
+    getTrackStoreState,
+    getTrackLatency,
+} as const;
 
-export function getMaxTrackLatency(): number {
-    const state = getTrackStoreState();
-    if (!state) {
-        return 0;
-    }
+export const getMaxTrackLatency = inject(maxTrackLatencyDependencies)(
+    ({ getTrackStoreState, getTrackLatency }) =>
+        function getMaxTrackLatency(): number {
+            const state = getTrackStoreState();
+            if (!state) {
+                return 0;
+            }
 
-    let maxMs = 0;
-    for (const track of state.tracks) {
-        const latency = getTrackLatency(track.id);
-        if (latency.totalLatencyMs > maxMs) {
-            maxMs = latency.totalLatencyMs;
+            let maxMs = 0;
+            for (const track of state.tracks) {
+                const latency = getTrackLatency(track.id);
+                if (latency.totalLatencyMs > maxMs) {
+                    maxMs = latency.totalLatencyMs;
+                }
+            }
+
+            return maxMs;
         }
-    }
+);
 
-    return maxMs;
-}
+export const compensationDelayDependencies = {
+    getMaxTrackLatency,
+    getTrackLatency,
+} as const;
 
-export function getCompensationDelay(trackId: string): number {
-    const maxLatencyMs = getMaxTrackLatency();
-    const trackLatency = getTrackLatency(trackId);
-    return (maxLatencyMs - trackLatency.totalLatencyMs) / 1000;
-}
-
-export function getLatencyReport(): LatencyReport {
-    const state = getTrackStoreState();
-    const tracks: TrackLatency[] = [];
-
-    if (state) {
-        for (const track of state.tracks) {
-            tracks.push(getTrackLatency(track.id));
+export const getCompensationDelay = inject(compensationDelayDependencies)(
+    ({ getMaxTrackLatency, getTrackLatency }) =>
+        function getCompensationDelay(trackId: string): number {
+            const maxLatencyMs = getMaxTrackLatency();
+            const trackLatency = getTrackLatency(trackId);
+            return (maxLatencyMs - trackLatency.totalLatencyMs) / 1000;
         }
-    }
+);
 
-    const ctx = audioEngine.context;
+export const latencyReportDependencies = {
+    getTrackStoreState,
+    getTrackLatency,
+    getMaxTrackLatency,
+    audioEngine,
+} as const;
 
-    return {
-        tracks,
-        maxLatencyMs: getMaxTrackLatency(),
-        contextBaseLatencyMs: (ctx.baseLatency ?? 0) * 1000,
-        contextOutputLatencyMs:
-            ('outputLatency' in ctx ? (ctx as unknown as { outputLatency: number }).outputLatency : 0) * 1000,
-    };
-}
+export const getLatencyReport = inject(latencyReportDependencies)(
+    ({ getTrackStoreState, getTrackLatency, getMaxTrackLatency, audioEngine }) =>
+        function getLatencyReport(): LatencyReport {
+            const state = getTrackStoreState();
+            const tracks: TrackLatency[] = [];
+
+            if (state) {
+                for (const track of state.tracks) {
+                    tracks.push(getTrackLatency(track.id));
+                }
+            }
+
+            const ctx = audioEngine.context;
+
+            return {
+                tracks,
+                maxLatencyMs: getMaxTrackLatency(),
+                contextBaseLatencyMs: (ctx.baseLatency ?? 0) * 1000,
+                contextOutputLatencyMs:
+                    ('outputLatency' in ctx ? (ctx as unknown as { outputLatency: number }).outputLatency : 0) * 1000,
+            };
+        }
+);

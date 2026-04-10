@@ -1,17 +1,39 @@
+import { inject } from '#/infra/di/inject';
 import { createExportError } from '../errors/ExportError';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
 import { getAutomationLanes } from '#/modules/Automation/useCases/getAutomationLanes';
 import { getTransportStoreValue, getTempoMapState } from '#/modules/Transport/useCases/transportQueries';
+import { type TempoChange } from '#/modules/Transport/models/TempoMap';
 import { audioBufferCache } from '../stores/audioBufferCache';
 import { buildDeviceChain } from './buildDeviceChain';
 import { scheduleNoteOffline, getSynthParamsFromDevices } from '#/modules/Synth/useCases/builtinSynth';
 import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
 import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
+import { type Track } from '#/modules/Arrangement/models/Track';
 import { beatToSeconds } from '#/modules/AudioEngine/services/beatConversion';
 import { resolveDrumKit } from '#/modules/AudioEngine/services/deviceResolution';
 import { scheduleTrackAutomation } from '../repositories/offlineScheduler/automationScheduling';
+
+type OfflineRenderDeps = {
+    getTrackStoreState: typeof getTrackStoreState;
+    getMidiStoreState: typeof getMidiStoreState;
+    getTransportStoreValue: typeof getTransportStoreValue;
+    getTempoMapState: typeof getTempoMapState;
+    getAutomationLanes: typeof getAutomationLanes;
+    audioBufferCache: typeof audioBufferCache;
+    buildDeviceChain: typeof buildDeviceChain;
+    resolveClipsWithComping: typeof resolveClipsWithComping;
+    beatToSeconds: typeof beatToSeconds;
+    resolveDrumKit: typeof resolveDrumKit;
+    scheduleTrackAutomation: typeof scheduleTrackAutomation;
+    scheduleNoteOffline: typeof scheduleNoteOffline;
+    getSynthParamsFromDevices: typeof getSynthParamsFromDevices;
+    scheduleKitNote: typeof scheduleKitNote;
+    getDrumKitDefByIndex: typeof getDrumKitDefByIndex;
+    scheduleDrumKitNote: typeof scheduleDrumKitNote;
+};
 
 // Re-export encoders for consumers
 export { audioBufferToWav } from '../repositories/audioEncoders/wavEncoder';
@@ -120,20 +142,21 @@ type OfflineBusStrip = {
 };
 
 function hasToasterDevice(
-    track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never
+    track: Track
 ): boolean {
     return track.devices.some((device) => device.type === 'toaster');
 }
 
 function shouldCreateOfflineStrip(
-    track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never
+    track: Track
 ): boolean {
     return track.kind !== 'folder' || hasToasterDevice(track);
 }
 
 async function createOfflineTrackStrip(
+    deps: OfflineRenderDeps,
     offlineCtx: OfflineAudioContext,
-    track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never
+    track: Track
 ): Promise<OfflineTrackStrip> {
     const inputNode = offlineCtx.createGain();
     inputNode.gain.value = 1;
@@ -153,7 +176,7 @@ async function createOfflineTrackStrip(
     const outputNode = offlineCtx.createGain();
     outputNode.gain.value = 1;
 
-    const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, inputNode, preFaderTap);
+    const deviceEntries = await deps.buildDeviceChain(offlineCtx, track.devices, inputNode, preFaderTap);
 
     preFaderTap.connect(faderNode);
     faderNode.connect(postFaderGain);
@@ -250,8 +273,9 @@ function schedulePendingSuspends(
  * `schedulePendingSuspends()` once after all tracks are processed.
  */
 async function scheduleTrackClips(
+    deps: OfflineRenderDeps,
     offlineCtx: OfflineAudioContext,
-    track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never,
+    track: Track,
     midi: NonNullable<ReturnType<typeof getMidiStoreState>>,
     trackInputNode: GainNode,
     trackGainNode: GainNode,
@@ -259,14 +283,14 @@ async function scheduleTrackClips(
     destination: AudioNode,
     durationSeconds: number,
     defaultTempo: number,
-    changes: ReturnType<typeof getTempoMapState> extends { changes: infer C } | null ? C : never,
+    changes: TempoChange[],
     onWarning?: (message: string) => void,
     pendingWorkletEvents?: PendingWorkletEvent[],
-    allTracks?: ReadonlyArray<ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never>,
+    allTracks?: ReadonlyArray<Track>,
     deviceEntriesByTrack?: Map<string, import('./buildDeviceChain').DeviceNodeEntry[]>
 ): Promise<void> {
     if (track.frozen && track.frozenBufferId) {
-        const frozenBuf = audioBufferCache.get(track.frozenBufferId);
+        const frozenBuf = deps.audioBufferCache.get(track.frozenBufferId);
         if (frozenBuf) {
             const source = offlineCtx.createBufferSource();
             source.buffer = frozenBuf;
@@ -281,18 +305,18 @@ async function scheduleTrackClips(
         return;
     }
 
-    const automationLanes = getAutomationLanes();
+    const automationLanes = deps.getAutomationLanes();
     let deviceEntries: import('./buildDeviceChain').DeviceNodeEntry[];
 
     // Use pre-built device chain if provided (Pass 2 of mixdown), otherwise build it (Stems export)
     if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
         deviceEntries = deviceEntriesByTrack.get(track.id)!;
     } else {
-        deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode);
+        deviceEntries = await deps.buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode);
         trackPanNode.connect(destination);
     }
 
-    scheduleTrackAutomation(
+    deps.scheduleTrackAutomation(
         automationLanes,
         track.id,
         trackGainNode,
@@ -304,7 +328,7 @@ async function scheduleTrackClips(
     );
 
     let clipsToProcess: { clip: import('#/modules/Arrangement/models/Track').Clip; padIndex: number }[] = [];
-    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map((c) => ({ clip: c, padIndex: -1 })));
+    clipsToProcess.push(...deps.resolveClipsWithComping(track.id, track.clips).map((c) => ({ clip: c, padIndex: -1 })));
 
     let instrumentEntry = deviceEntries.find((e) => e.instrumentControls);
     let instrumentControls = instrumentEntry?.instrumentControls ?? null;
@@ -316,7 +340,7 @@ async function scheduleTrackClips(
         for (let i = 0; i < children.length; i++) {
             const childTrack = children[i];
             if (!childTrack) continue;
-            const childClips = resolveClipsWithComping(childTrack.id, childTrack.clips);
+            const childClips = deps.resolveClipsWithComping(childTrack.id, childTrack.clips);
             clipsToProcess.push(...childClips.map((c) => ({ clip: c, padIndex: i })));
         }
     }
@@ -347,11 +371,11 @@ async function scheduleTrackClips(
                 continue;
             }
 
-            const drumKit = resolveDrumKit(track.devices);
+            const drumKit = deps.resolveDrumKit(track.devices);
             // Only resolve kitDef when the track actually has a drum kit device.
             const drumKitDevice = track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
             const kitDef = drumKitDevice
-                ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
+                ? deps.getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
                 : null;
 
             // Only Toaster parent tracks play their own children's clips.
@@ -366,7 +390,7 @@ async function scheduleTrackClips(
 
             // For non-worklet, non-drum-kit tracks: use the basic oscillator synth fallback
             const synthParams =
-                drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+                drumKit || kitDef || instrumentControls ? null : deps.getSynthParamsFromDevices(track.devices);
 
             let noteCount = 0;
 
@@ -391,9 +415,9 @@ async function scheduleTrackClips(
                         continue;
                     }
 
-                    const startTime = beatToSeconds(noteAbsStart, defaultTempo, changes);
+                    const startTime = deps.beatToSeconds(noteAbsStart, defaultTempo, changes);
                     const noteEndBeat = Math.min(noteAbsStart + note.duration, clip.endBeat);
-                    const endTime = beatToSeconds(noteEndBeat, defaultTempo, changes);
+                    const endTime = deps.beatToSeconds(noteEndBeat, defaultTempo, changes);
                     const duration = endTime - startTime;
                     if (startTime >= durationSeconds || duration <= 0) {
                         continue;
@@ -410,9 +434,9 @@ async function scheduleTrackClips(
                         });
                         workletEvents.push({ time: endTime, type: 'off', pitch: note.pitch, velocity: 0, duration: 0 });
                     } else if (kitDef) {
-                        scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
+                        deps.scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
                     } else if (drumKit) {
-                        scheduleKitNote(
+                        deps.scheduleKitNote(
                             offlineCtx,
                             trackInputNode,
                             drumKit,
@@ -422,7 +446,7 @@ async function scheduleTrackClips(
                             note.velocity
                         );
                     } else {
-                        scheduleNoteOffline(
+                        deps.scheduleNoteOffline(
                             offlineCtx,
                             trackInputNode,
                             note.pitch,
@@ -458,7 +482,7 @@ async function scheduleTrackClips(
                 }
             }
         } else if (clip.type === 'audio' && clip.audioBufferId) {
-            const buffer = audioBufferCache.get(clip.audioBufferId);
+            const buffer = deps.audioBufferCache.get(clip.audioBufferId);
             if (!buffer) {
                 onWarning?.(
                     `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
@@ -479,7 +503,7 @@ async function scheduleTrackClips(
                     break;
                 }
 
-                const iterStartTime = beatToSeconds(iterStartBeat, defaultTempo, changes);
+                const iterStartTime = deps.beatToSeconds(iterStartBeat, defaultTempo, changes);
                 if (iterStartTime >= durationSeconds) {
                     break;
                 }
@@ -488,7 +512,7 @@ async function scheduleTrackClips(
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
 
                 const remainingBeats = Math.min(loopLen, clip.endBeat - iterStartBeat);
-                const iterEndTime = beatToSeconds(iterStartBeat + remainingBeats, defaultTempo, changes);
+                const iterEndTime = deps.beatToSeconds(iterStartBeat + remainingBeats, defaultTempo, changes);
                 const iterDurationSec = iterEndTime - iterStartTime;
                 const playDuration = Math.min(iterDurationSec, buffer.duration / safeStretchRatio);
 
@@ -520,7 +544,7 @@ async function scheduleTrackClips(
                         // User-defined fade: ramp from silence over the specified beat count.
                         // Cap to half the iteration duration so it can never overlap the fade-out.
                         const fadeInEndBeat = clip.startBeat + clip.fadeInBeats;
-                        const fadeInEndSec = beatToSeconds(fadeInEndBeat, defaultTempo, changes);
+                        const fadeInEndSec = deps.beatToSeconds(fadeInEndBeat, defaultTempo, changes);
                         const fadeInDuration = Math.min(
                             Math.max(MICRO_FADE_SECONDS, fadeInEndSec - iterStartTime),
                             playDuration * 0.5
@@ -540,7 +564,7 @@ async function scheduleTrackClips(
                         // User-defined fade: ramp to silence over the specified beat count.
                         // Cap to half the iteration duration to mirror the fade-in cap.
                         const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
-                        const fadeOutStartSec = beatToSeconds(fadeOutStartBeat, defaultTempo, changes);
+                        const fadeOutStartSec = deps.beatToSeconds(fadeOutStartBeat, defaultTempo, changes);
                         const fadeOutOffset = Math.max(
                             startSec,
                             Math.max(fadeOutStartSec, endSec - playDuration * 0.5)
@@ -584,12 +608,33 @@ function renderWithTimeout(offlineCtx: OfflineAudioContext, timeoutMs: number): 
     });
 }
 
-export async function renderOffline(opts: OfflineRenderOptions): Promise<AudioBuffer>;
-export async function renderOffline(durationBeats: number, sampleRate?: number): Promise<AudioBuffer>;
-export async function renderOffline(
-    optsOrBeats: OfflineRenderOptions | number,
-    maybeSampleRate?: number
-): Promise<AudioBuffer> {
+type RenderOfflineFn = {
+    (opts: OfflineRenderOptions): Promise<AudioBuffer>;
+    (durationBeats: number, sampleRate?: number): Promise<AudioBuffer>;
+};
+
+export const renderOffline: RenderOfflineFn = inject({
+    getTrackStoreState,
+    getMidiStoreState,
+    getTransportStoreValue,
+    getTempoMapState,
+    getAutomationLanes,
+    audioBufferCache,
+    buildDeviceChain,
+    resolveClipsWithComping,
+    beatToSeconds,
+    resolveDrumKit,
+    scheduleTrackAutomation,
+    scheduleNoteOffline,
+    getSynthParamsFromDevices,
+    scheduleKitNote,
+    getDrumKitDefByIndex,
+    scheduleDrumKitNote,
+})(function renderOfflineFactory(deps) {
+    async function renderOffline(
+        optsOrBeats: OfflineRenderOptions | number,
+        maybeSampleRate?: number
+    ): Promise<AudioBuffer> {
     const releaseLock = acquireRenderLock();
 
     try {
@@ -609,13 +654,13 @@ export async function renderOffline(
             );
         }
 
-        const transport = getTransportStoreValue();
-        const tracks = getTrackStoreState();
-        const midi = getMidiStoreState();
-        const tempoMap = getTempoMapState();
+        const transport = deps.getTransportStoreValue();
+        const tracks = deps.getTrackStoreState();
+        const midi = deps.getMidiStoreState();
+        const tempoMap = deps.getTempoMapState();
         const defaultTempo = transport?.tempo ?? 120;
         const changes = tempoMap?.changes ?? [];
-        const durationSeconds = beatToSeconds(durationBeats, defaultTempo, changes);
+        const durationSeconds = deps.beatToSeconds(durationBeats, defaultTempo, changes);
 
         // Clamp frame count to browser-safe maximum to avoid context creation error
         const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
@@ -651,7 +696,7 @@ export async function renderOffline(
 
         for (const track of allRenderableTracks) {
             checkCancel();
-            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            const strip = await createOfflineTrackStrip(deps, offlineCtx, track);
             trackStripsById.set(track.id, strip);
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
         }
@@ -700,6 +745,7 @@ export async function renderOffline(
             }
 
             await scheduleTrackClips(
+                deps,
                 offlineCtx,
                 track,
                 midi!,
@@ -751,14 +797,38 @@ export async function renderOffline(
     } finally {
         releaseLock();
     }
-}
+    }
 
-export async function exportStems(opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>>;
-export async function exportStems(durationBeats: number, sampleRate?: number): Promise<Map<string, AudioBuffer>>;
-export async function exportStems(
-    optsOrBeats: OfflineRenderOptions | number,
-    maybeSampleRate?: number
-): Promise<Map<string, AudioBuffer>> {
+    return renderOffline;
+}) as RenderOfflineFn;
+
+type ExportStemsFn = {
+    (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>>;
+    (durationBeats: number, sampleRate?: number): Promise<Map<string, AudioBuffer>>;
+};
+
+export const exportStems: ExportStemsFn = inject({
+    getTrackStoreState,
+    getMidiStoreState,
+    getTransportStoreValue,
+    getTempoMapState,
+    getAutomationLanes,
+    audioBufferCache,
+    buildDeviceChain,
+    resolveClipsWithComping,
+    beatToSeconds,
+    resolveDrumKit,
+    scheduleTrackAutomation,
+    scheduleNoteOffline,
+    getSynthParamsFromDevices,
+    scheduleKitNote,
+    getDrumKitDefByIndex,
+    scheduleDrumKitNote,
+})(function exportStemsFactory(deps) {
+    async function exportStems(
+        optsOrBeats: OfflineRenderOptions | number,
+        maybeSampleRate?: number
+    ): Promise<Map<string, AudioBuffer>> {
     const releaseLock = acquireRenderLock();
 
     try {
@@ -775,13 +845,13 @@ export async function exportStems(
             throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
-        const tracks = getTrackStoreState();
-        const midi = getMidiStoreState();
-        const transport = getTransportStoreValue();
-        const tempoMap = getTempoMapState();
+        const tracks = deps.getTrackStoreState();
+        const midi = deps.getMidiStoreState();
+        const transport = deps.getTransportStoreValue();
+        const tempoMap = deps.getTempoMapState();
         const defaultTempo = transport?.tempo ?? 120;
         const changes = tempoMap?.changes ?? [];
-        const durationSeconds = beatToSeconds(durationBeats, defaultTempo, changes);
+        const durationSeconds = deps.beatToSeconds(durationBeats, defaultTempo, changes);
         const stems = new Map<string, AudioBuffer>();
 
         if (!tracks || !midi) {
@@ -821,12 +891,13 @@ export async function exportStems(
             trackPan.pan.value = Math.max(-1, Math.min(1, track.pan / 50));
 
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
-            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            const strip = await createOfflineTrackStrip(deps, offlineCtx, track);
             const deviceEntriesByTrack = new Map<string, import('./buildDeviceChain').DeviceNodeEntry[]>();
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
             strip.outputNode.connect(offlineCtx.destination);
 
             await scheduleTrackClips(
+                deps,
                 offlineCtx,
                 track,
                 midi,
@@ -900,4 +971,7 @@ export async function exportStems(
     } finally {
         releaseLock();
     }
-}
+    }
+
+    return exportStems;
+}) as ExportStemsFn;

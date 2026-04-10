@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { createAiGenerationError } from '../errors/AiGenerationError';
 import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
@@ -6,46 +7,55 @@ import { createAlternativeClips } from '#/modules/Arrangement/useCases/clipEditi
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
 type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
 
-export async function generateMidiVariations(clipId: string): Promise<void> {
-    const state = getTrackState();
-    if (!state) {
-        return;
-    }
+export const generateMidiVariationsDependencies = {
+    getTrackState,
+    streamCloudChatCompletion,
+    getNotesForClip,
+    createAlternativeClips,
+} as const;
 
-    let targetClip: Clip | null = null;
+export const generateMidiVariations = inject(generateMidiVariationsDependencies)(
+    ({ getTrackState, streamCloudChatCompletion, getNotesForClip, createAlternativeClips }) =>
+        async function generateMidiVariations(clipId: string): Promise<void> {
+            const state = getTrackState();
+            if (!state) {
+                return;
+            }
 
-    for (const track of state.tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) {
-            targetClip = clip;
-            break;
-        }
-    }
+            let targetClip: Clip | null = null;
 
-    if (!targetClip || targetClip.type !== 'midi') {
-        throw createAiGenerationError('Target clip must be a MIDI clip.');
-    }
+            for (const track of state.tracks) {
+                const clip = track.clips.find((c) => c.id === clipId);
+                if (clip) {
+                    targetClip = clip;
+                    break;
+                }
+            }
 
-    const notes = getNotesForClip(targetClip.id);
-    if (!notes || notes.length === 0) {
-        throw createAiGenerationError('MIDI clip has no notes to vary.');
-    }
+            if (!targetClip || targetClip.type !== 'midi') {
+                throw createAiGenerationError('Target clip must be a MIDI clip.');
+            }
 
-    const startBeat = targetClip.startBeat;
-    const endBeat = targetClip.endBeat;
-    const duration = endBeat - startBeat;
+            const notes = getNotesForClip(targetClip.id);
+            if (!notes || notes.length === 0) {
+                throw createAiGenerationError('MIDI clip has no notes to vary.');
+            }
 
-    // Build representation of current notes (relative to clip start)
-    const noteStrings = notes
-        .map(
-            (n: any) =>
-                `[pitch=${n.pitch}, start=${(n.startBeat - startBeat).toFixed(2)}, duration=${n.duration.toFixed(2)}, velocity=${n.velocity.toFixed(2)}]`
-        )
-        .join(', ');
+            const startBeat = targetClip.startBeat;
+            const endBeat = targetClip.endBeat;
+            const duration = endBeat - startBeat;
 
-    const projectContext = `We have a MIDI clip of length ${duration} beats. Current notes (relative to start): ${noteStrings}`;
+            // Build representation of current notes (relative to clip start)
+            const noteStrings = notes
+                .map(
+                    (n: any) =>
+                        `[pitch=${n.pitch}, start=${(n.startBeat - startBeat).toFixed(2)}, duration=${n.duration.toFixed(2)}, velocity=${n.velocity.toFixed(2)}]`
+                )
+                .join(', ');
 
-    const prompt = `Generate 3 completely unique musical variations of these MIDI notes. Keep the total length exactly ${duration} beats. Keep them in the same key.
+            const projectContext = `We have a MIDI clip of length ${duration} beats. Current notes (relative to start): ${noteStrings}`;
+
+            const prompt = `Generate 3 completely unique musical variations of these MIDI notes. Keep the total length exactly ${duration} beats. Keep them in the same key.
 Return ONLY valid JSON matching this schema:
 { "variations": [ [ { "pitch": number, "startBeat": number, "duration": number, "velocity": number } ] ] }
 Variation 1: Add syncopation and slight rhythm changes.
@@ -53,32 +63,33 @@ Variation 2: Add passing notes and embellishments.
 Variation 3: Simplify the rhythm but keep the core harmonic rhythm.
 ONLY output raw JSON, no markdown blocks.`;
 
-    let responseStr = '';
-    await streamCloudChatCompletion(
-        [
-            { role: 'system', content: 'You are a world-class generative MIDI AI.' },
-            { role: 'user', content: `${projectContext}\\n\\n${prompt}` },
-        ],
-        (token: string) => {
-            responseStr += token;
-        },
-        { maxTokens: 4000 }
-    );
+            let responseStr = '';
+            await streamCloudChatCompletion(
+                [
+                    { role: 'system', content: 'You are a world-class generative MIDI AI.' },
+                    { role: 'user', content: `${projectContext}\\n\\n${prompt}` },
+                ],
+                (token: string) => {
+                    responseStr += token;
+                },
+                { maxTokens: 4000 }
+            );
 
-    try {
-        // Extract JSON object from potentially markdown-wrapped response
-        const jsonMatch = responseStr.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-            throw createAiGenerationError('No JSON object found in AI response');
+            try {
+                // Extract JSON object from potentially markdown-wrapped response
+                const jsonMatch = responseStr.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) {
+                    throw createAiGenerationError('No JSON object found in AI response');
+                }
+                const data = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+                if (data && Array.isArray(data.variations)) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LLM output, validated by createAlternativeClips
+                    createAlternativeClips(targetClip.id, data.variations as any);
+                }
+            } catch (error) {
+                throw createAiGenerationError(
+                    `Failed to parse variations from AI: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
         }
-        const data = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-        if (data && Array.isArray(data.variations)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LLM output, validated by createAlternativeClips
-            createAlternativeClips(targetClip.id, data.variations as any);
-        }
-    } catch (error) {
-        throw createAiGenerationError(
-            `Failed to parse variations from AI: ${error instanceof Error ? error.message : String(error)}`
-        );
-    }
-}
+);

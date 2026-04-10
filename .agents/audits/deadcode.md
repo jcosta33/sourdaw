@@ -42,9 +42,9 @@ Verified analysis of files flagged by `knip` across audit sessions. Maps each fl
 2. **Unused exports (132)** — Overlaps heavily with **§3 Incomplete Epics** (adjustment layers, RAVE sub-operations, control room, extensions, node view, Push, plugin bridge, etc.) plus **store helpers**, **bridge exports**, and **command-registered** surfaces Knip does not attribute. A small subset may be trimmable on a **per-symbol** basis when touching that area.
 
 3. **Actionable hygiene** (review in isolation, not mass delete):
-   - **Unresolved import (1):** `AutomationSidebarCell.spec.tsx` line 3 — `./AutomationSidebarCell` does not resolve (fix import path or component filename).
-   - **Unused dependency (1):** `@typescript-eslint/eslint-plugin` — often loaded only from ESLint config; confirm before removing from `package.json`.
-   - **Duplicate exports (2):** `DEFAULT_WEBLLM_MODEL_ID` \| `WEBLLM_MODEL_ID` in `AiRuntime/models/ModelInfo.ts`; `CRUMBS_THEME` \| `SAMPLER_THEME` in `Workspace/.../InstrumentCard.tsx` — naming / duplicate identifier cleanup.
+   - **Unresolved import (1):** **Done** — `Workspace/presentations/views/AutomationSidebarCell.spec.tsx` now imports `./AutomationView/AutomationSidebarCell`.
+   - **Unused dependency (`@typescript-eslint/eslint-plugin`):** **Addressed in Knip** — dependency is required by `eslint.fast.config.mjs`; added to `knip.json` → `ignoreDependencies` so Knip stops flagging it (do **not** remove from `package.json`).
+   - **Duplicate exports:** **Done** — `WEBLLM_MODEL_ID` is now `export { DEFAULT_WEBLLM_MODEL_ID as WEBLLM_MODEL_ID }` in `ModelInfo.ts`; deprecated `SAMPLER_THEME` alias removed from `InstrumentCard.tsx` (no imports in repo).
    - **Unused exported types (8)** — e.g. `AutomationLane`, Proof/SampleLibrary model types — may still be part of public model surfaces; verify consumers before removing exports.
 
 4. **Relation to older “63 files”** — Sessions 1–2 reported **manually triaged** “flagged files” after excluding known false positives. Session 3 is a **full** Knip dump **without** that manual filter — **198 is not comparable** to **63** as “more dead code,” only as “stricter / unfiltered unused-file detection.”
@@ -53,9 +53,27 @@ Verified analysis of files flagged by `knip` across audit sessions. Maps each fl
 
 - **No bulk deletion** recommended from this run alone.
 - Sections **§1–§4** below remain the authoritative list of **deleted** work, **integrated** UI, **incomplete epics**, and **known false positives**.
-- **Next steps:** fix the **unresolved spec import**; optionally reconcile **duplicate exports** and **eslint-plugin** when touching tooling; trim **unused exports** only alongside feature work in the same module.
+- **Next steps:** trim **unused exports** only alongside feature work in the same module; optional Knip tuning (entry / project globs) if you want fewer unused-file false positives.
+
+### 0.1 Partial features — should we wire them next?
+
+These are **domain-complete** or **half-wired** but missing **one** integration layer (UI, dispatch, or persistence). Rough **value vs effort** for product decision:
+
+| Area | What’s missing | Effort | Value |
+| ---- | -------------- | ------ | ----- |
+| **Plugin bridge state** (`getPluginState` / `setPluginState`, …) | Preset system + IPC from UI | Medium | High — native plugin UX |
+| **Adjustment layers** | Timeline / mixer UI for regions | High | High — non-destructive mix |
+| **Node-based plugin view** | Canvas + graph interactions | High | Medium — power-user, not daily |
+| **Ableton Push** | MIDI dispatch from device layer | Medium | Medium — hardware niche |
+| **Extensions API** | Scripting UI + sandbox story | High | Medium — security gate first |
+| **CRDT merge / `.sdaw`** | Save/load + merge dialog trigger | Medium | Medium — collaboration edge cases |
+| **Native project `.sourdaw` files** | **Done (import/export path):** save via `saveProjectToFile`; import via `pickAndImportProjectFile` → Tauri `open` + `loadProjectFromFile` (`read_audio_file`), web unchanged (`pickFiles` + `File.text()`). Optional later: recent-files / CLI open with path | Medium | High — desktop parity |
+| **Toaster MPC extras** (`noteRepeat`, `sixteenLevels`, …) | Pad UI + sequencer | Medium | Medium — performance niche |
+
+**Suggested order if wiring:** (1) **native project I/O** + **plugin bridge** presets (desktop credibility), (2) **adjustment layers** (large feature, schedule a dedicated milestone), (3) **Push** / **Toaster** (hardware-specific), (4) **node view** / **extensions** (after UX + security spec).
 
 ---
+
 
 ## 1. True Dead Code — All Deleted
 
@@ -176,7 +194,7 @@ Robust domain logic with real value, missing only their final UI or audio graph 
 ### 3.7 Native Project File I/O
 
 - **Files:** `Project/repositories/nativeProjectFiles.ts`
-- **Status:** Tauri-based filesystem operations for `.sourdaw` project files. Not called from any save/load handler yet.
+- **Status:** **`saveProjectToFile`** and **`loadProjectFromFile`** are on the export/import path (`downloadProjectFile`, `pickAndImportProjectFile`). **`listProjectFiles`**, **`getProjectDirectory`**, and **`isNativeFileSystemAvailable`** are still unused — reserved for a future “browse folder” / OS recent-files UX, not dead code to delete.
 
 ### 3.8 Native Plugin Bridge — Full State Persistence (5 files)
 

@@ -2,13 +2,23 @@
  * Export the current Toaster step pattern as MIDI clips on the child pad tracks.
  */
 
+import { inject } from '#/infra/di/inject';
 import { toasterStore } from '../stores/toasterStore';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 
-export function exportPatternToTimeline(): void {
+export const exportPatternToTimelineDependencies = {
+    getAllTracks,
+    addMidiNote,
+    addClip,
+    playheadPositionRef,
+} as const;
+
+export const exportPatternToTimeline = inject(exportPatternToTimelineDependencies)(
+    ({ getAllTracks, addMidiNote, addClip, playheadPositionRef }) =>
+        function exportPatternToTimeline(): void {
     const state = toasterStore.value;
     if (!state) {
         return;
@@ -73,3 +83,4 @@ export function exportPatternToTimeline(): void {
         }
     }
 }
+);

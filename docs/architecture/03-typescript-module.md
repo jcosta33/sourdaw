@@ -97,7 +97,7 @@ useCases
                       models
 
 Cross-module access is narrow:
-- other modules may use public contract folders only
+- other modules import only from the destination module’s root **`index.ts`** (curated re-exports)
 - private internals stay private
 ```
 
@@ -109,27 +109,26 @@ A TypeScript module is composed of a **public contract surface** and **private i
 
 ## 3.1 Public contract surface
 
-These are the parts that other modules may depend on.
+Other modules **never** import these folders by path. They depend on **`index.ts` only**, which re-exports a curated subset from:
 
 ```text
-errors/
 events/
 useCases/
 stores/
 presentations/views/
 ```
 
-These folders expose the module’s public contract.
+`errors/` stays internal. Cross-module **named types** use **`events/`** (re-exported from `index.ts`) or a **local duplicate** in the consumer — not `export type` from `useCases/`.
 
-### Meaning of each public surface
+### Meaning of each re-export root
 
-| Folder                 | Role                             | Who uses it                      |
-| ---------------------- | -------------------------------- | -------------------------------- |
-| `errors/`              | stable domain/application errors | other modules, presentation      |
-| `events/`              | meaningful domain events         | other modules, integration code  |
-| `useCases/`            | public write boundary            | other modules, presentation      |
-| `stores/`              | shared business/read state       | other modules, presentation      |
-| `presentations/views/` | composable UI entry points       | other modules, route composition |
+| Folder / origin        | Role                             | Cross-module access |
+| ---------------------- | -------------------------------- | -------------------- |
+| `useCases/`            | public write boundary (functions) | `export { fn }` from `index.ts` only — **no** `export type` from `useCases/` on `index.ts` |
+| `events/`              | meaningful domain event payloads | `export type` / values via `index.ts` as needed |
+| `stores/`              | shared business/read state       | via `index.ts` re-exports only |
+| `presentations/views/` | composable UI entry points       | via `index.ts` re-exports only |
+| `errors/`              | internal error types             | not re-exported from `index.ts`; surface error *semantics* through `events/` or local types |
 
 ## 3.2 Private internals
 
@@ -163,14 +162,18 @@ ModuleName/
   useCases/
   events/
   stores/
-  ...               ← all private
+  presentations/
+    views/          ← composable views; cross-module only via re-exports in index.ts
+  ...               ← all other paths private to the module
 ```
 
 ### Rules
 
-1. **All cross-module imports must target `<module>/index.ts`** — direct imports to `useCases/`, `events/`, `stores/`, or any other folder from outside the module are forbidden.
-2. **`index.ts` may only re-export from `useCases/`, `events/`, and `stores/`** — it must not import from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/`, `engine/`, `runtime/`, or `worklets/`.
-3. **`index.ts` is a curated surface, not a barrel file** — only export what external consumers genuinely need. Omitting things is correct.
+1. **All cross-module imports must target `<module>/index.ts`** — direct imports to `useCases/`, `events/`, `stores/`, `presentations/views/`, or any other folder from outside the module are forbidden.
+2. **`index.ts` may only re-export from `useCases/`, `events/`, `stores/`, and `presentations/views/`** — it must not import from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/hooks/`, `presentations/stores/`, `presentations/context/`, `presentations/components/`, `presentations/renderers/`, `engine/`, `runtime/`, `worklets/`, or `errors/`. From `useCases/`, re-export **functions (and constants)** only — not `export type` (see rule 5). Shared **named types** cross via **`events/`** or consumer-local types.
+3. **Exception to the no-barrel rule:** the module root `index.ts` is the **only** allowed barrel-style file. Do not add other `index.ts` re-export shims or files like `contracts.ts` to bypass boundaries.
+4. **`index.ts` is a curated surface** — only export what external consumers genuinely need. Omitting things is correct; re-exporting “everything” to satisfy imports is not.
+5. **No use-case types cross the boundary** — `index.ts` may re-export **functions** (and constants) from `useCases/`, not `export type { … }` sourced from `useCases/`. Other modules define their own types or use `ReturnType` / `Parameters` on imported functions. **Typed event payloads** remain the exception: `export type { … } from './events/...'` is allowed.
 
 ### Why `index.ts` instead of direct folder access
 
@@ -189,6 +192,7 @@ export { addTrack } from './useCases/addTrack';
 export { removeTrack } from './useCases/removeTrack';
 export { trackStore } from './stores/trackStore';
 export type { TrackAddedEvent } from './events/TrackAddedEvent';
+export { ArrangementView } from './presentations/views/ArrangementView';
 ```
 
 ```ts
@@ -386,11 +390,13 @@ useCases/
   trackActions.ts   // 900 lines, 14 exported use cases
 ```
 
-### Use cases are a typed contract, not a re-export surface
+### Use cases are a behavioral contract, not a shared type surface
 
-A use case file must export its own typed function — never a pure re-export of a repository function. A file that only does `export { getX } from '../repositories/Y'` creates no real boundary; it launders private access through a fake public path. The **type signature** of the use case is the cross-module contract: the body may be thin (`return repo.method(input)`) but the signature uses the module's own types, or repo types only when the repository exposes pure models.
+A use case file must export its own typed function — never a pure re-export of a repository function. A file that only does `export { getX } from '../repositories/Y'` creates no real boundary; it launders private access through a fake public path. The **runtime behavior and function entry point** are what other modules may import; **types defined in `useCases/` stay inside the module** (including DTOs and aliases used to implement the function). Other modules do not `import type` from another module’s `useCases/` or from `index.ts` re-exports of those types — they keep **local types** or derive shapes with `ReturnType<typeof fn>` / `Parameters<typeof fn>` when calling an imported function.
 
-When a repository returns something that is not a pure model, the use case must define its own output type exposing only what consumers need.
+When a repository returns something that is not a pure model, the use case still defines internal types for mapping — those types are not part of the cross-module export surface.
+
+Cross-module **named types** for events belong in **`events/`** and may be re-exported from `index.ts` like any other event payload contract.
 
 See the `architecture-violations` skill (§6) for detailed rules and examples.
 
@@ -703,7 +709,7 @@ PluginRackView
 MixerConsoleView
 ```
 
-Other modules may import from `presentations/views/`.
+Other modules consume **promoted** views only via that module’s **`index.ts`** re-exports — never by importing `presentations/views/` directly from outside the module.
 
 ### `presentations/hooks/`
 
@@ -789,20 +795,22 @@ They should not become business logic containers.
 
 The only file other modules may import from is the module's root `index.ts`.
 
-`index.ts` may only re-export from three internal folders:
+`index.ts` may only re-export from these internal folders:
 
 ```text
-useCases/    → business operations
-events/      → typed domain event payloads
-stores/      → shared business-layer state
+useCases/              → business operations (functions on index.ts — not use-case type exports)
+events/                → typed domain event payloads
+stores/                → shared business-layer state
+presentations/views/   → composable UI entry points (cross-module only via index.ts)
 ```
 
 ## 5.2 Private folders
 
-Everything else is private. No other module may import from:
+Everything else is private. No other module may **directly** import paths under:
 
 ```text
 models/
+errors/
 validators/
 services/
 repositories/
@@ -812,13 +820,13 @@ presentations/stores/
 presentations/context/
 presentations/components/
 presentations/renderers/
-presentations/views/
+presentations/views/   ← use the owning module’s index.ts instead
 engine/
 runtime/
 worklets/
 ```
 
-Even `errors/` and `presentations/views/` — previously considered public contract folders — are now internal. If a module needs to expose an error type or a view, it re-exports from `index.ts`.
+If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on `index.ts`. Views that are part of the public contract are re-exported from `index.ts` as above.
 
 ---
 
@@ -1337,15 +1345,16 @@ Module boundaries exist for ownership and invariants, not for cosmetics.
 Before accepting TypeScript module architecture work, verify:
 
 1. Is the module boundary an ownership boundary, not just a UI slice?
-2. Are public contract folders narrow and intentional?
+2. Is the module root `index.ts` a narrow, intentional surface (not a full re-export of the module)?
 3. Are models plain and framework-free?
 4. Are use cases the real write boundary?
-5. Are repositories truly I/O-only?
-6. Are validators/services/transformers private and well-scoped?
-7. Are business stores separated from presentation stores?
-8. Are views public while hooks/components/context/renderers stay private by default?
-9. Is cross-module interaction happening through approved patterns?
-10. Did the refactor reduce or increase hidden coupling?
+5. Are use-case **types** kept private (no `export type` from `useCases/` on `index.ts` for other modules)?
+6. Are repositories truly I/O-only?
+7. Are validators/services/transformers private and well-scoped?
+8. Are business stores separated from presentation stores?
+9. Are promoted views re-exported from `index.ts` while hooks/components/context/renderers stay private by default?
+10. Is cross-module interaction happening only via each module’s `index.ts` and approved patterns?
+11. Did the refactor reduce or increase hidden coupling?
 
 ---
 

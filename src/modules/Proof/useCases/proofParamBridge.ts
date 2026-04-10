@@ -5,6 +5,7 @@
  * Per-device: each deviceId has its own bridge handle.
  */
 
+import { inject } from '#/infra/di/inject';
 import { type ProofPatch } from '../models/ProofPatch';
 import { loadProofPatch, updateProofPatch, getProofState } from '../stores/proofStore';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
@@ -25,10 +26,17 @@ export function unregisterProofDevice(deviceId: string): void {
     bridges.delete(deviceId);
 }
 
-export function setProofParam(deviceId: string, name: string, value: number): void {
-    bridges.get(deviceId)?.setParam(name, value);
-    persistDeviceParam(deviceId, name, value);
-}
+export const setProofParamDependencies = {
+    persistDeviceParam,
+} as const;
+
+export const setProofParam = inject(setProofParamDependencies)(
+    ({ persistDeviceParam: persistDeviceParamFn }) =>
+        function setProofParam(deviceId: string, name: string, value: number): void {
+            bridges.get(deviceId)?.setParam(name, value);
+            persistDeviceParamFn(deviceId, name, value);
+        }
+);
 
 /** Set a patch parameter and send to audio engine. */
 export function setProofParamWithPatch<K extends keyof ProofPatch>(

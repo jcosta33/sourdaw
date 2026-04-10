@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { forwardRef } from 'react';
 import { ArrangementSelector } from './ArrangementSelector';
 
 // Mock external dependencies
@@ -26,7 +27,7 @@ vi.mock('../../useCases/arrangement', () => ({
 
 // Mock UI components
 vi.mock('#/components/daw/DawCompactInput', () => ({
-    DawCompactInput: vi.forwardRef(({ value, onChange, onKeyDown }: any, ref) => (
+    DawCompactInput: forwardRef(({ value, onChange, onKeyDown }: any, ref: any) => (
         <input 
             ref={ref}
             value={value} 
@@ -58,14 +59,23 @@ vi.mock('#/components/ui/tooltip', () => ({
     TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+const { useStore } = await import('#/infra/store/useStore');
+const { switchArrangement } = await import('../../useCases/arrangement');
+
 describe('ArrangementSelector', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements: [
+                { id: 'arr-1', name: 'Arrangement 1' },
+                { id: 'arr-2', name: 'Arrangement 2' },
+            ],
+            activeArrangementId: 'arr-1',
+        });
     });
 
     it('should render null when there is only one arrangement', () => {
-        const useStoreMock = vi.mocked(await import('#/infra/store/useStore'));
-        useStoreMock.useStore.mockReturnValue({
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             arrangements: [{ id: 'arr-1', name: 'Arrangement 1' }],
             activeArrangementId: 'arr-1',
         });
@@ -95,12 +105,12 @@ describe('ArrangementSelector', () => {
         render(<ArrangementSelector />);
         const button = screen.getByLabelText(/Arrangement selector/i);
         fireEvent.click(button);
-        expect(screen.getByText('Arrangement 1')).toBeInTheDocument();
+        // Use getAllByText since arrangement name appears in both selector and dropdown
+        expect(screen.getAllByText('Arrangement 1').length).toBeGreaterThanOrEqual(1);
         expect(screen.getByText('Arrangement 2')).toBeInTheDocument();
     });
 
     it('should call switchArrangement when arrangement is clicked', () => {
-        const { switchArrangement } = await import('../../useCases/arrangement');
         render(<ArrangementSelector />);
         const button = screen.getByLabelText(/Arrangement selector/i);
         fireEvent.click(button);

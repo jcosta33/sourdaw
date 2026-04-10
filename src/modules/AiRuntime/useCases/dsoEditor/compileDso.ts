@@ -4,14 +4,23 @@
  * Each DSO type maps to specific use case calls. Validation is performed
  * before execution. Human-readable summaries are generated for the action history.
  */
+import { inject } from '#/infra/di/inject';
 import { type Dso } from '../../models/DsoTypes';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
+import { setSend } from '#/modules/Arrangement/useCases/device/sendManagement';
+import { setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
+import { disableLooping } from '#/modules/Transport/useCases/setLooping';
+import { applyMelodyToTrack } from '#/modules/AiGeneration/useCases/generateMelody/applyToTrack';
+import { applyChordProgressionToTrack } from '#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack';
+import { applyDrumPatternToTrack } from '#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack';
+import { humanizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes';
 // Local type aliases — duplicated from AiGeneration algorithm files to avoid
 // a circular module dependency (AiGeneration already imports from AiRuntime).
 type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
@@ -573,41 +582,57 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
     return errors;
 }
 
+export const compileDsoExecutionDependencies = {
+    executeAppAction,
+    addTrack,
+    removeTrack,
+    addClip,
+    addDevice,
+    setLoopRegion,
+    disableLooping,
+    applyMelodyToTrack,
+    applyChordProgressionToTrack,
+    applyDrumPatternToTrack,
+    humanizeNotes,
+    setSend,
+    trackStore,
+    transportStore,
+    midiStore,
+} as const;
+
+type CompileDsoExecutionDeps = {
+    executeAppAction: typeof executeAppAction;
+    addTrack: typeof addTrack;
+    removeTrack: typeof removeTrack;
+    addClip: typeof addClip;
+    addDevice: typeof addDevice;
+    setLoopRegion: typeof setLoopRegion;
+    disableLooping: typeof disableLooping;
+    applyMelodyToTrack: typeof applyMelodyToTrack;
+    applyChordProgressionToTrack: typeof applyChordProgressionToTrack;
+    applyDrumPatternToTrack: typeof applyDrumPatternToTrack;
+    humanizeNotes: typeof humanizeNotes;
+    setSend: typeof setSend;
+    trackStore: typeof trackStore;
+    transportStore: typeof transportStore;
+    midiStore: typeof midiStore;
+};
+
 // ── Compilation (execution) ──────────────────────────────────────────────────
-
-/**
- * Execute a list of validated DSOs against the DAW stores.
- * Returns human-readable summaries of each applied operation.
- */
-export async function executeDsos(dsos: Dso[]): Promise<string[]> {
-    lastInsertedDeviceId = null;
-    const summaries: string[] = [];
-
-    for (const dso of dsos) {
-        try {
-            await executeSingleDso(dso);
-            summaries.push(describeDso(dso));
-        } catch (error) {
-            console.warn(`Failed to execute DSO ${dso.op}:`, error);
-        }
-    }
-
-    return summaries;
-}
 
 /** Options passed to executeAppAction for all DSO sub-operations.
  *  skipUndo: the batch undo entry is managed by executeDsoEdit, not per-operation. */
 const DSO_EXEC_OPTIONS = { skipUndo: true, source: 'ai' as const };
 
-async function executeSingleDso(dso: Dso): Promise<void> {
-    const state = trackStore.value;
+async function executeSingleDso(deps: CompileDsoExecutionDeps, dso: Dso): Promise<void> {
+    const state = deps.trackStore.value;
     if (!state) {
         return;
     }
 
     switch (dso.op) {
         case 'add_track': {
-            addTrack({
+            deps.addTrack({
                 id: (dso as any).track_id,
                 name: dso.name,
                 kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master',
@@ -616,12 +641,12 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'remove_track': {
-            removeTrack(dso.track_id);
+            deps.removeTrack(dso.track_id);
             break;
         }
 
         case 'rename_track': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'renameTrack', payload: { trackId: dso.track_id, name: dso.name } },
                 DSO_EXEC_OPTIONS
             );
@@ -629,7 +654,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'set_track_volume': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'setTrackGain', payload: { trackId: dso.track_id, gain: dso.gain } },
                 DSO_EXEC_OPTIONS
             );
@@ -637,7 +662,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'set_track_pan': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'setTrackPan', payload: { trackId: dso.track_id, pan: dso.pan } },
                 DSO_EXEC_OPTIONS
             );
@@ -645,7 +670,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'mute_track': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'muteTrack', payload: { trackId: dso.track_id, muted: dso.muted } },
                 DSO_EXEC_OPTIONS
             );
@@ -653,7 +678,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'solo_track': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'soloTrack', payload: { trackId: dso.track_id, soloed: dso.soloed } },
                 DSO_EXEC_OPTIONS
             );
@@ -661,7 +686,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'arm_track': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'armTrack', payload: { trackId: dso.track_id, armed: dso.armed } },
                 DSO_EXEC_OPTIONS
             );
@@ -669,7 +694,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'color_track': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'setTrackColor', payload: { trackId: dso.track_id, color: dso.color } },
                 DSO_EXEC_OPTIONS
             );
@@ -677,7 +702,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'reorder_track': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'reorderTrack', payload: { trackId: dso.track_id, newIndex: dso.new_index } },
                 DSO_EXEC_OPTIONS
             );
@@ -685,7 +710,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'add_clip': {
-            addClip({
+            deps.addClip({
                 trackId: dso.track_id,
                 name: dso.name,
                 type: dso.type,
@@ -696,12 +721,12 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'remove_clip': {
-            await executeAppAction({ type: 'removeClip', payload: { clipId: dso.clip_id } }, DSO_EXEC_OPTIONS);
+            await deps.executeAppAction({ type: 'removeClip', payload: { clipId: dso.clip_id } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'rename_clip': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'renameClip', payload: { clipId: dso.clip_id, name: dso.name } },
                 DSO_EXEC_OPTIONS
             );
@@ -709,7 +734,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'move_clip': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 {
                     type: 'moveClip',
                     payload: {
@@ -728,7 +753,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const sourceClip = allClips.find((c) => c.id === dso.clip_id);
             if (sourceClip) {
                 const duration = sourceClip.endBeat - sourceClip.startBeat;
-                addClip({
+                deps.addClip({
                     trackId: dso.destination_track_id,
                     name: `${sourceClip.name} (copy)`,
                     type: (sourceClip.type as 'audio' | 'midi') ?? 'audio',
@@ -741,7 +766,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'split_clip': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'splitClip', payload: { clipId: dso.clip_id, beat: dso.split_at_beats } },
                 DSO_EXEC_OPTIONS
             );
@@ -753,10 +778,10 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const track = state.tracks.find((t) => t.id === dso.track_id);
             const deviceCountBefore = track?.devices.length ?? 0;
 
-            addDevice(dso.track_id, dso.device_type);
+            deps.addDevice(dso.track_id, dso.device_type);
 
             // Track the newly inserted device ID for "latest" resolution
-            const updatedState = trackStore.value;
+            const updatedState = deps.trackStore.value;
             const updatedTrack = updatedState?.tracks.find((t) => t.id === dso.track_id);
             if (updatedTrack && updatedTrack.devices.length > deviceCountBefore) {
                 const newDevice = updatedTrack.devices[updatedTrack.devices.length - 1];
@@ -768,12 +793,12 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'remove_device': {
-            await executeAppAction({ type: 'removeDevice', payload: { deviceId: dso.device_id } }, DSO_EXEC_OPTIONS);
+            await deps.executeAppAction({ type: 'removeDevice', payload: { deviceId: dso.device_id } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'bypass_device': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'bypassDevice', payload: { deviceId: dso.device_id, bypassed: dso.bypassed } },
                 DSO_EXEC_OPTIONS
             );
@@ -781,7 +806,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'set_tempo': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'setTempo', payload: { bpm: Math.max(20, Math.min(999, dso.bpm)) } },
                 DSO_EXEC_OPTIONS
             );
@@ -789,9 +814,9 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'set_time_signature': {
-            const ts = transportStore.value;
+            const ts = deps.transportStore.value;
             if (ts) {
-                transportStore.set({
+                deps.transportStore.set({
                     ...ts,
                     timeSignatureNumerator: Math.max(1, Math.min(32, dso.numerator)),
                     timeSignatureDenominator: Math.max(1, Math.min(32, dso.denominator)),
@@ -802,11 +827,9 @@ async function executeSingleDso(dso: Dso): Promise<void> {
 
         case 'set_loop': {
             if (dso.enabled) {
-                const { setLoopRegion } = await import('#/modules/Transport/useCases/transportControls/setLoopRegion');
-                setLoopRegion(dso.start_beats, dso.end_beats);
+                deps.setLoopRegion(dso.start_beats, dso.end_beats);
             } else {
-                const { disableLooping } = await import('#/modules/Transport/useCases/setLooping');
-                disableLooping();
+                deps.disableLooping();
             }
             break;
         }
@@ -817,7 +840,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             if (!resolvedId) {
                 break;
             }
-            await executeAppAction(
+            await deps.executeAppAction(
                 {
                     type: 'setDeviceParameter',
                     payload: { deviceId: resolvedId, paramId: dso.param_name, value: dso.value },
@@ -828,8 +851,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'add_midi_notes': {
-            const { midiStore } = await import('#/modules/MIDI/stores/midiStore');
-            const ms = midiStore.value;
+            const ms = deps.midiStore.value;
             if (ms) {
                 // Find the clip's start beat so we can offset relative note positions to absolute
                 const clip = state.tracks.flatMap((t) => t.clips).find((c) => c.id === dso.clip_id);
@@ -845,7 +867,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
                         velocity: Math.max(1, Math.min(127, n.velocity)),
                     })
                 );
-                midiStore.set({
+                deps.midiStore.set({
                     ...ms,
                     notesByClipId: {
                         ...ms.notesByClipId,
@@ -857,7 +879,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'set_clip_gain': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'setClipGain', payload: { clipId: dso.clip_id, gain: dso.gain } },
                 DSO_EXEC_OPTIONS
             );
@@ -868,8 +890,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const key = noteNameToMidi(dso.key);
             const scale = toScaleType(dso.scale);
             const style = toMelodyStyle(dso.style);
-            const { applyMelodyToTrack } = await import('#/modules/AiGeneration/useCases/generateMelody/applyToTrack');
-            applyMelodyToTrack(
+            deps.applyMelodyToTrack(
                 dso.track_id,
                 { style, key, scale, octave: dso.octave, bars: dso.bars, density: dso.density },
                 dso.start_beat ?? 0
@@ -881,9 +902,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const key = noteNameToMidi(dso.key);
             const style = toChordStyle(dso.progression);
             const voicing = toChordVoicing(dso.voicing);
-            const { applyChordProgressionToTrack } =
-                await import('#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack');
-            applyChordProgressionToTrack(
+            deps.applyChordProgressionToTrack(
                 dso.track_id,
                 { style, key, scale: 'major', bars: dso.bars, voicing },
                 dso.start_beat ?? 0
@@ -893,14 +912,12 @@ async function executeSingleDso(dso: Dso): Promise<void> {
 
         case 'generate_drums': {
             const style = toDrumStyle(dso.style);
-            const { applyDrumPatternToTrack } =
-                await import('#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack');
-            applyDrumPatternToTrack(dso.track_id, { style, bars: dso.bars, density: dso.density }, dso.start_beat ?? 0);
+            deps.applyDrumPatternToTrack(dso.track_id, { style, bars: dso.bars, density: dso.density }, dso.start_beat ?? 0);
             break;
         }
 
         case 'transpose_notes': {
-            await executeAppAction(
+            await deps.executeAppAction(
                 { type: 'transposeNotes', payload: { clipId: dso.clip_id, semitones: dso.semitones } },
                 DSO_EXEC_OPTIONS
             );
@@ -908,18 +925,39 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'humanize_midi': {
-            const { humanizeNotes } = await import('#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes');
-            humanizeNotes(dso.clip_id, dso.timing_amount, dso.velocity_amount);
+            deps.humanizeNotes(dso.clip_id, dso.timing_amount, dso.velocity_amount);
             break;
         }
 
         case 'create_send': {
-            const { setSend } = await import('#/modules/Arrangement/useCases/device/sendManagement');
-            setSend(dso.from_track_id, dso.to_track_id, dso.gain);
+            deps.setSend(dso.from_track_id, dso.to_track_id, dso.gain);
             break;
         }
     }
 }
+
+/**
+ * Execute a list of validated DSOs against the DAW stores.
+ * Returns human-readable summaries of each applied operation.
+ */
+export const executeDsos = inject(compileDsoExecutionDependencies)(
+    (deps) =>
+        async function executeDsos(dsos: Dso[]): Promise<string[]> {
+            lastInsertedDeviceId = null;
+            const summaries: string[] = [];
+
+            for (const dso of dsos) {
+                try {
+                    await executeSingleDso(deps, dso);
+                    summaries.push(describeDso(dso));
+                } catch (error) {
+                    console.warn(`Failed to execute DSO ${dso.op}:`, error);
+                }
+            }
+
+            return summaries;
+        }
+);
 
 // ── Human-readable summaries ─────────────────────────────────────────────────
 

@@ -123,7 +123,7 @@ Before writing the Handoff, stop. Refactors are high-risk: they touch many files
 
 ### Architecture — the non-negotiable
 
-- Zero `pnpm deps:validate` violations (see pasted output above)? Any new architectural violations introduced while cleaning up old ones — cross-module internals, barrel files, wrong import paths?
+- Zero `pnpm deps:validate` violations (see pasted output above)? Any new architectural violations introduced while cleaning up old ones — cross-module internals, disallowed barrels (anything other than module root `index.ts`), wrong import paths?
   Answer:
 
 ### Completeness

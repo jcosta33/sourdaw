@@ -1,11 +1,14 @@
 import * as Automerge from '@automerge/automerge';
 
+import { inject } from '#/infra/di/inject';
 import { type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 import { projectCrdtToStores } from './projection/projectProjection';
 import { persistCrdtProject } from './crdtProjectLifecycle';
 import { forkProjectBranch } from './crdtBranching';
 import { decodeSdawFile, encodeSdawFile } from './sdawFileFormat';
+
+const mergeDocumentBundleFromRepo = (bundle: DocumentBundle) => automergeRepository.mergeBundle(bundle);
 
 export type ImportDecision = 'merge' | 'branch' | 'separate';
 
@@ -58,32 +61,40 @@ export const detectImportDecision = (bundle: DocumentBundle): ImportDecision => 
  * - Same lineage: merge directly
  * - Unrelated: returns null with suggestion to open separately
  */
-export const importSdawFile = async (file: File): Promise<MergeResult | null> => {
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        const bundle = decodeSdawFile(bytes);
+export const importSdawFile = inject({
+    forkProjectBranch,
+    projectCrdtToStores,
+    persistCrdtProject,
+    mergeBundle: mergeDocumentBundleFromRepo,
+})(
+    ({ forkProjectBranch, projectCrdtToStores, persistCrdtProject, mergeBundle }) =>
+        async function importSdawFile(file: File): Promise<MergeResult | null> {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                const bundle = decodeSdawFile(bytes);
 
-        const decision = detectImportDecision(bundle);
+                const decision = detectImportDecision(bundle);
 
-        if (decision === 'separate') {
-            return null;
+                if (decision === 'separate') {
+                    return null;
+                }
+
+                if (decision === 'branch') {
+                    await forkProjectBranch(`Import ${file.name}`);
+                }
+
+                const result = await mergeBundle(bundle);
+                projectCrdtToStores();
+
+                await persistCrdtProject();
+                return result;
+            } catch (error) {
+                console.error('[CrdtMerge] Failed to import .sdaw file:', error);
+                return null;
+            }
         }
-
-        if (decision === 'branch') {
-            await forkProjectBranch(`Import ${file.name}`);
-        }
-
-        const result = await automergeRepository.mergeBundle(bundle);
-        projectCrdtToStores();
-
-        await persistCrdtProject();
-        return result;
-    } catch (error) {
-        console.error('[CrdtMerge] Failed to import .sdaw file:', error);
-        return null;
-    }
-};
+);
 
 /**
  * Export the current project as an .sdaw binary blob.
@@ -97,9 +108,16 @@ export const exportSdawFile = (): Blob => {
 /**
  * Merge a document bundle into the current project.
  */
-export const mergeDocumentBundle = async (bundle: DocumentBundle): Promise<MergeResult> => {
-    const result = await automergeRepository.mergeBundle(bundle);
-    projectCrdtToStores();
-    await persistCrdtProject();
-    return result;
-};
+export const mergeDocumentBundle = inject({
+    projectCrdtToStores,
+    persistCrdtProject,
+    mergeBundle: mergeDocumentBundleFromRepo,
+})(
+    ({ projectCrdtToStores, persistCrdtProject, mergeBundle }) =>
+        async function mergeDocumentBundle(bundle: DocumentBundle): Promise<MergeResult> {
+            const result = await mergeBundle(bundle);
+            projectCrdtToStores();
+            await persistCrdtProject();
+            return result;
+        }
+);

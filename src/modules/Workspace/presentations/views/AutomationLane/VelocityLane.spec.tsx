@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { VelocityLane } from './VelocityLane';
 
 vi.mock('./NotePropertyLane', () => ({
@@ -13,6 +14,10 @@ vi.mock('./NotePropertyLane', () => ({
 vi.mock('#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity', () => ({
     setNoteVelocity: vi.fn(),
 }));
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('VelocityLane', () => {
     const defaultProps = {
@@ -28,30 +33,30 @@ describe('VelocityLane', () => {
     });
 
     it('should render without crashing', () => {
-        render(<VelocityLane {...defaultProps} />);
+        renderWithTooltip(<VelocityLane {...defaultProps} />);
         expect(screen.getByTestId('note-property-lane')).toBeInTheDocument();
     });
 
     it('should pass correct label to NotePropertyLane', () => {
-        render(<VelocityLane {...defaultProps} />);
+        renderWithTooltip(<VelocityLane {...defaultProps} />);
         const lane = screen.getByTestId('note-property-lane');
         expect(lane).toHaveAttribute('data-label', 'Velocity');
     });
 
     it('should pass clipId to NotePropertyLane', () => {
-        render(<VelocityLane {...defaultProps} clipId="test-clip" />);
+        renderWithTooltip(<VelocityLane {...defaultProps} clipId="test-clip" />);
         const lane = screen.getByTestId('note-property-lane');
         expect(lane).toHaveAttribute('data-clip-id', 'test-clip');
     });
 
     it('should pass null clipId when not provided', () => {
-        render(<VelocityLane {...defaultProps} clipId={null} />);
+        renderWithTooltip(<VelocityLane {...defaultProps} clipId={null} />);
         const lane = screen.getByTestId('note-property-lane');
-        expect(lane).toHaveAttribute('data-clip-id', 'null');
+        expect(lane.getAttribute('data-clip-id')).toBeNull();
     });
 
     it('should display NotePropertyLane content', () => {
-        render(<VelocityLane {...defaultProps} />);
+        renderWithTooltip(<VelocityLane {...defaultProps} />);
         expect(screen.getByText('NotePropertyLane: Velocity')).toBeInTheDocument();
     });
 });

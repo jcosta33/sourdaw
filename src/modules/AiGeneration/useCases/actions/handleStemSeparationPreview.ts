@@ -1,6 +1,7 @@
+import { inject } from '#/infra/di/inject';
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 import { isAppError } from '#/infra/errors/isAppError';
-import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
+import { separateStems } from '#/modules/AudioAnalysis/useCases/audioAi';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
@@ -51,64 +52,50 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
     return wavBuffer;
 }
 
-export async function handleStemSeparationPreview(clipId: string) {
-    const taskId = addTask({
-        type: 'stem-separation',
-        status: 'processing',
-        prompt: 'Extracting: Drums, Bass, Vocals, Other',
-    });
-    try {
-        const start = performance.now();
+export const handleStemSeparationPreviewDependencies = {
+    addTask,
+    updateTask,
+    separateStems,
+} as const;
 
-        if (isTauri()) {
-            const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
-            const buffer = audioBufferCache.get(clipId);
-            if (!buffer) {
-                throw createAiGenerationError('Audio buffer not found for clip');
-            }
-
-            const wavData = audioBufferToWav(buffer);
-            const stemResults = await separateStems(wavData, ['all']);
-
-            const stemNames = Object.keys(stemResults);
-            for (const [name, stemBuffer] of Object.entries(stemResults)) {
-                audioBufferCache.set(`${clipId}-${name}`, stemBuffer);
-            }
-
-            updateTask(taskId, {
-                status: 'success',
-                data: { clipId, stems: stemNames },
-                durationMs: Math.round(performance.now() - start),
+export const handleStemSeparationPreview = inject(handleStemSeparationPreviewDependencies)(
+    ({ addTask, updateTask, separateStems }) =>
+        async function handleStemSeparationPreview(clipId: string) {
+            const taskId = addTask({
+                type: 'stem-separation',
+                status: 'processing',
+                prompt: 'Extracting: Drums, Bass, Vocals, Other',
             });
-        } else {
-            const { separateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
-            const buffer = audioBufferCache.get(clipId);
-            if (!buffer) {
-                throw createAiGenerationError('Audio buffer not found for clip');
+            try {
+                const start = performance.now();
+
+                const buffer = audioBufferCache.get(clipId);
+                if (!buffer) {
+                    throw createAiGenerationError('Audio buffer not found for clip');
+                }
+
+                const wavData = audioBufferToWav(buffer);
+                const stemResults = await separateStems(wavData, ['all']);
+
+                const stemNames = Object.keys(stemResults);
+                for (const [name, stemBuffer] of Object.entries(stemResults)) {
+                    audioBufferCache.set(`${clipId}-${name}`, stemBuffer);
+                }
+
+                updateTask(taskId, {
+                    status: 'success',
+                    data: { clipId, stems: stemNames },
+                    durationMs: Math.round(performance.now() - start),
+                });
+            } catch (error: unknown) {
+                updateTask(taskId, {
+                    status: 'error',
+                    error: isAppError(error)
+                        ? error.message
+                        : error instanceof Error
+                          ? error.message
+                          : 'Stem separation failed',
+                });
             }
-
-            const wavData = audioBufferToWav(buffer);
-            const stemResults = await separateStems(wavData, ['all']);
-
-            const stemNames = Object.keys(stemResults);
-            for (const [name, stemBuffer] of Object.entries(stemResults)) {
-                audioBufferCache.set(`${clipId}-${name}`, stemBuffer);
-            }
-
-            updateTask(taskId, {
-                status: 'success',
-                data: { clipId, stems: stemNames },
-                durationMs: Math.round(performance.now() - start),
-            });
         }
-    } catch (error: unknown) {
-        updateTask(taskId, {
-            status: 'error',
-            error: isAppError(error)
-                ? error.message
-                : error instanceof Error
-                  ? error.message
-                  : 'Stem separation failed',
-        });
-    }
-}
+);

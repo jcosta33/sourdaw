@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { PlayheadDisplay } from './PlayheadDisplay';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('PlayheadDisplay', () => {
     beforeEach(() => {
@@ -12,22 +17,22 @@ describe('PlayheadDisplay', () => {
     });
 
     it('should render without crashing', () => {
-        render(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        render(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

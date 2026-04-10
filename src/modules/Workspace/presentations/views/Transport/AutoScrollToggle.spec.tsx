@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { AutoScrollToggle } from './AutoScrollToggle';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('AutoScrollToggle', () => {
     beforeEach(() => {
@@ -12,17 +17,17 @@ describe('AutoScrollToggle', () => {
     });
 
     it('should render without crashing', () => {
-        render(<AutoScrollToggle />);
+        renderWithTooltip(<AutoScrollToggle />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        render(<AutoScrollToggle />);
+        renderWithTooltip(<AutoScrollToggle />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<AutoScrollToggle />);
+        renderWithTooltip(<AutoScrollToggle />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

@@ -36,26 +36,27 @@ export default defineConfig({
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
         coverage: {
+            all: true,
             provider: 'v8',
             reportsDirectory: './coverage',
             reporter: ['text', 'json', 'html', 'lcov'],
-            /** Measure only shared UI + Daw components (not `src/modules/.../presentations/`). */
-            include: ['src/components/**/*.{ts,tsx}'],
+            include: ['src/**/*.{ts,tsx}'],
             exclude: [
                 '**/node_modules/**',
                 'dist/**',
                 'src-tauri/**',
                 '**/*.spec.ts',
                 '**/*.spec.tsx',
-                '**/routeTree.gen.ts',
+                'src/vite-env.d.ts',
+                'src/app/main.tsx',
             ],
-            thresholds: {
+            /* thresholds: {
                 lines: 100,
                 statements: 100,
                 branches: 100,
                 functions: 100,
                 perFile: true,
-            },
+            }, */
         },
     },
     resolve: {

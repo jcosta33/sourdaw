@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { notifyAiChange } from './notifyAiChange';
 
@@ -13,15 +14,18 @@ export type AiActionToastMessages = {
  * Centralises the notify → execute → notify-change / notify-error orchestration that context
  * menus and inspectors would otherwise repeat inline.
  */
-export async function runAiActionWithToast(
-    action: () => Promise<void>,
-    messages: AiActionToastMessages
-): Promise<void> {
-    notifyUser(messages.startMsg);
-    try {
-        await action();
-        notifyAiChange(messages.successMsg, messages.successDetails);
-    } catch {
-        notifyUser(messages.failMsg, 'error');
-    }
-}
+export const runAiActionWithToast = inject({ notifyUser, notifyAiChange })(
+    ({ notifyUser, notifyAiChange }) =>
+        async function runAiActionWithToast(
+            action: () => Promise<void>,
+            messages: AiActionToastMessages
+        ): Promise<void> {
+            notifyUser(messages.startMsg);
+            try {
+                await action();
+                notifyAiChange(messages.successMsg, messages.successDetails);
+            } catch {
+                notifyUser(messages.failMsg, 'error');
+            }
+        }
+);

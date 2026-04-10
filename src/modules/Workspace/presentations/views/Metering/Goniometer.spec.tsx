@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { Goniometer } from './Goniometer';
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('Goniometer', () => {
     beforeEach(() => {
@@ -8,12 +13,12 @@ describe('Goniometer', () => {
     });
 
     it('should render without crashing', () => {
-        render(<Goniometer />);
+        renderWithTooltip(<Goniometer />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<Goniometer />);
+        renderWithTooltip(<Goniometer />);
         expect(document.body).toBeTruthy();
     });
 });

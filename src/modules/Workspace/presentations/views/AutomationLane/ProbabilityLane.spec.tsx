@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { ProbabilityLane } from './ProbabilityLane';
 
 vi.mock('./NotePropertyLane', () => ({
@@ -13,6 +14,10 @@ vi.mock('./NotePropertyLane', () => ({
 vi.mock('#/modules/MIDI/useCases/midiNoteCrud/setNoteProbability', () => ({
     setNoteProbability: vi.fn(),
 }));
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('ProbabilityLane', () => {
     const defaultProps = {
@@ -28,30 +33,30 @@ describe('ProbabilityLane', () => {
     });
 
     it('should render without crashing', () => {
-        render(<ProbabilityLane {...defaultProps} />);
+        renderWithTooltip(<ProbabilityLane {...defaultProps} />);
         expect(screen.getByTestId('note-property-lane')).toBeInTheDocument();
     });
 
     it('should pass correct label to NotePropertyLane', () => {
-        render(<ProbabilityLane {...defaultProps} />);
+        renderWithTooltip(<ProbabilityLane {...defaultProps} />);
         const lane = screen.getByTestId('note-property-lane');
         expect(lane).toHaveAttribute('data-label', 'Probability');
     });
 
     it('should pass clipId to NotePropertyLane', () => {
-        render(<ProbabilityLane {...defaultProps} clipId="test-clip" />);
+        renderWithTooltip(<ProbabilityLane {...defaultProps} clipId="test-clip" />);
         const lane = screen.getByTestId('note-property-lane');
         expect(lane).toHaveAttribute('data-clip-id', 'test-clip');
     });
 
     it('should pass null clipId when not provided', () => {
-        render(<ProbabilityLane {...defaultProps} clipId={null} />);
+        renderWithTooltip(<ProbabilityLane {...defaultProps} clipId={null} />);
         const lane = screen.getByTestId('note-property-lane');
-        expect(lane).toHaveAttribute('data-clip-id', 'null');
+        expect(lane.getAttribute('data-clip-id')).toBeNull();
     });
 
     it('should display NotePropertyLane content', () => {
-        render(<ProbabilityLane {...defaultProps} />);
+        renderWithTooltip(<ProbabilityLane {...defaultProps} />);
         expect(screen.getByText('NotePropertyLane: Probability')).toBeInTheDocument();
     });
 });

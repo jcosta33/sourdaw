@@ -3,6 +3,7 @@
  * Delegates to SynthModels for types/defaults.
  */
 
+import { inject } from '#/infra/di/inject';
 import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
@@ -342,13 +343,15 @@ export function getSynthParamsFromDevices(devices: Device[]): SynthParams {
  * `getSynthParamsFromDevices(track.devices)` to use a stable snapshot and
  * avoid a live-store read mid-render.
  */
-export function getSynthParamsForTrack(trackId: string): SynthParams {
-    const track = getTrackById(trackId);
-    if (!track) {
-        return { ...defaultSynthParams };
-    }
-    return getSynthParamsFromDevices(track.devices);
-}
+export const getSynthParamsForTrack = inject({ getTrackById })(({ getTrackById: getTrack }) => {
+    return function getSynthParamsForTrack(trackId: string): SynthParams {
+        const track = getTrack(trackId);
+        if (!track) {
+            return { ...defaultSynthParams };
+        }
+        return getSynthParamsFromDevices(track.devices);
+    };
+});
 
 /**
  * Lightweight note scheduling for offline rendering.

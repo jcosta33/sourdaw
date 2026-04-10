@@ -1,23 +1,77 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
+import { useStore } from '#/infra/store/useStore';
 import { LevainLoadingSpinner } from './LevainLoadingSpinner';
 
+// Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn(),
 }));
+
+vi.mock('#/modules/Levain/stores/levainStore', () => ({
+    levainStore: {},
+}));
+
+const mockTrackWithLevain = {
+    id: 'track1',
+    name: 'Levain Track',
+    devices: [{ type: 'levain' }],
+};
+
+const mockTrackWithoutLevain = {
+    id: 'track2',
+    name: 'Regular Track',
+    devices: [{ type: 'other' }],
+};
 
 describe('LevainLoadingSpinner', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('should render without crashing', () => {
-        render(<LevainLoadingSpinner />);
-        expect(document.body).toBeTruthy();
+    it('should render null when track has no levain device', () => {
+        vi.mocked(useStore).mockReturnValue({ sampleLoadProgress: 50, engineReady: false });
+        const { container } = render(<LevainLoadingSpinner track={mockTrackWithoutLevain} />);
+        expect(container.firstChild).toBeNull();
     });
 
-    it('should handle store state', () => {
-        render(<LevainLoadingSpinner />);
-        expect(document.body).toBeTruthy();
+    it('should render null when not loading', () => {
+        vi.mocked(useStore).mockReturnValue({ sampleLoadProgress: null, engineReady: true });
+        const { container } = render(<LevainLoadingSpinner track={mockTrackWithLevain} />);
+        expect(container.firstChild).toBeNull();
+    });
+
+    it('should render spinner when loading', () => {
+        vi.mocked(useStore).mockReturnValue({ sampleLoadProgress: 50, engineReady: false });
+        const { container } = render(<LevainLoadingSpinner track={mockTrackWithLevain} />);
+        expect(container.firstChild).toBeTruthy();
+    });
+
+    it('should have animate-spin class', () => {
+        vi.mocked(useStore).mockReturnValue({ sampleLoadProgress: 50, engineReady: false });
+        const { container } = render(<LevainLoadingSpinner track={mockTrackWithLevain} />);
+        const spinner = container.querySelector('.animate-spin');
+        expect(spinner).toBeInTheDocument();
+    });
+
+    it('should have aria-hidden attribute', () => {
+        vi.mocked(useStore).mockReturnValue({ sampleLoadProgress: 50, engineReady: false });
+        const { container } = render(<LevainLoadingSpinner track={mockTrackWithLevain} />);
+        const spinner = container.querySelector('[aria-hidden="true"]');
+        expect(spinner).toBeInTheDocument();
+    });
+
+    it('should have aria-label for accessibility', () => {
+        vi.mocked(useStore).mockReturnValue({ sampleLoadProgress: 50, engineReady: false });
+        const { container } = render(<LevainLoadingSpinner track={mockTrackWithLevain} />);
+        const spinner = container.querySelector('[aria-label="Loading Orchestral Samples"]');
+        expect(spinner).toBeInTheDocument();
+    });
+
+    it('should have correct color', () => {
+        vi.mocked(useStore).mockReturnValue({ sampleLoadProgress: 50, engineReady: false });
+        const { container } = render(<LevainLoadingSpinner track={mockTrackWithLevain} />);
+        const spinner = container.querySelector('.text-\\[var\\(--color-accent-amber\\)\\]');
+        expect(spinner).toBeInTheDocument();
     });
 });

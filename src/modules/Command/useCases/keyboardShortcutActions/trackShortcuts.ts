@@ -1,18 +1,38 @@
 /**
  * Track/Clip keyboard shortcut delegates.
  */
-import { clearSolos as _clearSolos } from '#/modules/Arrangement/useCases/toggleTrackState/clearSolos';
-import { addTrack as _addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { duplicateTrack as _duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
-import { duplicateClip as _duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
-import { duplicateClipToNextBar as _duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
-import { zoomTracksVertical as _zoomTracksVertical } from '#/modules/Arrangement/useCases/trackZoom';
+import { inject } from '#/infra/di/inject';
+import { clearSolos as clearSolosImpl } from '#/modules/Arrangement/useCases/toggleTrackState/clearSolos';
+import { addTrack as addTrackImpl } from '#/modules/Arrangement/useCases/addTrack';
+import { duplicateTrack as duplicateTrackImpl } from '#/modules/Arrangement/useCases/duplicateTrack';
+import { duplicateClip as duplicateClipImpl } from '#/modules/Arrangement/useCases/clip/duplicateClip';
+import { duplicateClipToNextBar as duplicateClipToNextBarImpl } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
+import { zoomTracksVertical as zoomTracksVerticalImpl } from '#/modules/Arrangement/useCases/trackZoom';
 
-export const clearSolos = (): void => _clearSolos();
-export const addTrack = (opts: Parameters<typeof _addTrack>[0]): void => {
-    _addTrack(opts);
-};
-export const duplicateTrack = (trackId: string): void => _duplicateTrack(trackId);
-export const duplicateClip = (clipId: string): void => _duplicateClip(clipId);
-export const duplicateClipToNextBar = (clipId: string): void => _duplicateClipToNextBar(clipId);
-export const zoomTracksVertical = (delta: number): void => _zoomTracksVertical(delta);
+export const trackShortcutsDependencies = {
+    clearSolos: clearSolosImpl,
+    addTrack: addTrackImpl,
+    duplicateTrack: duplicateTrackImpl,
+    duplicateClip: duplicateClipImpl,
+    duplicateClipToNextBar: duplicateClipToNextBarImpl,
+    zoomTracksVertical: zoomTracksVerticalImpl,
+} as const;
+
+export const clearSolos = inject(trackShortcutsDependencies)((d) => () => d.clearSolos());
+export const addTrack = inject(trackShortcutsDependencies)(
+    (d) => (opts: Parameters<typeof addTrackImpl>[0]) => {
+        d.addTrack(opts);
+    }
+);
+export const duplicateTrack = inject(trackShortcutsDependencies)((d) => (trackId: string) =>
+    d.duplicateTrack(trackId)
+);
+export const duplicateClip = inject(trackShortcutsDependencies)((d) => (clipId: string) =>
+    d.duplicateClip(clipId)
+);
+export const duplicateClipToNextBar = inject(trackShortcutsDependencies)((d) => (clipId: string) =>
+    d.duplicateClipToNextBar(clipId)
+);
+export const zoomTracksVertical = inject(trackShortcutsDependencies)((d) => (delta: number) =>
+    d.zoomTracksVertical(delta)
+);

@@ -17,6 +17,6 @@
         "src/modules/Arrangement/useCases/clipGainEnvelope/moveGainEnvelopePoint.ts"
     ],
     "ignoreExportsUsedInFile": true,
-    "ignoreDependencies": ["@tauri-apps/plugin-fs", "tailwindcss"],
+    "ignoreDependencies": ["@tauri-apps/plugin-fs", "tailwindcss", "@typescript-eslint/eslint-plugin"],
     "ignoreBinaries": ["prettier", "wasm-pack"]
 }

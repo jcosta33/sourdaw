@@ -1,14 +1,13 @@
 import { type ProjectData } from '../../models/ProjectData';
+import { saveProjectToFile } from '../nativeProjectFiles';
 import { isTauri } from '#/helpers/tauriBridge';
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeFile } from '@tauri-apps/plugin-fs';
 
 /**
  * Download a project as a .sourdaw file.
  * Uses Tauri native save for desktop, and File System Access API for web (with anchor fallback).
  */
 export async function downloadProjectFile(data: ProjectData): Promise<void> {
-    const json = JSON.stringify(data, null, 2);
     const safeName = data.name.replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
     const filename = `${safeName}.sourdaw`;
 
@@ -18,13 +17,12 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
             filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
         });
         if (filePath) {
-            const encoder = new TextEncoder();
-            const bytes = encoder.encode(json);
-            await writeFile(filePath, bytes);
+            await saveProjectToFile(filePath, data);
         }
         return;
     }
 
+    const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
 
     // Try File System Access API for a proper native Save dialog

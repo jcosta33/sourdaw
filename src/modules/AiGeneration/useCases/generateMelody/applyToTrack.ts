@@ -1,32 +1,41 @@
+import { inject } from '#/infra/di/inject';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { type GenerateMelodyOptions } from './algorithm';
 import { generateMelody } from './algorithm';
 
-export function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptions, startBeat: number = 0): void {
-    const bars = options.bars ?? 4;
-    const totalBeats = bars * 4;
+export const applyMelodyToTrackDependencies = {
+    addClip,
+    addMidiNote,
+} as const;
 
-    const scaleName = options.scale.charAt(0).toUpperCase() + options.scale.slice(1);
-    const keyNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    const keyName = keyNames[options.key % 12] ?? 'C';
+export const applyMelodyToTrack = inject(applyMelodyToTrackDependencies)(
+    ({ addClip, addMidiNote }) =>
+        function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptions, startBeat: number = 0): void {
+            const bars = options.bars ?? 4;
+            const totalBeats = bars * 4;
 
-    const clip = addClip({
-        trackId,
-        startBeat,
-        endBeat: startBeat + totalBeats,
-        name: `${options.style} melody (${keyName} ${scaleName})`,
-        type: 'midi',
-    });
+            const scaleName = options.scale.charAt(0).toUpperCase() + options.scale.slice(1);
+            const keyNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const keyName = keyNames[options.key % 12] ?? 'C';
 
-    if (!clip) {
-        return;
-    }
+            const clip = addClip({
+                trackId,
+                startBeat,
+                endBeat: startBeat + totalBeats,
+                name: `${options.style} melody (${keyName} ${scaleName})`,
+                type: 'midi',
+            });
 
-    const MIN_NOTE_DURATION = 0.25;
-    const { notes } = generateMelody(options);
-    for (const note of notes) {
-        const duration = Math.max(MIN_NOTE_DURATION, note.duration);
-        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
-    }
-}
+            if (!clip) {
+                return;
+            }
+
+            const MIN_NOTE_DURATION = 0.25;
+            const { notes } = generateMelody(options);
+            for (const note of notes) {
+                const duration = Math.max(MIN_NOTE_DURATION, note.duration);
+                addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
+            }
+        }
+);

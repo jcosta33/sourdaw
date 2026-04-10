@@ -5,25 +5,16 @@
  * explaining WHY certain mixing techniques work.
  */
 
+import { inject } from '#/infra/di/inject';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { analyzeMix } from '#/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix';
 import { type MentorCategory, type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
 
 let lessonCounter = 0;
 
-// Cache analyzeMix results — invalidate when track state identity changes
-let cachedAnalysis: ReturnType<typeof analyzeMix> | null = null;
-let cachedTrackStateRef: unknown = null;
-
-function getCachedAnalysis(): ReturnType<typeof analyzeMix> {
-    const currentRef = trackStore.value;
-    if (cachedAnalysis && cachedTrackStateRef === currentRef) {
-        return cachedAnalysis;
-    }
-    cachedAnalysis = analyzeMix();
-    cachedTrackStateRef = currentRef;
-    return cachedAnalysis;
-}
+export const generateMentorLessonsDependencies = {
+    analyzeMix,
+} as const;
 
 function createLesson(
     category: MentorCategory,
@@ -51,7 +42,22 @@ function createLesson(
 /**
  * Analyze the current project and generate contextual lessons.
  */
-export function generateMentorLessons(): MentorLesson[] {
+export const generateMentorLessons = inject(generateMentorLessonsDependencies)(
+    ({ analyzeMix }) => {
+        let cachedAnalysis: ReturnType<typeof analyzeMix> | null = null;
+        let cachedTrackStateRef: unknown = null;
+
+        function getCachedAnalysis(): ReturnType<typeof analyzeMix> {
+            const currentRef = trackStore.value;
+            if (cachedAnalysis && cachedTrackStateRef === currentRef) {
+                return cachedAnalysis;
+            }
+            cachedAnalysis = analyzeMix();
+            cachedTrackStateRef = currentRef;
+            return cachedAnalysis;
+        }
+
+        return function generateMentorLessons(): MentorLesson[] {
     const state = trackStore.value;
     if (!state) {
         return [];
@@ -213,5 +219,7 @@ export function generateMentorLessons(): MentorLesson[] {
         );
     }
 
-    return lessons.sort((a, b) => b.relevance - a.relevance);
-}
+            return lessons.sort((a, b) => b.relevance - a.relevance);
+        };
+    }
+);

@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
@@ -37,12 +38,15 @@ const projectStores = [
  * - Receiving remote changes via sync (Phase 2)
  * - Merging an external .sdaw file
  */
-export const projectCrdtToStores = (): void => {
-    for (const store of projectStores) {
-        store.hydrate();
-    }
-    hydrateSidechainRoutes();
-};
+export const projectCrdtToStores = inject({ hydrateSidechainRoutes })(
+    ({ hydrateSidechainRoutes }) =>
+        function projectCrdtToStores(): void {
+            for (const store of projectStores) {
+                store.hydrate();
+            }
+            hydrateSidechainRoutes();
+        }
+);
 
 /**
  * Set up the projection bridge: subscribe to Automerge changes and hydrate stores.

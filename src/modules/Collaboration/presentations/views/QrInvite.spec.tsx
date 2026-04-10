@@ -54,6 +54,8 @@ describe('QrInvite', () => {
 
     it('should render with correct container structure', () => {
         const { container } = render(<QrInvite inviteString={mockInviteString} />);
-        expect(container.querySelector('[class*="CollaborationBlock"]')).toBeTruthy();
+        // Check that the component renders a container with expected content
+        expect(container.firstChild).toBeTruthy();
+        expect(screen.getByText(/Scan to join/i)).toBeInTheDocument();
     });
 });

@@ -1,5 +1,6 @@
+import { inject } from '#/infra/di/inject';
 import { createMidiError } from '../errors/MidiError';
-import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
 import { midiStore } from '../stores/midiStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
@@ -182,91 +183,116 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
     return { tracks: parsedTracks, ticksPerBeat, tempo: globalTempo };
 }
 
-export async function importMidiFile(file: File): Promise<void> {
-    const buffer = await file.arrayBuffer();
-    // Yield to the event loop before the synchronous parse so that any pending
-    // UI work (e.g. a drag-and-drop visual update) can complete first.
-    // The parse itself remains on the main thread; a Web Worker is the full fix.
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    const { tracks: parsedTracks } = parseMidiFile(buffer);
+const importMidiFileDependencies = {
+    getTrackStoreState,
+    setTrackState,
+    createTrack,
+    getNextClipId,
+    pushUndo,
+    createCallbackUndoEntry,
+    trackStore,
+    midiStore,
+} as const;
 
-    if (parsedTracks.length === 0) {
-        return;
-    }
+export const importMidiFile = inject(importMidiFileDependencies)(
+    ({
+        getTrackStoreState,
+        setTrackState,
+        createTrack,
+        getNextClipId,
+        pushUndo,
+        createCallbackUndoEntry,
+        trackStore,
+        midiStore,
+    }) =>
+        async function importMidiFile(file: File): Promise<void> {
+            const buffer = await file.arrayBuffer();
+            // Yield to the event loop before the synchronous parse so that any pending
+            // UI work (e.g. a drag-and-drop visual update) can complete first.
+            // The parse itself remains on the main thread; a Web Worker is the full fix.
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            const { tracks: parsedTracks } = parseMidiFile(buffer);
 
-    const state = getTrackState();
-    if (!state) {
-        return;
-    }
-
-    const trackSnapshotBefore = structuredClone(trackStore.value);
-    const midiSnapshotBefore = structuredClone(midiStore.value);
-
-    const newMidiData: Record<string, MidiNote[]> = { ...(midiStore.value?.notesByClipId ?? {}) };
-
-    // Build all tracks with their clips in-memory so we can commit everything
-    // in a single setTrackState() call instead of calling addClip() (→ updateTrack()
-    // → trackStore.set()) once per imported track.
-    const tracksWithClips = parsedTracks.map((parsed) => {
-        const track = createTrack({ name: parsed.name, kind: 'midi' });
-        const maxBeat = Math.max(...parsed.notes.map((n) => n.startBeat + n.duration), 4);
-        const endBeat = Math.ceil(maxBeat / 4) * 4;
-        const clip: Clip = {
-            id: getNextClipId(),
-            trackId: track.id,
-            name: parsed.name,
-            startBeat: 0,
-            endBeat,
-            type: 'midi',
-            fadeInBeats: 0,
-            fadeOutBeats: 0,
-            gain: 1.0,
-            color: '',
-            locked: false,
-            muted: false,
-        };
-        newMidiData[clip.id] = parsed.notes;
-        return { ...track, clips: [clip] };
-    });
-
-    const ts = getTrackState();
-    if (ts) {
-        setTrackState({
-            ...ts,
-            tracks: [...ts.tracks, ...tracksWithClips],
-        });
-    }
-
-    midiStore.set({
-        notesByClipId: newMidiData,
-        ccByClipId: midiStore.value?.ccByClipId ?? {},
-        pitchBendByClipId: midiStore.value?.pitchBendByClipId ?? {},
-    });
-
-    const trackSnapshotAfter = structuredClone(trackStore.value);
-    const midiSnapshotAfter = structuredClone(midiStore.value);
-
-    const name =
-        parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
-    pushUndo(
-        createCallbackUndoEntry(
-            `Import MIDI: ${name}`,
-            () => {
-                if (trackSnapshotBefore) {
-                    trackStore.set(trackSnapshotBefore);
-                }
-                if (midiSnapshotBefore) {
-                    midiStore.set(midiSnapshotBefore);
-                }
-            },
-            () => {
-                if (trackSnapshotAfter) {
-                    trackStore.set(trackSnapshotAfter);
-                }
-                if (midiSnapshotAfter) {
-                    midiStore.set(midiSnapshotAfter);
-                }
+            if (parsedTracks.length === 0) {
+                return;
             }
-        )
-    );
-}
+
+            const state = getTrackStoreState();
+            if (!state) {
+                return;
+            }
+
+            const trackSnapshotBefore = structuredClone(trackStore.value);
+            const midiSnapshotBefore = structuredClone(midiStore.value);
+
+            const newMidiData: Record<string, MidiNote[]> = { ...(midiStore.value?.notesByClipId ?? {}) };
+
+            // Build all tracks with their clips in-memory so we can commit everything
+            // in a single setTrackState() call instead of calling addClip() (→ updateTrack()
+            // → trackStore.set()) once per imported track.
+            const tracksWithClips = parsedTracks.map((parsed) => {
+                const track = createTrack({ name: parsed.name, kind: 'midi' });
+                const maxBeat = Math.max(...parsed.notes.map((n) => n.startBeat + n.duration), 4);
+                const endBeat = Math.ceil(maxBeat / 4) * 4;
+                const clip: Clip = {
+                    id: getNextClipId(),
+                    trackId: track.id,
+                    name: parsed.name,
+                    startBeat: 0,
+                    endBeat,
+                    type: 'midi',
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1.0,
+                    color: '',
+                    locked: false,
+                    muted: false,
+                };
+                newMidiData[clip.id] = parsed.notes;
+                return { ...track, clips: [clip] };
+            });
+
+            const ts = getTrackStoreState();
+            if (ts) {
+                setTrackState({
+                    ...ts,
+                    tracks: [...ts.tracks, ...tracksWithClips],
+                });
+            }
+
+            midiStore.set({
+                notesByClipId: newMidiData,
+                ccByClipId: midiStore.value?.ccByClipId ?? {},
+                pitchBendByClipId: midiStore.value?.pitchBendByClipId ?? {},
+            });
+
+            const trackSnapshotAfter = structuredClone(trackStore.value);
+            const midiSnapshotAfter = structuredClone(midiStore.value);
+
+            const name =
+                parsedTracks.length === 1
+                    ? (parsedTracks[0]?.name ?? 'MIDI file')
+                    : `${parsedTracks.length} MIDI tracks`;
+            pushUndo(
+                createCallbackUndoEntry(
+                    `Import MIDI: ${name}`,
+                    () => {
+                        if (trackSnapshotBefore) {
+                            trackStore.set(trackSnapshotBefore);
+                        }
+                        if (midiSnapshotBefore) {
+                            midiStore.set(midiSnapshotBefore);
+                        }
+                    },
+                    () => {
+                        if (trackSnapshotAfter) {
+                            trackStore.set(trackSnapshotAfter);
+                        }
+                        if (midiSnapshotAfter) {
+                            midiStore.set(midiSnapshotAfter);
+                        }
+                    }
+                )
+            );
+        }
+);

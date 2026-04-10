@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { SpectrumAnalyzer } from './SpectrumAnalyzer';
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('SpectrumAnalyzer', () => {
     beforeEach(() => {
@@ -8,12 +13,12 @@ describe('SpectrumAnalyzer', () => {
     });
 
     it('should render without crashing', () => {
-        render(<SpectrumAnalyzer />);
+        renderWithTooltip(<SpectrumAnalyzer />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<SpectrumAnalyzer />);
+        renderWithTooltip(<SpectrumAnalyzer />);
         expect(document.body).toBeTruthy();
     });
 });

@@ -1,5 +1,9 @@
-import { trackStore } from '../stores/trackStore';
+import { inject } from '#/infra/di/inject';
+import { trackStore, type TrackStoreState } from '../stores/trackStore';
 
-export function setTrackStoreState(state: NonNullable<typeof trackStore.value>): void {
-    trackStore.set(state);
-}
+export const setTrackStoreState = inject({ trackStore })(
+    ({ trackStore: tracks }) =>
+        function setTrackStoreState(state: TrackStoreState): void {
+            tracks.set(state);
+        }
+);

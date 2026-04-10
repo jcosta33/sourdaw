@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
+import { disableLooping } from '#/modules/Transport/useCases/setLooping';
 import { BeatRulerBar } from './BeatRulerBar';
 
 // Mock external dependencies
@@ -69,16 +71,14 @@ describe('BeatRulerBar', () => {
         expect(container.firstChild).toHaveAttribute('title', expect.stringContaining('Drag to set loop'));
     });
 
-    it('should call seekPlayhead on mouse down', () => {
-        const { seekPlayhead } = vi.importMock('#/modules/Transport/useCases/transportControls/seekPlayhead');
+    it('should call seekPlayhead on mouse down', async () => {
         const { container } = render(<BeatRulerBar />);
         const surface = container.firstChild as HTMLElement;
         fireEvent.mouseDown(surface, { button: 0, clientX: 100 });
         expect(seekPlayhead).toHaveBeenCalled();
     });
 
-    it('should handle double click to disable looping', () => {
-        const { disableLooping } = vi.importMock('#/modules/Transport/useCases/setLooping');
+    it('should handle double click to disable looping', async () => {
         const { container } = render(<BeatRulerBar />);
         const surface = container.firstChild as HTMLElement;
         fireEvent.doubleClick(surface);
@@ -90,8 +90,7 @@ describe('BeatRulerBar', () => {
         expect(container.firstChild).toHaveClass('select-none');
     });
 
-    it('should handle mouse move during drag', () => {
-        const { seekPlayhead } = vi.importMock('#/modules/Transport/useCases/transportControls/seekPlayhead');
+    it('should handle mouse move during drag', async () => {
         const { container } = render(<BeatRulerBar />);
         const surface = container.firstChild as HTMLElement;
         fireEvent.mouseDown(surface, { button: 0, clientX: 100 });

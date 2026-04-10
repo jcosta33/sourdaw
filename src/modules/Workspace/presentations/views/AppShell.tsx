@@ -373,7 +373,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     return (
         <MobileGate>
-            <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
+            <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app" data-testid="app-shell">
                 <a
                     href="#main-content"
                     className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"

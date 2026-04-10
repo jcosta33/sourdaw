@@ -8,8 +8,8 @@ import { type MidiNote } from '#/modules/Arrangement/models/MidiNoteViewTypes';
 import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
 import { clipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
-export const pasteClip = inject({ getTrackState })(
-    ({ getTrackState }) =>
+export const pasteClip = inject({ getTrackState, getTransportState, addClip, createMidiNote })(
+    ({ getTrackState, getTransportState, addClip, createMidiNote }) =>
         function pasteClip(): void {
             if (clipClipboard.length === 0) {
                 return;

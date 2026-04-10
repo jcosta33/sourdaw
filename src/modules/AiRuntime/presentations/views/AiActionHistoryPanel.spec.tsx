@@ -8,13 +8,13 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/stores/aiActionHistoryStore', () => ({
-    aiActionHistoryStore: {},
+    aiActionHistoryStore: { name: 'aiActionHistoryStore' },
     toggleAiHistoryPanel: vi.fn(),
     clearAiHistory: vi.fn(),
 }));
 
 vi.mock('#/modules/CrdtDocument/stores/actionHistoryStore', () => ({
-    actionHistoryStore: {},
+    actionHistoryStore: { name: 'actionHistoryStore' },
     clearActionHistory: vi.fn(),
 }));
 
@@ -27,15 +27,18 @@ vi.mock('#/modules/CrdtDocument/useCases/revertAction', () => ({
     canRevertAction: vi.fn(() => true),
 }));
 
-// Mock the store modules to return test data
-let mockAiState = { groups: [], panelOpen: false };
-let mockHistoryState = { entries: [] };
+const { useStore } = await import('#/infra/store/useStore');
+const { toggleAiHistoryPanel } = await import('#/modules/AiRuntime/stores/aiActionHistoryStore');
 
-vi.mocked(vi.importMock('#/infra/store/useStore').useStore).mockImplementation((store) => {
-    if (store === vi.importMock('#/modules/AiRuntime/stores/aiActionHistoryStore').aiActionHistoryStore) {
+// Mock store states
+const mockAiState = { groups: [], panelOpen: true };
+const mockHistoryState = { entries: [] };
+
+(useStore as ReturnType<typeof vi.fn>).mockImplementation((store: { name: string }) => {
+    if (store?.name === 'aiActionHistoryStore') {
         return mockAiState;
     }
-    if (store === vi.importMock('#/modules/CrdtDocument/stores/actionHistoryStore').actionHistoryStore) {
+    if (store?.name === 'actionHistoryStore') {
         return mockHistoryState;
     }
     return {};
@@ -44,8 +47,9 @@ vi.mocked(vi.importMock('#/infra/store/useStore').useStore).mockImplementation((
 describe('AiActionHistoryPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockAiState = { groups: [], panelOpen: true };
-        mockHistoryState = { entries: [] };
+        mockAiState.groups = [];
+        mockAiState.panelOpen = true;
+        mockHistoryState.entries = [];
     });
 
     it('should render without crashing when panel is open', () => {
@@ -54,7 +58,7 @@ describe('AiActionHistoryPanel', () => {
     });
 
     it('should return null when panel is closed', () => {
-        mockAiState = { groups: [], panelOpen: false };
+        mockAiState.panelOpen = false;
         const { container } = render(<AiActionHistoryPanel />);
         expect(container.firstChild).toBeNull();
     });
@@ -71,41 +75,34 @@ describe('AiActionHistoryPanel', () => {
     });
 
     it('should render AI action groups', () => {
-        mockAiState = {
-            panelOpen: true,
-            groups: [
-                {
-                    id: 'g1',
-                    prompt: 'Test prompt',
-                    actions: [{ label: 'Action 1' }, { label: 'Action 2' }],
-                    timestamp: Date.now(),
-                    reverted: false,
-                },
-            ],
-        };
-        const { rerender } = render(<AiActionHistoryPanel />);
-        // Force re-render with new mock data
+        mockAiState.groups = [
+            {
+                id: 'g1',
+                prompt: 'Test prompt',
+                actions: [{ label: 'Action 1' }, { label: 'Action 2' }],
+                timestamp: Date.now(),
+                reverted: false,
+            },
+        ];
+        render(<AiActionHistoryPanel />);
         expect(screen.getByText('Test prompt')).toBeInTheDocument();
     });
 
     it('should render user actions', () => {
-        mockHistoryState = {
-            entries: [
-                {
-                    id: 'e1',
-                    label: 'User action',
-                    timestamp: Date.now(),
-                    reverted: false,
-                    source: 'user',
-                },
-            ],
-        };
+        mockHistoryState.entries = [
+            {
+                id: 'e1',
+                label: 'User action',
+                timestamp: Date.now(),
+                reverted: false,
+                source: 'user',
+            },
+        ];
         render(<AiActionHistoryPanel />);
         expect(screen.getByText('User action')).toBeInTheDocument();
     });
 
     it('should call toggleAiHistoryPanel when close button is clicked', () => {
-        const { toggleAiHistoryPanel } = vi.importMock('#/modules/AiRuntime/stores/aiActionHistoryStore');
         render(<AiActionHistoryPanel />);
         const closeButton = screen.getByLabelText('Close action history');
         fireEvent.click(closeButton);

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { ToolSelector } from './ToolSelector';
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('ToolSelector', () => {
     beforeEach(() => {
@@ -8,17 +13,17 @@ describe('ToolSelector', () => {
     });
 
     it('should render without crashing', () => {
-        render(<ToolSelector />);
+        renderWithTooltip(<ToolSelector />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<ToolSelector />);
+        renderWithTooltip(<ToolSelector />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<ToolSelector />);
+        renderWithTooltip(<ToolSelector />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

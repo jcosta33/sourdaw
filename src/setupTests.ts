@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom';
+import { vi } from 'vitest';
 
 // Radix UI (Slider, etc.) uses ResizeObserver in layout effects — jsdom does not provide it.
 globalThis.ResizeObserver = class ResizeObserver {
@@ -6,6 +7,21 @@ globalThis.ResizeObserver = class ResizeObserver {
     unobserve(): void {}
     disconnect(): void {}
 };
+
+// Mock matchMedia for JSDOM
+Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation(query => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(), // deprecated
+        removeListener: vi.fn(), // deprecated
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+    })),
+});
 
 // Canvas2D used by `src/components/daw/visualizers/*` — jsdom does not implement drawing.
 const gradientStub = {
@@ -116,6 +132,12 @@ function createMinimalBaseAudioContext(): {
             frequencyBinCount: 128,
             connect: (dest: AudioNode) => dest,
             disconnect: (): void => {},
+            getFloatTimeDomainData: (data: Float32Array): void => {
+                data.fill(0);
+            },
+            getFloatFrequencyData: (data: Float32Array): void => {
+                data.fill(-100);
+            },
         }) as unknown as AnalyserNode;
 
     return {
@@ -140,3 +162,84 @@ globalThis.OfflineAudioContext = class OfflineAudioContextMock {
         return createMinimalBaseAudioContext() as unknown as OfflineAudioContext;
     }
 } as unknown as typeof OfflineAudioContext;
+
+// Global mocks for Radix UI / Tooltip components to avoid "must be used within TooltipProvider" errors
+vi.mock('#/components/ui/tooltip', () => ({
+    Tooltip: ({ children }: any) => children,
+    TooltipTrigger: ({ children }: any) => children,
+    TooltipContent: ({ children }: any) => children,
+    TooltipProvider: ({ children }: any) => children,
+}));
+
+// Global mocks for core workspace hooks to avoid "cannot read property of undefined" in basic render tests
+vi.mock('#/modules/Workspace/presentations/hooks/useTracks', () => ({
+    useTracks: vi.fn(() => ({
+        tracks: [],
+        selectedTrackId: null,
+        buses: [],
+    })),
+}));
+
+vi.mock('#/modules/Workspace/presentations/hooks/useWorkspaceState', () => ({
+    useWorkspaceState: vi.fn(() => ({
+        mode: 'arrange',
+        channelStripWidth: 'normal',
+        isSidebarOpen: true,
+        isMixerOpen: true,
+        isInspectorOpen: false,
+    })),
+}));
+
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: vi.fn(() => ({
+        mappings: [],
+        isLearning: false,
+        learningTarget: null,
+        patch: new Proxy(
+            {
+                enabled: true,
+                processActive: true,
+                instrumentId: 'violin-1',
+                instrumentFamily: 'Strings',
+                articulations: [],
+                currentArticulation: 'long',
+                legato: { enabled: true },
+                expression: { dynamics: 0.5, vibrato: 0.5 },
+                humanize: { amount: 0.1 },
+                micPositions: [],
+                macros: [0, 0, 0, 0],
+                macroLabels: ['M1', 'M2', 'M3', 'M4'],
+                releaseTriggers: { enabled: true, dynamicScale: true },
+            },
+            {
+                get(target: any, prop: string | symbol) {
+                    if (prop in target) return target[prop];
+                    if (typeof prop === "string") {
+                        if (prop === "topology") return "glue"; // Gluten uses glue/punch
+                        if (prop === "algorithm") return "delay";
+                        if (prop === "filter") return { type: "lowpass", cutoff: 1000, resonance: 0 };
+                        if (prop === "pads" || prop === "nodes" || prop === "channels" || prop === "tracks" || prop === "prePedals" || prop === "postPedals" || prop === "micPositions" || prop === "macros" || prop === "macroLabels" || prop === "articulations" || prop === "devices" || prop === "sends" || prop === "clips") return [];
+                        if (prop.includes("Id") || prop === "name" || prop === "label" || prop === "category") return "mock";
+                    }
+                    return 0;
+                }
+            }
+        ),
+        engineReady: true,
+        activeVoices: 0,
+        sampleLoadProgress: null,
+        currentArticulationDisplay: 'Long',
+        uiLevel: 1,
+        peakL: 0,
+        peakR: 0,
+        activePresetId: null,
+        attack: 0.1,
+        decay: 0.2,
+        sustain: 0.5,
+        release: 0.3,
+        pads: [],
+        channels: [],
+        past: [],
+        future: [],
+    })),
+}));

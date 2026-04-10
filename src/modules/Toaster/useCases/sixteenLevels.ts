@@ -4,6 +4,7 @@
  * Grid position determines the parameter value (typically velocity, but configurable).
  */
 
+import { inject } from '#/infra/di/inject';
 import { triggerToasterPad } from './triggerPad';
 import { setToasterPadParam, getFirstToasterDeviceId } from './toasterParamBridge';
 
@@ -31,45 +32,54 @@ export function get16LevelsTarget(): { padIndex: number; target: SixteenLevelsTa
     return { padIndex: targetPad, target };
 }
 
+export const trigger16LevelDependencies = {
+    triggerToasterPad,
+    getFirstToasterDeviceId,
+    setToasterPadParam,
+} as const;
+
 /**
  * When in 16 Levels mode, hitting grid position `gridIndex` (0-15) triggers the
  * target pad at the mapped level. Grid is read left-to-right, top-to-bottom.
  * Position 0 = lowest level, position 15 = highest level.
  */
-export function trigger16Level(gridIndex: number): void {
-    if (!active) {
-        return;
-    }
-
-    const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
-
-    const deviceId = getFirstToasterDeviceId();
-
-    switch (target) {
-        case 'velocity':
-            triggerToasterPad(targetPad, Math.round(normalized * 127));
-            break;
-        case 'tune':
-            if (deviceId) {
-                setToasterPadParam(deviceId, targetPad, 'tune', -24 + normalized * 48);
+export const trigger16Level = inject(trigger16LevelDependencies)(
+    ({ triggerToasterPad, getFirstToasterDeviceId, setToasterPadParam }) =>
+        function trigger16Level(gridIndex: number): void {
+            if (!active) {
+                return;
             }
-            triggerToasterPad(targetPad, 127);
-            break;
-        case 'decay':
-            if (deviceId) {
-                setToasterPadParam(deviceId, targetPad, 'decay', normalized);
+
+            const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
+
+            const deviceId = getFirstToasterDeviceId();
+
+            switch (target) {
+                case 'velocity':
+                    triggerToasterPad(targetPad, Math.round(normalized * 127));
+                    break;
+                case 'tune':
+                    if (deviceId) {
+                        setToasterPadParam(deviceId, targetPad, 'tune', -24 + normalized * 48);
+                    }
+                    triggerToasterPad(targetPad, 127);
+                    break;
+                case 'decay':
+                    if (deviceId) {
+                        setToasterPadParam(deviceId, targetPad, 'decay', normalized);
+                    }
+                    triggerToasterPad(targetPad, 127);
+                    break;
+                case 'filter': {
+                    const minHz = 20;
+                    const maxHz = 20000;
+                    const freq = minHz * Math.pow(maxHz / minHz, normalized);
+                    if (deviceId) {
+                        setToasterPadParam(deviceId, targetPad, 'filterCutoff', freq);
+                    }
+                    triggerToasterPad(targetPad, 127);
+                    break;
+                }
             }
-            triggerToasterPad(targetPad, 127);
-            break;
-        case 'filter': {
-            const minHz = 20;
-            const maxHz = 20000;
-            const freq = minHz * Math.pow(maxHz / minHz, normalized);
-            if (deviceId) {
-                setToasterPadParam(deviceId, targetPad, 'filterCutoff', freq);
-            }
-            triggerToasterPad(targetPad, 127);
-            break;
         }
-    }
-}
+);

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
+import { addTrack } from '../../useCases/timelineViewActions';
 
 // Mock external dependencies
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
@@ -20,8 +22,8 @@ vi.mock('#/modules/Command/useCases/executeAppAction', () => ({
 }));
 
 vi.mock('../../useCases/timelineViewActions', () => ({
-    addClip: vi.fn(),
     addTrack: vi.fn(),
+    addClip: vi.fn(),
     decodeAudioFile: vi.fn(),
     importMidiFile: vi.fn(),
     pasteClip: vi.fn(),
@@ -45,6 +47,10 @@ vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
 describe('TimelineEmptyMenu', () => {
     const mockOnClose = vi.fn();
 
@@ -53,7 +59,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should render without crashing', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -66,7 +72,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should render Add Track buttons', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -81,7 +87,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should render Add Clip Here when trackId is provided', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -94,7 +100,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should render Paste button', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -107,7 +113,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should render Add Marker Here button', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -120,7 +126,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should render Import buttons', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -134,8 +140,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should call addTrack when Add Audio Track is clicked', () => {
-        const { addTrack } = vi.importMock('../../useCases/timelineViewActions');
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -151,7 +156,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should call onClose when menu item is clicked', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -166,7 +171,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should show AI Generate section', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -179,7 +184,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should show desktop-only notice for audio generation', () => {
-        render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={100}
                 y={100}
@@ -193,7 +198,7 @@ describe('TimelineEmptyMenu', () => {
     });
 
     it('should have correct positioning', () => {
-        const { container } = render(
+        renderWithTooltip(
             <TimelineEmptyMenu
                 x={150}
                 y={200}
@@ -202,7 +207,7 @@ describe('TimelineEmptyMenu', () => {
                 onClose={mockOnClose}
             />
         );
-        const menu = container.firstChild as HTMLElement;
+        const menu = screen.getByRole('menu');
         expect(menu).toHaveStyle({ left: '150px', top: '200px' });
     });
 });

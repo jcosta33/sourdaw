@@ -1,25 +1,48 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { EFFECT_GROUPS } from './effectsTabHelpers';
+import { Music2 } from 'lucide-react';
+import { PluginDummy } from '#/modules/Arrangement/_tests/PluginDummy';
+import { NavCard, EffectItem, UnimplementedBadge, SoonBadge } from './effectsTabHelpers';
 
-describe('EFFECT_GROUPS', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+describe('effectsTabHelpers components', () => {
+    describe('NavCard', () => {
+        it('should render correctly', () => {
+            render(
+                <NavCard
+                    icon={Music2}
+                    label="Test Card"
+                    description="Test Description"
+                    count={5}
+                    color="text-blue-500"
+                    onClick={vi.fn()}
+                />
+            );
+            expect(screen.getByText('Test Card')).toBeInTheDocument();
+            expect(screen.getByText('Test Description')).toBeInTheDocument();
+            expect(screen.getByText('5')).toBeInTheDocument();
+        });
     });
 
-    it('should render without crashing', () => {
-        render(<EFFECT_GROUPS />);
-        expect(document.body).toBeTruthy();
+    describe('EffectItem', () => {
+        it('should render correctly', () => {
+            const mockPlugin = PluginDummy.create({ name: 'Test Effect', parameters: [{}, {}] as any });
+            render(<EffectItem plugin={mockPlugin} selectedTrackId="t1" />);
+            expect(screen.getByText('Test Effect')).toBeInTheDocument();
+            expect(screen.getByText('2 params')).toBeInTheDocument();
+        });
     });
 
-    it('should render with useCase bindings', () => {
-        render(<EFFECT_GROUPS />);
-        expect(document.body).toBeTruthy();
+    describe('UnimplementedBadge', () => {
+        it('should render correctly', () => {
+            render(<UnimplementedBadge />);
+            expect(screen.getByText('Soon')).toBeInTheDocument();
+        });
     });
 
-    it('should have interactive elements', () => {
-        render(<EFFECT_GROUPS />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+    describe('SoonBadge', () => {
+        it('should render correctly', () => {
+            render(<SoonBadge />);
+            expect(screen.getByText('soon')).toBeInTheDocument();
+        });
     });
 });

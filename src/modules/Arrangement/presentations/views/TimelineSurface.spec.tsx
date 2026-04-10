@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { TimelineSurface } from './TimelineSurface';
+import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 
 // Mock external dependencies
 vi.mock('../../useCases/initTimelineRenderer', () => ({
@@ -16,7 +18,11 @@ vi.mock('../../useCases/buildTimelineRenderModel', () => ({
 }));
 
 vi.mock('../../stores/timelineViewStore', () => ({
-    timelineViewStore: { value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true } },
+    timelineViewStore: { 
+        value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
     setAutoScroll: vi.fn(),
 }));
 
@@ -55,7 +61,11 @@ vi.mock('../hooks/useTimelineInteractions', () => ({
 }));
 
 vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
-    workspaceStore: { value: {} },
+    workspaceStore: { 
+        value: {},
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Collaboration/presentations/views/PresenceOverlay', () => ({
@@ -63,19 +73,35 @@ vi.mock('#/modules/Collaboration/presentations/views/PresenceOverlay', () => ({
 }));
 
 vi.mock('#/modules/Automation/stores/automationStore', () => ({
-    automationStore: {},
+    automationStore: {
+        value: {},
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
-    trackStore: {},
+    trackStore: {
+        value: { tracks: [], selectedTrackId: null },
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
-    takeLaneStore: {},
+    takeLaneStore: {
+        value: { lanes: [] },
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Transport/stores/transportStore', () => ({
-    transportStore: { value: { isPlaying: false } },
+    transportStore: { 
+        value: { isPlaying: false },
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
@@ -83,15 +109,27 @@ vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
 }));
 
 vi.mock('#/modules/Transport/stores/tempoMapStore', () => ({
-    tempoMapStore: {},
+    tempoMapStore: {
+        value: {},
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
-    timeSignatureMapStore: {},
+    timeSignatureMapStore: {
+        value: {},
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
-    markerStore: {},
+    markerStore: {
+        value: { markers: [] },
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations', () => ({
@@ -100,36 +138,40 @@ vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations', () => ({
     onScrollToPlayhead: vi.fn(() => vi.fn()),
 }));
 
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
 describe('TimelineSurface', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('should render without crashing', () => {
-        const { container } = render(<TimelineSurface />);
+        const { container } = renderWithTooltip(<TimelineSurface />);
         expect(container.firstChild).toBeTruthy();
     });
 
     it('should render canvas element', () => {
-        const { container } = render(<TimelineSurface />);
+        const { container } = renderWithTooltip(<TimelineSurface />);
         const canvas = container.querySelector('canvas');
         expect(canvas).toBeInTheDocument();
     });
 
     it('should have correct aria attributes on canvas', () => {
-        const { container } = render(<TimelineSurface />);
+        const { container } = renderWithTooltip(<TimelineSurface />);
         const canvas = container.querySelector('canvas');
         expect(canvas).toHaveAttribute('aria-label', 'Timeline editor surface');
     });
 
     it('should render PresenceOverlay', () => {
-        render(<TimelineSurface />);
+        renderWithTooltip(<TimelineSurface />);
         expect(screen.getByTestId('presence-overlay')).toBeInTheDocument();
     });
 
     it('should handle drag over state', () => {
-        const { useTimelineInteractions } = vi.importMock('../hooks/useTimelineInteractions');
-        useTimelineInteractions.mockReturnValue({
+        const mockedUseTimelineInteractions = vi.mocked(useTimelineInteractions);
+        mockedUseTimelineInteractions.mockReturnValue({
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
@@ -149,13 +191,13 @@ describe('TimelineSurface', () => {
             setContextMenu: vi.fn(),
         });
         
-        render(<TimelineSurface />);
+        renderWithTooltip(<TimelineSurface />);
         expect(screen.getByText('Drop audio or MIDI files here')).toBeInTheDocument();
     });
 
     it('should handle importing state', () => {
-        const { useTimelineInteractions } = vi.importMock('../hooks/useTimelineInteractions');
-        useTimelineInteractions.mockReturnValue({
+        const mockedUseTimelineInteractions = vi.mocked(useTimelineInteractions);
+        mockedUseTimelineInteractions.mockReturnValue({
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
@@ -175,18 +217,18 @@ describe('TimelineSurface', () => {
             setContextMenu: vi.fn(),
         });
         
-        render(<TimelineSurface />);
+        renderWithTooltip(<TimelineSurface />);
         expect(screen.getByText('Importing audio…')).toBeInTheDocument();
     });
 
     it('should have relative flex container', () => {
-        const { container } = render(<TimelineSurface />);
+        const { container } = renderWithTooltip(<TimelineSurface />);
         expect(container.firstChild).toHaveClass('relative');
         expect(container.firstChild).toHaveClass('flex-1');
     });
 
     it('should have overflow hidden', () => {
-        const { container } = render(<TimelineSurface />);
+        const { container } = renderWithTooltip(<TimelineSurface />);
         expect(container.firstChild).toHaveClass('overflow-hidden');
     });
 });

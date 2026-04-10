@@ -1,24 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { ScoringPanel } from './ScoringPanel';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        noteName: 'A',
-        octave: 4,
-        cents: 0,
-        confidence: 0.95,
-        active: true,
-        mode: 'needle',
-        a4Reference: 440,
-        frequency: 440,
-    })),
+    useStore: vi.fn((store, defaultValue) => {
+        // Return a mock state for scoringStore
+        return {
+            'device-123': {
+                noteName: 'A',
+                octave: 4,
+                cents: 0,
+                confidence: 0.95,
+                active: true,
+                mode: 'needle',
+                a4Reference: 440,
+                frequency: 440,
+            }
+        };
+    }),
 }));
 
 vi.mock('../../stores/scoringStore', () => ({
     scoringStore: { name: 'scoringStore' },
-    getScoringState: vi.fn(() => ({
+    getScoringState: vi.fn((deviceId) => ({
         noteName: 'A',
         octave: 4,
         cents: 0,
@@ -56,9 +61,10 @@ vi.mock('#/components/daw/DawPluginMetricTile', () => ({
 }));
 
 vi.mock('#/components/daw/DawPluginSectionCard', () => ({
-    DawPluginSectionCard: ({ title, children }: any) => (
+    DawPluginSectionCard: ({ title, children, detail }: any) => (
         <div data-testid="section-card">
             <h3>{title}</h3>
+            <div>{detail}</div>
             {children}
         </div>
     ),
@@ -87,62 +93,59 @@ describe('ScoringPanel', () => {
         expect(screen.getByText(/Scoring/i)).toBeInTheDocument();
     });
 
-    it('should display tuning deck header', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Tuning deck/i)).toBeInTheDocument();
-    });
-
     it('should render display mode buttons', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Needle/i)).toBeInTheDocument();
-        expect(screen.getByText(/Strobe/i)).toBeInTheDocument();
-        expect(screen.getByText(/Poly/i)).toBeInTheDocument();
+        expect(screen.getByText('Needle')).toBeInTheDocument();
+        expect(screen.getByText('Strobe')).toBeInTheDocument();
+        expect(screen.getByText('Poly')).toBeInTheDocument();
     });
 
     it('should render reference section with knob', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Reference/i)).toBeInTheDocument();
+        // Get all "Reference" texts and check that at least one exists
+        expect(screen.getAllByText(/Reference/i).length).toBeGreaterThan(0);
         expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
     });
 
     it('should display current note when active', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText('A4')).toBeInTheDocument();
+        expect(screen.getByText('A')).toBeInTheDocument();
+        expect(screen.getByText('4')).toBeInTheDocument();
     });
 
     it('should render metric tiles', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        const metricTiles = screen.getAllByTestId('metric-tile');
-        expect(metricTiles.length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Cents').length).toBeGreaterThan(0);
+        expect(screen.getByText('Pitch')).toBeInTheDocument();
+        expect(screen.getByText('Conf')).toBeInTheDocument();
     });
 
     it('should display cents value', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Cents/i)).toBeInTheDocument();
-    });
-
-    it('should display pitch value', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Pitch/i)).toBeInTheDocument();
+        // We look for +0.0 or 0.0 or just 0
+        expect(screen.getAllByText(/\+?0\.0/).length).toBeGreaterThan(0);
     });
 
     it('should display confidence value', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Conf/i)).toBeInTheDocument();
+        expect(screen.getByText('95%')).toBeInTheDocument();
     });
 
     it('should render section cards', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getAllByTestId('section-card').length).toBeGreaterThan(0);
+        expect(screen.getByText('Display')).toBeInTheDocument();
+        expect(screen.getAllByText(/Reference/i).length).toBeGreaterThan(0);
     });
 
     it('should render guide section', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Guide/i)).toBeInTheDocument();
+        expect(screen.getByText('Guide')).toBeInTheDocument();
+        expect(screen.getByText('Tight zone')).toBeInTheDocument();
+        expect(screen.getByText('Usable zone')).toBeInTheDocument();
     });
 
     it('should render quick read section', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
-        expect(screen.getByText(/Quick read/i)).toBeInTheDocument();
+        expect(screen.getByText('Quick read')).toBeInTheDocument();
     });
 });

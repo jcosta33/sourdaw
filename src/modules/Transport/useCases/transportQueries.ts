@@ -14,7 +14,7 @@ import {
 import { type TransportState, defaultTransportState } from '../models/TransportState';
 import { type TempoChange, getTempoAtBeat as modelGetTempoAtBeat } from '../models/TempoMap';
 import { type TimeSignatureChange } from '../models/TimeSignatureMap';
-import { tempoMapStore } from '../stores/tempoMapStore';
+import { tempoMapStore, type TempoMapStoreState } from '../stores/tempoMapStore';
 
 export { defaultTransportState };
 export type { TransportState, TempoChange, TimeSignatureChange };
@@ -36,9 +36,12 @@ export const getTransportStoreValue = inject({ repoGetTransportState })(
 );
 
 /** Get tempo map store state snapshot. */
-export function getTempoMapState(): { changes: TempoChange[] } | null {
-    return tempoMapStore.value;
-}
+export const getTempoMapState = inject({ tempoMapStore })(
+    ({ tempoMapStore: store }) =>
+        function getTempoMapState(): TempoMapStoreState | null {
+            return store.value;
+        }
+);
 
 /** Resolve tempo at a given beat. */
 export function getTempoAtBeat(changes: TempoChange[], beat: number, defaultTempo: number): number {

@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 
@@ -6,8 +7,9 @@ export type ResolvedClip = Clip & {
     regionEndBeat: number;
 };
 
-export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
-    const laneState = takeLaneStore.value;
+export const resolveClipsWithComping = inject({ takeLaneStore })(({ takeLaneStore: laneStore }) => {
+    return function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
+    const laneState = laneStore.value;
     if (!laneState) {
         return clips.map((c) => ({ ...c, regionStartBeat: c.startBeat, regionEndBeat: c.endBeat }));
     }
@@ -77,4 +79,5 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
     }
 
     return resolved.sort((a, b) => a.startBeat - b.startBeat);
-}
+    };
+});

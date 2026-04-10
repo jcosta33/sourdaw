@@ -1,25 +1,28 @@
+import { inject } from '#/infra/di/inject';
 import { extensionStore, type ExtensionManifest, type InstalledExtension } from '#/modules/Extension/stores/extension';
 
-export function installExtension(manifest: ExtensionManifest): void {
-    const state = extensionStore.value;
-    if (!state) {
-        return;
-    }
+export const installExtension = inject({ extensionStore })(({ extensionStore: store }) => {
+    return function installExtension(manifest: ExtensionManifest): void {
+        const state = store.value;
+        if (!state) {
+            return;
+        }
 
-    if (state.installed.some((e) => e.manifest.id === manifest.id)) {
-        return; // Already installed
-    }
+        if (state.installed.some((e) => e.manifest.id === manifest.id)) {
+            return;
+        }
 
-    const ext: InstalledExtension = {
-        manifest,
-        enabled: true,
-        installedAt: new Date().toISOString(),
-        lastUpdatedAt: new Date().toISOString(),
-        state: {},
+        const ext: InstalledExtension = {
+            manifest,
+            enabled: true,
+            installedAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+            state: {},
+        };
+
+        store.set({
+            ...state,
+            installed: [...state.installed, ext],
+        });
     };
-
-    extensionStore.set({
-        ...state,
-        installed: [...state.installed, ext],
-    });
-}
+});

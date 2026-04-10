@@ -15,10 +15,12 @@ import { inject } from '#/infra/di/inject';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
-import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
+import { type Dso, type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
 import { serializeLogicalState, buildProjectSummary, logEdit } from './serializeLogicalState';
 import { buildDsoPrompt } from './dsoPrompt';
 import { resolveDsoNames, validateDsos, executeDsos } from './compileDso';
+
+type ExecuteDsosFn = (dsos: Dso[]) => Promise<string[]>;
 import { resolveBackend, isDsoBackendAvailable } from '../llmOrchestration/backendResolution';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
@@ -40,8 +42,8 @@ export type DsoEditResult = {
 /**
  * Execute a DSO edit request — the single orchestration entrypoint.
  */
-export const executeDsoEdit = inject({ logger })(
-    ({ logger }) =>
+export const executeDsoEdit = inject({ logger, executeDsos })(
+    ({ logger, executeDsos }) =>
         async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
     const backend = resolveBackend();
 
@@ -144,7 +146,7 @@ export const executeDsoEdit = inject({ logger })(
         const classification = classifyEditPlan(plan);
 
         if (classification === 'confirmation_required') {
-            const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning);
+            const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
             const descriptions = plan.dsos.filter((d) => d.op.startsWith('remove')).map((d) => d.op.replace(/_/g, ' '));
             updateChatMessage(assistantMsgId, {
                 content: `Done (destructive): ${summaries.join('. ')}.\n\nRemoved: ${descriptions.join(', ')}. Use Ctrl+Z to undo.`,
@@ -157,7 +159,7 @@ export const executeDsoEdit = inject({ logger })(
         }
 
         // 9. Execute with undo support
-        const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning);
+        const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
 
         finish();
         return { success: true, plan, summaries };
@@ -240,7 +242,8 @@ async function commitDsos(
     plan: EditPlan,
     userRequest: string,
     assistantMsgId: string,
-    reasoning?: string
+    reasoning: string | undefined,
+    runDsos: ExecuteDsosFn
 ): Promise<string[]> {
     // Binary snapshot of ALL Automerge documents before the edit.
     // Much more compact than structuredClone(store.value) and correctly captures
@@ -248,7 +251,7 @@ async function commitDsos(
     const bundleBefore = saveSnapshot();
 
     // Execute
-    const summaries = await executeDsos(plan.dsos);
+    const summaries = await runDsos(plan.dsos);
 
     // Binary snapshot after — used for redo.
     const bundleAfter = saveSnapshot();

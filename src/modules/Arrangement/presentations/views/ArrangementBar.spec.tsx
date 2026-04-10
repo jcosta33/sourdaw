@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ArrangementBar } from './ArrangementBar';
+import { useStore } from '#/infra/store/useStore';
+import { addSection } from '../../useCases/marker/sectionOperations';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        markers: [],
-        sections: [],
-    })),
+    useStore: vi.fn(),
 }));
 
 vi.mock('../../stores/markerStore', () => ({
@@ -32,14 +31,10 @@ vi.mock('./TimelineChromeSurface', () => ({
     TimelineChromeSurface: ({ children, ...props }: any) => <div {...props}>{children}</div>,
 }));
 
-let mockMarkerState = { markers: [], sections: [] };
-
-vi.mocked(vi.importMock('#/infra/store/useStore').useStore).mockImplementation(() => mockMarkerState);
-
 describe('ArrangementBar', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockMarkerState = { markers: [], sections: [] };
+        vi.mocked(useStore).mockReturnValue({ markers: [], sections: [] });
     });
 
     it('should render without crashing', () => {
@@ -53,13 +48,13 @@ describe('ArrangementBar', () => {
     });
 
     it('should render sections when present', () => {
-        mockMarkerState = {
+        vi.mocked(useStore).mockReturnValue({
             markers: [],
             sections: [
                 { id: 's1', name: 'Intro', startBeat: 0, endBeat: 16, color: 'oklch(0.38 0.08 260)' },
                 { id: 's2', name: 'Verse', startBeat: 16, endBeat: 32, color: 'oklch(0.38 0.08 150)' },
             ],
-        };
+        });
         render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);
         expect(screen.getByText('Intro')).toBeInTheDocument();
         expect(screen.getByText('Verse')).toBeInTheDocument();
@@ -80,7 +75,6 @@ describe('ArrangementBar', () => {
     });
 
     it('should call addSection when Add Section is clicked', () => {
-        const { addSection } = vi.importMock('#/modules/Arrangement/useCases/marker/sectionOperations');
         const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);
         const bar = container.querySelector('[role="region"]');
         fireEvent.contextMenu(bar!);
@@ -90,7 +84,7 @@ describe('ArrangementBar', () => {
     });
 
     it('should cycle through section colors', () => {
-        mockMarkerState = {
+        vi.mocked(useStore).mockReturnValue({
             markers: [],
             sections: [
                 { id: 's1', name: 'Section 1', startBeat: 0, endBeat: 8 },
@@ -100,7 +94,7 @@ describe('ArrangementBar', () => {
                 { id: 's5', name: 'Section 5', startBeat: 32, endBeat: 40 },
                 { id: 's6', name: 'Section 6', startBeat: 40, endBeat: 48 },
             ],
-        };
+        });
         const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);
         const sections = container.querySelectorAll('[title]');
         expect(sections.length).toBeGreaterThan(0);

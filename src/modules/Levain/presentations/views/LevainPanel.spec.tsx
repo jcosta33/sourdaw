@@ -4,8 +4,7 @@ import { LevainPanel } from './LevainPanel';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        patch: {
+    useStore: vi.fn(() => ({ mappings: [], patch: {
             instrumentId: 'violin-1',
             instrumentFamily: 'Strings',
             articulations: [],
@@ -140,8 +139,9 @@ describe('LevainPanel', () => {
     it('should render family filter chips', () => {
         render(<LevainPanel />);
         expect(screen.getByText('All')).toBeInTheDocument();
-        expect(screen.getByText('Strings')).toBeInTheDocument();
-        expect(screen.getByText('Brass')).toBeInTheDocument();
+        const chips = screen.getAllByTestId('daw-plugin-chip');
+        expect(chips.some(c => c.textContent === 'Strings')).toBe(true);
+        expect(chips.some(c => c.textContent === 'Brass')).toBe(true);
     });
 
     it('should render section cards', () => {
@@ -186,6 +186,7 @@ describe('LevainPanel', () => {
 
     it('should display engine status', () => {
         render(<LevainPanel />);
-        expect(screen.getByTestId('daw-plugin-led')).toBeInTheDocument();
+        const leds = screen.getAllByTestId('daw-plugin-led');
+        expect(leds.some(l => l.textContent === 'Ready')).toBe(true);
     });
 });

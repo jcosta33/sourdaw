@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { TrackContextMenu } from './TrackContextMenu';
 
 // Mock external dependencies
@@ -74,13 +75,17 @@ const mockTrack = {
     height: 64,
 };
 
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
 describe('TrackContextMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('should render without crashing', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div>Track Content</div>
             </TrackContextMenu>
@@ -89,7 +94,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should render context menu on right click', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -100,7 +105,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should render Add Clip menu item', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -111,7 +116,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should render Import menu items', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -123,7 +128,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should render Arm for Recording menu item', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -134,7 +139,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should render Freeze menu item', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -145,7 +150,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should render Bounce menu items', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -157,7 +162,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should render Delete Track menu item', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -168,7 +173,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should show color picker when Track Color is clicked', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>
@@ -181,7 +186,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('should show input monitoring options for audio/midi tracks', () => {
-        render(
+        renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
             </TrackContextMenu>

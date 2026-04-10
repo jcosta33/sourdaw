@@ -6,51 +6,60 @@
  * and can also process scheduled clip notes.
  */
 
+import { inject } from '#/infra/di/inject';
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 import { getYeastRack } from '../stores/yeastStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 
+export const processYeastMidiDependencies = {
+    getYeastRack,
+    transportStore,
+    getAudioContext,
+} as const;
+
 /**
  * Process a batch of MIDI events through the Yeast rack for a specific track.
  * Returns the transformed events.
  */
-export function processYeastMidi(
-    _trackId: string,
-    events: MidiEvent[],
-    blockStartSamples: number,
-    blockEndSamples: number
-): MidiEvent[] {
-    const rack = getYeastRack();
-    const processorIds = rack.getProcessorIds();
+export const processYeastMidi = inject(processYeastMidiDependencies)(
+    ({ getYeastRack: getYeastRackFn, transportStore: transportStoreDep, getAudioContext: getAudioContextFn }) =>
+        function processYeastMidi(
+            _trackId: string,
+            events: MidiEvent[],
+            blockStartSamples: number,
+            blockEndSamples: number
+        ): MidiEvent[] {
+            const rack = getYeastRackFn();
+            const processorIds = rack.getProcessorIds();
 
-    // If rack is empty, pass through
-    if (processorIds.length === 0) return events;
+            if (processorIds.length === 0) {
+                return events;
+            }
 
-    const transport = transportStore.value;
-    if (!transport) return events;
+            const transport = transportStoreDep.value;
+            if (!transport) {
+                return events;
+            }
 
-    const transportInfo: TransportInfo = {
-        sampleRate: getAudioContext().sampleRate,
-        bpm: transport.tempo,
-        ppqPosition: 0, // approximate
-        isPlaying: transport.isPlaying,
-        barIndex: 0,
-        beatInBar: 0,
-        timeSigNum: transport.timeSignatureNumerator,
-        timeSigDen: transport.timeSignatureDenominator,
-        loopEnabled: transport.loopStart < transport.loopEnd,
-        loopStartPpq: transport.loopStart,
-        loopEndPpq: transport.loopEnd,
-    };
+            const transportInfo: TransportInfo = {
+                sampleRate: getAudioContextFn().sampleRate,
+                bpm: transport.tempo,
+                ppqPosition: 0,
+                isPlaying: transport.isPlaying,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: transport.timeSignatureNumerator,
+                timeSigDen: transport.timeSignatureDenominator,
+                loopEnabled: transport.loopStart < transport.loopEnd,
+                loopStartPpq: transport.loopStart,
+                loopEndPpq: transport.loopEnd,
+            };
 
-    return rack.processBlock(events, blockStartSamples, blockEndSamples, transportInfo);
-}
+            return rack.processBlock(events, blockStartSamples, blockEndSamples, transportInfo);
+        }
+);
 
-/**
- * Convert a real-time MIDI input (from keyboard/controller) into a MidiEvent
- * and process it through the Yeast rack.
- */
 export function processRealtimeMidiInput(
     note: number,
     velocity: number,
@@ -66,9 +75,6 @@ export function processRealtimeMidiInput(
     return processYeastMidi('', [event], sampleTime, sampleTime + 128);
 }
 
-/**
- * Panic — kill all active notes in the Yeast rack.
- */
 export function yeastPanic(sampleTime: number): MidiEvent[] {
     const rack = getYeastRack();
     return rack.allNotesOff(sampleTime);

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatPanel } from './ChatPanel';
 
-// Mock external dependencies
+// Mock external dependencies - factories are hoisted, so define mocks inside
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({
         messages: [],
@@ -49,9 +49,21 @@ vi.mock('../components/ChatComposer', () => ({
     ),
 }));
 
+// Import the mocked modules to access mock functions
+const { useStore } = await import('#/infra/store/useStore');
+const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions');
+const { isLlmAvailable } = await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution');
+
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            messages: [],
+            isGenerating: false,
+            chatMode: 'chat',
+            enableReasoning: false,
+        });
+        (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(true);
     });
 
     it('should render without crashing', () => {
@@ -78,7 +90,6 @@ describe('ChatPanel', () => {
     });
 
     it('should render close chat button', () => {
-        const { toggleChat } = vi.importMock('#/modules/AiRuntime/useCases/aiPanelActions');
         render(<ChatPanel />);
         const closeButton = screen.getByTitle('Close Chat Panel');
         expect(closeButton).toBeInTheDocument();
@@ -87,8 +98,7 @@ describe('ChatPanel', () => {
     });
 
     it('should show LLM unavailable warning when not available', () => {
-        const { isLlmAvailable } = vi.importMock('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution');
-        isLlmAvailable.mockReturnValue(false);
+        (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
         
         render(<ChatPanel />);
         expect(screen.getByText('Local AI Not Available')).toBeInTheDocument();

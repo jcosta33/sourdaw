@@ -3,21 +3,29 @@
  *
  * Handles adding, removing, and updating device parameters on tracks.
  */
+import { inject } from '#/infra/di/inject';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/isDeviceSupportedOnCurrentPlatform';
 
-export function addDeviceToStrip(
-    trackId: string,
-    deviceId: string,
-    deviceType: string,
-    externalInstanceId?: string
-): void {
-    if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
-        console.warn(`Device type ${deviceType} not supported on platform, skipping init.`);
-        return;
-    }
-    audioEngine.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId);
-}
+export const addDeviceToStripDependencies = {
+    isDeviceSupportedOnCurrentPlatform,
+} as const;
+
+export const addDeviceToStrip = inject(addDeviceToStripDependencies)(
+    ({ isDeviceSupportedOnCurrentPlatform }) =>
+        function addDeviceToStrip(
+            trackId: string,
+            deviceId: string,
+            deviceType: string,
+            externalInstanceId?: string
+        ): void {
+            if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
+                console.warn(`Device type ${deviceType} not supported on platform, skipping init.`);
+                return;
+            }
+            audioEngine.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId);
+        }
+);
 
 export function removeDeviceFromStrip(trackId: string, deviceId: string): void {
     audioEngine.removeDeviceFromStrip(trackId, deviceId);

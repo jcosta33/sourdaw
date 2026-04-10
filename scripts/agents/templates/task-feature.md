@@ -124,7 +124,7 @@ Before writing the Handoff, stop. Act as a senior engineer doing an adversarial 
 
 ### Architecture
 
-- Zero `pnpm deps:validate` violations (see pasted output above)? Did you introduce any cross-module imports through internals (`models/`, `repositories/`, `engine/`, `presentations/components/`, `presentations/hooks/`)? Any barrel files (`index.ts`) or pseudo-barrel re-exports?
+- Zero `pnpm deps:validate` violations (see pasted output above)? Did you introduce any cross-module imports through internals (`models/`, `repositories/`, `engine/`, `presentations/components/`, `presentations/hooks/`)? Any barrel files other than a module root `index.ts` (or pseudo-barrels like `contracts.ts`)?
   Answer:
 
 ### React and TypeScript conventions

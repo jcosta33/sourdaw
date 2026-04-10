@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { SoloModeSelector } from './SoloModeSelector';
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('SoloModeSelector', () => {
     beforeEach(() => {
@@ -8,17 +13,17 @@ describe('SoloModeSelector', () => {
     });
 
     it('should render without crashing', () => {
-        render(<SoloModeSelector />);
+        renderWithTooltip(<SoloModeSelector />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<SoloModeSelector />);
+        renderWithTooltip(<SoloModeSelector />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<SoloModeSelector />);
+        renderWithTooltip(<SoloModeSelector />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

@@ -56,7 +56,7 @@ describe('goToItem', () => {
     it('should not change state or emit when index is out of range', () => {
         const eventBus = createMock<EventBusShape>();
         eventBus.emit.mockResolvedValue(undefined);
-        injectDependencies(goToItem, { eventBus });
+        injectDependencies(goToItem, { eventBus, setlistStore });
 
         goToItem(-1);
 
@@ -74,7 +74,7 @@ describe('goToItem', () => {
 
         const eventBus = createMock<EventBusShape>();
         eventBus.emit.mockResolvedValue(undefined);
-        injectDependencies(goToItem, { eventBus });
+        injectDependencies(goToItem, { eventBus, setlistStore });
 
         goToItem(0);
 
@@ -93,7 +93,7 @@ describe('goToItem', () => {
 
         const eventBus = createMock<EventBusShape>();
         eventBus.emit.mockResolvedValue(undefined);
-        injectDependencies(goToItem, { eventBus });
+        injectDependencies(goToItem, { eventBus, setlistStore });
 
         goToItem(0);
 

@@ -25,9 +25,10 @@ vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles', () => ({
 
 // Mock UI components
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({ title, actions }: { title: string; actions?: React.ReactNode }) => (
+    DawHeaderBand: ({ title, actions, children }: any) => (
         <div data-testid="daw-header-band">
             <span>{title}</span>
+            {children}
             {actions}
         </div>
     ),

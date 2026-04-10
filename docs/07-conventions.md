@@ -338,10 +338,13 @@ export const TrackCard = (): React.ReactElement => {
     - **Related Lint Rule**: [`import/order`](https://github.com/import-js/eslint-plugin-import/blob/main/docs/rules/order.md)
 
 ```typescript
-// ✅ Good
+// ✅ Good — cross-module: module root index.ts only
 import { useState, type ReactElement } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { getTrack } from '#/modules/Arrangement/useCases/getTrack';
+import { getTrack } from '#/modules/Arrangement';
+
+// ✅ Good — same module: direct useCases path is fine
+// import { getTrack } from './useCases/getTrack';
 
 // ❌ Bad: Mixed order and missing type-only imports
 import { ReactElement } from 'react';
@@ -369,7 +372,8 @@ const TrackCard = (): ReactElement => {
 };
 export default TrackCard;
 
-// ⚠️ Barrel exports: Prefer direct imports from files for internal code
+// ⚠️ Re-exports: Cross-module imports use each module’s root `index.ts` only.
+// Within the same module, prefer direct file paths — do not add extra `index.ts` barrels.
 ```
 
 ### Import paths

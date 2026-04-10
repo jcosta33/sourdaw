@@ -1,18 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { MidiLearnButton } from './MidiLearnButton';
+import { startMidiLearn, stopMidiLearn, findMappingForTarget } from '#/modules/MIDI/useCases/midiLearn';
 
-// Mock external dependencies
+// Track mock state
+let mockMidiState = {
+    mappings: [],
+    isLearning: false,
+    learningTarget: null,
+};
+
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        mappings: [],
-        isLearning: false,
-        learningTarget: null,
-    })),
+    useStore: vi.fn(() => mockMidiState),
 }));
 
 vi.mock('#/modules/MIDI/stores/midiLearnStore', () => ({
-    midiLearnStore: {},
+    midiLearnStore: {
+        value: { mappings: [], isLearning: false, learningTarget: null },
+        subscribe: vi.fn(() => vi.fn()),
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/MIDI/useCases/midiLearn', () => ({
@@ -21,13 +29,9 @@ vi.mock('#/modules/MIDI/useCases/midiLearn', () => ({
     findMappingForTarget: vi.fn(() => null),
 }));
 
-let mockMidiState = {
-    mappings: [],
-    isLearning: false,
-    learningTarget: null,
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
-
-vi.mocked(vi.importMock('#/infra/store/useStore').useStore).mockImplementation(() => mockMidiState);
 
 describe('MidiLearnButton', () => {
     beforeEach(() => {
@@ -37,23 +41,25 @@ describe('MidiLearnButton', () => {
             isLearning: false,
             learningTarget: null,
         };
+        const mockedFindMappingForTarget = vi.mocked(findMappingForTarget);
+        mockedFindMappingForTarget.mockReturnValue(null);
     });
 
     it('should render without crashing', () => {
-        const { container } = render(
+        const { container } = renderWithTooltip(
             <MidiLearnButton targetType="deviceParam" trackId="track1" deviceId="dev1" paramId="param1" />
         );
         expect(container.firstChild).toBeTruthy();
     });
 
     it('should display "M" when no mapping exists', () => {
-        render(<MidiLearnButton targetType="deviceParam" trackId="track1" />);
+        renderWithTooltip(<MidiLearnButton targetType="deviceParam" trackId="track1" />);
         expect(screen.getByText('M')).toBeInTheDocument();
     });
 
     it('should display mapped CC number when mapping exists', () => {
-        const { findMappingForTarget } = vi.importMock('#/modules/MIDI/useCases/midiLearn');
-        findMappingForTarget.mockReturnValue({
+        const mockedFindMappingForTarget = vi.mocked(findMappingForTarget);
+        mockedFindMappingForTarget.mockReturnValue({
             id: 'm1',
             channel: 1,
             cc: 7,
@@ -61,13 +67,12 @@ describe('MidiLearnButton', () => {
             trackId: 'track1',
             paramId: 'param1',
         });
-        render(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
+        renderWithTooltip(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
         expect(screen.getByText('7')).toBeInTheDocument();
     });
 
     it('should call startMidiLearn when clicked and not learning', () => {
-        const { startMidiLearn } = vi.importMock('#/modules/MIDI/useCases/midiLearn');
-        render(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
+        renderWithTooltip(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
         const button = screen.getByRole('button');
         fireEvent.click(button);
         expect(startMidiLearn).toHaveBeenCalledWith({
@@ -79,7 +84,6 @@ describe('MidiLearnButton', () => {
     });
 
     it('should call stopMidiLearn when clicked while learning this target', () => {
-        const { stopMidiLearn } = vi.importMock('#/modules/MIDI/useCases/midiLearn');
         mockMidiState = {
             mappings: [],
             isLearning: true,
@@ -89,20 +93,20 @@ describe('MidiLearnButton', () => {
                 paramId: 'param1',
             },
         };
-        render(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
+        renderWithTooltip(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
         const button = screen.getByRole('button');
         fireEvent.click(button);
         expect(stopMidiLearn).toHaveBeenCalled();
     });
 
     it('should show tooltip with "MIDI Learn" label', () => {
-        render(<MidiLearnButton targetType="deviceParam" trackId="track1" />);
+        renderWithTooltip(<MidiLearnButton targetType="deviceParam" trackId="track1" />);
         expect(screen.getByLabelText('MIDI Learn')).toBeInTheDocument();
     });
 
     it('should show tooltip with mapped CC info', () => {
-        const { findMappingForTarget } = vi.importMock('#/modules/MIDI/useCases/midiLearn');
-        findMappingForTarget.mockReturnValue({
+        const mockedFindMappingForTarget = vi.mocked(findMappingForTarget);
+        mockedFindMappingForTarget.mockReturnValue({
             id: 'm1',
             channel: 0,
             cc: 1,
@@ -110,13 +114,13 @@ describe('MidiLearnButton', () => {
             trackId: 'track1',
             paramId: 'param1',
         });
-        render(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
+        renderWithTooltip(<MidiLearnButton targetType="deviceParam" trackId="track1" paramId="param1" />);
         expect(screen.getByLabelText(/MIDI CC 1/)).toBeInTheDocument();
     });
 
     it('should stop propagation on click', () => {
         const mockStopPropagation = vi.fn();
-        render(<MidiLearnButton targetType="deviceParam" trackId="track1" />);
+        renderWithTooltip(<MidiLearnButton targetType="deviceParam" trackId="track1" />);
         const button = screen.getByRole('button');
         fireEvent.click(button, { stopPropagation: mockStopPropagation });
     });

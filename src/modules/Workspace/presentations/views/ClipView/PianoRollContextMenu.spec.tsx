@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { PianoRollContextMenu } from './PianoRollContextMenu';
 
 vi.mock('#/components/daw/DawContextMenuSurface', () => ({
@@ -84,6 +85,10 @@ vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge', () => ({
     isTauri: vi.fn(() => false),
 }));
 
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
 describe('PianoRollContextMenu', () => {
     const defaultProps = {
         menu: { x: 100, y: 100, beat: 4, pitch: 60 },
@@ -100,79 +105,79 @@ describe('PianoRollContextMenu', () => {
     });
 
     it('should render without crashing', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
-        expect(screen.getByRole('menu')).toBeInTheDocument();
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        expect(screen.getByText('Select All')).toBeInTheDocument();
     });
 
     it('should render Select All button', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Select All')).toBeInTheDocument();
     });
 
     it('should call onSelectAll when Select All is clicked', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         fireEvent.click(screen.getByText('Select All'));
         expect(defaultProps.onSelectAll).toHaveBeenCalled();
     });
 
     it('should render Copy button', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Copy')).toBeInTheDocument();
     });
 
     it('should render Cut button', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Cut')).toBeInTheDocument();
     });
 
     it('should render Paste button', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Paste')).toBeInTheDocument();
     });
 
     it('should render quantize options', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Quantize')).toBeInTheDocument();
     });
 
     it('should render transpose options', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Transpose')).toBeInTheDocument();
     });
 
     it('should render humanize options', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
-        expect(screen.getByText(/Humanize/)).toBeInTheDocument();
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        expect(screen.getAllByText(/Humanize/i).length).toBeGreaterThan(0);
     });
 
     it('should render strum options', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Strum')).toBeInTheDocument();
     });
 
     it('should render AI Auto-Complete button', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('AI Auto-Complete')).toBeInTheDocument();
     });
 
     it('should render Groove section', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Groove')).toBeInTheDocument();
     });
 
     it('should render Delete Selected button', () => {
-        render(<PianoRollContextMenu {...defaultProps} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Delete Selected')).toBeInTheDocument();
     });
 
     it('should disable Delete Selected when no notes selected', () => {
-        render(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set()} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set()} />);
         const deleteButton = screen.getByText('Delete Selected');
         expect(deleteButton).toBeDisabled();
     });
 
     it('should disable Copy when no notes selected', () => {
-        render(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set()} />);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set()} />);
         const copyButton = screen.getByText('Copy');
         expect(copyButton).toBeDisabled();
     });

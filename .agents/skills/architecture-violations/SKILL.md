@@ -1,6 +1,6 @@
 ---
 name: architecture-violations
-description: Apply when fixing architecture violations, refactoring modules, restructuring boundaries, or performing codebase audits. Contains mandatory rules for addressing violations properly without hacking around the architecture. Prevents barrel re-exports that bypass boundaries, fake use cases, dumping unrelated logic into single files, shadow shared layers, and other forms of malicious or fake compliance.
+description: Apply when fixing architecture violations, refactoring modules, restructuring boundaries, or performing codebase audits. Contains mandatory rules for addressing violations properly without hacking around the architecture. Prevents ad-hoc barrel re-exports (other than the module root index.ts), fake use cases, dumping unrelated logic into single files, shadow shared layers, and other forms of malicious or fake compliance.
 ---
 
 # Architecture Violations Skill
@@ -10,6 +10,8 @@ This document explains **why** the architecture must be followed, **how** to rea
 It applies to both AI agents and human maintainers.
 
 This is not another architecture overview. It is a guardrail document for preventing architectural drift, shortcut-driven refactors, validator gaming, and code that "passes the rules" without preserving the meaning of the rules.
+
+**Canonical module-boundary reference:** `docs/architecture/03-typescript-module.md` §3.3 (`index.ts`) and §5.1 (public surface).
 
 ---
 
@@ -38,7 +40,7 @@ If a violation exists, the correct fix is to establish the proper architecture s
 Never:
 
 - change validation rules to make violations pass
-- create barrel exports of non-contract entities to bypass restrictions
+- create barrel exports (other than the module root `index.ts`) of non-contract entities to bypass restrictions
 - move code into a "fake" use case, action, or projection file just to make imports legal
 - rename files or folders to trick the validator
 - move forbidden logic into `src/helpers/`, `src/shared/`, `utils/`, or other ungoverned escape hatches
@@ -185,15 +187,16 @@ The **only** file other modules may import from is the module's root `index.ts`.
 src/modules/ModuleName/index.ts   ← sole cross-module import target
 ```
 
-`index.ts` may only re-export from three internal folders:
+`index.ts` may only re-export from these internal folders:
 
 ```text
-useCases/              → business operations + exported DTOs
-events/                → typed event payload types (plain objects in AppEvents map)
-stores/                → Store<T> instances (business-layer, cross-module)
+useCases/                 → business operations (functions/constants — not cross-module type exports)
+events/                   → typed event payload types (plain objects in AppEvents map)
+stores/                   → Store<T> instances (business-layer, cross-module)
+presentations/views/      → composable UI entry points (cross-module only through index.ts)
 ```
 
-Everything else — `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/`, `engine/`, `runtime/`, `worklets/`, `errors/` — is private to the module. If it needs to be consumed externally, it must be explicitly re-exported from `index.ts` (and only if it originates in `useCases/`, `events/`, or `stores/`).
+Everything else — `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/hooks/`, `presentations/stores/`, `presentations/context/`, `presentations/components/`, `presentations/renderers/`, `engine/`, `runtime/`, `worklets/`, `errors/` — is private to the module. External consumers never import those paths directly; the module promotes symbols only through curated `index.ts` re-exports from the four allowed roots (error types that must cross the boundary surface via `useCases/` or `events/`, not from `errors/` in `index.ts`).
 
 ### Importing cross-module
 
@@ -209,35 +212,40 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 ### Writing `index.ts`
 
 ```ts
-// src/modules/Arrangement/index.ts — curated, not a barrel file
+// src/modules/Arrangement/index.ts — sole allowed barrel; curated public surface
 export { addTrack } from './useCases/addTrack';
 export { removeTrack } from './useCases/removeTrack';
 export { trackStore } from './stores/trackStore';
 export type { TrackAddedEvent } from './events/TrackAddedEvent';
+export { ArrangementView } from './presentations/views/ArrangementView';
 
 // FORBIDDEN inside index.ts
+export type { SomeDto } from './useCases/getThing'; // use-case types do not cross modules
 export { Track } from './models/Track';           // models/ is private
 export { getTrackById } from './repositories/...'; // repositories/ is private
 ```
 
-### `index.ts` is not a barrel file
+### `index.ts` and the no-barrel rule
 
-`index.ts` is a curated list of intentionally public things. Most files in a module should not appear in `index.ts`. If you find yourself re-exporting everything just to pass the validator, that is fake compliance. Only export what external consumers demonstrably need.
+**Only** the module root `index.ts` may act as a re-export barrel. Do not add other `index.ts` or `contracts.ts` shims. This file is still a **curated** list of intentionally public symbols — not a full re-export of the module. Most files in a module should not appear in `index.ts`. If you find yourself re-exporting everything just to pass the validator, that is fake compliance.
 
 ---
 
-## 6. Use Case Contract Types
+## 6. Use cases — behavior crosses modules; types stay local
 
-A use case is the implicit cross-module contract. Its **type signature** — not its body — is what other modules depend on.
+A use case is the **callable** cross-module contract. Other modules import **functions** from `#/modules/<Module>` — not types defined in that module’s `useCases/`. Each consumer module keeps its own types (or uses `ReturnType<typeof fn>` / `Parameters<typeof fn>`). **Event payload types** in `events/` are the shared type surface when a named cross-module type is required.
 
 ### 6.1 What a legitimate use case looks like
 
-Every use case file must export its own typed function signature:
+Every use case file must export its own typed function:
 
 - The file exports a named function (or arrow) written by the module that owns the use case.
-- The input and output types are the module's own types, or pure-model types from another module that explicitly exports pure models.
+- **Types** used in the signature (`input`, return DTOs, etc.) are **internal** to the module — they are not re-exported from `index.ts` and are not imported by other modules via `import type` from `#/modules/...`.
+- The input and output types may use this module’s `models/`, repositories’ pure-model types (§6.4, intra-module only), or inline types in the file — see `AGENTS.md` model isolation for cross-module data shapes.
 - The function body may be thin. `return someRepo.method(input)` is acceptable — a use case is allowed to delegate to a private repository.
-- The consumer imports the function by name from the use-case file. The consumer never sees the repository.
+- **Within the same module**, callers may import from `./useCases/<file>` directly (including `import type` for types in that file).
+- **From another module**, callers import **values** from `#/modules/<Module>` only (`export { fn }` on `index.ts`). No `export type { … } from './useCases/…'` on `index.ts`.
+- Across a module boundary, callers never import `repositories/`; the use case hides the repository.
 
 ```ts
 // Arrangement/useCases/getNextClipId.ts — legitimate thin use case
@@ -248,7 +256,7 @@ export function getNextClipId(): string {
 }
 ```
 
-The signature `() => string` is the contract. The repository is free to change its internal implementation; the use case absorbs the change.
+The repository is free to change its internal implementation; the use case absorbs the change. Another module imports `getNextClipId` and does not import a type alias for its return type from Arrangement’s use cases.
 
 ### 6.2 What is forbidden
 
@@ -261,6 +269,15 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 // CORRECT — goes through the module's public surface
 import { addTrack, trackStore } from '#/modules/Arrangement';
+```
+
+**Importing use-case types from another module:**
+
+```ts
+// FORBIDDEN — types defined in useCases/ are not a cross-module surface
+import type { TrackSummary } from '#/modules/Arrangement';
+
+// Prefer: local shape, or ReturnType<typeof getTrackSummary> after importing the function
 ```
 
 **Re-exporting a repository function through a use-case file:**
@@ -276,23 +293,24 @@ This creates no boundary. The consumer imports the repository symbol verbatim, u
 **Re-exporting non-contract internals from `index.ts`:**
 
 ```ts
-// FORBIDDEN — index.ts may only re-export from useCases/, events/, stores/
+// FORBIDDEN — index.ts may only re-export from useCases/, events/, stores/, presentations/views/
 export { Track } from './models/Track';
 export { getTrackById } from './repositories/track/getTrackById';
 export { TrackNotFoundError } from './errors/TrackNotFoundError';
+export type { TrackSummary } from './useCases/getTrackSummary'; // use-case types do not cross
 ```
 
 These patterns are non-compliant even if `deps:validate` passes — a fake public surface does not become a real one just because the path resolves.
 
 If there is nothing to add to a use-case body, define a proper typed function that calls the repo. The function _is_ the boundary.
 
-### 6.3 When repo return types are not pure models
+### 6.3 Internal DTOs when the repository shape is not safe to leak
 
-If the repository returns a framework-coupled object, an internal class instance, or anything that would leak private implementation into consumers, the use case **must** define its own output type exposing only what the consumer needs:
+If the repository returns a framework-coupled object or internal entity shape, the use case defines **internal** types to map or narrow — those types stay in the module (not on `index.ts`):
 
 ```ts
-// Use case defines a DTO that hides the repository's internal entity shape.
-export type TrackSummary = { id: string; name: string; kind: TrackKind };
+// Internal to the module — not exported from index.ts for other modules
+type TrackSummary = { id: string; name: string; kind: TrackKind };
 
 export function getTrackSummary(input: { trackId: string }): TrackSummary | null {
     const entity = trackRepository.get(input.trackId);
@@ -301,13 +319,15 @@ export function getTrackSummary(input: { trackId: string }): TrackSummary | null
 }
 ```
 
-The DTO is the contract. The repository's entity type stays private.
+Other modules import `getTrackSummary` only; they define their own local types or use `ReturnType<typeof getTrackSummary>` if needed.
 
-### 6.4 Repo types may only cross module boundaries as pure models
+### 6.4 Repo types the use case may reference (intra-module)
 
-A repository may export types that the use case reuses directly _only when those types are pure models_ — plain data shapes with no behavior, no framework coupling, and no internal-implementation leakage. `type DocId = string` is a pure model. A class instance, a mutable handle, or a type tied to infrastructure is not.
+Inside a module, a repository may expose **pure-model** types for the use case to use in signatures — plain data shapes with no behavior, no framework coupling, and no internal-implementation leakage. `type DocId = string` is a pure model. A class instance, a mutable handle, or a type tied to infrastructure is not.
 
-When in doubt, define a use-case-owned type.
+Those types do not become other modules’ imports — consumers stay decoupled (see `AGENTS.md`).
+
+When in doubt, keep types private to the use case file or use `models/` inside the module only.
 
 ### 6.5 One function per file
 
@@ -318,7 +338,7 @@ Each use case lives in its own file, named after the function. A file that expor
 Before committing a use-case file, ask:
 
 1. Does this file export its own typed function, not a re-export?
-2. If the signature uses repo types, are those types pure models the repo has agreed to expose?
-3. Would a consumer know, from reading the use-case signature alone, what this operation does without reading the repository?
+2. If the signature uses repo types, are those types pure models and only referenced **inside this module**?
+3. Are we avoiding `export type` of use-case types on `index.ts` and avoiding cross-module `import type` of those types?
 
-If any answer is no, the boundary is fake.
+If any answer is no, the boundary is fake or the type surface is too wide.

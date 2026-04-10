@@ -2,13 +2,12 @@
 
 ## Overview
 
-This audit was produced after the `cross-module-index-only` and `module-index-contract-only` rules were added to `.dependency-cruiser.cjs`. It documents:
+Canonical rules: `docs/architecture/03-typescript-module.md` §3.3 and §5.1. Each module’s root **`index.ts`** is the sole cross-module import target; it may re-export only from **`useCases/`**, **`events/`**, **`stores/`**, and **`presentations/views/`** (curated). From **`useCases/`**, re-export **functions** only — not **`export type`** (see `AGENTS.md`). The module root `index.ts` is the only permitted barrel-style file.
 
-1. Existing non-root `index.ts` files and what to do with them
-2. Every cross-module direct-folder import (1 190 violations), grouped by target module, showing which paths must be re-exported from a new root `index.ts`
-3. An architectural note on `presentations/views/` — a category that the current `module-index-contract-only` rule forbids in `index.ts` but that Workspace imports extensively
+This audit documents:
 
-**Rule:** `index.ts` may only re-export from `useCases/`, `events/`, and `stores/`. All other folders are module-private.
+1. Non-root `index.ts` files under `src/modules/` and how to treat them
+2. Cross-module direct-folder imports (1 190 violations), grouped by target module, with paths to fold into each module’s root `index.ts` re-exports
 
 ---
 
@@ -28,7 +27,7 @@ export { initWebMidi, selectMidiInput, setMidiInputTrack, setMpeEnabled, resetMi
 
 **Problem:** Exports types from `models/` and a store — not a use case. This is intra-module organisation for a repository directory, not a public contract surface. It does not satisfy the new module-root `index.ts` requirement.
 
-**Action:** Keep as an intra-module convenience barrel (it is not visible cross-module and does not violate `module-index-contract-only`). AudioEngine still needs a root `index.ts` created separately.
+**Action:** Keep as an intra-module convenience barrel (not a cross-module import target). AudioEngine still needs a root `index.ts` for its public surface.
 
 ---
 
@@ -47,25 +46,7 @@ import './effects';
 
 ---
 
-## 2. Open Architectural Question: `presentations/views/`
-
-The current `module-index-contract-only` rule forbids `index.ts` from importing `presentations/`. However, **Workspace imports views from 24 modules** — this is the primary cross-module view composition mechanism in the app.
-
-**The tension:** Views need to be accessible cross-module but cannot legally appear in `index.ts` under the current rule.
-
-**Options (decision needed before migrating Workspace):**
-
-- **A.** Allow `presentations/views/` as a fourth permitted re-export layer in `index.ts` (update `module-index-contract-only` to `(useCases|events|stores|presentations/views)/`).
-- **B.** Keep `presentations/views/` out of `index.ts` and let Workspace import views directly (a narrow explicit exception in the depcruiser rule for `presentations/views/` cross-module access).
-- **C.** Require views to be re-exported from `index.ts` only after being promoted from within the module — meaning the module itself controls which views are public (consistent with the index-as-curator model).
-
-Option C is most consistent with the architecture. The `module-index-contract-only` rule would need to permit `presentations/views/` as a source, but only view files, not hooks/components/context.
-
-All 22 modules whose views Workspace directly imports are annotated below with `[view]` — these are the view-import violations, which require an architectural decision before they can be resolved.
-
----
-
-## 3. Cross-Module Violations by Target Module
+## 2. Cross-Module Violations by Target Module
 
 Format per entry: `` `path` ← ImportingModule, ... ``
 
@@ -95,7 +76,7 @@ Needs `index.ts` exporting:
 
 ### AiRuntime — 22 paths, 26 unique cross-module import relationships
 
-**Note:** 6 paths are `presentations/views/` — see §2 for architectural decision.
+**Note:** 6 paths are `presentations/views/` — promote via the owning module’s root `index.ts`.
 
 Needs `index.ts` exporting:
 
@@ -126,7 +107,7 @@ Needs `index.ts` exporting:
 
 ### Arrangement — 122 paths, 211 unique cross-module import relationships
 
-The most violated module. **8 paths are `presentations/views/`** — see §2.
+The most violated module. **8 paths are `presentations/views/`** — promote via the owning module’s root `index.ts`.
 
 Needs `index.ts` exporting:
 
@@ -276,7 +257,7 @@ Needs `index.ts` exporting:
 
 ### AudioEngine — 35 paths, 75 unique cross-module import relationships
 
-**4 paths are `presentations/views/`** — see §2.
+**4 paths are `presentations/views/`** — promote via the owning module’s root `index.ts`.
 
 Needs `index.ts` exporting:
 
@@ -370,7 +351,7 @@ Needs `index.ts` exporting:
 
 ### Command — 16 paths, 35 unique cross-module import relationships
 
-**3 paths are `presentations/views/`** — see §2.
+**3 paths are `presentations/views/`** — promote via the owning module’s root `index.ts`.
 
 - `presentations/views/CommandPalette.tsx` ← Workspace `[view]`
 - `presentations/views/UndoHistoryPanel.tsx` ← Workspace `[view]`
@@ -393,7 +374,7 @@ Needs `index.ts` exporting:
 
 ### CrdtDocument — 19 paths, 25 unique cross-module import relationships
 
-**1 path is `presentations/views/`** — see §2.
+**1 path is `presentations/views/`** — promote via the owning module’s root `index.ts`.
 
 - `presentations/views/BranchManagerDialog.tsx` ← Workspace `[view]`
 - `stores/actionHistoryStore.ts` ← AiRuntime, Command
@@ -549,7 +530,7 @@ Needs `index.ts` exporting:
 
 ### Project — 14 paths, 19 unique cross-module import relationships
 
-**3 paths are `presentations/views/`** — see §2.
+**3 paths are `presentations/views/`** — promote via the owning module’s root `index.ts`.
 
 - `presentations/views/ArrangementSelector.tsx` ← Workspace `[view]`
 - `presentations/views/ExportDialog.tsx` ← Workspace `[view]`
@@ -744,4 +725,4 @@ Needs `index.ts` exporting:
 | VirtualKeyboard  | 1           | 1                    | 1              |
 | **Total**        | **~468**    | **1 190**            | **~42**        |
 
-**`[view]` paths** (42 total) require the architectural decision in §2 before they can be resolved. All other paths (≈426) may proceed immediately by creating module root `index.ts` files that re-export from `useCases/`, `events/`, and `stores/`.
+**`[view]` paths** (42 total): add `presentations/views/` re-exports to the owning module’s root `index.ts`. Other paths (≈426): add module root `index.ts` re-exports from `useCases/`, `events/`, `stores/`, and `presentations/views/` where needed.

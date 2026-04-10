@@ -35,9 +35,9 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 ## Hard rules
 
 - `pnpm deps:validate` must pass with zero violations before any task is complete
-- Cross-module imports are only allowed from `useCases/`, `events/`, `errors/`, `stores/`, and `presentations/views/`
+- Cross-module imports must target each module’s root `index.ts` only (no deep paths into `useCases/`, `stores/`, `presentations/views/`, etc.)
 - Module internals (`models/`, `repositories/`, `engine/`, `presentations/components/`) are strictly private
-- No barrel files, no `index.ts` re-exports
+- No barrel files except each module’s root `index.ts`, which may only re-export from `useCases/`, `events/`, `stores/`, and `presentations/views/` — do not `export type` from `useCases/` for other modules (`AGENTS.md`)
 - Audio thread: no allocation, no blocking, no mutex locks
 
 ## Safety rules (bypass-permissions mode is active)

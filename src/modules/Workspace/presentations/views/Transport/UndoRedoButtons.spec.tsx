@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { UndoRedoButtons } from './UndoRedoButtons';
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('UndoRedoButtons', () => {
     beforeEach(() => {
@@ -8,17 +13,17 @@ describe('UndoRedoButtons', () => {
     });
 
     it('should render without crashing', () => {
-        render(<UndoRedoButtons />);
+        renderWithTooltip(<UndoRedoButtons />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<UndoRedoButtons />);
+        renderWithTooltip(<UndoRedoButtons />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<UndoRedoButtons />);
+        renderWithTooltip(<UndoRedoButtons />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

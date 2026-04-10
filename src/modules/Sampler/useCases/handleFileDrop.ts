@@ -4,6 +4,8 @@
  * Auto-detects sample category and suggests appropriate mode.
  */
 
+import type { DragEvent } from 'react';
+import { inject } from '#/infra/di/inject';
 import { isTauri } from '#/helpers/tauriBridge';
 import type { SampleCategory, SamplerMode } from '../models/SamplerTypes';
 import { loadSampleFromPath } from './loadSample';
@@ -30,39 +32,49 @@ function categoryToMode(category: SampleCategory): SamplerMode {
     }
 }
 
-export async function handleSamplerFileDrop(event: React.DragEvent): Promise<void> {
-    event.preventDefault();
-    event.stopPropagation();
+export const handleSamplerFileDropDependencies = {
+    isTauri,
+    loadSampleFromPath,
+    switchSamplerMode,
+    samplerStore,
+} as const;
 
-    const files = event.dataTransfer.files;
-    if (files.length === 0) return;
+export const handleSamplerFileDrop = inject(handleSamplerFileDropDependencies)(
+    ({ isTauri: isTauriFn, loadSampleFromPath: loadSampleFromPathFn, switchSamplerMode: switchSamplerModeFn, samplerStore: samplerStoreDep }) =>
+        async function handleSamplerFileDrop(event: DragEvent): Promise<void> {
+            event.preventDefault();
+            event.stopPropagation();
 
-    const file = files[0];
-    if (!file || !isAudioFile(file.name)) return;
+            const files = event.dataTransfer.files;
+            if (files.length === 0) {
+                return;
+            }
 
-    if (isTauri()) {
-        // In Tauri, we can get the file path from the drop event.
-        let filePath: string | null = null;
+            const file = files[0];
+            if (!file || !isAudioFile(file.name)) {
+                return;
+            }
 
-        // Try to get path from file object (Tauri provides this).
-        if ('path' in file) {
-            filePath = (file as File & { path: string }).path;
-        }
+            if (isTauriFn()) {
+                let filePath: string | null = null;
 
-        if (!filePath) {
-            // Fallback: try webkitRelativePath or name.
-            filePath = file.webkitRelativePath || file.name;
-        }
+                if ('path' in file) {
+                    filePath = (file as File & { path: string }).path;
+                }
 
-        if (filePath) {
-            await loadSampleFromPath(filePath);
+                if (!filePath) {
+                    filePath = file.webkitRelativePath || file.name;
+                }
 
-            // Auto-switch mode based on detected category.
-            const state = samplerStore.value;
-            if (state?.activeSample) {
-                const suggestedMode = categoryToMode(state.activeSample.category);
-                await switchSamplerMode(suggestedMode);
+                if (filePath) {
+                    await loadSampleFromPathFn(filePath);
+
+                    const state = samplerStoreDep.value;
+                    if (state?.activeSample) {
+                        const suggestedMode = categoryToMode(state.activeSample.category);
+                        await switchSamplerModeFn(suggestedMode);
+                    }
+                }
             }
         }
-    }
-}
+);

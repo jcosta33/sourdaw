@@ -8,7 +8,7 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
     errorComponent: RootError,
 });
 
-function RootLayout(): ReactElement {
+export function RootLayout(): ReactElement {
     return (
         <AppShell>
             <Outlet />
@@ -16,7 +16,7 @@ function RootLayout(): ReactElement {
     );
 }
 
-function RootError(): ReactElement {
+export function RootError(): ReactElement {
     return (
         <div className="flex h-screen w-screen items-center justify-center bg-background">
             <div className="text-center">

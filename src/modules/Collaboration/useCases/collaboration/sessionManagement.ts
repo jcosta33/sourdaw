@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import {
     type PeerId,
     type PeerInfo,
@@ -26,6 +27,30 @@ import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AutomergeSync } from '../automergeSync';
 import { AssetTransfer } from '../assetTransfer';
 import { PermissionManager } from '../permissions';
+
+export const sessionManagementDependencies = {
+    setupProjectionBridge,
+    subscribeToCrdtChanges,
+    getCrdtDoc,
+    createCrdtDoc,
+    hasCrdtDoc,
+    removeCrdtDoc,
+    mutateCrdtDoc,
+    persistCrdtProject,
+    getAudioContext,
+} as const;
+
+type SessionManagementDeps = {
+    setupProjectionBridge: typeof setupProjectionBridge;
+    subscribeToCrdtChanges: typeof subscribeToCrdtChanges;
+    getCrdtDoc: typeof getCrdtDoc;
+    createCrdtDoc: typeof createCrdtDoc;
+    hasCrdtDoc: typeof hasCrdtDoc;
+    removeCrdtDoc: typeof removeCrdtDoc;
+    mutateCrdtDoc: typeof mutateCrdtDoc;
+    persistCrdtProject: typeof persistCrdtProject;
+    getAudioContext: typeof getAudioContext;
+};
 
 const DOC_BRANCHES = '__branches__';
 const MAIN_BRANCH_ID = 'main';
@@ -91,7 +116,7 @@ const PLAYHEAD_BROADCAST_HZ = 4;
  *
  * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
  */
-const startBranchSync = (isHost: boolean): void => {
+const startBranchSync = (deps: SessionManagementDeps, isHost: boolean): void => {
     // Snapshot current state so we can restore it on session end.
     branchStoreSnapshot = branchStore.value
         ? { ...branchStore.value, branches: [...branchStore.value.branches] }
@@ -99,10 +124,10 @@ const startBranchSync = (isHost: boolean): void => {
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
-        removeCrdtDoc(DOC_BRANCHES);
-        createCrdtDoc(DOC_BRANCHES);
+        deps.removeCrdtDoc(DOC_BRANCHES);
+        deps.createCrdtDoc(DOC_BRANCHES);
         const currentBranches = branchStore.value?.branches ?? [];
-        mutateCrdtDoc({
+        deps.mutateCrdtDoc({
             id: DOC_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
                 doc['branches'] = currentBranches;
@@ -116,10 +141,10 @@ const startBranchSync = (isHost: boolean): void => {
         if (isProjectingBranches || !state) {
             return;
         }
-        if (!hasCrdtDoc(DOC_BRANCHES)) {
+        if (!deps.hasCrdtDoc(DOC_BRANCHES)) {
             return;
         }
-        mutateCrdtDoc({
+        deps.mutateCrdtDoc({
             id: DOC_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
                 doc['branches'] = state.branches;
@@ -128,8 +153,8 @@ const startBranchSync = (isHost: boolean): void => {
     });
 
     // Project incoming __branches__ doc changes back into branchStore.
-    unsubscribeAutomergeChanges = subscribeToCrdtChanges(() => {
-        const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_BRANCHES);
+    unsubscribeAutomergeChanges = deps.subscribeToCrdtChanges(() => {
+        const doc = deps.getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_BRANCHES);
         if (!doc?.branches) {
             return;
         }
@@ -159,7 +184,7 @@ const startBranchSync = (isHost: boolean): void => {
  * Stop branch sync and restore the pre-session branchStore state.
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
-const stopBranchSync = (): void => {
+const stopBranchSync = (deps: SessionManagementDeps): void => {
     if (unsubscribeBranchStore) {
         unsubscribeBranchStore();
         unsubscribeBranchStore = null;
@@ -169,7 +194,7 @@ const stopBranchSync = (): void => {
         unsubscribeAutomergeChanges = null;
     }
 
-    removeCrdtDoc(DOC_BRANCHES);
+    deps.removeCrdtDoc(DOC_BRANCHES);
 
     if (branchStoreSnapshot) {
         isProjectingBranches = true;
@@ -182,7 +207,7 @@ const stopBranchSync = (): void => {
     }
 
     // Persist without the __branches__ doc so IDB stays clean.
-    persistCrdtProject().catch((error) => {
+    deps.persistCrdtProject().catch((error) => {
         console.error('[Collaboration] Failed to persist after branch sync cleanup:', error);
     });
 };
@@ -213,51 +238,54 @@ const getLocalPeerInfo = (): PeerInfo => {
  * Create a new collaboration session as host.
  * Returns the session ID.
  */
-export const createSession = (name: string): string => {
-    // Clean up any existing session first
-    cleanupSubsystems();
+export const createSession = inject(sessionManagementDependencies)(
+    (deps) =>
+        function createSession(name: string): string {
+            // Clean up any existing session first
+            cleanupSubsystems(deps);
 
-    const peerId = generatePeerId();
-    const sessionId = generateSessionId();
-    const color = pickPeerColor([]);
+            const peerId = generatePeerId();
+            const sessionId = generateSessionId();
+            const color = pickPeerColor([]);
 
-    peerManager = new PeerConnectionManager({
-        onMessage: handlePeerMessage,
-        onConnected: handlePeerConnected,
-        onDisconnected: handlePeerDisconnected,
-    });
+            peerManager = new PeerConnectionManager({
+                onMessage: handlePeerMessage,
+                onConnected: handlePeerConnected,
+                onDisconnected: handlePeerDisconnected,
+            });
 
-    automergeSync = new AutomergeSync(peerManager);
-    automergeSync.start();
-    cleanupProjectionBridge = setupProjectionBridge();
+            automergeSync = new AutomergeSync(peerManager);
+            automergeSync.start();
+            cleanupProjectionBridge = deps.setupProjectionBridge();
 
-    assetTransfer = new AssetTransfer(peerManager, {
-        onAssetAvailable: (hash) => {
-            resolveAssetForClips(hash);
-        },
-        onProgress: (_hash, _received, _total) => {
-            // Could update a UI progress indicator.
-        },
-    });
+            assetTransfer = new AssetTransfer(peerManager, {
+                onAssetAvailable: (hash) => {
+                    void resolveAssetForClips(deps, hash);
+                },
+                onProgress: (_hash, _received, _total) => {
+                    // Could update a UI progress indicator.
+                },
+            });
 
-    permissionManager = new PermissionManager(peerManager);
-    startPlayheadBroadcast();
-    startBranchSync(true);
+            permissionManager = new PermissionManager(peerManager);
+            startPlayheadBroadcast();
+            startBranchSync(deps, true);
 
-    collaborationStore.set({
-        isEnabled: true,
-        sessionId,
-        localPeerId: peerId,
-        localName: name,
-        localColor: color,
-        isHost: true,
-        peers: [],
-        connectionStatus: 'disconnected',
-        error: null,
-    });
+            collaborationStore.set({
+                isEnabled: true,
+                sessionId,
+                localPeerId: peerId,
+                localName: name,
+                localColor: color,
+                isHost: true,
+                peers: [],
+                connectionStatus: 'disconnected',
+                error: null,
+            });
 
-    return sessionId;
-};
+            return sessionId;
+        }
+);
 
 /**
  * Generate an invite string containing the SDP offer for a new peer.
@@ -296,85 +324,88 @@ export const generateInvite = async (): Promise<string> => {
  * Join a session by pasting an invite string.
  * Returns an answer string to send back to the host.
  */
-export const joinSession = async (inviteString: string, name: string): Promise<string> => {
-    cleanupSubsystems();
+export const joinSession = inject(sessionManagementDependencies)(
+    (deps) =>
+        async function joinSession(inviteString: string, name: string): Promise<string> {
+            cleanupSubsystems(deps);
 
-    if (!inviteString.trim()) {
-        throw createCollaborationError('Invite string is empty');
-    }
+            if (!inviteString.trim()) {
+                throw createCollaborationError('Invite string is empty');
+            }
 
-    let invite: SignalingMessage;
-    try {
-        const json = await decompressInvite(inviteString.trim());
-        invite = JSON.parse(json) as SignalingMessage;
-    } catch {
-        throw createCollaborationError('Invalid invite — must be a valid invite string');
-    }
+            let invite: SignalingMessage;
+            try {
+                const json = await decompressInvite(inviteString.trim());
+                invite = JSON.parse(json) as SignalingMessage;
+            } catch {
+                throw createCollaborationError('Invalid invite — must be a valid invite string');
+            }
 
-    if (invite.type !== 'offer') {
-        throw createCollaborationError('Invalid invite: expected offer');
-    }
+            if (invite.type !== 'offer') {
+                throw createCollaborationError('Invalid invite: expected offer');
+            }
 
-    const peerId = generatePeerId();
-    // Pick a color that doesn't clash with the host's (always the first color).
-    const color = pickPeerColor([PEER_COLORS[0]!]);
+            const peerId = generatePeerId();
+            // Pick a color that doesn't clash with the host's (always the first color).
+            const color = pickPeerColor([PEER_COLORS[0]!]);
 
-    peerManager = new PeerConnectionManager({
-        onMessage: handlePeerMessage,
-        onConnected: handlePeerConnected,
-        onDisconnected: handlePeerDisconnected,
-    });
+            peerManager = new PeerConnectionManager({
+                onMessage: handlePeerMessage,
+                onConnected: handlePeerConnected,
+                onDisconnected: handlePeerDisconnected,
+            });
 
-    automergeSync = new AutomergeSync(peerManager);
-    automergeSync.start();
-    cleanupProjectionBridge = setupProjectionBridge();
+            automergeSync = new AutomergeSync(peerManager);
+            automergeSync.start();
+            cleanupProjectionBridge = deps.setupProjectionBridge();
 
-    assetTransfer = new AssetTransfer(peerManager, {
-        onAssetAvailable: (hash) => {
-            resolveAssetForClips(hash);
-        },
-        onProgress: (_hash, _received, _total) => {},
-    });
+            assetTransfer = new AssetTransfer(peerManager, {
+                onAssetAvailable: (hash) => {
+                    void resolveAssetForClips(deps, hash);
+                },
+                onProgress: (_hash, _received, _total) => {},
+            });
 
-    permissionManager = new PermissionManager(peerManager);
-    startPlayheadBroadcast();
-    startBranchSync(false);
+            permissionManager = new PermissionManager(peerManager);
+            startPlayheadBroadcast();
+            startBranchSync(deps, false);
 
-    const peer = peerManager.createPeer(invite.peerId);
-    const answerSdp = await peer.acceptOffer(invite.sdp);
+            const peer = peerManager.createPeer(invite.peerId);
+            const answerSdp = await peer.acceptOffer(invite.sdp);
 
-    collaborationStore.set({
-        isEnabled: true,
-        sessionId: invite.sessionId,
-        localPeerId: peerId,
-        localName: name,
-        localColor: color,
-        isHost: false,
-        peers: [
-            {
-                id: invite.peerId,
-                name: invite.name,
-                color: PEER_COLORS[0]!,
-                isHost: true,
-                isConnected: false,
-                lastSeen: Date.now(),
-                latencyMs: null,
-            },
-        ],
-        connectionStatus: 'connecting',
-        error: null,
-    });
+            collaborationStore.set({
+                isEnabled: true,
+                sessionId: invite.sessionId,
+                localPeerId: peerId,
+                localName: name,
+                localColor: color,
+                isHost: false,
+                peers: [
+                    {
+                        id: invite.peerId,
+                        name: invite.name,
+                        color: PEER_COLORS[0]!,
+                        isHost: true,
+                        isConnected: false,
+                        lastSeen: Date.now(),
+                        latencyMs: null,
+                    },
+                ],
+                connectionStatus: 'connecting',
+                error: null,
+            });
 
-    const answer: SignalingMessage = {
-        type: 'answer',
-        peerId,
-        name,
-        sdp: answerSdp,
-        pendingPeerId: invite.pendingPeerId,
-    };
+            const answer: SignalingMessage = {
+                type: 'answer',
+                peerId,
+                name,
+                sdp: answerSdp,
+                pendingPeerId: invite.pendingPeerId,
+            };
 
-    return await compressInvite(JSON.stringify(answer));
-};
+            return await compressInvite(JSON.stringify(answer));
+        }
+);
 
 /**
  * Accept an answer from a joiner (host side, completes the connection).
@@ -418,10 +449,10 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
 };
 
 /** Tear down all subsystems without changing store state. */
-const cleanupSubsystems = (): void => {
+const cleanupSubsystems = (deps: SessionManagementDeps): void => {
     pendingInviteId = null;
     stopPlayheadBroadcast();
-    stopBranchSync();
+    stopBranchSync(deps);
     for (const timer of peerCleanupTimers.values()) {
         clearTimeout(timer);
     }
@@ -453,7 +484,7 @@ const cleanupSubsystems = (): void => {
  * and decode the blob into the audioBufferCache under their audioBufferId.
  * This lets the scheduler play the clip on the next playback start.
  */
-async function resolveAssetForClips(hash: string): Promise<void> {
+async function resolveAssetForClips(deps: SessionManagementDeps, hash: string): Promise<void> {
     const blob = assetTransfer?.getAsset(hash);
     if (!blob) {
         return;
@@ -462,7 +493,7 @@ async function resolveAssetForClips(hash: string): Promise<void> {
     const tracks = trackStore.value?.tracks ?? [];
     let ctx: BaseAudioContext;
     try {
-        ctx = getAudioContext();
+        ctx = deps.getAudioContext();
     } catch {
         return;
     }
@@ -529,28 +560,31 @@ const stopPlayheadBroadcast = (): void => {
 /**
  * Leave the current session.
  */
-export const leaveSession = (): void => {
-    if (peerManager) {
-        peerManager.broadcastCrdtSync({
-            type: 'peer-leave',
-            peerId: collaborationStore.value?.localPeerId ?? '',
-        });
-    }
+export const leaveSession = inject(sessionManagementDependencies)(
+    (deps) =>
+        function leaveSession(): void {
+            if (peerManager) {
+                peerManager.broadcastCrdtSync({
+                    type: 'peer-leave',
+                    peerId: collaborationStore.value?.localPeerId ?? '',
+                });
+            }
 
-    cleanupSubsystems();
+            cleanupSubsystems(deps);
 
-    collaborationStore.set({
-        isEnabled: false,
-        sessionId: null,
-        localPeerId: null,
-        localName: '',
-        localColor: '',
-        isHost: false,
-        peers: [],
-        connectionStatus: 'disconnected',
-        error: null,
-    });
-};
+            collaborationStore.set({
+                isEnabled: false,
+                sessionId: null,
+                localPeerId: null,
+                localName: '',
+                localColor: '',
+                isHost: false,
+                peers: [],
+                connectionStatus: 'disconnected',
+                error: null,
+            });
+        }
+);
 
 /**
  * Broadcast local presence data to all peers.

@@ -3,20 +3,36 @@
  *
  * Handles bus strip creation, gain, and send routing between tracks and buses.
  */
+import { inject } from '#/infra/di/inject';
 import {
     ensureBusStrip as ensureBusStripEngine,
     setBusGain as setBusGainEngine,
     setSend as setSendEngine,
 } from '#/modules/AudioEngine/useCases/engineAccess';
 
-export function ensureBusStrip(busId: string): void {
-    ensureBusStripEngine(busId);
-}
+const busStripDependencies = { ensureBusStripEngine } as const;
 
-export function setBusGain(busId: string, gain: number): void {
-    setBusGainEngine(busId, gain);
-}
+export const ensureBusStrip = inject(busStripDependencies)(
+    ({ ensureBusStripEngine }) =>
+        function ensureBusStrip(busId: string): void {
+            ensureBusStripEngine(busId);
+        }
+);
 
-export function setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
-    setSendEngine(sourceTrackId, busId, level, preFader);
-}
+const busGainDependencies = { setBusGainEngine } as const;
+
+export const setBusGain = inject(busGainDependencies)(
+    ({ setBusGainEngine }) =>
+        function setBusGain(busId: string, gain: number): void {
+            setBusGainEngine(busId, gain);
+        }
+);
+
+const sendDependencies = { setSendEngine } as const;
+
+export const setSend = inject(sendDependencies)(
+    ({ setSendEngine }) =>
+        function setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
+            setSendEngine(sourceTrackId, busId, level, preFader);
+        }
+);

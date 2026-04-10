@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { PanelToggles } from './PanelToggles';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('PanelToggles', () => {
     beforeEach(() => {
@@ -12,22 +17,22 @@ describe('PanelToggles', () => {
     });
 
     it('should render without crashing', () => {
-        render(<PanelToggles />);
+        renderWithTooltip(<PanelToggles />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        render(<PanelToggles />);
+        renderWithTooltip(<PanelToggles />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<PanelToggles />);
+        renderWithTooltip(<PanelToggles />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<PanelToggles />);
+        renderWithTooltip(<PanelToggles />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

@@ -1,23 +1,28 @@
+import { inject } from '#/infra/di/inject';
 import { punchRecordingStore, type BackgroundCapture } from '#/modules/Transport/stores/punchRecordingStore';
 import { getNextCaptureId } from '#/modules/Transport/models/punchRecordingHelpers';
 
-export function startBackgroundCapture(trackId: string, startBeat: number): void {
-    const state = punchRecordingStore.value;
-    if (!state || !state.enabled) {
-        return;
+export const startBackgroundCapture = inject({ punchRecordingStore, getNextCaptureId })(
+    ({ punchRecordingStore: store, getNextCaptureId: nextId }) => {
+        return function startBackgroundCapture(trackId: string, startBeat: number): void {
+            const state = store.value;
+            if (!state || !state.enabled) {
+                return;
+            }
+
+            const capture: BackgroundCapture = {
+                id: nextId(),
+                trackId,
+                startBeat,
+                endBeat: startBeat,
+                recording: true,
+                punchRegions: [],
+            };
+
+            store.set({
+                ...state,
+                captures: [...state.captures, capture],
+            });
+        };
     }
-
-    const capture: BackgroundCapture = {
-        id: getNextCaptureId(),
-        trackId,
-        startBeat,
-        endBeat: startBeat,
-        recording: true,
-        punchRegions: [],
-    };
-
-    punchRecordingStore.set({
-        ...state,
-        captures: [...state.captures, capture],
-    });
-}
+);

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { TransportControls } from './TransportControls';
+
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
 
 describe('TransportControls', () => {
     beforeEach(() => {
@@ -8,17 +13,17 @@ describe('TransportControls', () => {
     });
 
     it('should render without crashing', () => {
-        render(<TransportControls />);
+        renderWithTooltip(<TransportControls />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<TransportControls />);
+        renderWithTooltip(<TransportControls />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<TransportControls />);
+        renderWithTooltip(<TransportControls />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

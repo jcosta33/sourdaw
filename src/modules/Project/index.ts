@@ -19,7 +19,12 @@ export { projectStore } from './stores/projectStore';
 export { pickFiles } from './useCases/fileDialog';
 
 // useCases/projectPersistence/fileIO.ts
-export { exportProjectFile, importProjectFile } from './useCases/projectPersistence/fileIO';
+export {
+    exportProjectFile,
+    importProjectFile,
+    importProjectFromNativePath,
+    pickAndImportProjectFile,
+} from './useCases/projectPersistence/fileIO';
 
 // useCases/projectPersistence/helpers.ts
 export {

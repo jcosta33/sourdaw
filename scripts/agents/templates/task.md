@@ -118,7 +118,7 @@ Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing yo
 
 ### Conventions
 
-- No `useMemo`/`useCallback`/`React.memo`. No `&&` in JSX rendering. No `interface` — use `type`. No `enum` — use `as const`. No barrel files. No cross-module internal imports.
+- No `useMemo`/`useCallback`/`React.memo`. No `&&` in JSX rendering. No `interface` — use `type`. No `enum` — use `as const`. No barrel files except each module’s root `index.ts` (curated re-exports only). No cross-module internal imports.
   Answer:
 
 ### Scope

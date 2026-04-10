@@ -1,6 +1,7 @@
 /**
  * Grinder parameter bridge — throttles UI updates to audio engine.
  */
+import { inject } from '#/infra/di/inject';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
@@ -9,13 +10,19 @@ import { loadGrinderPatch, setGrinderParam } from '../stores/grinderStore';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
-function findDeviceRef(deviceId: string): DeviceRef | null {
-    for (const track of getAllTracks()) {
-        if (track.devices.some((d) => d.id === deviceId)) {
-            return { trackId: track.id, deviceId };
+type GetAllTracksFn = typeof getAllTracks;
+type UpdateDeviceParamFn = typeof updateDeviceParam;
+type PersistDeviceParamFn = typeof persistDeviceParam;
+
+function createFindDeviceRef(getAllTracksFn: GetAllTracksFn) {
+    return function findDeviceRef(deviceId: string): DeviceRef | null {
+        for (const track of getAllTracksFn()) {
+            if (track.devices.some((d) => d.id === deviceId)) {
+                return { trackId: track.id, deviceId };
+            }
         }
-    }
-    return null;
+        return null;
+    };
 }
 
 const AMP_MODELS = ['clean-twin', 'crunch-jcm', 'lead-jcm', 'ac30-tb', 'rectifier', 'custom'] as const;
@@ -97,14 +104,19 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
 const pendingUpdates = new Map<string, number>();
 const latestValues = new Map<string, number>();
 
-function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
-    const compositeKey = `${deviceId}:${key}`;
-    pendingUpdates.delete(compositeKey);
-    const value = latestValues.get(compositeKey);
-    if (value === undefined) return;
-    latestValues.delete(compositeKey);
-    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-    persistDeviceParam(ref.deviceId, key, value);
+function createFlushParam(
+    updateDeviceParamFn: UpdateDeviceParamFn,
+    persistDeviceParamFn: PersistDeviceParamFn
+) {
+    return function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
+        const compositeKey = `${deviceId}:${key}`;
+        pendingUpdates.delete(compositeKey);
+        const value = latestValues.get(compositeKey);
+        if (value === undefined) return;
+        latestValues.delete(compositeKey);
+        updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
+        persistDeviceParamFn(ref.deviceId, key, value);
+    };
 }
 
 function getIndexedValue<T extends readonly string[]>(options: T, raw: number): T[number] {
@@ -180,78 +192,114 @@ function toAudioValue<K extends keyof GrinderPatch>(key: K, value: GrinderPatch[
     }
 }
 
-function sendNumericParamToDevice(ref: DeviceRef, key: string, value: number): void {
-    if (!Number.isFinite(value)) return;
-    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-    persistDeviceParam(ref.deviceId, key, value);
+function createSendNumericParamToDevice(
+    updateDeviceParamFn: UpdateDeviceParamFn,
+    persistDeviceParamFn: PersistDeviceParamFn
+) {
+    return function sendNumericParamToDevice(ref: DeviceRef, key: string, value: number): void {
+        if (!Number.isFinite(value)) return;
+        updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
+        persistDeviceParamFn(ref.deviceId, key, value);
+    };
 }
 
 function findFirstPedal(pedals: readonly GrinderPedal[], types: readonly string[]): GrinderPedal | undefined {
     return pedals.find((pedal) => types.includes(pedal.type));
 }
 
-function syncSupportedPedals(patch: GrinderPatch, ref: DeviceRef): void {
-    const preCompressor = findFirstPedal(patch.prePedals, ['compressor']);
-    const preOverdrive = findFirstPedal(patch.prePedals, ['overdrive', 'boost']);
-    const preDistortion = findFirstPedal(patch.prePedals, ['distortion']);
-    const preFuzz = findFirstPedal(patch.prePedals, ['fuzz']);
-    sendNumericParamToDevice(ref, 'preCompressorEnabled', preCompressor?.enabled ? 1 : 0);
-    sendNumericParamToDevice(ref, 'preCompressorThreshold', preCompressor?.params.threshold ?? -20);
-    sendNumericParamToDevice(ref, 'preCompressorRatio', preCompressor?.params.ratio ?? 4);
-    sendNumericParamToDevice(ref, 'preCompressorAttack', preCompressor?.params.attack ?? 10);
-    sendNumericParamToDevice(ref, 'preCompressorRelease', preCompressor?.params.release ?? 200);
+export const grinderParamBridgeDependencies = {
+    getAllTracks,
+    updateDeviceParam,
+    persistDeviceParam,
+} as const;
 
-    sendNumericParamToDevice(ref, 'preOverdriveEnabled', preOverdrive?.enabled ? 1 : 0);
-    sendNumericParamToDevice(ref, 'preOverdriveDrive', preOverdrive?.params.drive ?? 0);
-    sendNumericParamToDevice(ref, 'preOverdriveTone', preOverdrive?.params.tone ?? 5);
-    sendNumericParamToDevice(ref, 'preOverdriveLevel', preOverdrive?.params.level ?? 5);
+export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)(
+    ({
+        getAllTracks: getAllTracksFn,
+        updateDeviceParam: updateDeviceParamFn,
+        persistDeviceParam: persistDeviceParamFn,
+    }) => {
+        const findDeviceRef = createFindDeviceRef(getAllTracksFn);
+        const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
+        return function setGrinderParamWithAudio<K extends keyof GrinderPatch>(
+            deviceId: string,
+            key: K,
+            value: number
+        ): void {
+            const patchValue = toPatchValue(key, value);
+            setGrinderParam(deviceId, key, patchValue);
+            if (key === 'engineMode') {
+                setGrinderParam(deviceId, 'neuralEnabled', (patchValue !== 'circuit') as GrinderPatch['neuralEnabled']);
+            } else if (key === 'neuralEnabled') {
+                setGrinderParam(deviceId, 'engineMode', (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']);
+            }
 
-    sendNumericParamToDevice(ref, 'preDistortionEnabled', preDistortion?.enabled ? 1 : 0);
-    sendNumericParamToDevice(ref, 'preDistortionDrive', preDistortion?.params.drive ?? 0);
-    sendNumericParamToDevice(ref, 'preDistortionTone', preDistortion?.params.tone ?? 5);
-    sendNumericParamToDevice(ref, 'preDistortionLevel', preDistortion?.params.level ?? 5);
+            const ref = findDeviceRef(deviceId);
+            if (!ref) return;
 
-    sendNumericParamToDevice(ref, 'preFuzzEnabled', preFuzz?.enabled ? 1 : 0);
-    sendNumericParamToDevice(ref, 'preFuzzFuzz', preFuzz?.params.fuzz ?? 0);
-    sendNumericParamToDevice(ref, 'preFuzzTone', preFuzz?.params.tone ?? 5);
-    sendNumericParamToDevice(ref, 'preFuzzLevel', preFuzz?.params.level ?? 5);
-}
-
-export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(deviceId: string, key: K, value: number): void {
-    const patchValue = toPatchValue(key, value);
-    setGrinderParam(deviceId, key, patchValue);
-    if (key === 'engineMode') {
-        setGrinderParam(deviceId, 'neuralEnabled', (patchValue !== 'circuit') as GrinderPatch['neuralEnabled']);
-    } else if (key === 'neuralEnabled') {
-        setGrinderParam(deviceId, 'engineMode', (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']);
+            const compositeKey = `${deviceId}:${key}`;
+            latestValues.set(compositeKey, value);
+            if (!pendingUpdates.has(compositeKey)) {
+                pendingUpdates.set(
+                    compositeKey,
+                    requestAnimationFrame(() => flushParam(deviceId, ref, key))
+                );
+            }
+        };
     }
+);
 
-    const ref = findDeviceRef(deviceId);
-    if (!ref) return;
+export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(
+    ({
+        getAllTracks: getAllTracksFn,
+        updateDeviceParam: updateDeviceParamFn,
+        persistDeviceParam: persistDeviceParamFn,
+    }) => {
+        const findDeviceRef = createFindDeviceRef(getAllTracksFn);
+        const sendNumericParamToDevice = createSendNumericParamToDevice(updateDeviceParamFn, persistDeviceParamFn);
 
-    const compositeKey = `${deviceId}:${key}`;
-    latestValues.set(compositeKey, value);
-    if (!pendingUpdates.has(compositeKey)) {
-        pendingUpdates.set(
-            compositeKey,
-            requestAnimationFrame(() => flushParam(deviceId, ref, key))
-        );
+        function syncSupportedPedals(patch: GrinderPatch, ref: DeviceRef): void {
+            const preCompressor = findFirstPedal(patch.prePedals, ['compressor']);
+            const preOverdrive = findFirstPedal(patch.prePedals, ['overdrive', 'boost']);
+            const preDistortion = findFirstPedal(patch.prePedals, ['distortion']);
+            const preFuzz = findFirstPedal(patch.prePedals, ['fuzz']);
+            sendNumericParamToDevice(ref, 'preCompressorEnabled', preCompressor?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'preCompressorThreshold', preCompressor?.params.threshold ?? -20);
+            sendNumericParamToDevice(ref, 'preCompressorRatio', preCompressor?.params.ratio ?? 4);
+            sendNumericParamToDevice(ref, 'preCompressorAttack', preCompressor?.params.attack ?? 10);
+            sendNumericParamToDevice(ref, 'preCompressorRelease', preCompressor?.params.release ?? 200);
+
+            sendNumericParamToDevice(ref, 'preOverdriveEnabled', preOverdrive?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'preOverdriveDrive', preOverdrive?.params.drive ?? 0);
+            sendNumericParamToDevice(ref, 'preOverdriveTone', preOverdrive?.params.tone ?? 5);
+            sendNumericParamToDevice(ref, 'preOverdriveLevel', preOverdrive?.params.level ?? 5);
+
+            sendNumericParamToDevice(ref, 'preDistortionEnabled', preDistortion?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'preDistortionDrive', preDistortion?.params.drive ?? 0);
+            sendNumericParamToDevice(ref, 'preDistortionTone', preDistortion?.params.tone ?? 5);
+            sendNumericParamToDevice(ref, 'preDistortionLevel', preDistortion?.params.level ?? 5);
+
+            sendNumericParamToDevice(ref, 'preFuzzEnabled', preFuzz?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'preFuzzFuzz', preFuzz?.params.fuzz ?? 0);
+            sendNumericParamToDevice(ref, 'preFuzzTone', preFuzz?.params.tone ?? 5);
+            sendNumericParamToDevice(ref, 'preFuzzLevel', preFuzz?.params.level ?? 5);
+        }
+
+        return function loadGrinderPatchWithAudio(deviceId: string, patch: GrinderPatch): void {
+            const migratedPatch = migrateGrinderPatch(patch);
+            loadGrinderPatch(deviceId, migratedPatch);
+
+            const ref = findDeviceRef(deviceId);
+            if (!ref) return;
+
+            for (const key of AUDIO_SYNC_KEYS) {
+                const value = toAudioValue(key, migratedPatch[key]);
+                if (value === null || !Number.isFinite(value)) continue;
+                updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
+                persistDeviceParamFn(ref.deviceId, key, value);
+            }
+
+            syncSupportedPedals(migratedPatch, ref);
+        };
     }
-}
-
-export function loadGrinderPatchWithAudio(deviceId: string, patch: GrinderPatch): void {
-    const migratedPatch = migrateGrinderPatch(patch);
-    loadGrinderPatch(deviceId, migratedPatch);
-
-    const ref = findDeviceRef(deviceId);
-    if (!ref) return;
-
-    for (const key of AUDIO_SYNC_KEYS) {
-        const value = toAudioValue(key, migratedPatch[key]);
-        if (value === null || !Number.isFinite(value)) continue;
-        updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-        persistDeviceParam(ref.deviceId, key, value);
-    }
-
-    syncSupportedPedals(migratedPatch, ref);
-}
+);

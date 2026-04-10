@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
+import { useTracks } from '../hooks/useTracks';
 
 // Mock external dependencies
 vi.mock('#/modules/AudioEngine/useCases/engineAccess', () => ({
@@ -22,70 +25,78 @@ vi.mock('../../useCases/toggleTrackState/selectTrack', () => ({
     selectTrack: vi.fn(),
 }));
 
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
 describe('MiniMasterSpectrum', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Reset mock to default state
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [{ id: 'master', kind: 'master' }],
+            selectedTrackId: 'master',
+        });
     });
 
     it('should render without crashing', () => {
-        const { container } = render(<MiniMasterSpectrum />);
+        const { container } = renderWithTooltip(<MiniMasterSpectrum />);
         expect(container.firstChild).toBeTruthy();
     });
 
     it('should render null when no master track', () => {
-        const { useTracks } = vi.importMock('../hooks/useTracks');
-        useTracks.mockReturnValue({
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
             tracks: [{ id: 'audio1', kind: 'audio' }],
             selectedTrackId: null,
         });
-        const { container } = render(<MiniMasterSpectrum />);
+        const { container } = renderWithTooltip(<MiniMasterSpectrum />);
         expect(container.firstChild).toBeNull();
     });
 
     it('should render canvas element', () => {
-        const { container } = render(<MiniMasterSpectrum />);
+        const { container } = renderWithTooltip(<MiniMasterSpectrum />);
         const canvas = container.querySelector('canvas');
         expect(canvas).toBeInTheDocument();
     });
 
     it('should display "Master" label', () => {
-        render(<MiniMasterSpectrum />);
+        renderWithTooltip(<MiniMasterSpectrum />);
         expect(screen.getByText('Master')).toBeInTheDocument();
     });
 
     it('should have correct accessibility attributes', () => {
-        render(<MiniMasterSpectrum />);
+        renderWithTooltip(<MiniMasterSpectrum />);
         expect(screen.getByLabelText('Master Track Spectrum')).toBeInTheDocument();
     });
 
     it('should call selectTrack when clicked', () => {
-        const { selectTrack } = vi.importMock('../../useCases/toggleTrackState/selectTrack');
-        render(<MiniMasterSpectrum />);
+        renderWithTooltip(<MiniMasterSpectrum />);
         const spectrum = screen.getByLabelText('Master Track Spectrum');
         fireEvent.click(spectrum);
         expect(selectTrack).toHaveBeenCalledWith('master');
     });
 
     it('should call selectTrack when Enter key is pressed', () => {
-        const { selectTrack } = vi.importMock('../../useCases/toggleTrackState/selectTrack');
-        render(<MiniMasterSpectrum />);
+        renderWithTooltip(<MiniMasterSpectrum />);
         const spectrum = screen.getByLabelText('Master Track Spectrum');
         fireEvent.keyDown(spectrum, { key: 'Enter' });
         expect(selectTrack).toHaveBeenCalledWith('master');
     });
 
     it('should have pointer cursor', () => {
-        const { container } = render(<MiniMasterSpectrum />);
+        const { container } = renderWithTooltip(<MiniMasterSpectrum />);
         expect(container.firstChild).toHaveClass('cursor-pointer');
     });
 
     it('should apply custom className', () => {
-        const { container } = render(<MiniMasterSpectrum className="custom-class" />);
+        const { container } = renderWithTooltip(<MiniMasterSpectrum className="custom-class" />);
         expect(container.firstChild).toHaveClass('custom-class');
     });
 
     it('should have correct title attribute', () => {
-        render(<MiniMasterSpectrum />);
+        renderWithTooltip(<MiniMasterSpectrum />);
         expect(screen.getByLabelText('Master Track Spectrum')).toHaveAttribute('title', 'Master Track (Click to inspect)');
     });
 });

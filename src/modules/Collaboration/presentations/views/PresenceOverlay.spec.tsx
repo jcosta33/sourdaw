@@ -1,53 +1,54 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { usePresence } from '../hooks/usePresence';
 import { PresenceOverlay } from './PresenceOverlay';
 
-// Mock the usePresence hook
+// Mock external dependencies
 vi.mock('../hooks/usePresence', () => ({
-    usePresence: vi.fn(() => new Map()),
+    usePresence: vi.fn(),
 }));
 
 describe('PresenceOverlay', () => {
-    const mockBeatToX = vi.fn((beat: number) => beat * 10);
-    const mockTrackIdToY = vi.fn(() => 50);
+    const defaultProps = {
+        beatToX: (beat: number) => beat * 10,
+        trackIdToY: (_id: string) => 100,
+        trackHeight: 80,
+    };
 
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('should render without crashing', () => {
-        const { container } = render(
-            <PresenceOverlay
-                beatToX={mockBeatToX}
-                trackIdToY={mockTrackIdToY}
-                trackHeight={40}
-            />
-        );
-        expect(container.firstChild).toBeInTheDocument();
+        vi.mocked(usePresence).mockReturnValue(new Map());
+        const { container } = render(<PresenceOverlay {...defaultProps} />);
+        expect(container.firstChild).toBeTruthy();
     });
 
-    it('should render with empty presence map', () => {
-        const { container } = render(
-            <PresenceOverlay
-                beatToX={mockBeatToX}
-                trackIdToY={mockTrackIdToY}
-                trackHeight={40}
-            />
-        );
-        expect(container.querySelector('.pointer-events-none')).toBeInTheDocument();
-    });
+    it('should render collaborator cursors', () => {
+        const mockPresence = new Map();
+        mockPresence.set('peer-1', {
+            peerId: 'peer-1',
+            name: 'Alice',
+            color: '#ff0000',
+            playheadBeat: 10,
+            cursorBeat: 20,
+            cursorTrackId: 'track-1',
+        });
+        mockPresence.set('peer-2', {
+            peerId: 'peer-2',
+            name: 'Bob',
+            color: '#00ff00',
+            playheadBeat: null,
+            cursorBeat: 40,
+            cursorTrackId: null,
+        });
 
-    it('should apply correct CSS classes', () => {
-        const { container } = render(
-            <PresenceOverlay
-                beatToX={mockBeatToX}
-                trackIdToY={mockTrackIdToY}
-                trackHeight={40}
-            />
-        );
-        const overlay = container.firstChild as HTMLElement;
-        expect(overlay.classList.contains('pointer-events-none')).toBe(true);
-        expect(overlay.classList.contains('absolute')).toBe(true);
-        expect(overlay.classList.contains('inset-0')).toBe(true);
+        vi.mocked(usePresence).mockReturnValue(mockPresence);
+        render(<PresenceOverlay {...defaultProps} />);
+        
+        // Cursors are rendered by PresenceMarker which usually shows the name
+        expect(screen.getAllByText('Alice').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Bob').length).toBeGreaterThan(0);
     });
 });

@@ -23,9 +23,8 @@ import {
 import { type TemplateCategory } from '#/modules/Project/models/ProjectTemplateTypes';
 import { newProject } from '../../useCases/projectPersistence/newProject';
 import { saveProject } from '../../useCases/projectPersistence/saveProject';
-import { exportProjectFile, importProjectFile } from '../../useCases/projectPersistence/fileIO';
+import { exportProjectFile, pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO';
 import { TemplateChooser } from './TemplateChooser';
-import { pickFiles } from '../../useCases/fileDialog';
 import { openExportDialog } from '#/modules/Workspace/useCases/dialogs';
 
 const formatRelativeTime = (timestamp: number): string => {
@@ -124,14 +123,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleImportProject = () => {
         setOpen(false);
-        pickFiles({
-            filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw', 'json'] }],
-        }).then((files) => {
-            if (!files || files.length === 0) {
-                return;
-            }
-            importProjectFile(files[0]!);
-        });
+        void pickAndImportProjectFile();
     };
 
     const handleLoad = (entry: RecentProjectEntry) => {

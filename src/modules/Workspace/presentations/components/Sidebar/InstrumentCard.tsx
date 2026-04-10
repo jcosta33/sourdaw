@@ -122,9 +122,6 @@ export const CRUMBS_THEME: InstrumentCardTheme = {
     glow: 'bg-[var(--color-accent-lavender)]/8',
 };
 
-/** @deprecated Use CRUMBS_THEME instead */
-export const SAMPLER_THEME = CRUMBS_THEME;
-
 export const GRAND_BOULE_THEME: InstrumentCardTheme = {
     button: 'border-neutral-400/25 bg-gradient-to-br from-neutral-300/10 via-surface-raised to-neutral-400/5 hover:border-neutral-300/45 hover:from-neutral-300/15',
     iconBox: 'bg-neutral-300/15 border-neutral-400/20 shadow-[0_0_12px_rgba(200,200,200,0.10)]',

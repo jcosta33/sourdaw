@@ -4,6 +4,7 @@
  * Handles: step triggers, probability, conditional triggers, swing, ratcheting, param locks.
  */
 
+import { inject } from '#/infra/di/inject';
 import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess';
 import { toasterStore } from '../stores/toasterStore';
 import { type Step, type Pattern } from '../models/ToasterKit';
@@ -59,124 +60,142 @@ function shouldTrigger(step: Step, loopIndex: number): boolean {
     return true;
 }
 
-function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
-    if (!running) {
-        return;
-    }
+export const startSequencerDependencies = {
+    getAudioTime,
+    getFirstToasterDeviceId,
+    setToasterPadParam,
+    setPadEngineImmediate,
+    triggerToasterPad,
+} as const;
 
-    const state = toasterStore.value;
-    if (!state) {
-        return;
-    }
+export const startSequencer = inject(startSequencerDependencies)(
+    ({
+        getAudioTime: getAudioTimeFn,
+        getFirstToasterDeviceId: getFirstToasterDeviceIdFn,
+        setToasterPadParam: setToasterPadParamFn,
+        setPadEngineImmediate: setPadEngineImmediateFn,
+        triggerToasterPad: triggerToasterPadFn,
+    }) => {
+        function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
+            if (!running) {
+                return;
+            }
 
-    const sourcePattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
-    if (!sourcePattern) {
-        return;
-    }
+            const state = toasterStore.value;
+            if (!state) {
+                return;
+            }
 
-    let pattern: Pattern = sourcePattern;
-    if (state.morph.enabled && state.morph.targetPatternId) {
-        const targetPattern = state.kit.patterns.find((p) => p.id === state.morph.targetPatternId);
-        if (targetPattern) {
-            pattern = morphPatterns(sourcePattern, targetPattern, state.morph.position);
-        }
-    }
+            const sourcePattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
+            if (!sourcePattern) {
+                return;
+            }
 
-    const totalSteps = pattern.stepsPerBar * pattern.bars;
-    const stepDurationMs = 60_000 / bpm / stepsPerBeat;
+            let pattern: Pattern = sourcePattern;
+            if (state.morph.enabled && state.morph.targetPatternId) {
+                const targetPattern = state.kit.patterns.find((p) => p.id === state.morph.targetPatternId);
+                if (targetPattern) {
+                    pattern = morphPatterns(sourcePattern, targetPattern, state.morph.position);
+                }
+            }
 
-    const toasterDeviceId = getFirstToasterDeviceId();
+            const totalSteps = pattern.stepsPerBar * pattern.bars;
+            const stepDurationMs = 60_000 / bpm / stepsPerBeat;
 
-    for (const track of pattern.tracks) {
-        const trackSteps = track.stepsOverride ?? totalSteps;
-        const stepIdx = currentStep % trackSteps;
-        const step = track.steps[stepIdx];
-        if (!step) {
-            continue;
-        }
-        if (!shouldTrigger(step, playCount)) {
-            continue;
-        }
+            const toasterDeviceId = getFirstToasterDeviceIdFn();
 
-        const vel = Math.round(step.velocity * 127);
-
-        // Apply sound lock: swap engine type before triggering
-        const pad = state.kit.pads[track.padIndex];
-        if (step.soundLock && pad && toasterDeviceId) {
-            const lockIdx = TOASTER_ENGINE_MAP[step.soundLock] ?? 0;
-            setPadEngineImmediate(toasterDeviceId, track.padIndex, lockIdx);
-        }
-
-        // Apply parameter locks before trigger
-        if (toasterDeviceId) {
-            const locks = step.paramLocks;
-            for (const [key, value] of Object.entries(locks)) {
-                if (key.startsWith('_')) {
+            for (const track of pattern.tracks) {
+                const trackSteps = track.stepsOverride ?? totalSteps;
+                const stepIdx = currentStep % trackSteps;
+                const step = track.steps[stepIdx];
+                if (!step) {
                     continue;
                 }
-                setToasterPadParam(
-                    toasterDeviceId,
-                    track.padIndex,
-                    key as keyof import('../models/ToasterKit').PadState,
-                    value
-                );
+                if (!shouldTrigger(step, playCount)) {
+                    continue;
+                }
+
+                const vel = Math.round(step.velocity * 127);
+
+                // Apply sound lock: swap engine type before triggering
+                const pad = state.kit.pads[track.padIndex];
+                if (step.soundLock && pad && toasterDeviceId) {
+                    const lockIdx = TOASTER_ENGINE_MAP[step.soundLock] ?? 0;
+                    setPadEngineImmediateFn(toasterDeviceId, track.padIndex, lockIdx);
+                }
+
+                // Apply parameter locks before trigger
+                if (toasterDeviceId) {
+                    const locks = step.paramLocks;
+                    for (const [key, value] of Object.entries(locks)) {
+                        if (key.startsWith('_')) {
+                            continue;
+                        }
+                        setToasterPadParamFn(
+                            toasterDeviceId,
+                            track.padIndex,
+                            key as keyof import('../models/ToasterKit').PadState,
+                            value
+                        );
+                    }
+                }
+
+                // Micro-timing + swing offset
+                const microOffsetMs = step.microTiming * stepDurationMs;
+                const swingMs = stepIdx % 2 === 1 ? state.kit.swing * stepDurationMs * 0.5 : 0;
+                const totalDelayMs = Math.max(0, swingMs + microOffsetMs);
+
+                const fire = () => {
+                    triggerToasterPadFn(track.padIndex, vel);
+                    // Restore default engine type after sound-locked trigger
+                    if (step.soundLock && pad && toasterDeviceId) {
+                        const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
+                        setPadEngineImmediateFn(toasterDeviceId, track.padIndex, defaultIdx);
+                    }
+                };
+
+                if (totalDelayMs > 1) {
+                    setTimeout(fire, totalDelayMs);
+                } else {
+                    fire();
+                }
+
+                // Ratcheting
+                if (step.retriggerCount > 0) {
+                    const subInterval = stepDurationMs / (step.retriggerCount + 1);
+                    for (let r = 1; r <= step.retriggerCount; r++) {
+                        const retrigVel = Math.max(20, Math.round(vel * (1 - r * 0.12)));
+                        setTimeout(() => triggerToasterPadFn(track.padIndex, retrigVel), totalDelayMs + subInterval * r);
+                    }
+                }
             }
+
+            // Update UI cursor
+            toasterStore.set({ ...state, currentStep, isPlaying: true });
+
+            // Schedule next step using AudioContext clock to prevent drift
+            const stepDurationSec = stepDurationMs / 1000;
+            const nextStep = (currentStep + 1) % totalSteps;
+            if (nextStep === 0) {
+                playCount++;
+            }
+
+            nextTickTime += stepDurationSec;
+            const now = getAudioTimeFn();
+            const delayMs = Math.max(1, (nextTickTime - now) * 1000);
+
+            timeoutId = setTimeout(() => tick(nextStep, bpm, stepsPerBeat), delayMs);
         }
 
-        // Micro-timing + swing offset
-        const microOffsetMs = step.microTiming * stepDurationMs;
-        const swingMs = stepIdx % 2 === 1 ? state.kit.swing * stepDurationMs * 0.5 : 0;
-        const totalDelayMs = Math.max(0, swingMs + microOffsetMs);
-
-        const fire = () => {
-            triggerToasterPad(track.padIndex, vel);
-            // Restore default engine type after sound-locked trigger
-            if (step.soundLock && pad && toasterDeviceId) {
-                const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
-                setPadEngineImmediate(toasterDeviceId, track.padIndex, defaultIdx);
-            }
+        return function startSequencer(bpm: number, stepsPerBeat: number = 4): void {
+            stopSequencer();
+            running = true;
+            playCount = 0;
+            nextTickTime = getAudioTimeFn();
+            tick(0, bpm, stepsPerBeat);
         };
-
-        if (totalDelayMs > 1) {
-            setTimeout(fire, totalDelayMs);
-        } else {
-            fire();
-        }
-
-        // Ratcheting
-        if (step.retriggerCount > 0) {
-            const subInterval = stepDurationMs / (step.retriggerCount + 1);
-            for (let r = 1; r <= step.retriggerCount; r++) {
-                const retrigVel = Math.max(20, Math.round(vel * (1 - r * 0.12)));
-                setTimeout(() => triggerToasterPad(track.padIndex, retrigVel), totalDelayMs + subInterval * r);
-            }
-        }
     }
-
-    // Update UI cursor
-    toasterStore.set({ ...state, currentStep, isPlaying: true });
-
-    // Schedule next step using AudioContext clock to prevent drift
-    const stepDurationSec = stepDurationMs / 1000;
-    const nextStep = (currentStep + 1) % totalSteps;
-    if (nextStep === 0) {
-        playCount++;
-    }
-
-    nextTickTime += stepDurationSec;
-    const now = getAudioTime();
-    const delayMs = Math.max(1, (nextTickTime - now) * 1000);
-
-    timeoutId = setTimeout(() => tick(nextStep, bpm, stepsPerBeat), delayMs);
-}
-
-export function startSequencer(bpm: number, stepsPerBeat: number = 4): void {
-    stopSequencer();
-    running = true;
-    playCount = 0;
-    nextTickTime = getAudioTime();
-    tick(0, bpm, stepsPerBeat);
-}
+);
 
 export function stopSequencer(): void {
     running = false;

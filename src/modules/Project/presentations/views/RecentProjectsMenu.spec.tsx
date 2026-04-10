@@ -10,7 +10,6 @@ vi.mock('../../useCases/recentProjects', () => ({
     ]),
     removeFromRecentProjects: vi.fn(),
     loadRecentProject: vi.fn(),
-    type RecentProjectEntry: {},
 }));
 
 vi.mock('../../useCases/projectPersistence/newProject', () => ({
@@ -23,11 +22,7 @@ vi.mock('../../useCases/projectPersistence/saveProject', () => ({
 
 vi.mock('../../useCases/projectPersistence/fileIO', () => ({
     exportProjectFile: vi.fn(),
-    importProjectFile: vi.fn(),
-}));
-
-vi.mock('../../useCases/fileDialog', () => ({
-    pickFiles: vi.fn().mockResolvedValue([]),
+    pickAndImportProjectFile: vi.fn(),
 }));
 
 vi.mock('#/modules/Workspace/useCases/dialogs', () => ({

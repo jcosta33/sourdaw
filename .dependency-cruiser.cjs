@@ -8,23 +8,21 @@
 //
 //   Each module MUST expose a root index.ts as its sole public surface.
 //   All cross-module imports must target <module>/index.ts — direct imports
-//   into useCases/, events/, stores/, or any other folder are forbidden.
+//   into useCases/, events/, stores/, presentations/views/, or any other path are forbidden.
 //
 //   index.ts may only re-export from:
-//     - useCases/
+//     - useCases/   (values: functions/constants — not export type from useCases)
 //     - events/
 //     - stores/
+//     - presentations/views/
 //
 //   All other module folders are private — including models/, repositories/,
-//   services/, validators/, transformers/, presentations/, engine/, worklets/.
+//   services/, validators/, transformers/, presentations/hooks|stores|context|
+//   components|renderers/, engine/, worklets/, runtime/.
 //
 // Intra-module dependency direction:
 //   presentations/ → useCases → repositories / stores / validators / services
 //
-// Notes:
-// - This config enforces the TARGET architecture.
-// - Temporary migration shims can be allowed via narrow exceptions during
-//   migration, but those should be added consciously and removed later.
 // ----------------------------------------------------------------------------
 
 // ------------------------------
@@ -84,6 +82,7 @@ module.exports = {
             comment:
                 'Module index.ts is the public contract surface. ' +
                 'It may only re-export from useCases/, events/, stores/, and presentations/views/ within the same module. ' +
+                'Do not re-export types from useCases/ for other modules (see AGENTS.md — use-case types stay private). ' +
                 'Importing from models/, repositories/, services/, validators/, transformers/, ' +
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
                 'engine/, runtime/, or worklets/ is forbidden.',

@@ -47,7 +47,7 @@ export { duplicateTrack } from './useCases/duplicateTrack';
 export { updateTrack } from './useCases/updateTrack';
 export { getAllTracks } from './useCases/getAllTracks';
 export { getTrackById } from './useCases/getTrackById';
-export { getTrackStoreState } from './useCases/getTrackStoreState';
+export { getTrackStoreState, type TrackStoreState } from './useCases/getTrackStoreState';
 export { setTrackState } from './useCases/setTrackState';
 export { setTrackStoreState } from './useCases/setTrackStoreState';
 export { importAudioFile } from './useCases/importAudioFile';

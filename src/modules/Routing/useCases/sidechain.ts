@@ -1,3 +1,4 @@
+import { inject } from '#/infra/di/inject';
 import { createSidechainRoute, type SidechainRoute } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 import { wireSidechainRoute, unwireSidechainRoute } from '#/modules/AudioEngine/useCases/engineAccess';
 
@@ -6,31 +7,43 @@ import { SidechainCycleError } from '../errors/RoutingErrors';
 
 export type { SidechainRoute };
 
-export function addSidechainRoute(
-    sourceTrackId: string,
-    targetTrackId: string,
-    targetDeviceId: string,
-    targetParameterId = 'threshold'
-): void {
-    const state = sidechainStore.value;
-    if (!state) {
-        return;
-    }
+const sidechainRouteMutationDependencies = {
+    createSidechainRoute,
+    wireSidechainRoute,
+    unwireSidechainRoute,
+    sidechainStore,
+} as const;
 
-    const exists = state.routes.some((r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId);
-    if (exists) {
-        return;
-    }
+export const addSidechainRoute = inject(sidechainRouteMutationDependencies)(
+    ({ createSidechainRoute, wireSidechainRoute, sidechainStore }) =>
+        function addSidechainRoute(
+            sourceTrackId: string,
+            targetTrackId: string,
+            targetDeviceId: string,
+            targetParameterId = 'threshold'
+        ): void {
+            const state = sidechainStore.value;
+            if (!state) {
+                return;
+            }
 
-    if (wouldCreateCycle(sourceTrackId, targetTrackId, state.routes)) {
-        throw new SidechainCycleError(sourceTrackId, targetTrackId);
-    }
+            const exists = state.routes.some(
+                (r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId
+            );
+            if (exists) {
+                return;
+            }
 
-    const route = createSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId, targetParameterId);
-    sidechainStore.set({ routes: [...state.routes, route] });
+            if (wouldCreateCycle(sourceTrackId, targetTrackId, state.routes)) {
+                throw new SidechainCycleError(sourceTrackId, targetTrackId);
+            }
 
-    wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
-}
+            const route = createSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId, targetParameterId);
+            sidechainStore.set({ routes: [...state.routes, route] });
+
+            wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
+        }
+);
 
 function wouldCreateCycle(sourceTrackId: string, targetTrackId: string, routes: SidechainRoute[]): boolean {
     if (sourceTrackId === targetTrackId) {
@@ -56,21 +69,24 @@ function wouldCreateCycle(sourceTrackId: string, targetTrackId: string, routes: 
     return false;
 }
 
-export function removeSidechainRoute(routeId: string): void {
-    const state = sidechainStore.value;
-    if (!state) {
-        return;
-    }
+export const removeSidechainRoute = inject(sidechainRouteMutationDependencies)(
+    ({ unwireSidechainRoute, sidechainStore }) =>
+        function removeSidechainRoute(routeId: string): void {
+            const state = sidechainStore.value;
+            if (!state) {
+                return;
+            }
 
-    const route = state.routes.find((r) => r.id === routeId);
-    if (route) {
-        unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
-    }
+            const route = state.routes.find((r) => r.id === routeId);
+            if (route) {
+                unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
+            }
 
-    sidechainStore.set({
-        routes: state.routes.filter((r) => r.id !== routeId),
-    });
-}
+            sidechainStore.set({
+                routes: state.routes.filter((r) => r.id !== routeId),
+            });
+        }
+);
 
 export function getSidechainRoutesForTrack(trackId: string): SidechainRoute[] {
     const state = sidechainStore.value;
@@ -92,17 +108,20 @@ export function getAllSidechainRoutes(): SidechainRoute[] {
     return sidechainStore.value?.routes ?? [];
 }
 
-export function setSidechainRoutes(routes: SidechainRoute[]): void {
-    const state = sidechainStore.value;
-    if (state) {
-        for (const route of state.routes) {
-            unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
+export const setSidechainRoutes = inject(sidechainRouteMutationDependencies)(
+    ({ wireSidechainRoute, unwireSidechainRoute, sidechainStore }) =>
+        function setSidechainRoutes(routes: SidechainRoute[]): void {
+            const state = sidechainStore.value;
+            if (state) {
+                for (const route of state.routes) {
+                    unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
+                }
+            }
+
+            sidechainStore.set({ routes });
+
+            for (const route of routes) {
+                wireSidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
+            }
         }
-    }
-
-    sidechainStore.set({ routes });
-
-    for (const route of routes) {
-        wireSidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
-    }
-}
+);

@@ -12,7 +12,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/stores/mixAnalysisStore', () => ({
-    mixAnalysisStore: {},
+    mixAnalysisStore: { name: 'mixAnalysisStore' },
     toggleMixAnalysisPanel: vi.fn(),
 }));
 
@@ -28,22 +28,25 @@ vi.mock('../components/mixAnalysis/MixAnalysisSections', () => ({
     SuggestionsList: ({ suggestions }: any) => <div data-testid="suggestions-list">Suggestions: {suggestions?.length || 0}</div>,
 }));
 
-let mockState = {
-    result: null,
+const { useStore } = await import('#/infra/store/useStore');
+const { toggleMixAnalysisPanel } = await import('#/modules/AiRuntime/stores/mixAnalysisStore');
+const { runAppAction } = await import('#/modules/AiRuntime/useCases/aiPanelActions');
+
+// Mock store state
+const mockState = {
+    result: null as unknown,
     isAnalyzing: false,
     panelOpen: true,
 };
 
-vi.mocked(vi.importMock('#/infra/store/useStore').useStore).mockImplementation(() => mockState);
+(useStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockState);
 
 describe('MixAnalysisPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockState = {
-            result: null,
-            isAnalyzing: false,
-            panelOpen: true,
-        };
+        mockState.result = null;
+        mockState.isAnalyzing = false;
+        mockState.panelOpen = true;
     });
 
     it('should render without crashing when panel is open', () => {
@@ -52,7 +55,7 @@ describe('MixAnalysisPanel', () => {
     });
 
     it('should return null when panel is closed', () => {
-        mockState = { result: null, isAnalyzing: false, panelOpen: false };
+        mockState.panelOpen = false;
         const { container } = render(<MixAnalysisPanel />);
         expect(container.firstChild).toBeNull();
     });
@@ -69,13 +72,12 @@ describe('MixAnalysisPanel', () => {
     });
 
     it('should render analyzing state', () => {
-        mockState = { result: null, isAnalyzing: true, panelOpen: true };
+        mockState.isAnalyzing = true;
         render(<MixAnalysisPanel />);
         expect(screen.getByText('Analyzing mix...')).toBeInTheDocument();
     });
 
     it('should call runAppAction with analyzeMix when refresh button is clicked', () => {
-        const { runAppAction } = vi.importMock('#/modules/AiRuntime/useCases/aiPanelActions');
         render(<MixAnalysisPanel />);
         const refreshButton = screen.getByLabelText('Refresh mix analysis');
         fireEvent.click(refreshButton);
@@ -83,7 +85,6 @@ describe('MixAnalysisPanel', () => {
     });
 
     it('should call toggleMixAnalysisPanel when close button is clicked', () => {
-        const { toggleMixAnalysisPanel } = vi.importMock('#/modules/AiRuntime/stores/mixAnalysisStore');
         render(<MixAnalysisPanel />);
         const closeButton = screen.getByLabelText('Close mix analysis');
         fireEvent.click(closeButton);
@@ -91,17 +92,13 @@ describe('MixAnalysisPanel', () => {
     });
 
     it('should render analysis results when available', () => {
-        mockState = {
-            result: {
-                overallLevel: -12,
-                frequencyBalance: [{ freq: 100, level: -20 }],
-                trackLevels: [{ trackId: 't1', level: -10 }],
-                issues: [{ severity: 'warning', message: 'Clipping detected' }],
-                suggestions: ['Reduce bass level'],
-                timestamp: Date.now(),
-            },
-            isAnalyzing: false,
-            panelOpen: true,
+        mockState.result = {
+            overallLevel: -12,
+            frequencyBalance: [{ freq: 100, level: -20 }],
+            trackLevels: [{ trackId: 't1', level: -10 }],
+            issues: [{ severity: 'warning', message: 'Clipping detected' }],
+            suggestions: ['Reduce bass level'],
+            timestamp: Date.now(),
         };
         render(<MixAnalysisPanel />);
         expect(screen.getByTestId('overall-level')).toBeInTheDocument();
@@ -112,19 +109,14 @@ describe('MixAnalysisPanel', () => {
     });
 
     it('should call runAppAction with autoFixMix when auto-fix button is clicked', () => {
-        mockState = {
-            result: {
-                overallLevel: -12,
-                frequencyBalance: [],
-                trackLevels: [],
-                issues: [{ severity: 'warning', message: 'Test issue' }],
-                suggestions: [],
-                timestamp: Date.now(),
-            },
-            isAnalyzing: false,
-            panelOpen: true,
+        mockState.result = {
+            overallLevel: -12,
+            frequencyBalance: [],
+            trackLevels: [],
+            issues: [{ severity: 'warning', message: 'Test issue' }],
+            suggestions: [],
+            timestamp: Date.now(),
         };
-        const { runAppAction } = vi.importMock('#/modules/AiRuntime/useCases/aiPanelActions');
         render(<MixAnalysisPanel />);
         const autoFixButton = screen.getByText('Auto-Fix');
         fireEvent.click(autoFixButton);

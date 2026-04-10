@@ -3,6 +3,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import {
     getTransportState,
     getTransportStoreValue,
+    getTempoMapState,
     updateTransportState,
 } from './transportQueries';
 import { defaultTransportState } from '../models/TransportState';
@@ -34,5 +35,13 @@ describe('transportQueries injectables', () => {
         updateTransportState({ tempo: 140 });
 
         expect(repoUpdate).toHaveBeenCalledWith({ tempo: 140 });
+    });
+
+    it('should forward getTempoMapState to the tempo map store', () => {
+        const snapshot = { changes: [{ beat: 0, bpm: 120 }] };
+        const tempoMapStoreStub = { value: snapshot };
+        injectDependencies(getTempoMapState, { tempoMapStore: tempoMapStoreStub as never });
+
+        expect(getTempoMapState()).toBe(snapshot);
     });
 });

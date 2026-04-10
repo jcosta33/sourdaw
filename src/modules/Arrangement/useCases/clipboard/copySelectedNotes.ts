@@ -1,23 +1,32 @@
+import { inject } from '#/infra/di/inject';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { setNoteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
-export function copySelectedNotes(clipId: string, noteIds: string[]): void {
-    const midiState = midiStore.value;
-    if (!midiState) {
-        return;
-    }
+export const copySelectedNotesDependencies = {
+    midiStore,
+    setNoteClipboard,
+};
 
-    const notes = midiState.notesByClipId[clipId];
-    if (!notes) {
-        return;
-    }
+export const copySelectedNotes = inject(copySelectedNotesDependencies)(
+    ({ midiStore: midi, setNoteClipboard: setNotes }) =>
+        function copySelectedNotes(clipId: string, noteIds: string[]): void {
+            const midiState = midi.value;
+            if (!midiState) {
+                return;
+            }
 
-    const selected = notes.filter((n) => noteIds.includes(n.id));
-    if (selected.length === 0) {
-        return;
-    }
+            const notes = midiState.notesByClipId[clipId];
+            if (!notes) {
+                return;
+            }
 
-    setNoteClipboard({
-        notes: selected.map((n) => ({ ...n })),
-    });
-}
+            const selected = notes.filter((n) => noteIds.includes(n.id));
+            if (selected.length === 0) {
+                return;
+            }
+
+            setNotes({
+                notes: selected.map((n) => ({ ...n })),
+            });
+        }
+);

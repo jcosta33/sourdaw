@@ -28,14 +28,16 @@ vi.mock('#/modules/Command/useCases/undoRedo', () => ({
     undoToIndex: vi.fn(),
 }));
 
+const { useStore } = await import('#/infra/store/useStore');
+const { closeUndoHistory } = await import('#/modules/Workspace/useCases/togglePanel/panelToggles');
+
 describe('UndoHistoryPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('should render null when panel is closed', () => {
-        const useStoreMock = vi.mocked(await import('#/infra/store/useStore'));
-        useStoreMock.useStore.mockImplementation((store) => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) => {
             if (store?.name === 'workspaceStore') {
                 return { undoHistoryOpen: false };
             }
@@ -47,22 +49,49 @@ describe('UndoHistoryPanel', () => {
     });
 
     it('should render panel when open', () => {
-        const { container } = render(<UndoHistoryPanel />);
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) => {
+            if (store?.name === 'workspaceStore') {
+                return { undoHistoryOpen: true };
+            }
+            return { past: [], future: [] };
+        });
+        
+        render(<UndoHistoryPanel />);
         expect(screen.getByText(/Undo History/i)).toBeInTheDocument();
     });
 
     it('should render empty state when no history', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) => {
+            if (store?.name === 'workspaceStore') {
+                return { undoHistoryOpen: true };
+            }
+            return { past: [], future: [] };
+        });
+        
         render(<UndoHistoryPanel />);
         expect(screen.getByText(/No history yet/i)).toBeInTheDocument();
     });
 
     it('should render close button', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) => {
+            if (store?.name === 'workspaceStore') {
+                return { undoHistoryOpen: true };
+            }
+            return { past: [], future: [] };
+        });
+        
         render(<UndoHistoryPanel />);
         expect(screen.getByLabelText(/Close undo history/i)).toBeInTheDocument();
     });
 
     it('should call closeUndoHistory when close button is clicked', () => {
-        const { closeUndoHistory } = await import('#/modules/Workspace/useCases/togglePanel/panelToggles');
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) => {
+            if (store?.name === 'workspaceStore') {
+                return { undoHistoryOpen: true };
+            }
+            return { past: [], future: [] };
+        });
+        
         render(<UndoHistoryPanel />);
         const closeButton = screen.getByLabelText(/Close undo history/i);
         fireEvent.click(closeButton);

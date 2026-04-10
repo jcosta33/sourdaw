@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { TooltipProvider } from '#/components/ui/tooltip';
 import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
@@ -55,6 +56,10 @@ vi.mock('#/modules/Arrangement/useCases/clipGainEnvelope/resetClipGainEnvelope',
     resetClipGainEnvelope: vi.fn(),
 }));
 
+const renderWithTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
 describe('ClipGainEnvelopeSection', () => {
     const defaultProps = {
         clipId: 'clip-1',
@@ -66,32 +71,32 @@ describe('ClipGainEnvelopeSection', () => {
     });
 
     it('should render without crashing', () => {
-        render(<ClipGainEnvelopeSection {...defaultProps} />);
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
         expect(screen.getByText('Gain Envelope')).toBeInTheDocument();
     });
 
     it('should display section title', () => {
-        render(<ClipGainEnvelopeSection {...defaultProps} />);
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
         expect(screen.getByText('Gain Envelope')).toBeInTheDocument();
     });
 
     it('should render toggle button', () => {
-        render(<ClipGainEnvelopeSection {...defaultProps} />);
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
         expect(screen.getByLabelText('Enable gain envelope')).toBeInTheDocument();
     });
 
     it('should render add breakpoint button', () => {
-        render(<ClipGainEnvelopeSection {...defaultProps} />);
-        expect(screen.getByLabelText('Add breakpoint at midpoint')).toBeInTheDocument();
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
+        expect(screen.getByLabelText('Add breakpoint')).toBeInTheDocument();
     });
 
     it('should render reset button', () => {
-        render(<ClipGainEnvelopeSection {...defaultProps} />);
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
         expect(screen.getByLabelText('Reset gain envelope')).toBeInTheDocument();
     });
 
     it('should display envelope status', () => {
-        render(<ClipGainEnvelopeSection {...defaultProps} />);
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
         expect(screen.getByText(/Disabled/)).toBeInTheDocument();
         expect(screen.getByText(/0 points/)).toBeInTheDocument();
     });
