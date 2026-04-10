@@ -8,8 +8,10 @@ import {
     type LearningTarget,
     type MidiMappingTargetType,
     type MidiLearnState,
-} from '#/modules/MIDI/stores/midiLearnStore';
-import { startMidiLearn, stopMidiLearn, findMappingForTarget } from '#/modules/MIDI/useCases/midiLearn';
+    startMidiLearn,
+    stopMidiLearn,
+    findMappingForTarget,
+} from '#/modules/MIDI';
 
 type MidiLearnButtonProps = {
     targetType: MidiMappingTargetType;

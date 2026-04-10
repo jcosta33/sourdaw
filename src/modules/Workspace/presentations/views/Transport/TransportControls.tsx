@@ -8,16 +8,18 @@ import { LED } from '#/components/daw/LED';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { TransportValuePill } from '../../components/Transport/TransportValuePill';
-import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';
-import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
-import { toggleLoop } from '#/modules/Transport/useCases/transportControls/toggleLoop';
-import { toggleOverdub } from '#/modules/Transport/useCases/transportControls/toggleOverdub';
-import { toggleMetronome } from '#/modules/Transport/useCases/transportControls/toggleMetronome';
-import { setMetronomeVolume } from '#/modules/Transport/useCases/transportControls/setMetronomeVolume';
-import { toggleRecording } from '#/modules/Transport/useCases/transportControls/toggleRecording';
-import { togglePunchEnabled } from '#/modules/Transport/useCases/transportControls/togglePunchEnabled';
-import { toggleCountIn } from '#/modules/Transport/useCases/transportControls/toggleCountIn';
-import { setCountInBars } from '#/modules/Transport/useCases/transportControls/setCountInBars';
+import {
+    togglePlayback,
+    stopPlayback,
+    toggleLoop,
+    toggleOverdub,
+    toggleMetronome,
+    setMetronomeVolume,
+    toggleRecording,
+    togglePunchEnabled,
+    toggleCountIn,
+    setCountInBars,
+} from '#/modules/Transport';
 
 type TransportControlsProps = {
     isPlaying: boolean;

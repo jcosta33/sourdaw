@@ -2,9 +2,8 @@ import { type ReactElement, useState, useEffect } from 'react';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { Check, Undo2, X } from 'lucide-react';
-import { undoLastAction } from '#/modules/AiRuntime/useCases/aiPanelActions';
-
-import { type AiChangeNotification, subscribeAiChangeNotification } from '#/modules/AiRuntime/useCases/notifyAiChange';
+import { undoLastAction } from '../../useCases/aiPanelActions';
+import { type AiChangeNotification, subscribeAiChangeNotification } from '../../useCases/notifyAiChange';
 
 export const AiChangeToast = (): ReactElement | null => {
     const [changes, setChanges] = useState<AiChangeNotification[]>([]);

@@ -1,13 +1,15 @@
 import { useRef, useEffect, type MouseEvent } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { type TransportState } from '#/modules/Transport/models/TransportState';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
+import {
+    transportStore,
+    type TransportState,
+    playheadPositionRef,
+    seekPlayhead,
+    setLoopRegion,
+    disableLooping,
+} from '#/modules/Transport';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
-import { setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
-import { disableLooping } from '#/modules/Transport/useCases/setLooping';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 const HEIGHT = 18;

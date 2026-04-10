@@ -5,13 +5,12 @@ import {
     stopPlayback,
     toggleRecording,
     toggleLoop,
-} from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
-import { duplicateClipToNextBar } from '#/modules/Command/useCases/keyboardShortcutActions/trackShortcuts';
-import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
-import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
-import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
+    duplicateClipToNextBar,
+    undo,
+    redo,
+} from '#/modules/Command';
+import { copySelectedClip, pasteClip, removeClip } from '#/modules/Arrangement';
+import { saveProject } from '#/modules/Project';
 import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel/panelToggles';
 import { workspaceStore } from '../stores/workspaceStore';
 import { eventBus } from '#/app/registerDependencies';

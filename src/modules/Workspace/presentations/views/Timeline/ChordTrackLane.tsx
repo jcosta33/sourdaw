@@ -11,18 +11,16 @@ import { useStore } from '#/infra/store/useStore';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
-import { chordTrackStore, type ChordTrackState } from '#/modules/Arrangement/stores/chordTrackStore';
-import { addChordEvent } from '#/modules/MIDI/useCases/chordTrack/addChordEvent';
-import { removeChordEvent } from '#/modules/MIDI/useCases/chordTrack/removeChordEvent';
-import { moveChordEvent } from '#/modules/MIDI/useCases/chordTrack/moveChordEvent';
-import { updateChordEvent } from '#/modules/MIDI/useCases/chordTrack/updateChordEvent';
-import { toggleChordTrack } from '#/modules/MIDI/useCases/chordTrack/toggleChordTrack';
-import { clearChordTrack } from '#/modules/MIDI/useCases/chordTrack/clearChordTrack';
-import { formatChordName } from '#/modules/MIDI/useCases/formatChordName';
-import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
-
-// Workspace-local (AGENTS.md §95 — derive ChordEvent shape from the public Arrangement store).
-type ChordEvent = ChordTrackState['events'][number];
+import { chordTrackStore } from '#/modules/Arrangement';
+import {
+    addChordEvent,
+    removeChordEvent,
+    moveChordEvent,
+    updateChordEvent,
+    toggleChordTrack,
+    clearChordTrack,
+    formatChordName,
+} from '#/modules/MIDI';
 const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 import { cn } from '#/helpers/Styles/cn';
 
@@ -31,7 +29,39 @@ type ChordTrackLaneProps = {
     scrollX: number;
 };
 
-const defaultState: ChordTrackState = { enabled: false, events: [] };
+type ChordQuality =
+    | 'major'
+    | 'minor'
+    | 'dim'
+    | 'aug'
+    | 'sus2'
+    | 'sus4'
+    | '7'
+    | 'maj7'
+    | 'min7'
+    | 'dim7'
+    | 'aug7'
+    | '6'
+    | 'min6'
+    | '9'
+    | 'add9'
+    | 'min9'
+    | '7sus4';
+
+type ChordTrackEvent = {
+    id: string;
+    beat: number;
+    duration: number;
+    root: number;
+    quality: ChordQuality;
+};
+
+type ChordTrackViewState = {
+    enabled: boolean;
+    events: ChordTrackEvent[];
+};
+
+const defaultState: ChordTrackViewState = { enabled: false, events: [] };
 
 const LANE_HEIGHT = 26;
 
@@ -55,15 +85,15 @@ const ROOT_COLORS = [
 ] as const;
 
 /** Chord qualities offered in the quick-add menu. */
-const ADD_MENU_QUALITIES: ChordType[] = ['major', 'minor', '7', 'maj7', 'min7', 'dim', 'sus4'];
+const ADD_MENU_QUALITIES: ChordQuality[] = ['major', 'minor', '7', 'maj7', 'min7', 'dim', 'sus4'];
 
 type ContextMenuState =
     | { kind: 'none' }
     | { kind: 'empty'; x: number; y: number; beat: number }
-    | { kind: 'chord'; x: number; y: number; event: ChordEvent };
+    | { kind: 'chord'; x: number; y: number; event: ChordTrackEvent };
 
 export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps): ReactElement => {
-    const state = useStore(chordTrackStore, defaultState);
+    const state = useStore<ChordTrackViewState>(chordTrackStore, defaultState);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [dragState, setDragState] = useState<{ eventId: string; startX: number; originalBeat: number } | null>(null);
@@ -91,7 +121,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     }, [contextMenu.kind, showAddMenu]);
 
     // ── Drag handling ─────────────────────────────────────────────────
-    const handleMouseDown = (e: MouseEvent, event: ChordEvent): void => {
+    const handleMouseDown = (e: MouseEvent, event: ChordTrackEvent): void => {
         if (e.button !== 0) {
             return;
         }
@@ -135,13 +165,13 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     };
 
     // ── Add chord at beat from context menu ───────────────────────────
-    const handleAddAtBeat = (beat: number, root: number, quality: ChordType): void => {
+    const handleAddAtBeat = (beat: number, root: number, quality: ChordQuality): void => {
         addChordEvent(Math.floor(beat), root, quality, 4);
         setContextMenu({ kind: 'none' });
     };
 
     // ── Add chord from top-bar "+" button ─────────────────────────────
-    const handleQuickAdd = (root: number, quality: ChordType): void => {
+    const handleQuickAdd = (root: number, quality: ChordQuality): void => {
         const lastEvent = state.events[state.events.length - 1];
         const beat = lastEvent ? lastEvent.beat + lastEvent.duration : 0;
         addChordEvent(beat, root, quality, 4);
@@ -341,7 +371,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
 
 // ── Chord picker popover ──────────────────────────────────────────────────
 
-const ChordPickerPopover = ({ onPick }: { onPick: (root: number, quality: ChordType) => void }): ReactElement => (
+const ChordPickerPopover = ({ onPick }: { onPick: (root: number, quality: ChordQuality) => void }): ReactElement => (
     <div className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-56 w-48 overflow-y-auto rounded-md p-1.5">
         {ROOT_NAMES.map((name, rootIdx) => (
             <div key={name}>

@@ -1,9 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { pushUndoEntry } from '#/modules/Command';
 import { splitClip } from './splitClip';
 import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 
 /**
  * Split a clip at `splitBeat` and register a single undo entry that

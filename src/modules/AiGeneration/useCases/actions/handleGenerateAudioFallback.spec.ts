@@ -18,6 +18,7 @@ describe('handleGenerateAudioFallback', () => {
             updateTask,
             generateAudio,
             isAudioGenerationAvailable,
+            audioBufferCache: { set: vi.fn(), get: vi.fn() },
         });
 
         await handleGenerateAudioFallback('prompt', '8');

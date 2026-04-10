@@ -4,30 +4,56 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
-import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import {
+    automationStore,
+    addAutomationLane,
+    toggleLaneCollapsed,
+    removeAutomationLane,
+} from '#/modules/Automation';
+import {
+    trackStore,
     timelineViewStore,
-    type TimelineViewState,
     scrollTimeline,
-} from '#/modules/Arrangement/stores/timelineViewStore';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
+    setAutomationMode,
+    BeatRulerBar,
+    TimelineChromeSurface,
+} from '#/modules/Arrangement';
+import { workspaceStore } from '#/modules/Workspace';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
-import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { toggleLaneCollapsed } from '#/modules/Automation/useCases/automation/toggleLaneCollapsed';
-import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
-import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
 import { AutomationSidebarCell } from './AutomationView/AutomationSidebarCell';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationView/AutomationControls';
 import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
+import { type Track } from '../../models/TrackViewTypes';
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
-import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
-import { TimelineChromeSurface } from '#/modules/Arrangement/presentations/views/TimelineChromeSurface';
 
 const SPARKLINE_HEIGHT = 24;
+
+type AutomationPanelWorkspaceState = {
+    selectedClipId: string | null;
+    selectedClipIds: string[];
+    activeTool: 'select' | 'cut' | 'draw' | 'automation' | 'stretch';
+    snapValue: number;
+    trackListWidth: number;
+    trackListOpen: boolean;
+};
+
+type AutomationPanelState = {
+    lanes: AutomationLane[];
+};
+
+type AutomationTrackState = {
+    tracks: Track[];
+    selectedTrackId: string | null;
+};
+
+type AutomationTimelineState = {
+    scrollX: number;
+    scrollY: number;
+    pixelsPerBeat: number;
+    autoScrollEnabled: boolean;
+};
 
 /** Reactively track an element's width via ResizeObserver */
 function useContainerWidth(ref: RefObject<HTMLDivElement | null>): number {
@@ -95,15 +121,15 @@ export const AutomationBottomPanel = (): ReactElement => {
 
     const containerWidth = useContainerWidth(containerRef);
 
-    const trackState = useStore<TrackStoreState>(trackStore, { tracks: [], selectedTrackId: null });
-    const autoState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
-    const viewState = useStore<TimelineViewState>(timelineViewStore, {
+    const trackState = useStore<AutomationTrackState>(trackStore, { tracks: [], selectedTrackId: null });
+    const autoState = useStore<AutomationPanelState>(automationStore, { lanes: [] });
+    const viewState = useStore<AutomationTimelineState>(timelineViewStore, {
         scrollX: 0,
         scrollY: 0,
         pixelsPerBeat: 12,
         autoScrollEnabled: true,
     });
-    const ws = useStore<WorkspaceState>(workspaceStore, defaultWorkspaceState);
+    const ws = useStore<AutomationPanelWorkspaceState>(workspaceStore, defaultWorkspaceState);
 
     const selectedTrackId = trackState.selectedTrackId;
     const selectedTrack = trackState.tracks.find((t) => t.id === selectedTrackId) ?? null;

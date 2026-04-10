@@ -1,21 +1,37 @@
 import { type RefObject, useState, useRef, useEffect } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { useTransportState } from './useTransportState';
-import { setTempo } from '#/modules/Transport/useCases/setTempo';
-import { setTimeSignature } from '#/modules/Transport/useCases/setTimeSignature';
-import { tempoMapStore, type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStore';
-import { addTempoChange, removeTempoChange, updateTempoChange } from '#/modules/Transport/useCases/tempoMap';
-import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
+import {
+    setTempo,
+    setTimeSignature,
+    tempoMapStore,
+    addTempoChange,
+    removeTempoChange,
+    updateTempoChange,
+} from '#/modules/Transport';
 
-const defaultTempoMapState: TempoMapStoreState = { changes: [] };
+type TempoCurve = 'instant' | 'linear';
 
-const useTempoMapState = (): TempoMapStoreState => {
-    return useStore(tempoMapStore, defaultTempoMapState);
+type TempoChangeView = {
+    id: string;
+    beat: number;
+    tempo: number;
+    curve: TempoCurve;
+};
+
+type TempoMapViewState = {
+    changes: TempoChangeView[];
+};
+
+const defaultTempoMapState: TempoMapViewState = { changes: [] };
+
+const useTempoMapState = (): TempoMapViewState => {
+    return useStore<TempoMapViewState>(tempoMapStore, defaultTempoMapState);
 };
 
 export type TempoEditorState = {
     transport: ReturnType<typeof useTransportState>;
-    tempoMap: TempoMapStoreState;
+    tempoMap: TempoMapViewState;
 
     // Time signature editing
     editingTimeSig: boolean;
@@ -37,13 +53,13 @@ export type TempoEditorState = {
     setNewBeat: (v: string) => void;
     newTempo: string;
     setNewTempo: (v: string) => void;
-    newCurve: TempoChange['curve'];
-    setNewCurve: (v: TempoChange['curve']) => void;
+    newCurve: TempoCurve;
+    setNewCurve: (v: TempoCurve) => void;
     editingChangeId: string | null;
     editingChangeTempo: string;
     setEditingChangeTempo: (v: string) => void;
     handleAddTempoChange: () => void;
-    startEditChange: (change: TempoChange) => void;
+    startEditChange: (change: TempoChangeView) => void;
     commitEditChange: () => void;
     cancelEditChange: () => void;
     removeChange: (id: string) => void;
@@ -68,7 +84,7 @@ export const useTempoEditorState = (): TempoEditorState => {
     const mapPanelRef = useRef<HTMLDivElement>(null);
     const [newBeat, setNewBeat] = useState('0');
     const [newTempo, setNewTempo] = useState('120');
-    const [newCurve, setNewCurve] = useState<TempoChange['curve']>('instant');
+    const [newCurve, setNewCurve] = useState<TempoCurve>('instant');
     const [editingChangeId, setEditingChangeId] = useState<string | null>(null);
     const [editingChangeTempo, setEditingChangeTempo] = useState('');
 
@@ -113,7 +129,7 @@ export const useTempoEditorState = (): TempoEditorState => {
         setNewBeat(String(beat + 4));
     };
 
-    const startEditChange = (change: TempoChange): void => {
+    const startEditChange = (change: TempoChangeView): void => {
         setEditingChangeId(change.id);
         setEditingChangeTempo(String(change.tempo));
     };

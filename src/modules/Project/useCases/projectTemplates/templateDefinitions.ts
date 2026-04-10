@@ -1,16 +1,22 @@
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { addTrack, addDevice, trackStore } from '#/modules/Arrangement';
 import { newProject } from '../projectPersistence/newProject';
-import {
-    demo1_TheCompleteMix,
-    demo_SweetDreams,
-    demo4_NativeShowcase,
-    demo5_NebulaDrift,
-} from '../demoProjects/demoFactories';
-import { type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
+import { demo1_TheCompleteMix } from '../demoProjects/resonance/createResonanceDemo';
+import { demo_SweetDreams } from '../demoProjects/sweetDreams/createSweetDreamsDemo';
+import { demo4_NativeShowcase } from '../demoProjects/synthwave/createSynthwaveDemo';
+import { demo5_NebulaDrift } from '../demoProjects/nebulaDrift/createNebulaDriftDemo';
+import { stopPlayback } from '#/modules/Command';
+import { resetAudioGraph } from '#/modules/AudioEngine';
+
+export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
+
+export type ProjectTemplate = {
+    id: string;
+    name: string;
+    description: string;
+    category: TemplateCategory;
+    platform?: 'web' | 'native';
+    create: () => void | Promise<void>;
+};
 
 let synthDeviceCounter = 0;
 

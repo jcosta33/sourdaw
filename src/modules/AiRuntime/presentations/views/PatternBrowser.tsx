@@ -24,11 +24,10 @@ import {
     type ScaleType,
     type GenerationParams,
 } from '../../models/midiPatternLibrary';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { trackStore, addClip } from '#/modules/Arrangement';
+import { addMidiNote } from '#/modules/MIDI';
+import { getTransportState } from '#/modules/Transport';
+import { selectClip } from '#/modules/Workspace';
 
 // ── Mini piano-roll preview ──
 

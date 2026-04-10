@@ -7,9 +7,7 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { GitBranch, Plus, Merge, Trash2, Check, X } from 'lucide-react';
 
-import { type BranchRecord, type BranchStoreState, MAIN_BRANCH_ID } from '../../models/BranchTypes';
-
-import { branchStore } from '../../stores/branchStore';
+import { branchStore, type BranchRecord, type BranchStoreState, MAIN_BRANCH_ID } from '../../stores/branchStore';
 import { forkProjectBranch, switchBranch, mergeBranch, deleteBranch } from '../../useCases/crdtBranching';
 
 const defaultState: BranchStoreState = {

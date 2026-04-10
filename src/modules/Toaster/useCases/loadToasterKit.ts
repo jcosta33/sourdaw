@@ -5,8 +5,8 @@
 import { inject } from '#/infra/di/inject';
 import { type ToasterKit, type DrumEngineType } from '../models/ToasterKit';
 import { loadKit } from '../stores/toasterStore';
-import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getTrackStrip } from '#/modules/AudioEngine';
+import { getAllTracks } from '#/modules/Arrangement';
 
 /**
  * Map TS engine type to Rust DrumEngineType index.
@@ -110,4 +110,3 @@ export function loadToasterKitPreset(kit: ToasterKit): void {
         }
     }
 }
-export type { ToasterKit } from '../models/ToasterKit';

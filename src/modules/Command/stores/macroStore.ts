@@ -1,6 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
-import { type Macro } from '../models/Macro';
-import { type AppAction } from '../models/AppAction';
+import { type AppAction } from '../useCases/commandQueries';
+import { type Macro } from '../useCases/macro/recording';
 
 const STORAGE_KEY = 'sourdaw:macros';
 

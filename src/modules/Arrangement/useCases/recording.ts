@@ -3,13 +3,13 @@ import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { updateTrack } from '../repositories/track/updateTrack';
 import { getTrackById } from '../repositories/track/getTrackById';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { getTransportState } from '#/modules/Transport';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { type Clip } from '../models/Track';
+import { type Clip } from '../stores/trackStore';
 import { addTakeLane } from '#/modules/Arrangement/useCases/comping/addTakeLane';
 import { addTake } from '#/modules/Arrangement/useCases/comping/addTake';
 import { getTakeLaneForTrack } from '#/modules/Arrangement/useCases/comping/getTakeLaneForTrack';
-import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput';
+import { setMidiInputTrack } from '#/modules/AudioEngine';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 
 let recordClipId = 1;

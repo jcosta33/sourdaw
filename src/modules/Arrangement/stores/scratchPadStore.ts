@@ -1,5 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
-import { type ScratchPadSection } from '../models/ScratchPadSection';
+import { type ScratchPadSection } from '../useCases/scratchPad/scratchPadCrud';
 
 export type ScratchPadStoreState = {
     sections: ScratchPadSection[];

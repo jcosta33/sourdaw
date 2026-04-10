@@ -4,32 +4,28 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import {
-    setWorkspaceMode,
-    splitClipWithUndo,
-    normalizeClip,
-    reverseClip,
-    lockClip,
-    setClipColor,
-    renameClip,
-    muteClip,
-    removeClip,
-    duplicateClip,
-    duplicateClipToNextBar,
-    copySelectedClip,
-    cutSelectedClip,
-    pasteClip,
-    detectTempo,
-    detectKey,
-    stripSilence,
-    exportMidiClip,
-    executeAppAction,
-} from '../../useCases/timelineViewActions';
+import { workspaceStore, selectClip, setWorkspaceMode } from '#/modules/Workspace';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { runAiActionWithToast } from '#/modules/AiRuntime/useCases/runAiActionWithToast';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { runAiActionWithToast } from '#/modules/AiRuntime';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration';
+import { trackStore } from '#/modules/Arrangement';
+import { detectTempo, detectKey } from '#/modules/AudioAnalysis';
+import { exportMidiClip } from '#/modules/MIDI';
+import { executeAppAction } from '#/modules/Command';
+import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
+import { normalizeClip } from '../../useCases/clipEditing/normalizeClip';
+import { reverseClip } from '../../useCases/clipEditing/reverseClip';
+import { lockClip } from '../../useCases/clipEditing/lockClip';
+import { setClipColor } from '../../useCases/clipEditing/setClipColor';
+import { renameClip } from '../../useCases/clipEditing/renameClip';
+import { muteClip } from '../../useCases/clipEditing/muteClip';
+import { removeClip } from '../../useCases/clip/removeClip';
+import { duplicateClip } from '../../useCases/clip/duplicateClip';
+import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
+import { copySelectedClip } from '../../useCases/clipboard/copySelectedClip';
+import { cutSelectedClip } from '../../useCases/clipboard/cutSelectedClip';
+import { pasteClip } from '../../useCases/clipboard/pasteClip';
+import { stripSilence } from '../../useCases/stripSilence';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 type ClipContextMenuProps = {
@@ -171,11 +167,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() =>
                     runAiActionWithToast(
-                        async () => {
-                            const { handleAiDenoiseClip } =
-                                await import('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip');
-                            await handleAiDenoiseClip(clipId, 0.7);
-                        },
+                        () => handleAiDenoiseClip(clipId, 0.7),
                         {
                             startMsg: 'Denoising audio…',
                             successMsg: 'Audio denoised',

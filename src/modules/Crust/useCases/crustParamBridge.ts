@@ -3,9 +3,8 @@
  * Same rAF-throttled pattern as glutenParamBridge.
  */
 import { inject } from '#/infra/di/inject';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { updateDeviceParam } from '#/modules/AudioEngine';
+import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement';
 import { type CrustPatch } from '../models/CrustPatch';
 import { loadCrustPatch, setCrustParam } from '../stores/crustStore';
 

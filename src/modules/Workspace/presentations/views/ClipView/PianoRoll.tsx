@@ -12,10 +12,9 @@
 import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
 
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { midiStore } from '#/modules/MIDI';
+import { trackStore } from '#/modules/Arrangement';
 import { useStore } from '#/infra/store/useStore';
-import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
 
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
@@ -34,6 +33,25 @@ type PianoRollProps = {
     onBeatWidthChange?: (beatWidth: number) => void;
     onContentWidthChange?: (contentWidth: number) => void;
 };
+
+type PianoRollChordType =
+    | 'major'
+    | 'minor'
+    | 'dim'
+    | 'aug'
+    | 'sus2'
+    | 'sus4'
+    | '7'
+    | 'maj7'
+    | 'min7'
+    | 'dim7'
+    | 'aug7'
+    | '6'
+    | 'min6'
+    | '9'
+    | 'add9'
+    | 'min9'
+    | '7sus4';
 
 export const PianoRoll = ({
     clipId,
@@ -56,7 +74,7 @@ export const PianoRoll = ({
     const [stepBeat, setStepBeat] = useState(0);
     const [showGhostNotes, setShowGhostNotes] = useState(true);
     const [chordMode, setChordMode] = useState(false);
-    const [chordType, setChordType] = useState<ChordType>('major');
+    const [chordType, setChordType] = useState<PianoRollChordType>('major');
     const [paintMode, setPaintMode] = useState(false);
     const [lassoMode, setLassoMode] = useState(false);
     const [isFolded, setIsFolded] = useState(false);

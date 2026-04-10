@@ -47,7 +47,7 @@ export { duplicateTrack } from './useCases/duplicateTrack';
 export { updateTrack } from './useCases/updateTrack';
 export { getAllTracks } from './useCases/getAllTracks';
 export { getTrackById } from './useCases/getTrackById';
-export { getTrackStoreState, type TrackStoreState } from './useCases/getTrackStoreState';
+export { getTrackStoreState } from './useCases/getTrackStoreState';
 export { setTrackState } from './useCases/setTrackState';
 export { setTrackStoreState } from './useCases/setTrackStoreState';
 export { importAudioFile } from './useCases/importAudioFile';
@@ -196,8 +196,6 @@ export { toggleSoloSafe } from './useCases/toggleTrackState/toggleSoloSafe';
 
 // ── UseCases: Track View / Zoom ────────────────────────────────────────────
 
-export { setWorkspaceMode, getAudioDevices, decodeAudioFile } from './useCases/trackViewActions';
-export type { AudioDeviceInfo } from './useCases/trackViewActions';
 export { zoomTracksVertical } from './useCases/trackZoom';
 
 // ── UseCases: Track Template ───────────────────────────────────────────────

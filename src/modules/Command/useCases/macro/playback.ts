@@ -1,5 +1,5 @@
 import { macroStore } from '../../stores/macroStore';
-import { generateGroupId } from '../../models/UndoEntry';
+import { generateGroupId } from '../commandQueries';
 
 /**
  * Replay a saved macro by dispatching each action in sequence.

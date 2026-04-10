@@ -7,6 +7,9 @@ export { PresenceOverlay } from './presentations/views/PresenceOverlay';
 // stores/collaborationStore.ts
 export { collaborationStore } from './stores/collaborationStore';
 
+// useCases/collaborationQueries.ts
+export type { CollaborationPeer, CollaborationState, PresenceData, PresenceView } from './useCases/collaborationQueries';
+
 // useCases/collaboration/sessionManagement.ts
 export {
     createSession,

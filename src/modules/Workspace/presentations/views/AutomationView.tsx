@@ -1,12 +1,11 @@
 import { type ReactElement, type WheelEvent, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
-import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
 import {
+    ArrangementBar,
     timelineViewStore,
     scrollTimeline,
     setScrollY,
-    type TimelineViewState,
-} from '#/modules/Arrangement/stores/timelineViewStore';
+} from '#/modules/Arrangement';
 import { useTracks } from '../hooks/useTracks';
 import { TrackAutomationSection } from './AutomationView/TrackAutomationSection';
 import { Button } from '#/components/ui/button';
@@ -14,11 +13,18 @@ import { X } from 'lucide-react';
 import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
 
+type AutomationTimelineState = {
+    scrollX: number;
+    scrollY: number;
+    pixelsPerBeat: number;
+    autoScrollEnabled: boolean;
+};
+
 export const AutomationView = (): ReactElement => {
     const { tracks } = useTracks();
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const viewState = useStore<TimelineViewState>(timelineViewStore, {
+    const viewState = useStore<AutomationTimelineState>(timelineViewStore, {
         scrollX: 0,
         scrollY: 0,
         pixelsPerBeat: 12,

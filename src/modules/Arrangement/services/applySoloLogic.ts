@@ -6,11 +6,8 @@
  */
 
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import {
-    setTrackMute as engineSetTrackMute,
-    setTrackGain as engineSetTrackGain,
-} from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
+import { setTrackMute as engineSetTrackMute, setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine';
+import { getWorkspaceState } from '#/modules/Workspace';
 import { type Track } from '#/modules/Arrangement/models/Track';
 
 const savedGains = new Map<string, number>();

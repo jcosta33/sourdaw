@@ -6,7 +6,7 @@ import { DawUtilityMetric } from '#/components/daw/DawUtilityMetric';
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
-import { type MixAnalysis, type MixIssue } from '#/modules/AiRuntime/models/MixAnalysis';
+import { type MixAnalysis, type MixIssue } from '../../../models/MixAnalysis';
 
 // ── Shared helpers ──────────────────────────────────────────────────────
 

@@ -9,7 +9,26 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
-import { CHORD_TYPE_KEYS, type ChordType } from '#/modules/MIDI/useCases/chordStamps';
+import { CHORD_TYPE_KEYS } from '#/modules/MIDI';
+
+type PianoRollChordType =
+    | 'major'
+    | 'minor'
+    | 'dim'
+    | 'aug'
+    | 'sus2'
+    | 'sus4'
+    | '7'
+    | 'maj7'
+    | 'min7'
+    | 'dim7'
+    | 'aug7'
+    | '6'
+    | 'min6'
+    | '9'
+    | 'add9'
+    | 'min9'
+    | '7sus4';
 
 type PianoRollToolbarProps = {
     gridSnap: number;
@@ -26,8 +45,8 @@ type PianoRollToolbarProps = {
     onToggleGhostNotes: () => void;
     chordMode: boolean;
     onToggleChordMode: () => void;
-    chordType: ChordType;
-    onChordTypeChange: (v: ChordType) => void;
+    chordType: PianoRollChordType;
+    onChordTypeChange: (v: PianoRollChordType) => void;
     paintMode: boolean;
     onTogglePaintMode: () => void;
     lassoMode: boolean;
@@ -183,7 +202,7 @@ export const PianoRollToolbar = ({
         {chordMode ? (
             <DawCompactSelect
                 value={chordType}
-                onChange={(e) => onChordTypeChange(e.target.value as ChordType)}
+                onChange={(e) => onChordTypeChange(e.target.value as PianoRollChordType)}
                 size="micro"
                 aria-label="Chord type"
             >

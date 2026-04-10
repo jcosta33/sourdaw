@@ -5,7 +5,7 @@
  */
 
 import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { audioBufferCache } from '#/modules/AudioEngine';
 
 export const drawClip = (
     ctx: CanvasRenderingContext2D,

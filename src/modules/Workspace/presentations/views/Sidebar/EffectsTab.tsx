@@ -32,21 +32,23 @@ import {
     showGrinderPanel,
     showBacteriaPanel,
     showYeastPanel,
-} from '#/modules/Workspace/useCases/panels/devicePanels';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
+} from '../../../useCases/panels/devicePanels';
+import {
+    addDevice,
+    getFactoryPresets,
+    createTrackFromPreset,
+    loadPresetToTrack,
+} from '#/modules/Arrangement';
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
-import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
-import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
-import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
+import { PluginBrowser } from '#/modules/AudioEngine';
 import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
 import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2, SoonBadge } from './effectsTabHelpers';
-import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
+import { MODULATOR_PRESETS, MIDI_EFFECT_FACTORIES } from '#/modules/Plugin';
 
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
 

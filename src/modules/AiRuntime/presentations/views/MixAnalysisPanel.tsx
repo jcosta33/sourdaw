@@ -7,9 +7,9 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Activity, RefreshCw, Wrench, X } from 'lucide-react';
-import { mixAnalysisStore, toggleMixAnalysisPanel } from '#/modules/AiRuntime/stores/mixAnalysisStore';
-import { runAppAction } from '#/modules/AiRuntime/useCases/aiPanelActions';
-import { type MixAnalysis } from '#/modules/AiRuntime/models/MixAnalysis';
+import { mixAnalysisStore, toggleMixAnalysisPanel } from '../../stores/mixAnalysisStore';
+import { runAppAction } from '../../useCases/aiPanelActions';
+import { type MixAnalysis } from '../../models/MixAnalysis';
 import {
     OverallLevel,
     FrequencyBalance,

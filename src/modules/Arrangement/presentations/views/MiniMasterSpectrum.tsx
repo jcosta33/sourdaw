@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useRef } from 'react';
-import { getMasterAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getMasterAnalyser } from '#/modules/AudioEngine';
 import { useTracks } from '../hooks/useTracks';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { cn } from '#/helpers/Styles/cn';

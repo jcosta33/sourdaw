@@ -5,13 +5,14 @@
 import { type ReactElement, useRef, useEffect, useState } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases/engineAccess';
-import { resolveToken } from '#/helpers/UI/resolveToken';
 import {
+    getMasterAnalyser,
+    getAudioSampleRate,
     computeMomentaryLUFS,
     ShortTermLUFS,
     IntegratedLUFS,
-} from '#/modules/AudioEngine/useCases/advancedMetering/lufs';
+} from '#/modules/AudioEngine';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type LUFSMeterProps = {
     height?: number;

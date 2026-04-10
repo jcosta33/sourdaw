@@ -1,4 +1,4 @@
-import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
+import { chordTrackStore } from '#/modules/Arrangement';
 import { createChordEvent, type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
 import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
 

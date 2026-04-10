@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 import { isAppError } from '#/infra/errors/isAppError';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { generateAudio, isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases/audioAi';
+import { generateAudio, isAudioGenerationAvailable } from '#/modules/AudioAnalysis';
+import { audioBufferCache } from '#/modules/AudioEngine';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
@@ -11,10 +11,11 @@ export const handleGenerateAudioFallbackDependencies = {
     updateTask,
     generateAudio,
     isAudioGenerationAvailable,
-} as const;
+    audioBufferCache,
+};
 
 export const handleGenerateAudioFallback = inject(handleGenerateAudioFallbackDependencies)(
-    ({ addTask, updateTask, generateAudio, isAudioGenerationAvailable }) =>
+    ({ addTask, updateTask, generateAudio, isAudioGenerationAvailable, audioBufferCache: cache }) =>
         async function handleGenerateAudioFallback(prompt: string, durationStr: string, _strength: number = 0.7) {
             const taskId = addTask({ type: 'audio-generation', status: 'processing', prompt });
             try {
@@ -28,7 +29,7 @@ export const handleGenerateAudioFallback = inject(handleGenerateAudioFallbackDep
 
                 const duration = parseInt(durationStr) || 8;
                 const buffer = await generateAudio(prompt, duration);
-                audioBufferCache.set(`generated-${crypto.randomUUID()}`, buffer);
+                cache.set(`generated-${crypto.randomUUID()}`, buffer);
 
                 updateTask(taskId, {
                     status: 'success',

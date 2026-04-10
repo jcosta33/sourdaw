@@ -1,6 +1,5 @@
 import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
-import { broadcastPresence } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
-import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
+import { broadcastPresence, collaborationStore } from '#/modules/Collaboration';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { useTimelineGestures } from './useTimelineGestures';
 import { useTimelineFileDrop } from './useTimelineFileDrop';
@@ -11,33 +10,28 @@ import { hitTestClip, hitTestTrack } from '../../useCases/timelineInteractions/h
 import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
 import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
-import {
-    selectTrack,
-    setWorkspaceMode,
-    addClip,
-    removeClip,
-    moveClip,
-    removeAutomationPoint,
-    batchAddAutomationPoints,
-    pushUndoEntry,
-    setLoopRegion,
-    trimClipStart,
-    trimClipEnd,
-} from '../../useCases/timelineViewActions';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { toggleLoop } from '#/modules/Transport/useCases/transportControls/toggleLoop';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import {
+    workspaceStore,
     toggleClipInSelection,
     selectClipWithFocus,
     clearClipSelection,
     setClipSelection,
     selectClip,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+} from '#/modules/Workspace';
+import { trackStore } from '#/modules/Arrangement';
+import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport';
+import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation';
+import { pushUndoEntry } from '#/modules/Command';
+import { setWorkspaceMode } from '#/modules/Workspace';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
+import { addClip } from '../../useCases/clip/addClip';
+import { removeClip } from '../../useCases/clip/removeClip';
+import { moveClip } from '../../useCases/clip/moveClip';
+import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
+import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
+import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
+import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';
 import {
     handleCutTool,

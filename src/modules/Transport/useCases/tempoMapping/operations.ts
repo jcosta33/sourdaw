@@ -6,7 +6,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { type TempoMapPoint, type TempoMapResult } from '#/modules/Transport/models/TempoMappingTypes';
 

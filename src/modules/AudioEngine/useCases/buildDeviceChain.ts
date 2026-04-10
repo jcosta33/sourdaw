@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/isDeviceSupportedOnCurrentPlatform';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement';
 import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 
 export type DeviceNodeEntry = {

@@ -4,11 +4,13 @@ import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { cn } from '#/helpers/Styles/cn';
+import {
+    closeCommandPalette,
+    workspaceStore,
+    type WorkspaceState,
+} from '#/modules/Workspace';
 import { searchCommands, type CommandEntry } from '../../models/CommandRegistry';
 import { executeAppAction } from '../../useCases/executeAppAction';
-import { closeCommandPalette } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 
 export const CommandPalette = (): ReactElement | null => {
     const commandPaletteOpen = useStore(workspaceStore, null as unknown as WorkspaceState)?.commandPaletteOpen ?? false;

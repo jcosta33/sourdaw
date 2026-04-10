@@ -1,6 +1,6 @@
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { audioBufferCache } from '#/modules/AudioEngine';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────

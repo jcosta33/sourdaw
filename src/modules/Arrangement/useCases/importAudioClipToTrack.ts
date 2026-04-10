@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { addClip } from './clip/addClip';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { decodeAudioFile } from '#/modules/AudioEngine';
+import { getTransportState } from '#/modules/Transport';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 /**

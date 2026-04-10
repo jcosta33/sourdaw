@@ -1,6 +1,6 @@
-import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
-import type { ScannedPlugin } from '../../repositories/pluginBridge/types';
-export type { ScannedPlugin };
+import { pluginScanStore, defaultPluginScanState, type ScannedPlugin } from '../../stores/pluginScanStore';
+
+export type { ScannedPlugin } from '../../stores/pluginScanStore';
 
 const getState = () => pluginScanStore.value ?? defaultPluginScanState;
 

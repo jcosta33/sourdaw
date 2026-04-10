@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { getWorkspaceState, updateWorkspaceState } from '../../repositories/workspace';
-import { type SoloMode, type ChannelStripWidth } from '../../models/WorkspaceState';
+import { type SoloMode, type ChannelStripWidth } from '../workspaceQueries';
 
 const STRIP_WIDTH_CYCLE: Record<ChannelStripWidth, ChannelStripWidth> = {
     narrow: 'normal',

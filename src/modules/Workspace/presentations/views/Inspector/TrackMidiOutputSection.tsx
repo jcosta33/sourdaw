@@ -2,8 +2,8 @@ import { type ReactElement } from 'react';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
-import { toggleChordTrackFollow } from '#/modules/Arrangement/useCases/toggleTrackState/toggleChordTrackFollow';
+import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI';
+import { toggleChordTrackFollow } from '#/modules/Arrangement';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 

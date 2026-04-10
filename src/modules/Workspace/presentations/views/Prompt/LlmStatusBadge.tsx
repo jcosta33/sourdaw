@@ -1,24 +1,39 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap, Check } from 'lucide-react';
 
-import { isLlmAvailable, resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
-import { unloadEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
 import {
+    isLlmAvailable,
+    resolveBackend,
+    unloadEngine,
     NATIVE_MODEL_INFO,
     CLOUD_MODEL_INFO,
     WEBLLM_MODELS,
-    type ModelInfo,
     getActiveModelId,
-} from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
+} from '#/modules/AiRuntime';
 import { Button } from '#/components/ui/button';
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 
 type LlmStatusBadgeProps = {
-    status: LlmEngineStatus;
+    status: BadgeLlmStatus;
     onLoad: (modelId?: string) => void;
+};
+
+type BadgeLlmStatus =
+    | { state: 'idle' }
+    | { state: 'loading'; progress: number; text: string }
+    | { state: 'ready'; modelId: string }
+    | { state: 'generating' }
+    | { state: 'error'; message: string };
+
+type BadgeModelInfo = {
+    id?: string;
+    displayName: string;
+    description: string;
+    downloadSize: string;
+    ramUsage: string;
+    parameterCount: string;
 };
 
 const TIER_COLORS = {
@@ -58,7 +73,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     const backendLabel = backend === 'native' ? 'Native' : backend === 'cloud' ? 'Cloud' : 'Browser';
     const tierKey = backend === 'native' ? 'native' : backend === 'cloud' ? 'cloud' : 'webllm';
 
-    const modelInfo: ModelInfo =
+    const modelInfo: BadgeModelInfo =
         backend === 'native'
             ? NATIVE_MODEL_INFO
             : backend === 'cloud'
@@ -262,7 +277,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 // ── Model option card ───────────────────────────────────────────────────
 
 type ModelOptionProps = {
-    model: ModelInfo;
+    model: BadgeModelInfo;
     isSelected: boolean;
     onSelect: () => void;
 };

@@ -4,7 +4,7 @@
  */
 
 import { type PluginDescriptor } from '../DeviceParameter';
-import { FERMENTER_PARAMS } from '#/modules/Fermenter/useCases/fermenterQueries';
+import { FERMENTER_PARAMS } from '#/modules/Fermenter';
 
 export const FERMENTER_DESCRIPTOR: PluginDescriptor = {
     id: 'fermenter',

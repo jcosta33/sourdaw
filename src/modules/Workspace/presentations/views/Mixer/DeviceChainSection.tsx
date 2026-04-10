@@ -1,14 +1,16 @@
 import { type ReactElement, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
-import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
-import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDevices';
-import { getPlatformPlugins } from '#/modules/Arrangement/useCases/getPlatformPlugins';
-import { openInspector } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import {
+    selectTrack,
+    bypassDevice,
+    addDevice,
+    removeDevice,
+    reorderDevices,
+    getPlatformPlugins,
+} from '#/modules/Arrangement';
+import { openInspector } from '#/modules/Workspace';
 import { type Track } from '../../../models/TrackViewTypes';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
 import { MixerSection } from '../../components/Mixer/MixerSection';
 

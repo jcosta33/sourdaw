@@ -1,7 +1,7 @@
 import { useStore } from '#/infra/store/useStore';
 
 import { collaborationStore } from '../../stores/collaborationStore';
-import { type CollaborationState } from '../../models/CollaborationTypes';
+import { type CollaborationState } from '../../useCases/collaborationQueries';
 
 const defaultState: CollaborationState = {
     isEnabled: false,

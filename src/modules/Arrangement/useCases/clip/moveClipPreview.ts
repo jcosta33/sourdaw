@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { type Clip } from '#/modules/Arrangement/models/Track';
-import { shiftClipMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud/shiftClipMidiNotes';
+import { shiftClipMidiNotes } from '#/modules/MIDI';
 
 export const moveClipPreview = inject({ getTrackState, setTrackState, shiftClipMidiNotes })(
     ({ getTrackState, setTrackState, shiftClipMidiNotes }) =>

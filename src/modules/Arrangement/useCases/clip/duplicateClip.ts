@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation/duplicateClipAutomation';
+import { duplicateClipAutomation } from '#/modules/Automation';
 import { addClip } from './addClip';
 
 export const duplicateClip = inject({ getTrackState, addClip, duplicateClipAutomation })(

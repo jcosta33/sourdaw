@@ -1,12 +1,16 @@
 import { createStore } from '#/infra/store/createStore';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+
+export type ActionHistoryAction = {
+    type: string;
+    payload?: unknown;
+};
 
 export type ActionHistoryEntry = {
     id: string;
     label: string;
     actionKind: string;
-    action: AppAction;
-    inverseAction: AppAction | null;
+    action: ActionHistoryAction;
+    inverseAction: ActionHistoryAction | null;
     source: 'manual' | 'prompt' | 'voice' | 'ai';
     timestamp: number;
     groupId?: string;

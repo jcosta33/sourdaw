@@ -1,4 +1,4 @@
-import { type UndoEntry } from '../../models/UndoEntry';
+import { type UndoEntry } from '../commandQueries';
 import { pushToTree } from '../../models/UndoTree';
 import { undoTreeStore } from '../../stores/undoTree';
 

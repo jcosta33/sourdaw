@@ -15,7 +15,7 @@ import {
     PATTERN_TEMPLATES,
     filterTemplates,
 } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { type GeneratedNote } from '#/modules/AudioEngine/useCases/audioEngineQueries';
+import { type GeneratedNote } from '#/modules/AudioEngine/models/GeneratedNote';
 
 // ── System prompt for music generation ──
 

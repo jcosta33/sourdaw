@@ -5,7 +5,7 @@
  */
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '../repositories/createWebAudioEngine';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/isDeviceSupportedOnCurrentPlatform';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement';
 
 export const addDeviceToStripDependencies = {
     isDeviceSupportedOnCurrentPlatform,

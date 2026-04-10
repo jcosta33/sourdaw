@@ -7,7 +7,7 @@
  */
 
 import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
-import { autoLoadLevainSamples } from '#/modules/Levain/useCases/autoLoadSamples';
+import { autoLoadLevainSamples } from '#/modules/Levain';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

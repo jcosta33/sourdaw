@@ -1,6 +1,6 @@
 import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useState } from 'react';
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement';
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 

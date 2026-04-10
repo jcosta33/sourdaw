@@ -3,16 +3,25 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { useStore } from '#/infra/store/useStore';
-import { audioGraphStore, type AudioGraphState, defaultAudioGraphState } from '#/modules/AudioEngine/stores/audioGraphStore';
+import { audioGraphStore, defaultAudioGraphState } from '#/modules/AudioEngine';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
+
+type RoutingGraphState = {
+    routes: Array<{
+        id: string;
+        sourceId: string;
+        destinationId: string;
+        gain: number;
+    }>;
+};
 
 type TrackRoutingSectionProps = {
     track: Track;
 };
 
 export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactElement => {
-    const graphState = useStore<AudioGraphState>(audioGraphStore, defaultAudioGraphState);
+    const graphState = useStore<RoutingGraphState>(audioGraphStore, defaultAudioGraphState);
 
     const trackRoutes = graphState.routes.filter((r) => r.sourceId === track.id || r.destinationId === track.id);
 

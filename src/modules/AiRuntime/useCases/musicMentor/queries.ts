@@ -1,5 +1,6 @@
-import { type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
 import { generateMentorLessons } from './generateLessons';
+
+type MentorLesson = ReturnType<typeof generateMentorLessons>[number];
 
 /**
  * Get a single mentor tip based on the most relevant observation.

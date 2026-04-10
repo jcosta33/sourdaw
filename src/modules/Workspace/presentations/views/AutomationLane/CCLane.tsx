@@ -1,11 +1,8 @@
 import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addMidiCC } from '#/modules/MIDI/useCases/midiEvent/addMidiCC';
-import { removeMidiCC } from '#/modules/MIDI/useCases/midiEvent/removeMidiCC';
-import { moveMidiCC } from '#/modules/MIDI/useCases/midiEvent/moveMidiCC';
+import { midiStore, addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI';
+import { pushUndoEntry } from '#/modules/Command';
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
 import { useStore } from '#/infra/store/useStore';
 
@@ -16,11 +13,17 @@ type CCLaneProps = {
     contentWidth: number;
 };
 
+type MidiLaneStoreState = {
+    notesByClipId: Record<string, unknown[]>;
+    ccByClipId: Record<string, MidiCC[]>;
+    pitchBendByClipId: Record<string, unknown[]>;
+};
+
 export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [dragId, setDragId] = useState<string | null>(null);
 
-    const midiState = useStore<MidiStoreState>(midiStore, {
+    const midiState = useStore<MidiLaneStoreState>(midiStore, {
         notesByClipId: {},
         ccByClipId: {},
         pitchBendByClipId: {},

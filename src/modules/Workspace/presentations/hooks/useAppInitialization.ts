@@ -1,21 +1,23 @@
 import { useEffect, useRef } from 'react';
-import { initializeAudioEngine } from '#/modules/AudioEngine/useCases/initializeAudioEngine';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { verifyAudioBufferReferences } from '#/modules/Project/useCases/projectPersistence/helpers';
-import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost/builtinDescriptors';
-import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine/builtinDSP';
-import { registerProModulationEffects } from '#/modules/Plugin/useCases/proModulationEffects';
-import { registerProSynthInstruments } from '#/modules/Synth/useCases/proSynthInstruments';
-import { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
-import { loadProject } from '#/modules/Project/useCases/projectPersistence/loadProject';
-import { hasCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
-import { projectStore } from '#/modules/Project/stores/projectStore';
-import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
-import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
-import { restoreLibrary } from '#/modules/SampleLibrary/useCases/restoreLibrary';
+import {
+    initializeAudioEngine,
+    audioBufferCache,
+    getAudioContext,
+    initWebMidi,
+} from '#/modules/AudioEngine';
+import {
+    verifyAudioBufferReferences,
+    loadProject,
+    projectStore,
+    saveProject,
+} from '#/modules/Project';
+import { registerBuiltinPlugins, registerBuiltinFaustDSP, registerProModulationEffects } from '#/modules/Plugin';
+import { registerProSynthInstruments } from '#/modules/Synth';
+import { hasCrdtProject } from '#/modules/CrdtDocument';
+import { ensureTrackStrips } from '#/modules/Transport';
+import { restoreLibrary } from '#/modules/SampleLibrary';
 import { preferencesStore } from '../../stores/preferencesStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 
 /**
  * Handles one-time app startup: audio engine + plugins on first user interaction,

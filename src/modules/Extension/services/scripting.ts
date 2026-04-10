@@ -42,7 +42,7 @@ export function createDawApi(): Record<string, unknown> {
             notifyUser(message);
         },
         executeAction: async (action: { type: string; payload?: unknown }) => {
-            const { executeAppAction } = await import('#/modules/Command/useCases/executeAppAction');
+            const { executeAppAction } = await import('#/modules/Command');
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await executeAppAction(action as any, { source: 'ai' });
         },

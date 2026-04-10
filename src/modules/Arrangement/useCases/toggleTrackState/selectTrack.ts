@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { updateTrackState } from '#/modules/Arrangement/repositories/track/updateTrackState';
 import { getTrackById } from '#/modules/Arrangement/repositories/track/getTrackById';
-import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput';
+import { setMidiInputTrack } from '#/modules/AudioEngine';
 
 export const selectTrack = inject({ updateTrackState, getTrackById })(
     ({ updateTrackState, getTrackById }) =>

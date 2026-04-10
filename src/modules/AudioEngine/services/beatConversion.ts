@@ -1,4 +1,4 @@
-import { getTempoAtBeat, type TempoChange } from '#/modules/Transport/useCases/transportQueries';
+import { getTempoAtBeat, type TempoChange } from '#/modules/Transport';
 
 export function beatToSeconds(beat: number, defaultTempo: number, changes: TempoChange[]): number {
     if (changes.length === 0) {

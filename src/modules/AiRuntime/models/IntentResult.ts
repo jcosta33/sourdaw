@@ -1,7 +1,7 @@
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type RuntimeAction } from './RuntimeAction';
 
 export type IntentResult = {
-    actions: AppAction[];
+    actions: RuntimeAction[];
     confidence: number;
     rawText: string;
     requiresConfirmation: boolean;

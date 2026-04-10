@@ -27,48 +27,48 @@ import { clamp } from '#/helpers/Math/clamp';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
 import { InspectorPanel } from './InspectorPanel';
-import { GenerativeAiPanel } from '#/modules/AiRuntime/presentations/views/GenerativeAiPanel';
-import { ChatPanel } from '#/modules/AiRuntime/presentations/views/ChatPanel';
+import {
+    GenerativeAiPanel,
+    ChatPanel,
+    VoiceCommandOverlay,
+    AiChangeToast,
+    AiActionHistoryPanel,
+    MixAnalysisPanel,
+} from '#/modules/AiRuntime';
 import { MixerPanel } from './MixerPanel';
 import { SessionView } from './SessionView';
 import { RoutingMatrix } from './RoutingMatrix';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
-import { FermenterPanel } from '#/modules/Fermenter/presentations/views/FermenterPanel';
-import { ToasterPanel } from '#/modules/Toaster/presentations/views/ToasterPanel';
+import { FermenterPanel } from '#/modules/Fermenter';
+import { ToasterPanel } from '#/modules/Toaster';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
-import { LevainPanel } from '#/modules/Levain/presentations/views/LevainPanel';
-import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/ProofChamberPanel';
-import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
-import { BacteriaPanel } from '#/modules/Bacteria/presentations/views/BacteriaPanel';
-import { GrinderPanel } from '#/modules/Grinder/presentations/views/GrinderPanel';
-import { SamplerPanel } from '#/modules/Sampler/presentations/views/SamplerPanel';
-import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views/GrandBoulePanel';
+import { LevainPanel } from '#/modules/Levain';
+import { ProofChamberPanel } from '#/modules/ProofChamber';
+import { GlutenPanel } from '#/modules/Gluten';
+import { BacteriaPanel } from '#/modules/Bacteria';
+import { GrinderPanel } from '#/modules/Grinder';
+import { SamplerPanel } from '#/modules/Sampler';
+import { GrandBoulePanel } from '#/modules/GrandBoule';
 
-import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
-import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
-import { YeastPanel } from '#/modules/Yeast/presentations/views/YeastPanel';
-import { CrustPanel } from '#/modules/Crust/presentations/views/CrustPanel';
-import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views/VirtualKeyboard';
+import { ProofPanel } from '#/modules/Proof';
+import { ScoringPanel } from '#/modules/Scoring';
+import { YeastPanel } from '#/modules/Yeast';
+import { CrustPanel } from '#/modules/Crust';
+import { VirtualKeyboard } from '#/modules/VirtualKeyboard';
 import { toggleVirtualKeyboard, closeBranchManager } from '../../useCases/togglePanel/panelToggles';
 
-import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
-import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
-import { AiChangeToast } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
+import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command';
 import { NotificationToast } from '../components/NotificationToast';
-import { AiActionHistoryPanel } from '#/modules/AiRuntime/presentations/views/AiActionHistoryPanel';
-import { MixAnalysisPanel } from '#/modules/AiRuntime/presentations/views/MixAnalysisPanel';
 import { useStore } from '#/infra/store/useStore';
-import { aiStore } from '#/modules/AiGeneration/stores/aiStore';
-import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog';
+import { aiStore } from '#/modules/AiGeneration';
+import { ExportDialog } from '#/modules/Project';
 import { PreferencesDialog } from './PreferencesDialog';
-import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
 import { startShortcutEngine } from '../../useCases/shortcutEngine';
 import { openMixer } from '../../useCases/togglePanel/panelToggles';
 import { StatusBar } from './StatusBar';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
-import { UndoHistoryPanel } from '#/modules/Command/presentations/views/UndoHistoryPanel';
 
 import { Button } from '#/components/ui/button';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
@@ -80,13 +80,13 @@ import { defaultPreferences } from '../../models/Preferences';
 import { MobileGate } from '../components/MobileGate';
 
 const CollaborationPanelLazy = lazy(() =>
-    import('#/modules/Collaboration/presentations/views/CollaborationPanel').then((m) => ({
+    import('#/modules/Collaboration').then((m) => ({
         default: m.CollaborationPanel,
     }))
 );
 
 const BranchManagerDialogLazy = lazy(() =>
-    import('#/modules/CrdtDocument/presentations/views/BranchManagerDialog').then((m) => ({
+    import('#/modules/CrdtDocument').then((m) => ({
         default: m.BranchManagerDialog,
     }))
 );

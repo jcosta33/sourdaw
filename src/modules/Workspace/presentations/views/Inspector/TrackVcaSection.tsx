@@ -3,10 +3,12 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
-import { assignToVca } from '#/modules/Arrangement/useCases/vca/assignToVca';
-import { removeFromVca } from '#/modules/Arrangement/useCases/vca/removeFromVca';
-import { getVcaGroups } from '#/modules/Arrangement/useCases/vca/getVcaGroups';
-import { createVcaGroup } from '#/modules/Arrangement/useCases/vca/createVcaGroup';
+import {
+    assignToVca,
+    removeFromVca,
+    getVcaGroups,
+    createVcaGroup,
+} from '#/modules/Arrangement';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 

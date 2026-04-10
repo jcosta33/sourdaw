@@ -1,8 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
 import { getTrackById } from '#/modules/Arrangement/repositories/track/getTrackById';
-import { startInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring';
-import { stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder/stopInputMonitoring';
+import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine';
 
 export const toggleInputMonitoring = inject({ updateTrack, getTrackById })(
     ({ updateTrack, getTrackById }) =>

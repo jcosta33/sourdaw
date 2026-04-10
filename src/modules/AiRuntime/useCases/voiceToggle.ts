@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
-import { type ToggleVoiceCommandPayload } from '#/modules/Workspace/events/WorkspaceEvents';
+
+type VoiceTogglePayload = { active?: boolean };
 
 export const toggleVoiceInput = inject({ eventBus })(
     ({ eventBus }) =>
@@ -11,7 +12,7 @@ export const toggleVoiceInput = inject({ eventBus })(
 
 export const onVoiceToggle = inject({ eventBus })(
     ({ eventBus }) =>
-        function onVoiceToggle(handler: (payload: ToggleVoiceCommandPayload) => void): () => void {
+        function onVoiceToggle(handler: (payload: VoiceTogglePayload) => void): () => void {
             return eventBus.on('voice.toggle', handler);
         }
 );

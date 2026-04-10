@@ -34,6 +34,7 @@ export {
     WEBLLM_MODELS,
     searchPresets,
     getAvailablePresets,
+    resolvePresetActions,
     getActiveModelId,
     PATTERN_TEMPLATES,
     filterTemplates,
@@ -51,9 +52,6 @@ export type {
     MixAnalysisState,
     ModelInfo,
     FuzzyResult,
-    IntentResult,
-    PresetCategory,
-    PresetContext,
     MixAnalysis,
     MixIssue,
 } from './useCases/aiRuntimeQueries';
@@ -61,6 +59,7 @@ export type {
 export { configureCloudApi, removeCloudApi, isCloudAvailable } from './useCases/cloudApiManagement';
 
 export { getProjectContext } from './useCases/getProjectContext';
+export type { ProjectContext, ProjectContextClip, ProjectContextDevice, ProjectContextTrack } from './useCases/getProjectContext';
 
 export {
     resolveBackend,

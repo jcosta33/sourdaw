@@ -3,19 +3,23 @@ import { transportStore } from '../stores/transportStore';
 import { playheadPositionRef } from '../stores/playheadPositionRef';
 import { tempoMapStore } from '../stores/tempoMapStore';
 import { getTempoAtBeat } from '../models/TempoMap';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import {
+    trackStore,
+    startRecording,
+    stopRecording,
+    addTakeLane,
+    addTake,
+    takeLaneStore,
+} from '#/modules/Arrangement';
 import { evaluateFollowActions } from './evaluateFollowActions';
-import { startAutomationRecording } from '#/modules/Automation/useCases/automationRecording/startAutomationRecording';
-import { stopAutomationRecording } from '#/modules/Automation/useCases/automationRecording/stopAutomationRecording';
-import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { startAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording';
-import { stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording';
-import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recording';
-import { addTakeLane } from '#/modules/Arrangement/useCases/comping/addTakeLane';
-import { addTake } from '#/modules/Arrangement/useCases/comping/addTake';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation';
+import {
+    stopAllScheduled,
+    audioBufferCache,
+    startAudioRecording,
+    stopAudioRecording,
+    getAudioContext,
+} from '#/modules/AudioEngine';
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 import { scheduleAudioClips } from './scheduling/scheduleAudioClips';

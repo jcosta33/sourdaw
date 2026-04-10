@@ -17,15 +17,18 @@ import {
     useState,
 } from 'react';
 
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
-import { removeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/removeMidiNote';
-import { moveMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/moveMidiNote';
-import { resizeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/resizeMidiNote';
-import { setNoteVelocity } from '#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity';
+import { pushUndoEntry } from '#/modules/Command';
+import {
+    addMidiNote,
+    removeMidiNote,
+    moveMidiNote,
+    resizeMidiNote,
+    setNoteVelocity,
+    stampChord,
+    removeNotesByIds,
+} from '#/modules/MIDI';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
-import { stampChord, removeNotesByIds, type ChordType } from '#/modules/MIDI/useCases/chordStamps';
-import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
+import { playAuditionNote } from '#/modules/AudioEngine';
 
 import {
     ROW_HEIGHT,
@@ -41,6 +44,25 @@ type GestureEvent = UIEvent & {
     readonly rotation: number;
 };
 
+type PianoRollChordType =
+    | 'major'
+    | 'minor'
+    | 'dim'
+    | 'aug'
+    | 'sus2'
+    | 'sus4'
+    | '7'
+    | 'maj7'
+    | 'min7'
+    | 'dim7'
+    | 'aug7'
+    | '6'
+    | 'min6'
+    | '9'
+    | 'add9'
+    | 'min9'
+    | '7sus4';
+
 type InteractionArgs = {
     canvasRef: React.RefObject<HTMLCanvasElement | null>;
     clipId: string;
@@ -55,7 +77,7 @@ type InteractionArgs = {
     stepBeat: number;
     setStepBeat: Dispatch<SetStateAction<number>>;
     chordMode: boolean;
-    chordType: ChordType;
+    chordType: PianoRollChordType;
     paintMode: boolean;
     lassoMode: boolean;
     selectedNoteIds: Set<string>;

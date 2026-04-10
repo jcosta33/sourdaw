@@ -2,10 +2,15 @@
  * Hook to subscribe to the actual hardware audio recording state.
  */
 import { useStore } from '#/infra/store/useStore';
-import { audioRecordingStore, type AudioRecordingState } from '#/modules/AudioEngine/stores/audioRecordingStore';
+import { audioRecordingStore } from '#/modules/AudioEngine';
 
-const defaultState: AudioRecordingState = { isRecording: false, micPermissionGranted: false };
+type AudioRecordingViewState = {
+    isRecording: boolean;
+    micPermissionGranted: boolean;
+};
 
-export function useAudioRecordingState(): AudioRecordingState {
+const defaultState: AudioRecordingViewState = { isRecording: false, micPermissionGranted: false };
+
+export function useAudioRecordingState(): AudioRecordingViewState {
     return useStore(audioRecordingStore, defaultState);
 }

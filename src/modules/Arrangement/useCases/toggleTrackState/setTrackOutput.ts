@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { setTrackOutput as engineSetTrackOutput } from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { setTrackOutput as engineSetTrackOutput } from '#/modules/AudioEngine';
 
 export const setTrackOutput = inject({ updateTrack })(
     ({ updateTrack }) =>

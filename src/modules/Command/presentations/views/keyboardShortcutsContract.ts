@@ -1,8 +1,42 @@
+import { useEffect } from 'react';
+import { handleKeydown, handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut';
+
 /**
- * View-layer contract re-export of useGlobalKeyboardShortcuts.
- *
- * presentations/views/ is a contract folder, so other modules may
- * import from here.  The actual hook logic lives at
- * ../hooks/useGlobalKeyboardShortcuts.
+ * View-layer keyboard shortcut contract exposed to other modules.
  */
-export { useGlobalKeyboardShortcuts } from '../hooks/useGlobalKeyboardShortcuts';
+export const useGlobalKeyboardShortcuts = (): void => {
+    useEffect(() => {
+        const handler = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement;
+            const isInput =
+                target.tagName === 'INPUT' ||
+                target.tagName === 'TEXTAREA' ||
+                target.isContentEditable;
+
+            const shouldPreventDefault = handleKeydown({
+                key: event.key,
+                mod: event.metaKey || event.ctrlKey,
+                shift: event.shiftKey,
+                alt: event.altKey,
+                repeat: event.repeat,
+                isInput,
+            });
+
+            if (shouldPreventDefault) {
+                event.preventDefault();
+            }
+        };
+
+        const keyupHandler = (event: KeyboardEvent) => {
+            handleKeyup(event.key);
+        };
+
+        window.addEventListener('keydown', handler);
+        window.addEventListener('keyup', keyupHandler);
+
+        return () => {
+            window.removeEventListener('keydown', handler);
+            window.removeEventListener('keyup', keyupHandler);
+        };
+    }, []);
+};

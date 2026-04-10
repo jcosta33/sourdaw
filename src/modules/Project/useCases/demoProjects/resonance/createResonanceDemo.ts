@@ -1,12 +1,8 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { trackStore, markerStore, createTrack } from '#/modules/Arrangement';
+import { midiStore } from '#/modules/MIDI';
 import { projectStore } from '../../../stores/projectStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
-import { createAutomationLane } from '#/modules/Automation/useCases/automation/createAutomationLane';
+import { transportStore, defaultTransportState } from '#/modules/Transport';
+import { automationStore, createAutomationLane } from '#/modules/Automation';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
 import {
     note,
@@ -2214,11 +2210,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     syncArrangement(tracks);
 
     // Bootstrap device audio nodes from store state
-    const { ensureTrackStrips } = await import('#/modules/Transport/useCases/ensureTrackStrips');
+    const { ensureTrackStrips } = await import('#/modules/Transport');
     ensureTrackStrips();
 
     // Await all internal async device creations (e.g. Faust WASM compilation)
-    const { waitForDevices } = await import('#/modules/AudioEngine/useCases/engineAccess');
+    const { waitForDevices } = await import('#/modules/AudioEngine');
     await waitForDevices();
 
     projectStore.set({

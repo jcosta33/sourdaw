@@ -3,9 +3,8 @@
  * audio-engine updates to animation frames.
  */
 import { inject } from '#/infra/di/inject';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { updateDeviceParam } from '#/modules/AudioEngine';
+import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement';
 import { type GlutenPatch } from '../models/GlutenPatch';
 import { loadGlutenPatch, setGlutenParam } from '../stores/glutenStore';
 

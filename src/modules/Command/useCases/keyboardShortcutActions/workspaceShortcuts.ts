@@ -7,7 +7,7 @@ import {
     zoomToFit as zoomToFitImpl,
     zoomToSelection as zoomToSelectionImpl,
 } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
-import { type EditingTool } from '#/modules/Workspace/useCases/setEditingTool';
+import { type EditingTool } from '#/modules/Workspace/useCases/workspaceQueries';
 
 export const workspaceShortcutsDependencies = {
     setEditingTool: setEditingToolImpl,

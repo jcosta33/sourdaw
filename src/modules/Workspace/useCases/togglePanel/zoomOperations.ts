@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { getWorkspaceState } from '../../repositories/workspace';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 import { eventBus } from '#/app/registerDependencies';
-import { type ZoomToSelectionPayload } from '#/modules/Workspace/events/WorkspaceEvents';
+import { type ZoomToSelectionPayload } from '../../events/WorkspaceEvents';
 
 export const zoomToFit = inject({ eventBus })(
     ({ eventBus }) =>

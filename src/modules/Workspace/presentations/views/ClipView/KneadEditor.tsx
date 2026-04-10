@@ -1,10 +1,8 @@
 import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
-import { kneadStore } from '#/modules/Knead/stores/kneadStore';
+import { kneadStore, ingestDspAnalysis, updateTrackKneadState } from '#/modules/Knead';
 import { useStore } from '#/infra/store/useStore';
 import { useTracks } from '../../hooks/useTracks';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { ingestDspAnalysis } from '#/modules/Knead/useCases/dspAnalysis';
-import { updateTrackKneadState } from '#/modules/Knead/stores/kneadStore';
+import { addDevice } from '#/modules/Arrangement';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';

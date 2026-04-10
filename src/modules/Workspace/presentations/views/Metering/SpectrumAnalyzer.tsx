@@ -5,7 +5,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
-import { getMasterAnalyser, getTrackAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getMasterAnalyser, getTrackAnalyser, getAudioSampleRate } from '#/modules/AudioEngine';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type SpectrumAnalyzerProps = {

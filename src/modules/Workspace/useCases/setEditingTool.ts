@@ -1,8 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { type EditingTool } from '../models/EditingTool';
 import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
-
-export type { EditingTool };
+import { type EditingTool } from './workspaceQueries';
 
 export const setEditingTool = inject({ getWorkspaceState, updateWorkspaceState })(
     ({ getWorkspaceState, updateWorkspaceState }) =>

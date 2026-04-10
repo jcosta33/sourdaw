@@ -3,7 +3,8 @@
  * and shared coordinate conversion helpers.
  */
 import { type AutomationCurveType } from '../../models/AutomationViewTypes';
-import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
+
+type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
 
 export const CURVE_OPTIONS: { value: AutomationCurveType; label: string }[] = [
     { value: 'linear', label: 'Linear' },

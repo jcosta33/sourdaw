@@ -24,9 +24,7 @@ import {
     EyeOff,
     LayoutTemplate,
 } from 'lucide-react';
-import { MidiDevicePicker } from '#/modules/AudioEngine/presentations/views/MidiDevicePicker';
-import { AudioDevicePicker } from '#/modules/AudioEngine/presentations/views/AudioDevicePicker';
-import { PluginScanSettings } from '#/modules/AudioEngine/presentations/views/PluginScanSettings';
+import { MidiDevicePicker, AudioDevicePicker, PluginScanSettings } from '#/modules/AudioEngine';
 import { useStore } from '#/infra/store/useStore';
 import { preferencesStore } from '../../stores/preferencesStore';
 import {
@@ -38,8 +36,12 @@ import {
     type BufferSizeOption,
     type SampleRateOption,
 } from '../../models/Preferences';
-import { configureCloudApi, removeCloudApi, isCloudAvailable } from '#/modules/AiRuntime/useCases/cloudApiManagement';
-import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
+import {
+    configureCloudApi,
+    removeCloudApi,
+    isCloudAvailable,
+    resolveBackend,
+} from '#/modules/AiRuntime';
 import { cn } from '#/helpers/Styles/cn';
 import { SectionTitle, FieldGroup, ToggleRow, VoiceKeyEditor, GridSubdivisionSection } from './preferencesShared';
 import { ShortcutsSection } from './ShortcutsSection';

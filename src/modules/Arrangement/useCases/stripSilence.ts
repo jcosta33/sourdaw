@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { audioBufferCache } from '#/modules/AudioEngine';
+import { type Clip } from '#/modules/Arrangement/stores/trackStore';
 
 export const stripSilence = inject({ getTrackState, updateTrack })(
     ({ getTrackState, updateTrack }) =>

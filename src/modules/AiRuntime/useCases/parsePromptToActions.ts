@@ -1,9 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { type IntentResult } from '../models/IntentResult';
-import { type ProjectContext } from '../models/ProjectContext';
+import { type ProjectContext } from './getProjectContext';
 import { validateActions } from './validateActions';
 import { isDsoBackendAvailable } from './llmOrchestration/backendResolution';
+import { type IntentResult } from '../models/IntentResult';
 import {
     tryPresetMatch,
     buildPresetContext,

@@ -30,8 +30,8 @@
  *    during drag) without waiting for the next rAF tick.
  */
 import { type RefObject, useRef, useEffect } from 'react';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { midiStore } from '#/modules/MIDI';
+import { trackStore } from '#/modules/Arrangement';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import {

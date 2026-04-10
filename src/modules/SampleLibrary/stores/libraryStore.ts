@@ -3,7 +3,58 @@
  * folder tree state, search, and filter state.
  */
 import { createStore } from '#/infra/store/createStore';
-import { type LibraryRoot, type SampleRecord, type FolderNode } from '../models/LibraryTypes';
+
+export type FileProviderKind = 'browser' | 'tauri';
+
+export type LibraryRootStatus = 'ready' | 'offline' | 'permission_required' | 'scanning';
+
+export type LibraryRoot = {
+    id: string;
+    name: string;
+    provider: FileProviderKind;
+    rootRef: string;
+    handle?: FileSystemDirectoryHandle;
+    connectedAt: number;
+    lastScanAt?: number;
+    status: LibraryRootStatus;
+    fileCount: number;
+    settings: {
+        recursive: boolean;
+    };
+};
+
+export type SampleSyncStatus = 'discovered' | 'indexed' | 'analyzed' | 'offline' | 'error';
+
+export type SampleRecord = {
+    id: string;
+    libraryRootId: string;
+    relativePath: string;
+    displayName: string;
+    ext: string;
+    folder: string;
+    sync: {
+        exists: boolean;
+        mtimeMs?: number;
+        sizeBytes?: number;
+        status: SampleSyncStatus;
+    };
+    format: {
+        durationSec?: number;
+        sampleRate?: number;
+        channels?: number;
+        bitDepth?: number;
+    };
+    tags: string[];
+    favorite: boolean;
+};
+
+export type FolderNode = {
+    name: string;
+    path: string;
+    children: FolderNode[];
+    fileCount: number;
+    expanded: boolean;
+};
 
 export type LibrarySortField = 'name' | 'date' | 'duration' | 'size' | 'path';
 export type LibrarySortDirection = 'asc' | 'desc';

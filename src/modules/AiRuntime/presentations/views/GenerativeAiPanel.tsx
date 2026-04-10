@@ -10,18 +10,47 @@ import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { isTauri } from '#/helpers/tauriBridge';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { aiStore, type AiTaskResult } from '#/modules/AiGeneration/stores/aiStore';
-import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
-import { handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt';
-import { handleGenerateAudioFallback } from '#/modules/AiGeneration/useCases/actions/handleGenerateAudioFallback';
-import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { workspaceStore } from '#/modules/Workspace';
+import { trackStore } from '#/modules/Arrangement';
+import { aiStore, toggleAiPanel, handleGenerateMidiPrompt, handleGenerateAudioFallback, handleStemSeparationPreview } from '#/modules/AiGeneration';
+import { transportStore } from '#/modules/Transport';
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
 import { PatternBrowser } from './PatternBrowser';
+
+type GenerativePanelWorkspaceState = {
+    selectedClipId: string | null;
+};
+
+type GenerativePanelTrackState = {
+    tracks: Array<{
+        clips: Array<{
+            id: string;
+            type: 'audio' | 'midi';
+            name: string;
+        }>;
+    }>;
+};
+
+type GenerativeTaskType = 'midi-generation' | 'audio-generation' | 'stem-separation' | 'denoise';
+
+type GenerativeTaskStatus = 'idle' | 'processing' | 'success' | 'error';
+
+type GenerativeTaskResult = {
+    id: string;
+    type: GenerativeTaskType;
+    status: GenerativeTaskStatus;
+    prompt?: string;
+    timestamp: number;
+    error?: string;
+    data?: unknown;
+    durationMs?: number;
+};
+
+type GenerativeAiState = {
+    isPanelOpen: boolean;
+    tasks: GenerativeTaskResult[];
+};
 
 const DesktopOnlyNotice = ({ feature }: { feature: string }): ReactElement => (
     <DawUtilityNotice icon={<Info className="size-3.5 text-[var(--color-accent-amber)]" />}>
@@ -33,7 +62,7 @@ const DesktopOnlyNotice = ({ feature }: { feature: string }): ReactElement => (
 );
 
 export const GenerativeAiPanel = (): ReactElement | null => {
-    const state = useStore(aiStore, { isPanelOpen: false, tasks: [] });
+    const state = useStore<GenerativeAiState>(aiStore, { isPanelOpen: false, tasks: [] });
     const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
@@ -74,9 +103,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     };
 
     // Get selected audio clip for stem separation
-    const workspaceState = useStore(workspaceStore, null as unknown as WorkspaceState);
+    const workspaceState = useStore<GenerativePanelWorkspaceState | null>(workspaceStore, null);
     const selectedClipId = workspaceState?.selectedClipId ?? null;
-    const trackState = useStore(trackStore, null as unknown as TrackStoreState);
+    const trackState = useStore<GenerativePanelTrackState | null>(trackStore, null);
     const tracks = trackState?.tracks ?? [];
     const selectedClip =
         tracks.flatMap((t) => t.clips).find((c) => c.id === selectedClipId && c.type === 'audio') ?? null;
@@ -371,7 +400,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             bodyClassName="px-2 py-2"
                         >
                             <div className="space-y-1.5">
-                                {state.tasks.map((task: AiTaskResult) => (
+                                {state.tasks.map((task: GenerativeTaskResult) => (
                                     <AiTaskResultCard key={task.id} task={task} />
                                 ))}
                             </div>

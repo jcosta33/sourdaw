@@ -1,2 +1,2 @@
 export { GlutenPanel } from './presentations/views/GlutenPanel';
-export { glutenStore } from './stores/glutenStore';
+export { updateGlutenMeters } from './stores/glutenStore';

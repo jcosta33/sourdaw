@@ -40,6 +40,10 @@ export { loadPlugin, unloadPlugin, processAudioIPC, openPluginGui, closePluginGu
 // pluginQueries
 export { MIDI_EFFECT_FACTORIES } from './useCases/pluginQueries';
 
+// pluginScan/queries
+export { findPluginByName } from './useCases/pluginScan/queries';
+export type { ScannedPlugin } from './useCases/pluginScan/queries';
+
 // pluginScan/scanning
 export { startPluginScan, scanCustomPaths, addScanPath, removeScanPath } from './useCases/pluginScan/scanning';
 

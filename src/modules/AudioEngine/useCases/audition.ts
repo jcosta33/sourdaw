@@ -1,10 +1,13 @@
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '../repositories/createWebAudioEngine';
-import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
-import { startFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
-import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import {
+    getSynthParamsForTrack,
+    scheduleNote,
+    startFaustNote,
+    getDrumKitDefByIndex,
+    scheduleDrumKitNote,
+} from '#/modules/Synth';
+import { getTrackById, trackStore } from '#/modules/Arrangement';
 
 export const playAuditionNoteDependencies = {
     audioEngine,

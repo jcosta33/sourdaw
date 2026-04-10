@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
-import { type ImportMidiPayload } from '#/modules/Workspace/events/WorkspaceEvents';
+import { type ImportMidiPayload } from '../events/WorkspaceEvents';
 
 export const onProjectSave = inject({ eventBus })(
     ({ eventBus }) =>

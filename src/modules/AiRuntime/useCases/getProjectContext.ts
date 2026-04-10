@@ -1,8 +1,48 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type ProjectContext } from '../models/ProjectContext';
+import { trackStore } from '#/modules/Arrangement';
+import { midiStore } from '#/modules/MIDI';
+import { transportStore } from '#/modules/Transport';
+import { workspaceStore } from '#/modules/Workspace';
+
+export type ProjectContextClip = {
+    id: string;
+    name: string;
+    type: 'audio' | 'midi';
+    startBeat: number;
+    endBeat: number;
+    noteCount: number;
+};
+
+export type ProjectContextDevice = {
+    id: string;
+    type: string;
+    bypassed: boolean;
+};
+
+export type ProjectContextTrack = {
+    id: string;
+    name: string;
+    kind: string;
+    muted: boolean;
+    soloed: boolean;
+    armed: boolean;
+    gain: number;
+    pan: number;
+    clipCount: number;
+    deviceCount: number;
+    clips: ProjectContextClip[];
+    devices: ProjectContextDevice[];
+};
+
+export type ProjectContext = {
+    tempo: number;
+    timeSignature: [number, number];
+    tracks: ProjectContextTrack[];
+    selectedTrackId: string | null;
+    selectedClipId: string | null;
+    selectedClipIds: string[];
+    activeView: 'arrange' | 'automation' | 'clip' | 'mix';
+    playheadPosition: number;
+};
 
 export function getProjectContext(): ProjectContext {
     const trackState = trackStore.value;

@@ -13,18 +13,14 @@
  *   7. Drums — Toaster kit: folder + pad children (kick, snare/clap, hi-hat)
  */
 
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { trackStore, markerStore, createTrack } from '#/modules/Arrangement';
+import { midiStore } from '#/modules/MIDI';
 import { projectStore } from '../../../stores/projectStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
-import { createAutomationLane } from '#/modules/Automation/useCases/automation/createAutomationLane';
+import { transportStore, defaultTransportState } from '#/modules/Transport';
+import { automationStore, createAutomationLane } from '#/modules/Automation';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
 import { note, applyPreset, createMidiClip, syncArrangement } from '../demoUtils';
-import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases/toasterQueries';
+import { DEFAULT_PAD_NAMES } from '#/modules/Toaster';
 
 const TB = 320; // total beats (~2:34 at 125 BPM)
 const bpm = 125;
@@ -1248,9 +1244,9 @@ export async function demo_SweetDreams(): Promise<void> {
     // ══════════════════════════════════════════════════════════════════════
     syncArrangement(tracks);
 
-    const { addDeviceToStrip, updateDeviceParam } = await import('#/modules/AudioEngine/useCases/deviceControls');
+    const { addDeviceToStrip, updateDeviceParam } = await import('#/modules/AudioEngine');
     const { ensureTrackStrip, setTrackGain, setTrackPan, setTrackOutput, setTrackMute } =
-        await import('#/modules/AudioEngine/useCases/trackAudioControls');
+        await import('#/modules/AudioEngine');
 
     const toasterDev = toasterFolder.devices.find((d) => d.type === 'toaster');
     if (toasterDev) {
@@ -1267,10 +1263,10 @@ export async function demo_SweetDreams(): Promise<void> {
     setTrackPan(toasterFolder.id, toasterFolder.pan);
     setTrackMute(toasterFolder.id, toasterFolder.muted, toasterFolder.gain);
 
-    const { ensureTrackStrips } = await import('#/modules/Transport/useCases/ensureTrackStrips');
+    const { ensureTrackStrips } = await import('#/modules/Transport');
     ensureTrackStrips();
 
-    const { waitForDevices } = await import('#/modules/AudioEngine/useCases/engineAccess');
+    const { waitForDevices } = await import('#/modules/AudioEngine');
     await waitForDevices();
 
     projectStore.set({

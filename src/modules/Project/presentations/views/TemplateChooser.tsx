@@ -3,7 +3,6 @@ import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
 import { getTemplates, createFromTemplate } from '../../useCases/projectTemplates/templateDefinitions';
-import { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
 import { saveProject } from '../../useCases/projectPersistence/saveProject';
 
 // Inlined from Workspace/presentations/components/SourdawLogo to avoid
@@ -11,6 +10,15 @@ import { saveProject } from '../../useCases/projectPersistence/saveProject';
 type SourdawLogoProps = {
     className?: string;
     paused?: boolean;
+};
+
+type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
+
+type ProjectTemplate = {
+    id: string;
+    name: string;
+    description: string;
+    category: TemplateCategory;
 };
 
 type ParticleDef = {

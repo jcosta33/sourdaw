@@ -1,6 +1,6 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../useCases/selectionHelpers';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
+import { seekPlayhead } from '#/modules/Transport';
 
 /** Transport commands — play, stop, record, loop, metronome, seek. */
 export const transportCommands: CommandEntry[] = [

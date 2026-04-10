@@ -1,10 +1,10 @@
 import { inject } from '#/infra/di/inject';
 import { trackStore } from '../stores/trackStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
+import { audioBufferCache } from '#/modules/AudioEngine';
+import { addMidiNote } from '#/modules/MIDI';
 import { addTrack } from './addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
+import { summarizeFeatures } from '#/modules/AudioAnalysis';
 
 export const detectKeyDependencies = {
     summarizeFeatures,

@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { applyVelocityCurve, type VelocityCurve } from '#/modules/Arrangement/useCases/automationQueries';
+import { applyVelocityCurve, type VelocityCurve } from '#/modules/Arrangement';
 
 export const scaleVelocitiesDependencies = {
     applyVelocityCurve,

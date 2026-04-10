@@ -1,46 +1,12 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
-import { onNotification } from '../../useCases/onNotification';
+import { useNotificationQueue } from '../hooks/useNotificationQueue';
 export { notifyUser } from '#/helpers/Notification/notifyUser';
 
-export type AppNotification = {
-    id: string;
-    message: string;
-    level: 'warning' | 'error' | 'info' | 'success';
-    timestamp: number;
-};
-
 export const NotificationToast = (): ReactElement | null => {
-    const [items, setItems] = useState<AppNotification[]>([]);
-
-    useEffect(() => {
-        return onNotification(({ message, level }) => {
-            const notification: AppNotification = {
-                id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                message,
-                level,
-                timestamp: Date.now(),
-            };
-            setItems((prev) => {
-                if (prev.some((existing) => existing.message === notification.message)) {
-                    return prev;
-                }
-                return [...prev, notification];
-            });
-        });
-    }, []);
-
-    useEffect(() => {
-        if (items.length === 0) {
-            return;
-        }
-        const timer = setTimeout(() => {
-            setItems((prev) => prev.slice(1));
-        }, 8000);
-        return () => clearTimeout(timer);
-    }, [items]);
+    const { items, dismissLatest } = useNotificationQueue();
 
     if (items.length === 0) {
         return null;
@@ -74,7 +40,7 @@ export const NotificationToast = (): ReactElement | null => {
                 <Button
                     variant="ghost"
                     size="xs"
-                    onClick={() => setItems((prev) => prev.slice(1))}
+                    onClick={dismissLatest}
                     aria-label="Dismiss notification"
                 >
                     <X className="size-3" />

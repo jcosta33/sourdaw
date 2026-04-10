@@ -36,8 +36,11 @@ export { trackPitch, detectDominantPitch } from './useCases/pitchDetection';
 export type { PolyphonicAudioToMidiOptions, PolyphonicAudioToMidiResult } from './useCases/polyphonicAudioToMidi';
 export { polyphonicAudioToMidi } from './useCases/polyphonicAudioToMidi';
 
+// useCases/analyzeMix.ts (mix panel / metering)
+export { analyzeMix } from './useCases/analyzeMix';
+
 // useCases/referenceMixComparison/analyzeMix.ts
-export { analyzeMix, createReferenceAnalysis } from './useCases/referenceMixComparison/analyzeMix';
+export { createReferenceAnalysis } from './useCases/referenceMixComparison/analyzeMix';
 
 // useCases/referenceMixComparison/compareMixes.ts
 export { compareMixes, compareToReference } from './useCases/referenceMixComparison/compareMixes';

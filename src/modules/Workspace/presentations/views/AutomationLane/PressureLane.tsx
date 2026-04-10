@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { setNotePressure } from '#/modules/MIDI/useCases/midiEvent/setNotePressure';
+import { setNotePressure } from '#/modules/MIDI';
 import { NotePropertyLane } from './NotePropertyLane';
 
 type PressureLaneProps = {

@@ -41,9 +41,8 @@ export {
 } from './useCases/audioDeviceSelection';
 
 // audioEngineQueries
-export type { BusStrip, SidechainRoute, SynthParams, MpeParams, DrumKit, DrumKitVoice, GeneratedNote } from './useCases/audioEngineQueries';
+export type { SynthParams, MpeParams, DrumKit, DrumKitVoice } from './useCases/audioEngineQueries';
 export {
-    createSidechainRoute,
     defaultSynthParams,
     getDrumKitById,
     getDrumKitByIndex,
@@ -99,6 +98,9 @@ export {
     setSend,
     wireSidechainRoute,
     unwireSidechainRoute,
+    enableLink,
+    disableLink,
+    getLinkStatus,
 } from './useCases/engineAccess';
 
 // finalFeatureHandlers
@@ -118,12 +120,20 @@ export {
 } from './useCases/latencyCompensation/compensation';
 
 // nativeAiBridge
-export type { MidiGenerationResult, DenoiseResult } from './useCases/nativeAiBridge';
+export type { MidiGenerationResult, MidiGenerationNote, DenoiseResult } from './useCases/nativeAiBridge';
 export { isTauri, generateMidiAI, denoiseAudio } from './useCases/nativeAiBridge';
 
 // offlineRender
 export type { OfflineRenderOptions } from './useCases/offlineRender';
-export { cancelExport, isExportActive, renderOffline, exportStems } from './useCases/offlineRender';
+export {
+    cancelExport,
+    isExportActive,
+    renderOffline,
+    exportStems,
+    audioBufferToWav,
+    audioBufferToMp3,
+    audioBufferToFlac,
+} from './useCases/offlineRender';
 
 // scheduling
 export { scheduleClick, stopAllScheduled, getCurrentTime, createBufferSource } from './useCases/scheduling';

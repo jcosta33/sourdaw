@@ -1,27 +1,27 @@
 import { inject } from '#/infra/di/inject';
 import {
     type PeerId,
-    type PeerInfo,
     type PeerMessage,
-    type PresenceData,
     type SignalingMessage,
     PEER_COLORS,
 } from '../../models/CollaborationTypes';
 import { createCollaborationError } from '../../errors/CollaborationError';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { transportStore } from '#/modules/Transport';
+import { trackStore } from '#/modules/Arrangement';
+import { audioBufferCache, getAudioContext } from '#/modules/AudioEngine';
+import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
 
-import { setupProjectionBridge } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
-import { branchStore } from '#/modules/CrdtDocument/stores/branchStore';
-import { subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases/subscribeToCrdtChanges';
-import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
-import { createCrdtDoc } from '#/modules/CrdtDocument/useCases/createCrdtDoc';
-import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
-import { removeCrdtDoc } from '#/modules/CrdtDocument/useCases/removeCrdtDoc';
-import { mutateCrdtDoc } from '#/modules/CrdtDocument/useCases/mutateCrdtDoc';
-import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
+import {
+    setupProjectionBridge,
+    branchStore,
+    subscribeToCrdtChanges,
+    getCrdtDoc,
+    createCrdtDoc,
+    hasCrdtDoc,
+    removeCrdtDoc,
+    mutateCrdtDoc,
+    persistCrdtProject,
+} from '#/modules/CrdtDocument';
 import { collaborationStore } from '../../stores/collaborationStore';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AutomergeSync } from '../automergeSync';
@@ -221,7 +221,7 @@ const pickPeerColor = (excludeColors: string[]): string => {
     return PEER_COLORS.find((c) => !used.has(c)) ?? PEER_COLORS[0]!;
 };
 
-const getLocalPeerInfo = (): PeerInfo => {
+const getLocalPeerInfo = (): CollaborationPeer => {
     const state = collaborationStore.value!;
     return {
         id: state.localPeerId!,
@@ -432,7 +432,7 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
     // Add the joiner to our peer list
     const state = collaborationStore.value;
     if (state) {
-        const joinerInfo: PeerInfo = {
+        const joinerInfo: CollaborationPeer = {
             id: answer.peerId,
             name: answer.name,
             color: pickPeerColor([state.localColor, ...state.peers.map((p) => p.color)]),
@@ -697,7 +697,7 @@ const handlePeerDisconnected = (peerId: PeerId): void => {
     }
 };
 
-const addOrUpdatePeer = (peer: PeerInfo): void => {
+const addOrUpdatePeer = (peer: CollaborationPeer): void => {
     const state = collaborationStore.value;
     if (!state) {
         return;

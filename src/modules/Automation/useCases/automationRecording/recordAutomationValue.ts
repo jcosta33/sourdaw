@@ -1,4 +1,4 @@
-import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
+import { getTrackById } from '#/modules/Arrangement';
 import { type AutomationPoint } from '#/modules/Automation/models/Automation';
 import {
     RECORDING_MODES,

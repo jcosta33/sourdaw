@@ -1,5 +1,10 @@
+import { pickFiles as pickFilesFromNativeFileDialog } from '../repositories/nativeFileDialog';
+
 /**
- * Public contract re-exports for file dialog operations.
- * Cross-module consumers should import from here instead of private repositories/.
+ * Public contract for file dialog operations.
  */
-export { pickFiles } from '../repositories/nativeFileDialog';
+export function pickFiles(
+    ...args: Parameters<typeof pickFilesFromNativeFileDialog>
+): ReturnType<typeof pickFilesFromNativeFileDialog> {
+    return pickFilesFromNativeFileDialog(...args);
+}

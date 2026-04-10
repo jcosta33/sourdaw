@@ -1,12 +1,30 @@
 import { type ReactElement, type MouseEvent, useRef, useLayoutEffect } from 'react';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores/midiStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { midiStore } from '#/modules/MIDI';
+import { trackStore } from '#/modules/Arrangement';
+import { pushUndoEntry } from '#/modules/Command';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
 import { useStore } from '#/infra/store/useStore';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
+
+type MidiLaneStoreState = {
+    notesByClipId: Record<string, MidiNote[]>;
+    ccByClipId: Record<string, unknown[]>;
+    pitchBendByClipId: Record<string, unknown[]>;
+};
+
+type NotePropertyTrackState = {
+    tracks: Array<{
+        id: string;
+        color?: string;
+        clips: Array<{
+            id: string;
+            color?: string;
+        }>;
+    }>;
+    selectedTrackId: string | null;
+};
 
 type NotePropertyLaneProps = {
     clipId: string | null;
@@ -38,13 +56,13 @@ export const NotePropertyLane = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const midiState = useStore<MidiStoreState>(midiStore, {
+    const midiState = useStore<MidiLaneStoreState>(midiStore, {
         notesByClipId: {},
         ccByClipId: {},
         pitchBendByClipId: {},
     });
 
-    const trackState = useStore<TrackStoreState>(trackStore, {
+    const trackState = useStore<NotePropertyTrackState>(trackStore, {
         tracks: [],
         selectedTrackId: null,
     });

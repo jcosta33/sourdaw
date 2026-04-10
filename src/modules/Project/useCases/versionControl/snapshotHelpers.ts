@@ -1,8 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { trackStore, markerStore } from '#/modules/Arrangement';
+import { transportStore } from '#/modules/Transport';
 import { type ProjectSnapshot } from '../../models/ProjectVersion';
 
 /**

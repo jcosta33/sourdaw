@@ -1,9 +1,7 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { getSelectedTrackId } from '../../useCases/selectionHelpers';
-import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
-import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
+import { duplicateTrack, removeTrack, trackStore } from '#/modules/Arrangement';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 /** Track commands — add, duplicate, delete, rename, freeze, mute, solo, group, arm. */
 export const trackCommands: CommandEntry[] = [

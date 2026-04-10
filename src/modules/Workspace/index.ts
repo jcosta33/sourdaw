@@ -14,8 +14,10 @@ export { toggleRippleEditing, planRippleDelete, rippleDeleteClips, undoRippleDel
 // useCases/scratchPadHandlers.ts
 export { scratchPadHandlers } from './useCases/scratchPadHandlers';
 
+// useCases/panels/devicePanels.ts
+export { showDevicePanelForType } from './useCases/panels/devicePanels';
+
 // useCases/setEditingTool.ts
-export type { EditingTool } from './useCases/setEditingTool';
 export { setEditingTool } from './useCases/setEditingTool';
 
 // useCases/setTrackHeight.ts
@@ -76,7 +78,7 @@ export { workspaceHandlers } from './useCases/workspaceHandlers';
 
 // useCases/workspaceQueries.ts
 export { gridSnapBeats, TRACK_HEIGHT_VALUES, defaultPreferences } from './useCases/workspaceQueries';
-export type { Preferences, GridSnapOption, WorkspaceState } from './useCases/workspaceQueries';
+export type { Preferences, GridSnapOption, WorkspaceState, EditingTool } from './useCases/workspaceQueries';
 export { TOOL_SHORTCUTS } from './useCases/workspaceQueries';
 export { getWorkspaceState } from './useCases/workspaceQueries';
 

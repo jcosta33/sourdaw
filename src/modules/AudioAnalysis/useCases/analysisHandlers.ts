@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { analyzeMix } from '#/modules/AudioAnalysis/useCases/analyzeMix';
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { analyzeMix } from '#/modules/AudioAnalysis';
+import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

@@ -1,4 +1,4 @@
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type RuntimeAction } from '../../../models/RuntimeAction';
 
 // ── Context passed to every preset builder ──────────────────────────────
 
@@ -22,7 +22,7 @@ export type PresetAction = {
     /** Whether this action is destructive (requires confirmation) */
     isDestructive?: boolean;
     /** Build the AppAction(s). Return `null` to indicate the preset is not applicable. */
-    buildAction: (ctx: PresetContext) => AppAction | AppAction[] | null;
+    buildAction: (ctx: PresetContext) => RuntimeAction | RuntimeAction[] | null;
 };
 
 export type PresetCategory =
@@ -41,25 +41,25 @@ export type PresetCategory =
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 export const trackAction = (
-    type: AppAction['type'],
+    type: RuntimeAction['type'],
     payloadFn: (trackId: string) => Record<string, unknown>
 ): PresetAction['buildAction'] => {
     return (ctx) => {
         if (!ctx.selectedTrackId) {
             return null;
         }
-        return { type, payload: payloadFn(ctx.selectedTrackId) } as AppAction;
+        return { type, payload: payloadFn(ctx.selectedTrackId) } as RuntimeAction;
     };
 };
 
 export const clipAction = (
-    type: AppAction['type'],
+    type: RuntimeAction['type'],
     payloadFn: (clipId: string) => Record<string, unknown>
 ): PresetAction['buildAction'] => {
     return (ctx) => {
         if (!ctx.selectedClipId) {
             return null;
         }
-        return { type, payload: payloadFn(ctx.selectedClipId) } as AppAction;
+        return { type, payload: payloadFn(ctx.selectedClipId) } as RuntimeAction;
     };
 };

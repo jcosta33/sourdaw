@@ -16,22 +16,32 @@ import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
-import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Arrangement/stores/scratchPadStore';
 import {
+    scratchPadStore,
     removeScratchPadSection,
     renameScratchPadSection,
     setScratchPadSectionColor,
     reorderScratchPadSection,
     clearScratchPad,
-    type ScratchPadSection,
-} from '#/modules/Arrangement/useCases/scratchPad/scratchPadCrud';
-import {
     captureArrangementToScratchPad,
     commitScratchPadToArrangement,
-} from '#/modules/Arrangement/useCases/scratchPad/captureCommit';
+} from '#/modules/Arrangement';
 import { cn } from '#/helpers/Styles/cn';
 
-const defaultState: ScratchPadStoreState = { sections: [] };
+type ScratchPadSectionView = {
+    id: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    color: string;
+    order: number;
+};
+
+type ScratchPadViewState = {
+    sections: ScratchPadSectionView[];
+};
+
+const defaultState: ScratchPadViewState = { sections: [] };
 
 const SECTION_COLORS = [
     'oklch(0.40 0.08 260)',
@@ -42,7 +52,7 @@ const SECTION_COLORS = [
     'oklch(0.40 0.08 80)',
 ];
 
-type ContextMenuState = { kind: 'none' } | { kind: 'section'; x: number; y: number; section: ScratchPadSection };
+type ContextMenuState = { kind: 'none' } | { kind: 'section'; x: number; y: number; section: ScratchPadSectionView };
 
 type EditingState = { sectionId: string; name: string } | null;
 
@@ -52,7 +62,7 @@ type ScratchPadViewProps = {
 };
 
 export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): ReactElement => {
-    const state = useStore(scratchPadStore, defaultState);
+    const state = useStore<ScratchPadViewState>(scratchPadStore, defaultState);
 
     const sections = [...state.sections].sort((a, b) => a.order - b.order);
 
@@ -82,7 +92,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
         return () => window.removeEventListener('mousedown', handleClick);
     }, [contextMenu.kind]);
 
-    const handleContextMenu = (e: MouseEvent, section: ScratchPadSection): void => {
+    const handleContextMenu = (e: MouseEvent, section: ScratchPadSectionView): void => {
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({ kind: 'section', x: e.clientX, y: e.clientY, section });

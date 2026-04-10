@@ -1,6 +1,6 @@
 import { type AutomationPoint } from '../models/Automation';
 import { automationStore, type AutomationStoreState } from '../stores/automationStore';
-import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { pushUndoEntry } from '#/modules/Command';
 
 type DrawSession = {
     laneId: string;

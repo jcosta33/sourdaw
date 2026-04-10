@@ -6,7 +6,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
-import { type ShowDevicePanelPayload } from '#/modules/Workspace/events/WorkspaceEvents';
+import { type ShowDevicePanelPayload } from '../../events/WorkspaceEvents';
 
 // ── Device-type → panel-event mapping (kept in the use-case layer) ────────────
 

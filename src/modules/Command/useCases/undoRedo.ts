@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { undoStore } from '../stores/undoStore';
 import { executeAppAction } from './executeAppAction';
-import { type UndoEntry } from '../models/UndoEntry';
+import { type UndoEntry } from './commandQueries';
 
 async function executeUndo(entry: UndoEntry, runExecuteAppAction: typeof executeAppAction): Promise<void> {
     if (entry.kind === 'callback') {

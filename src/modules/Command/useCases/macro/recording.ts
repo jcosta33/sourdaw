@@ -1,9 +1,12 @@
 import { macroStore } from '../../stores/macroStore';
-import { type AppAction } from '../../models/AppAction';
-import { type Macro } from '../../models/Macro';
+import { type AppAction } from '../commandQueries';
 
-// Re-export for cross-module use
-export type { Macro } from '../../models/Macro';
+export type Macro = {
+    id: string;
+    name: string;
+    actions: AppAction[];
+    createdAt: number;
+};
 
 /** Actions that should NOT be recorded inside a macro (meta-actions). */
 const EXCLUDED_ACTIONS = new Set(['startMacroRecording', 'stopMacroRecording', 'playMacro', 'deleteMacro']);

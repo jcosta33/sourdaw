@@ -6,7 +6,7 @@
  * and the `fuzzyMatch` / `searchCommands` utilities.
  */
 
-import { type AppAction } from './AppAction';
+import { type AppAction } from '../useCases/commandQueries';
 
 export type CommandEntry = {
     id: string;

@@ -1,6 +1,6 @@
 import type { TrackChannelStrip, BuiltinDeviceNode, SendNode } from '../models/AudioEngineState';
-import { unregisterProofDevice } from '#/modules/Proof/useCases/proofParamBridge';
-import { unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
+import { unregisterLevainDevice } from '#/modules/Levain';
+import { unregisterProofDevice } from '#/modules/Proof';
 import { DEVICE_FACTORIES, applyParams, createFaustDeviceNode } from '../useCases/deviceResolvers';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';

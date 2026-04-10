@@ -28,9 +28,6 @@ export {
 
 // useCases/projectPersistence/helpers.ts
 export {
-    clearUndoHistory,
-    resetModuleStoresToDefault,
-    hydrateModuleStoresFromProjectData,
     verifyAudioBufferReferences,
 } from './useCases/projectPersistence/helpers';
 

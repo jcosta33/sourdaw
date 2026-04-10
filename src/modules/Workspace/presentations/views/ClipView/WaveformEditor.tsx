@@ -13,13 +13,12 @@ import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { replaceClipAudioBuffer } from '#/modules/Arrangement/useCases/replaceClipAudioBuffer';
-import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
-import { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
+import { audioBufferCache, decodeAudioFile, isTauri } from '#/modules/AudioEngine';
 import {
+    trackStore,
+    replaceClipAudioBuffer,
+    normalizeClip,
+    reverseClip,
     getWarpState,
     enableWarp,
     disableWarp,
@@ -27,12 +26,10 @@ import {
     addWarpMarker,
     removeWarpMarker,
     moveWarpMarker,
-} from '#/modules/Arrangement/useCases/warp';
-import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip';
-import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
+} from '#/modules/Arrangement';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
+import { audioToMidi } from '#/modules/AudioAnalysis';
 
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
 // Structurally compatible with the value returned by `getWarpState`.

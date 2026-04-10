@@ -22,14 +22,13 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { Slider } from '#/components/ui/slider';
-import { triggerLiveNoteOn } from '#/modules/AudioEngine/useCases/triggerLiveNoteOn';
-import { triggerLiveNoteOff } from '#/modules/AudioEngine/useCases/triggerLiveNoteOff';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
+import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine';
 import {
+    workspaceStore,
+    type WorkspaceState,
     setVirtualKeyboardOctave,
     setVirtualKeyboardVelocity,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+} from '#/modules/Workspace';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
