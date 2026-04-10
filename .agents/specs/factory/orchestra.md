@@ -1558,3 +1558,738 @@ An implementer should consult these sources for deep technical detail:
 - Sound On Sound "Session Notes" and "Orchestral Sampling" features
 - KVR forums — comparative discussions on library realism
 - VI-Control.net forums — primary community for orchestral composers and sample library users
+
+# Appendix: Achieving Orchestral Realism — Equations, Papers, Code, and Techniques
+
+> **Purpose:** This appendix complements the Orchestral Suite Implementation Guide with the specific mathematical models, friction curves, body resonance data, friction parameter tables, open-source codebases, and key papers an implementer needs to make Dutch Oven produce orchestral sounds indistinguishable from a live recording.
+
+---
+
+## 1. Bowed String Realism
+
+### 1.1 The Helmholtz Motion and Why It Matters
+
+A bowed string in normal playing produces **Helmholtz motion**: a single sharp corner (the "Helmholtz corner") traveling around the string, alternating between "sticking" and "slipping" phases at the bow contact point. The resulting velocity waveform at the bowed point is approximately a square wave. The output at the bridge is a sawtooth. All string realism begins here — if the model cannot reliably establish Helmholtz motion, it will never sound like a real instrument.
+
+The Helmholtz motion frequency is:
+
+```
+f₀ = (1 / 2L) × √(T / ρ)
+```
+
+where `L` = string length, `T` = tension (N), `ρ` = linear mass density (kg/m).
+
+### 1.2 Friction Models: The Core of Bowed String Realism
+
+Three friction models exist, each representing a different fidelity/cost tradeoff. For Sourdaw, the recommendation is: use the **velocity-dependent curve** for real-time, with the **thermal model** available as a quality upgrade in Lab mode.
+
+#### 1.2.1 Classical Velocity-Dependent Friction (Smith & Woodhouse 1999)
+
+The simplest usable model. Friction coefficient depends only on relative sliding velocity:
+
+```
+μ(v) = μ_d + (μ_s - μ_d) × exp(-|v| / v₀)
+```
+
+Typical measured values for violin rosin (from Woodhouse's lab):
+
+- `μ_s` (static friction coefficient) ≈ 0.8
+- `μ_d` (dynamic friction coefficient at high velocity) ≈ 0.3
+- `v₀` (characteristic velocity) ≈ 0.1 m/s
+
+The friction force is then:
+
+```
+f_friction = μ(v_rel) × F_bow × sign(v_rel)
+```
+
+where `v_rel = v_bow - v_string` and `F_bow` is the normal bow force.
+
+**The Friedlander graphical construction**: at each time step, the string's state (described by incoming traveling waves) defines a "load line" in the force-velocity plane. The intersection of this line with the friction curve gives the current friction force. When multiple intersections exist, hysteresis rules (stick-to-slip or slip-to-stick priority) determine the solution.
+
+**Key paper**: Smith, J.H. & Woodhouse, J. (2000). "The tribology of rosin." _Journal of the Mechanics and Physics of Solids_, 48(8), 1633–1681.
+
+#### 1.2.2 Thermal Friction Model (Woodhouse 2003)
+
+More realistic: the friction coefficient depends on the **contact temperature** of the rosin, not directly on velocity. Rosin's glass transition temperature (~49°C for violin rosin) causes a dramatic drop in friction as the surface softens.
+
+The model couples the string dynamics to a 1D heat diffusion equation at the contact point:
+
+```
+∂θ/∂t = κ × ∂²θ/∂z²
+```
+
+where `θ` = temperature, `κ` = thermal diffusivity of rosin, `z` = depth into rosin layer. The boundary condition at the contact surface is:
+
+```
+-k × (∂θ/∂z)|_{z=0} = q(t) = μ(θ_surface) × F_bow × |v_rel|
+```
+
+The friction coefficient is then a function of surface temperature:
+
+```
+μ(θ) = μ₀ × exp(-(θ - θ_ambient) / θ_char)
+```
+
+Measured thermal properties of violin rosin:
+
+- Thermal conductivity `k` ≈ 0.113 W/(m·K)
+- Specific heat `c_p` ≈ 1250 J/(kg·K)
+- Density ≈ 1070 kg/m³
+- Glass transition temperature ≈ 49°C (violin rosin), ~25°C (bass rosin)
+
+During Helmholtz motion, the contact temperature fluctuates by ~30°C per cycle, reaching ~70°C mean. This produces the hysteresis loop in the force-velocity plane that is observed experimentally but absent from the classical model.
+
+**Key paper**: Woodhouse, J. (2003). "Bowed string simulation using a thermal friction model." _Acta Acustica united with Acustica_, 89, 355–368.
+
+**Full text available**: https://euphonics.org/wp-content/uploads/2022/03/Thermal_bowing.pdf
+
+#### 1.2.3 Elasto-Plastic Friction Model (Dupont et al. 2002, applied by Serafin et al. 2003)
+
+Models the contact as a bundle of elastic bristles at the microscopic level. The internal state variable `z` (average bristle deflection) evolves according to:
+
+```
+dz/dt = v_rel × (1 - α(v_rel, z) × z / z_ss(v_rel))
+```
+
+where `z_ss(v_rel)` is the steady-state bristle deflection and `α` is a switching function between pre-sliding (elastic) and sliding (plastic) regimes. The friction force is:
+
+```
+f = σ₀ × z + σ₁ × dz/dt + σ₂ × v_rel
+```
+
+where `σ₀` = bristle stiffness, `σ₁` = bristle damping, `σ₂` = viscous friction.
+
+This model naturally captures pre-sliding displacement (micromotion before breakaway) and the transition from static to dynamic friction without discontinuity.
+
+**Recent validated implementation**: van Walstijn, M. et al. (2024). "Numerical modelling of elasto-plastic friction in bow-string interaction with guaranteed passivity." _Frontiers in Signal Processing_. Full open-access paper with parameter tables and energy-balanced discretization scheme.
+
+**Key paper URL**: https://www.frontiersin.org/journals/signal-processing/articles/10.3389/frsip.2025.1525044/full
+
+### 1.3 Digital Waveguide Bowed String: Complete Signal Flow
+
+The canonical real-time model (Smith, CCRMA):
+
+```
+String = two coupled delay lines (bidirectional waveguide)
+Bow = nonlinear scattering junction dividing string into two segments
+
+At the bow point:
+  v_incoming = v⁺_left + v⁻_right  (sum of incoming waves from both sides)
+
+  Find v_bow_inject such that:
+    f(v_bow - v_incoming - v_bow_inject) × F_bow = 2Z₀ × v_bow_inject
+
+  where Z₀ = √(T × ρ) is the string wave impedance
+
+  v⁻_left = v_incoming_left + v_bow_inject  (outgoing wave toward nut)
+  v⁺_right = v_incoming_right + v_bow_inject  (outgoing wave toward bridge)
+```
+
+The delay line lengths:
+
+```
+N_bridge = round(β × f_s / f₀)     // bow-to-bridge segment
+N_nut = round((1-β) × f_s / f₀)    // bow-to-nut segment
+```
+
+where `β` = fractional bow position (typically 0.08–0.15 for normal playing, ~1/8 of string length from bridge).
+
+**Reflection filters** at bridge and nut model frequency-dependent losses. The bridge filter is the most important: it shapes the output spectrum to match the instrument body response.
+
+**Key reference**: Smith, J.O. III, "Digital Waveguide Modeling of Bowed Strings." CCRMA lecture notes. https://ccrma.stanford.edu/~jos/BowedStrings/BowedStrings.pdf
+
+### 1.4 Two-Polarisation Model for Full Realism
+
+Real bowed strings vibrate in two perpendicular planes simultaneously. The NESS project (Edinburgh) demonstrated that modeling both polarisations is essential for realistic:
+
+- Bow bouncing (spiccato, sautillé)
+- Fingerboard interaction (left hand stopping, flautando)
+- String-to-string contact (double stops)
+
+The equations of motion in each polarisation:
+
+**Horizontal (bowing direction):**
+
+```
+ρ × ∂²u_h/∂t² = T × ∂²u_h/∂x² - E×I × ∂⁴u_h/∂x⁴ - 2×ρ×σ₀×∂u_h/∂t + f_friction(x_bow)
+```
+
+**Vertical (normal to bow):**
+
+```
+ρ × ∂²u_v/∂t² = T × ∂²u_v/∂x² - E×I × ∂⁴u_v/∂x⁴ - 2×ρ×σ₀×∂u_v/∂t + f_contact(x_bow) + f_finger + f_fingerboard
+```
+
+where:
+
+- `E×I` = bending stiffness (causes inharmonicity)
+- `σ₀` = frequency-independent damping
+- `f_contact` = nonlinear normal contact force (bow pressing on string)
+- `f_finger` = left-hand finger force (stopping the string)
+- `f_fingerboard` = rigid barrier collision model
+
+**Contact model** (Hunt-Crossley): `f_contact = k_c × η^α + λ × η^α × dη/dt` where `η` = interpenetration depth, `α` ≈ 1.5–3.
+
+**Key paper**: Desvages, C. & Bilbao, S. (2016). "Two-polarisation physical model of bowed strings with nonlinear contact and friction forces." _Applied Sciences_, 6(5), 135. **Open access**: https://www.mdpi.com/2076-3417/6/5/135
+
+### 1.5 Frequency-Dependent Damping (Critical for Realism)
+
+Real strings have damping that increases with frequency. A simple constant damping produces an unrealistic "ringing" quality. The NESS project developed an accurate time-domain model:
+
+Measured T60 decay times for a violin D-string (approximate):
+| Frequency (Hz) | T60 (seconds) |
+|---|---|
+| 294 (fundamental) | 0.8–1.2 |
+| 600 | 0.5–0.8 |
+| 1200 | 0.3–0.5 |
+| 2400 | 0.15–0.3 |
+| 5000 | 0.05–0.15 |
+| 10000 | 0.02–0.05 |
+
+Implementation: replace the simple one-pole loss filter in the waveguide with a higher-order filter designed to match these decay profiles per-band. The NESS approach uses auxiliary state variables added to each spatial grid point, implementing the frequency-dependent loss as a sum of first-order systems.
+
+**Key paper**: Desvages, C., Bilbao, S., Ducceschi, M. (2016). "Improved frequency-dependent damping for time domain modelling of linear string vibration." _Proc. Int. Congr. Acoust. (ICA)_, Buenos Aires.
+
+---
+
+## 2. Violin/Viola/Cello/Bass Body Resonance
+
+### 2.1 Critical Body Modes
+
+The violin body acts as a linear filter on the bridge force signal. The most perceptually important modes, agreed upon across decades of measurement:
+
+| Mode           | Frequency Range | Description                          |
+| -------------- | --------------- | ------------------------------------ |
+| C1             | ~185 Hz         | First corpus mode                    |
+| A0 (Helmholtz) | 260–290 Hz      | Air cavity resonance (f-holes)       |
+| C2             | ~405 Hz         | Second corpus mode                   |
+| A1             | 430–490 Hz      | Second air cavity mode               |
+| C3             | 490–590 Hz      | Third corpus mode                    |
+| C4             | ~700 Hz         | Fourth corpus mode                   |
+| "Bridge hill"  | 2000–3000 Hz    | Broad resonance from bridge dynamics |
+
+The frequency response above ~1 kHz becomes increasingly dense (mode spacing < bandwidth), transitioning to a "statistical" regime where individual modes are no longer perceptually distinct.
+
+### 2.2 Body Response Implementation: Two-Tier Model
+
+**Tier 1 — Low-frequency deterministic modes (< ~1.5 kHz):**
+Implement as a bank of second-order biquad resonators in parallel:
+
+```
+H_body(z) = Σᵢ [bᵢ₀ + bᵢ₁z⁻¹ + bᵢ₂z⁻²] / [1 + aᵢ₁z⁻¹ + aᵢ₂z⁻²]
+```
+
+Each resonator is parameterized by center frequency `fᵢ`, gain `gᵢ`, and bandwidth `BWᵢ`. The violin LPC resonance frequencies measured by the Princeton NBody database (Smith, Cook):
+
+**Violin**: 524, 1156, 1870, 2302, 2836, 3758 Hz
+**Hardanger fiddle**: 580, 987, 1894, 2234, 2584, 3465 Hz
+
+These can be extracted from a measured impulse response using:
+
+1. LPC (linear predictive coding) for gross spectral envelope
+2. Peak-picking on the frequency response for individual mode extraction
+3. Filter Diagonalisation Method (FDM) for precise mode parameter extraction
+
+**Tier 2 — High-frequency statistical modes (> ~1.5 kHz):**
+Use a 2D **waveguide mesh** (Karjalainen & Smith) to generate a statistically correct modal density. The mesh dimensions are tuned so that the number of modes per Hz matches that of a real violin body. This is far cheaper than modeling 100+ individual resonators.
+
+**Key paper**: Karjalainen, M. & Smith, J.O. (2000). "A Waveguide Mesh Model of High-Frequency Violin Body Resonances." _Proc. ICMC_. https://quod.lib.umich.edu/i/icmc/bbp2372.2000.171
+
+### 2.3 Scaling Body Resonances Across the String Family
+
+A cello body is approximately twice the length of a violin (35 cm vs 76 cm). A surprisingly effective technique: **frequency-scale a violin impulse response** downward by the ratio of body lengths. This shifts all modes proportionally, producing a crude but convincing cello body response without requiring separate cello measurements.
+
+```
+H_cello(f) ≈ H_violin(f × L_violin / L_cello)
+```
+
+For double bass, scale further. For viola, scale slightly downward (body length ~40 cm).
+
+### 2.4 Measured Body Impulse Responses: Free Databases
+
+- **Princeton NBody Database** (Cook & Smith, CCRMA): Directional radiation impulse responses from violin, guitar, mandolin, Hardanger fiddle. 12 mic positions per instrument. Freely available with LPC decompositions. https://www.cs.princeton.edu/~prc/ism98fin.pdf
+- **University of Iowa Electronic Music Studios**: Anechoic recordings of all standard orchestral instruments. Public domain.
+- **Philharmonia Orchestra Sound Samples**: Individual note recordings, many articulations, free for educational use.
+
+### 2.5 Convolution vs Parametric Body Model: When to Use Which
+
+| Approach                     | Pros                              | Cons                    | Use when               |
+| ---------------------------- | --------------------------------- | ----------------------- | ---------------------- |
+| Convolution with measured IR | Most realistic timbre             | Fixed, not tweakable    | Final render quality   |
+| Parametric biquad bank       | Tweakable (body size, brightness) | Harder to match reality | Real-time, UI morphing |
+| Hybrid (biquads + mesh)      | Good balance                      | Moderate complexity     | Default engine choice  |
+
+---
+
+## 3. Wind Instrument Realism
+
+### 3.1 Single-Reed Model (Clarinet, Saxophone)
+
+The reed is modeled as a pressure-controlled valve — a mass-spring-damper driven by the pressure difference across it:
+
+```
+m_r × d²x/dt² + r × dx/dt + k × (x - x₀) = ΔP × S_eff
+```
+
+where:
+
+- `m_r` = reed mass (~0.05 g for clarinet)
+- `r` = damping coefficient
+- `k` = reed stiffness
+- `x₀` = equilibrium opening
+- `ΔP = P_mouth - P_bore` = pressure difference
+- `S_eff` = effective area
+
+The volume flow through the reed channel (Bernoulli model):
+
+```
+U = w × x(t) × sign(ΔP) × √(2|ΔP| / ρ_air)    when x > 0
+U = 0                                               when x ≤ 0 (reed beats)
+```
+
+where `w` = reed channel width, `ρ_air` = air density.
+
+The bore is a bidirectional delay line (cylindrical for clarinet, requiring conical correction for saxophone). The bell reflection filter is lowpass (reflecting low frequencies back into the bore, radiating high frequencies).
+
+**Digitally**: the reed reflection function becomes a memoryless nonlinear lookup table indexed by `P_mouth - P_bore`:
+
+```
+p⁻_bore(t) = reed_table[2 × p⁺_bore(t) - P_mouth] + p⁺_bore(t)
+```
+
+where `reed_table` incorporates both the reed dynamics and the flow nonlinearity.
+
+**Measurements by Backus (1963)** showed the flow exponent is approximately 3 (not the theoretical 0.5 from Bernoulli), capturing the real reed's nonlinear compliance.
+
+**Key references**:
+
+- Scavone, G.P. (1997). _An Acoustic Analysis of Single-Reed Woodwind Instruments with an Emphasis on Design and Performance Issues and Digital Waveguide Modeling Techniques_. Ph.D. thesis, CCRMA, Stanford.
+- Smith, J.O. "Single-Reed Instruments." PAPS online: https://ccrma.stanford.edu/~jos/waveguide/Single_Reed_Instruments.html
+- Cook, P.R. (1992). "A meta-wind-instrument physical model." _Proc. ICMC_.
+
+### 3.2 Double-Reed Model (Oboe, Bassoon)
+
+The double reed differs from single reed: the embouchure geometry creates additional aerodynamic losses at the reed tip. The flow model must account for:
+
+```
+P_mouth - P_reed_tip = (1/2) × ρ × (U / S_reed)²    (Bernoulli at reed)
+P_reed_tip - P_bore = ΔP_losses                        (embouchure losses)
+```
+
+The extra loss term `ΔP_losses` is significant for double reeds and negligible for single reeds. This is what gives the oboe its more "resistant" feel and brighter, more nasal timbre.
+
+### 3.3 Lip-Reed / Brass Model
+
+The brass player's lips are modeled as an **outward-striking reed** (opposite polarity to woodwinds — the valve opens when internal pressure increases):
+
+```
+m_lip × d²x/dt² + r × dx/dt + k × x = (P_mouth - P_cup) × S_lip
+```
+
+The volume flow:
+
+```
+U = w_lip × x(t) × sign(P_mouth - P_cup) × √(2|P_mouth - P_cup| / ρ_air)
+```
+
+The bore is modeled with Webster's horn equation for the flaring bell:
+
+```
+∂²p/∂t² = c² × (1/S(x)) × ∂/∂x(S(x) × ∂p/∂x) - viscothermal_losses
+```
+
+where `S(x)` is the cross-sectional area at position `x` along the bore.
+
+**Viscothermal losses** (boundary layer absorption): Keefe (1984) model, involving half-order derivatives in time, approximated digitally as IIR filters.
+
+**Radiation at bell**: Levine-Schwinger radiation impedance model (unflanged pipe):
+
+```
+Z_rad(ω) = (ρc/S_bell) × [jωδ/c + (ωa/c)² / 2]    (low-frequency approximation)
+```
+
+where `a` = bell radius, `δ ≈ 0.6133a` = end correction.
+
+**Key paper**: Harrison-Harsley, R. (2018). _Time Domain Simulation of Brass Instruments_. Ph.D. thesis, University of Edinburgh. Bilbao, S. (2011). "Modeling of Brass Instrument Valves." _Proc. ICMC_.
+
+### 3.4 Tone Holes (Woodwinds)
+
+Each tone hole acts as a T-junction shunt impedance. Keefe's (1990) model:
+
+**Open hole**: primarily a shunt with series impedance:
+
+```
+Z_shunt = jωρℓ_eff / S_hole    (inertance of air in hole)
+Z_series = -jωρδ / S_bore       (series mass loading)
+```
+
+**Closed hole**: adds a small compliance (volume of air in the closed hole).
+
+A waveguide implementation uses a three-port scattering junction at each hole location.
+
+**Recent breakthrough**: Darabundit & Scavone (2025) proposed a port-Hamiltonian system (PHS) formulation that models reed + bore + toneholes as interconnected energy-conserving subsystems, guaranteeing stability even during rapid tonehole switching. This is the state of the art for stable real-time woodwind synthesis.
+
+**Key paper**: Darabundit & Scavone (2025). _Frontiers in Signal Processing_. https://www.frontiersin.org/journals/signal-processing/articles/10.3389/frsip.2025.1715792/full
+
+### 3.5 Vocal Tract Coupling (Advanced Realism)
+
+Professional wind players shape their vocal tract to affect timbre. Scavone demonstrated that the upstream impedance (mouth cavity) couples to the downstream impedance (bore) through the reed:
+
+```
+Z_total = Z_reed ∥ (Z_bore + Z_upstream)
+```
+
+When `Z_upstream` has resonances near `Z_bore` resonances, the player can isolate harmonics, bend pitch, and modify timbre — effects essential for realistic saxophone and clarinet modeling.
+
+**Key paper**: Scavone, G.P. (2003). "Modeling vocal-tract influence in reed wind instruments." _Proc. SMAC_. https://ccrma.stanford.edu/~gary/papers/smac03.pdf
+
+---
+
+## 4. Ensemble Simulation: From One Player to Sixteen
+
+### 4.1 What Makes an Ensemble Sound Like an Ensemble
+
+A violin section of 16 players produces a sound fundamentally different from one violin amplified 16×. The critical perceptual differences:
+
+1. **Pitch scatter**: individual players deviate from perfect unison by a few cents. Measured standard deviation: ~5–14 cents for "preferred" ensemble tuning (Ternström choir studies). This produces slow beating between partials.
+
+2. **Timing scatter**: onset times differ by ±5–20 ms. Attack transients are "smeared" into a softer, broader attack.
+
+3. **Vibrato decorrelation**: each player's vibrato has independent rate (4.5–7 Hz), depth (15–40 cents), and phase. This prevents the "chorus flanging" artifact.
+
+4. **Spectral decorrelation**: different instruments have different body resonances, so formant frequencies differ. Higher partials beat rapidly, creating the characteristic "shimmering" ensemble texture.
+
+### 4.2 The Ensemble Synthesis Algorithm
+
+For each "virtual player" `i` in a section of `N`:
+
+```
+output_i(t) = sample(t + Δt_i) × gain_i × pitch_shift(Δf_i + vibrato_i(t))
+```
+
+where:
+
+- `Δt_i` ~ Normal(0, σ_timing), `σ_timing` = 5–15 ms
+- `Δf_i` ~ Normal(0, σ_pitch), `σ_pitch` = 3–8 cents
+- `vibrato_i(t) = d_i × sin(2π × r_i × t + φ_i)` with:
+    - `d_i` ~ Normal(25, 8) cents (depth)
+    - `r_i` ~ Normal(5.5, 0.8) Hz (rate)
+    - `φ_i` ~ Uniform(0, 2π) (phase)
+- `gain_i` ~ Normal(1.0, 0.05) (level variation)
+
+The pitch shift is implemented as a time-varying delay (fractional delay interpolation) to avoid resampling artifacts:
+
+```
+delay_i(t) = delay_base + integral(Δf_i(t) / f₀) samples
+```
+
+### 4.3 Stereo Positioning
+
+Pan each virtual player according to orchestral seating, with slight randomization:
+
+```
+pan_i = pan_section + Normal(0, 0.05)    // ±5% of stereo field
+```
+
+Apply per-player distance simulation:
+
+- Air absorption: `-1 dB/10m above 5 kHz` (first-order shelving filter)
+- Early reflection delay: `distance_i / 343` seconds
+- Direct-to-reverb ratio: increases with distance
+
+### 4.4 Key Research on Ensemble Perception
+
+- Ternström, S. (1993). "Preferred scatter in choir singing." _J. Acoust. Soc. Am._ — Established that preferred pitch scatter is ~5 cent standard deviation; 14 cent is the maximum tolerable.
+- Kahlin & Ternström (1999). "The chorus effect revisited." _Proc. ICMC_ — Demonstrated that simple delay-based chorus fails above ~2 kHz because beating becomes too rapid; proper ensemble simulation requires decorrelated vibrato and independent spectral envelopes.
+
+---
+
+## 5. Open-Source Codebases for Reference
+
+### 5.1 The NESS Project (University of Edinburgh) — **MIT License**
+
+**Repository**: https://github.com/Edinburgh-Acoustics-and-Audio-Group/ness
+
+The gold standard for FDTD physical modeling synthesis. C++ with optional CUDA GPU acceleration. Models include:
+
+- **Bowed string**: two-polarisation, elasto-plastic friction, left-hand finger, fingerboard collision
+- **Brass**: full bore FDTD with viscothermal losses, lip model, valve mechanism, bell radiation
+- **Guitar**: six-string with fret/finger interactions
+- **3D room acoustics**: wave-based spatial simulation
+
+This codebase implements the research from Bilbao's group over 5 years (2012–2016). The bowed string model specifically implements the two-polarisation scheme from Desvages & Bilbao (2016).
+
+**License**: MIT — fully usable for commercial projects.
+
+### 5.2 STK — The Synthesis ToolKit in C++ (Perry Cook / Gary Scavone)
+
+**Repository**: https://github.com/thestk/stk
+
+The original practical implementation of waveguide synthesis. Includes:
+
+- `Bowed.cpp` — waveguide bowed string (simplified single-polarisation)
+- `Clarinet.cpp` — single-reed waveguide
+- `Brass.cpp` — lip-reed waveguide
+- `Flute.cpp` — air-jet flute model
+- `ModalBar.cpp` — modal percussion synthesis
+
+Cook's implementations prioritize playability over absolute physical accuracy. They are excellent starting points but lack the friction model sophistication of NESS.
+
+**License**: BSD-style (permissive, commercial use OK).
+
+### 5.3 Faust Physical Modeling Library (GRAME-CNCM)
+
+**Repository**: https://github.com/grame-cncm/faustlibraries (file: `physmodels.lib`)
+
+Complete physical modeling toolkit in the Faust DSP language. Includes:
+
+- Bowed string instruments (violin, cello)
+- Wind instruments (clarinet, flute, brass)
+- Modal percussions (marimba, vibraphone, tibetan bowl)
+- Vocal synthesis (FOF)
+- All waveguide primitives: bidirectional delay lines, scattering junctions, excitation models
+
+Faust compiles to C++, Rust, WASM, and many other targets. The `physmodels.lib` models are based on the STK algorithms but expressed in a more modular, functional style.
+
+**License**: LGPL (check compatibility with your use case).
+
+**Tutorial**: https://ccrma.stanford.edu/~rmichon/faustTutorials/#making-physical-models-of-musical-instruments-with-faust
+
+### 5.4 MoReeSC (Silva, Vergez, Guillemain et al.)
+
+**Paper**: Silva et al. (2014). "MoReeSC: A Framework for the Simulation and Analysis of Sound Production in Reed and Brass Instruments." _Acta Acustica united with Acustica_, 100(1), 126–138.
+
+Python-based open-source framework for reed and brass simulation using modal decomposition of the bore. Models the bore as a series of Helmholtz resonators, couples with a lumped reed/lip model, and solves self-sustained oscillations with ODE solvers. Supports time-varying mouth pressure, embouchure, and acoustic resonator parameters.
+
+Not real-time, but invaluable for understanding the physics and validating faster models.
+
+### 5.5 PFFDTD (Hamilton, Bilbao)
+
+**Repository**: https://github.com/bsxfun/pffdtd
+
+GPU-accelerated FDTD simulator for 3D room acoustics. Useful for generating custom room impulse responses for the convolution reverb engine. Supports arbitrary room geometries imported from SketchUp, frequency-dependent wall absorption, and multi-GPU execution.
+
+**License**: Check repository (research-oriented).
+
+### 5.6 twang (Rust)
+
+**Repository**: https://github.com/NibbleRealm/twang
+
+Pure Rust audio synthesis library implementing Karplus-Strong, basic waveguide synthesis, additive, FM, and wavetable synthesis. Not orchestral-specific, but demonstrates Rust patterns for allocation-free DSP.
+
+**License**: Apache-2.0 / MIT dual license.
+
+---
+
+## 6. Commuted Synthesis: The Practical Shortcut
+
+For real-time use, **commuted synthesis** (Smith, 1993) dramatically reduces cost by exploiting the linearity of the body:
+
+Instead of:
+
+```
+output = body_filter(bridge_force(string_model(bow_input)))
+```
+
+Commute the body response to the excitation:
+
+```
+output = string_model(body_filter(bow_input))
+```
+
+This works because the string is (approximately) linear, so convolution commutes. The body filter only needs to run once on the excitation signal, not on every string partial. For plucked strings, the body response can be baked into the initial pluck waveform (one-shot convolution), making subsequent processing a simple delay-line loop.
+
+For bowed strings, the approach is adapted: the "slip noise" (the burst of energy at each Helmholtz corner) is convolved with the body IR, producing a pulse that circulates in the delay line.
+
+**Key reference**: Jaffe, D. (1995). "Performance Expression in Commuted Waveguide Synthesis of Bowed Strings." https://www.davidajaffe.com/writings/performance-expression-in-commuted-waveguide-synthesis-of-bo.html
+
+---
+
+## 7. Vibrato Realism: Beyond Simple Pitch LFO
+
+### 7.1 What Real Vibrato Is
+
+Real vibrato involves simultaneous modulation of:
+
+1. **Pitch**: ±10–40 cents at 4.5–7 Hz (strings), 4–6 Hz (winds)
+2. **Amplitude**: ±1–3 dB (from body resonance interaction)
+3. **Timbre**: spectral envelope shifts as harmonics sweep through body resonances
+
+The third effect — **Spectral Envelope Modulation (SEM)** — is what makes vibrato sound "warm" rather than mechanical. As the pitch sweeps up, higher harmonics may sweep into or out of body resonances, causing them to modulate in amplitude independently.
+
+### 7.2 Implementing SEM
+
+**Method 1 — Physical model**: if using a waveguide string with a body resonance filter, SEM occurs naturally as the pitch-shifted harmonics interact with the fixed body resonances.
+
+**Method 2 — Sample-based**: crossfade between samples recorded at slightly different pitches (already implemented via dynamic layer crossfading). The natural body resonance interaction is baked into the samples.
+
+**Method 3 — Synthetic augmentation on samples**: apply a bank of narrow bandpass filters at the body resonance frequencies. Modulate the pitch of the source while keeping the filters fixed. The amplitude modulation of each harmonic through the fixed resonances produces SEM.
+
+### 7.3 Vibrato Onset
+
+Real players don't start vibrato immediately. Measured onset delay:
+
+- Violin: 100–300 ms after note start
+- Voice: 200–500 ms
+- Winds: 150–400 ms
+
+The vibrato depth ramps up over ~200 ms from zero to full depth. Model as:
+
+```
+depth(t) = depth_max × (1 - exp(-(t - t_onset) / τ_ramp))    for t > t_onset
+depth(t) = 0                                                    for t ≤ t_onset
+```
+
+where `t_onset` ~ 150–300 ms, `τ_ramp` ~ 100 ms.
+
+---
+
+## 8. Release Realism
+
+### 8.1 What Happens When a Bow Lifts
+
+1. Bow force decreases → friction drops → string transitions from Helmholtz to free decay
+2. Bow hair separates from string → brief noise burst (filtered, ~10–30 ms)
+3. String decays exponentially with frequency-dependent damping
+4. Body resonances ring out (body IR tail, ~100–300 ms)
+5. Sympathetic resonance from other strings may continue
+
+### 8.2 Synthetic Release Model
+
+```
+release(t) = [sample_tail(t) × env_release(t)] + noise_burst(t) + sympathetic(t)
+
+env_release(t) = exp(-t / τ_release)
+    τ_release depends on articulation:
+    - Sustain: 200–500 ms
+    - Staccato: 30–80 ms
+    - Pizzicato: 50–150 ms
+
+noise_burst(t) = filtered_noise × burst_env(t)
+    burst_env(t) = t × exp(-t / τ_burst), τ_burst ≈ 5–15 ms
+    Filter: bandpass centered at 2–5 kHz, Q ≈ 2 (bow hair/string scraping)
+```
+
+---
+
+## 9. Sympathetic Resonance
+
+When one string sounds, other strings vibrate sympathetically at their resonant frequencies. This is perceptually subtle but contributes to the "aliveness" of a real instrument.
+
+Implementation: a bank of bandpass filters, one per open string of the instrument:
+
+```
+For each open string j:
+    y_j(n) = resonator_j(bridge_output(n))    // excited by bridge signal
+
+    resonator_j: second-order IIR with:
+        f_center = open_string_frequency_j
+        Q = 500–2000 (very narrow, lightly damped)
+        gain = -30 to -20 dB (subtle)
+```
+
+Violin open strings: G3 (196 Hz), D4 (294 Hz), A4 (440 Hz), E5 (659 Hz).
+Cello open strings: C2 (65 Hz), G2 (98 Hz), D3 (147 Hz), A3 (220 Hz).
+
+---
+
+## 10. Master Bibliography for Realism
+
+### Essential Books (in priority order)
+
+1. **Smith, J.O. III. _Physical Audio Signal Processing_ (PAPS).** https://ccrma.stanford.edu/~jos/pasp/ — Free online. The single most important reference.
+
+2. **Bilbao, S. (2009). _Numerical Sound Synthesis: Finite Difference Schemes and Simulation in Musical Acoustics._ Wiley.** — The definitive FDTD approach. 150+ problems with MATLAB code.
+
+3. **Smith, J.O. III. _Spectral Audio Signal Processing._** https://ccrma.stanford.edu/~jos/sasp/ — Free online. SMS, onset detection, phase vocoder.
+
+4. **Fletcher, N.H. & Rossing, T.D. (1998). _The Physics of Musical Instruments._ Springer.** — The acoustics bible. Covers every instrument family.
+
+5. **Cook, P.R. (2002). _Real Sound Synthesis for Interactive Applications._ A K Peters.** — Practical implementation guide.
+
+### Essential Papers — Bowed Strings
+
+6. McIntyre, M. & Woodhouse, J. (1979). "On the fundamentals of bowed-string dynamics." _Acustica_, 43, 93–108. — The foundational paper.
+
+7. Smith, J.H. & Woodhouse, J. (2000). "The tribology of rosin." _JMPS_, 48(8), 1633–1681. — Measured rosin friction curves, thermal model origin.
+
+8. Woodhouse, J. (2003). "Bowed string simulation using a thermal friction model." _Acta Acustica_, 89, 355–368. — Thermal friction equations and validation.
+
+9. Desvages, C. & Bilbao, S. (2016). "Two-polarisation physical model of bowed strings." _Applied Sciences_, 6(5), 135. — State of the art FDTD bowed string.
+
+10. van Walstijn, M. et al. (2024). "Numerical modelling of elasto-plastic friction in bow-string interaction with guaranteed passivity." _Frontiers in Signal Processing_. — Latest friction model with energy balance.
+
+11. Maestre, E., Spa, C. & Smith, J.O. (2014). "A bowed string physical model including finite-width thermal friction and hair dynamics." _Proc. ICMC_. — Combines thermal friction with finite bow width.
+
+### Essential Papers — Body Resonance
+
+12. Holm, J-M. & Välimäki, V. (2000). "Modeling and modification of violin body modes for sound synthesis." _Proc. EUSIPCO_. — Biquad body model with mode tables.
+
+13. Karjalainen, M. & Smith, J.O. (2000). "A waveguide mesh model of high-frequency violin body resonances." _Proc. ICMC_. — Hybrid biquad + mesh approach.
+
+14. Cook, P.R. (1998). "A database of measured musical instrument body radiation impulse responses." _Proc. ICMC_. — Princeton NBody database description.
+
+### Essential Papers — Wind Instruments
+
+15. Scavone, G.P. (1997). _An Acoustic Analysis of Single-Reed Woodwind Instruments._ Ph.D. thesis, Stanford. — Canonical reed model reference.
+
+16. Silva, F. et al. (2014). "MoReeSC: A framework for the simulation and analysis of sound production in reed and brass instruments." _Acta Acustica_, 100(1), 126–138. — Open-source reed/brass framework.
+
+17. Darabundit & Scavone (2025). "Discrete port-Hamiltonian system approach to single-reed woodwind modeling." _Frontiers in Signal Processing_. — State of the art energy-consistent woodwind model.
+
+18. Bilbao, S. & Chick, J. (2013). "Finite difference time domain simulation for the brass instrument bore." _J. Acoust. Soc. Am._ — FDTD brass bore with losses.
+
+### Essential Papers — Ensemble and Perception
+
+19. Ternström, S. (1993). "Perceptual evaluation of pitch scatter in unison choir." _J. Acoust. Soc. Am._ — Preferred pitch scatter ~5 cents SD.
+
+20. Kahlin & Ternström (1999). "The chorus effect revisited." _Proc. ICMC_. — Why simple chorus fails for ensemble simulation.
+
+### Essential Papers — Physical Modeling Meta
+
+21. Bilbao, S. et al. (2019). "Physical Modeling, Algorithms, and Sound Synthesis: The NESS Project." _Computer Music Journal_, 43(2-3), 15–30. https://doi.org/10.1162/comj_a_00516 — Five-year project summary.
+
+22. Jaffe, D. (1995). "Performance Expression in Commuted Waveguide Synthesis of Bowed Strings." — Commuted synthesis technique.
+
+23. Demoucron, M. (2008). _On the Control of Virtual Violins — Physical Modelling and Control of Bowed String Instruments._ Ph.D. thesis, Univ. Pierre et Marie Curie. — Comprehensive bowing gesture study.
+
+---
+
+## 11. Implementation Priority for Sourdaw
+
+For the Dutch Oven orchestral engine, the recommended implementation order to maximize perceived realism per engineering effort:
+
+### Phase 1 — Sample Engine Foundation (biggest bang for buck)
+
+1. True legato with adaptive speed (CSS-inspired)
+2. CC1-driven dynamic layer crossfading (equal-power)
+3. Round-robin with repetition avoidance
+4. Release triggers
+5. Multi-mic mixing with simple close/room blend
+
+### Phase 2 — Expression & Intelligence
+
+6. Humanization (timing, pitch, dynamic jitter with seeded RNG)
+7. Auto-divisi
+8. Vibrato with onset delay and SEM
+9. Section size scaling via player multiplication
+10. Sympathetic resonance filters
+
+### Phase 3 — Physical Modeling Augmentation
+
+11. Bow noise layer (filtered noise, CC1-mapped intensity)
+12. Commuted waveguide sustain augmentation (defeats static loop)
+13. Body resonance filter bank (parametric, tweakable)
+14. Reed/breath noise layer for winds
+
+### Phase 4 — Research / Lab
+
+15. Full two-polarisation waveguide bowed string
+16. Thermal friction model
+17. FDTD brass bore
+18. Modal body synthesis with waveguide mesh
+
+---
+
+_This appendix is a living document. Update as new measurements, papers, or open-source implementations become available._
