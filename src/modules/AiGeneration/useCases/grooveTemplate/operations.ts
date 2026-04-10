@@ -12,11 +12,7 @@ type MidiNote = {
     velocity: number;
 };
 
-export const grooveTemplateOperationsDependencies = {
-    getAllTracks,
-} as const;
-
-export const extractGroove = inject(grooveTemplateOperationsDependencies)(
+export const extractGroove = inject({ getAllTracks, midiStore })(
     ({ getAllTracks }) =>
         function extractGroove(clipId: string, subdivisions = 16): GrooveTemplate {
             function findClip(id: string) {
@@ -67,7 +63,7 @@ export const extractGroove = inject(grooveTemplateOperationsDependencies)(
         }
 );
 
-export const applyGroove = inject(grooveTemplateOperationsDependencies)(
+export const applyGroove = inject({ getAllTracks, midiStore })(
     ({ getAllTracks }) =>
         function applyGroove(clipId: string, template: GrooveTemplate, amount = 1.0): void {
             function findClip(id: string) {

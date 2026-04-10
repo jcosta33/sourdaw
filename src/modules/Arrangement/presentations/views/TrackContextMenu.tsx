@@ -6,7 +6,7 @@ import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
-import { addClip } from '#/modules/Arrangement';
+import { addClip } from '../../useCases/clip/addClip';
 import { renameTrack } from '../../useCases/renameTrack';
 import { freezeTrack, unfreezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce/bounceOperations';

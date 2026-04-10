@@ -6,7 +6,7 @@ import {
     setScrollY,
     timelineViewStore,
 } from '../../stores/timelineViewStore';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '../../stores/trackStore';
 import { transportStore } from '#/modules/Transport';
 
 interface GestureEvent extends UIEvent {

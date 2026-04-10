@@ -177,6 +177,8 @@ ModuleName/
 3. **Exception to the no-barrel rule:** the module root `index.ts` is the **only** allowed barrel-style file. Do not add other `index.ts` re-export shims or files like `contracts.ts` to bypass boundaries.
 4. **`index.ts` is a curated surface** — only export what external consumers genuinely need. Omitting things is correct; re-exporting “everything” to satisfy imports is not.
 5. **No use-case types cross the boundary** — `index.ts` may re-export **functions** (and constants) from `useCases/`, not `export type { … }` sourced from `useCases/`. Other modules define their own types or use `ReturnType` / `Parameters` on imported functions. **Typed event payloads** remain the exception: `export type { … } from './events/...'` is allowed.
+6. **Same module — never this module’s barrel** — Files inside `src/modules/<ModuleName>/` must **not** import from `#/modules/<ModuleName>`. Use **relative** imports to the implementation (`./useCases/…`, `../stores/…`, etc.). Self-imports through `index.ts` obscure the graph and can create circular module initialization; the barrel exists only for **other** modules.
+7. **Curate `index.ts` for cross-module need only** — Export from `index.ts` only symbols that **another module** is allowed to consume. Do not re-export APIs solely so in-module files can import them from the barrel; internal call sites use relative paths (rule 6).
 
 ### Why `index.ts` instead of direct folder access
 
@@ -205,6 +207,15 @@ import { addTrack, trackStore } from '#/modules/Arrangement';
 // Another module — FORBIDDEN (direct folder access)
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+```
+
+```ts
+// Inside Arrangement — correct (relative)
+import { trackStore } from '../stores/trackStore';
+import { addClip } from './useCases/clip/addClip';
+
+// Inside Arrangement — FORBIDDEN (own barrel)
+import { trackStore, addClip } from '#/modules/Arrangement';
 ```
 
 ---
@@ -821,6 +832,8 @@ They should not become business logic containers.
 
 The only file other modules may import from is the module's root `index.ts`.
 
+Symbols on `index.ts` are the **cross-module** contract: export only what **other** modules may import. Files inside the module do not use this file — they import implementation files with **relative** paths (see §3.3 rules 6–7).
+
 `index.ts` may only re-export from these internal folders:
 
 ```text
@@ -1371,7 +1384,7 @@ Module boundaries exist for ownership and invariants, not for cosmetics.
 Before accepting TypeScript module architecture work, verify:
 
 1. Is the module boundary an ownership boundary, not just a UI slice?
-2. Is the module root `index.ts` a narrow, intentional surface (not a full re-export of the module)?
+2. Is the module root `index.ts` a narrow, intentional surface for **other** modules only (not a full re-export), and do in-module files avoid importing `#/modules/<ThisModule>`?
 3. Are models plain and framework-free?
 4. Are use cases the real write boundary?
 5. Are use-case **types** kept private (no `export type` from `useCases/` on `index.ts` for other modules)?

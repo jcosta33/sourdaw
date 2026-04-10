@@ -1,10 +1,8 @@
 import { inject } from '#/infra/di/inject';
-import {
-    getTrackStoreState,
-    setTrackState,
-    takeLaneStore,
-    updateTrack,
-} from '#/modules/Arrangement';
+import { takeLaneStore } from '../stores/takeLaneStore';
+import { getTrackStoreState } from './getTrackStoreState';
+import { setTrackState } from './setTrackState';
+import { updateTrack } from './updateTrack';
 import { automationStore } from '#/modules/Automation';
 import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { midiStore } from '#/modules/MIDI';

@@ -1,4 +1,4 @@
-import { type GrooveTemplate } from './GrooveTemplate';
+import { type GrooveTemplate } from '../models/GrooveTemplate';
 
 function fill(length: number, value: number): number[] {
     return Array.from({ length }, () => value);

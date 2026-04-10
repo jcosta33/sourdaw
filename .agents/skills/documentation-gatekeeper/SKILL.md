@@ -39,7 +39,7 @@ These apply to non-trivial tasks. They are hard constraints, not suggestions.
 
 5. **Update audits after implementation.** After making changes that affect the observable state of the codebase, update (or create) the relevant audit. Load the `write-audit` skill. Mark resolved issues. Add new ones discovered.
 
-6. **Load domain skills before touching domain code.** Check `.agents/skills/` for any skill whose description matches the area you are about to work in. Read the `description` field of each `SKILL.md` to decide relevance. Work that crosses **`src/modules/*` boundaries** (imports between modules, root `index.ts`, `pnpm deps:validate`) must load **`architecture-violations`** and the canonical **`docs/architecture/03-typescript-module.md`** §3.3–§5.1.
+6. **Load domain skills before touching domain code.** Check `.agents/skills/` for any skill whose description matches the area you are about to work in. Read the `description` field of each `SKILL.md` to decide relevance. Work that crosses **`src/modules/*` boundaries** (imports between modules, root `index.ts`, `pnpm deps:validate`) must load **`architecture-violations`** and the canonical **`docs/architecture/03-typescript-module.md`** §3.3–§5.1 (including **same module = relative imports**, **other modules = `#/modules/<Module>` only**, **`index.ts` exports only for external consumers**).
 
 7. **Task files are not a substitute for durable docs.** A task file records execution state for one session. It does not replace audits, specs, or research. Findings discovered in a session that belong in a durable artifact must be written there — not left only in the task file.
 

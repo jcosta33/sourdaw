@@ -209,6 +209,23 @@ import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 ```
 
+### Importing inside the same module (never the own barrel)
+
+**`index.ts` is only the contract for *other* modules.** Files under `src/modules/<Name>/` must **not** import from `#/modules/<Name>` — that self-imports the barrel and is wrong for in-module code.
+
+Use **relative** paths to the file that defines the symbol (`./useCases/…`, `../stores/…`, `../../models/…`, etc.). Same rule applies to use cases, stores, models, and presentation files: reach siblings and parents with relative imports, not the public barrel.
+
+```ts
+// CORRECT — Arrangement file importing Arrangement internals
+import { trackStore } from '../stores/trackStore';
+import { addClip } from './useCases/clip/addClip';
+
+// FORBIDDEN — same module importing its own index.ts
+import { trackStore, addClip } from '#/modules/Arrangement';
+```
+
+When editing `index.ts`, add or keep re-exports only for APIs that **another module** actually imports. Do not grow the barrel so in-module files can avoid relative paths — that is fake convenience and breaks the “external surface only” rule.
+
 ### Writing `index.ts`
 
 ```ts
@@ -243,7 +260,7 @@ Every use case file must export its own typed function:
 - **Types** used in the signature (`input`, return DTOs, etc.) are **internal** to the module — they are not re-exported from `index.ts` and are not imported by other modules via `import type` from `#/modules/...`.
 - The input and output types may use this module’s `models/`, repositories’ pure-model types (§6.4, intra-module only), or inline types in the file — see `AGENTS.md` model isolation for cross-module data shapes.
 - The function body may be thin. `return someRepo.method(input)` is acceptable — a use case is allowed to delegate to a private repository.
-- **Within the same module**, callers may import from `./useCases/<file>` directly (including `import type` for types in that file).
+- **Within the same module**, callers use **relative** paths to the file that defines the symbol (`./useCases/<file>`, `../stores/…`, etc.). They must **not** import from `#/modules/<ThisModule>`. Same-module `import type` from a co-located use case file is fine.
 - **From another module**, callers import **values** from `#/modules/<Module>` only (`export { fn }` on `index.ts`). No `export type { … } from './useCases/…'` on `index.ts`.
 - Across a module boundary, callers never import `repositories/`; the use case hides the repository.
 

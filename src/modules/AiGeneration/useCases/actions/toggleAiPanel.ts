@@ -1,6 +1,10 @@
+import { inject } from '#/infra/di/inject';
 import { aiStore, getAiSnapshot } from '../../stores/aiStore';
 
-export const toggleAiPanel = () => {
-    const s = getAiSnapshot();
-    aiStore.set({ ...s, isPanelOpen: !s.isPanelOpen });
-};
+export const toggleAiPanel = inject({ aiStore, getAiSnapshot })(
+    ({ aiStore, getAiSnapshot }) =>
+        function toggleAiPanel() {
+            const snapshot = getAiSnapshot();
+            aiStore.set({ ...snapshot, isPanelOpen: !snapshot.isPanelOpen });
+        }
+);

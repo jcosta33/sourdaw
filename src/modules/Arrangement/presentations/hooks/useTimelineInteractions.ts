@@ -19,7 +19,7 @@ import {
     setClipSelection,
     selectClip,
 } from '#/modules/Workspace';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '../../stores/trackStore';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport';
 import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation';
 import { pushUndoEntry } from '#/modules/Command';

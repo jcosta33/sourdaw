@@ -1,11 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import {
-    createAdjustmentLayer,
-    createCompGroup,
-    type AdjustmentEffectType,
-} from '#/modules/Arrangement';
 import { type ActionHandler } from '#/modules/Command';
+import { createAdjustmentLayer } from './adjustmentLayer/createAdjustmentLayer';
+import { createCompGroup } from './groupComping/compGroupOperations';
+import { type AdjustmentEffectType } from '../stores/adjustmentLayer';
 import { searchSamples } from '#/modules/SoundLibrary';
 import {
     detectProjectTempo,

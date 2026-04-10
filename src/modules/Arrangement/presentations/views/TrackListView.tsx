@@ -34,7 +34,7 @@ import {
     setTrackHeight,
     setWorkspaceMode,
 } from '#/modules/Workspace';
-import { timelineViewStore, setScrollY, type TimelineViewState } from '#/modules/Arrangement';
+import { timelineViewStore, setScrollY, type TimelineViewState } from '../../stores/timelineViewStore';
 import { injectPromptCommand } from '#/modules/AiRuntime';
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';

@@ -1,38 +1,30 @@
-import { inject } from '#/infra/di/inject';
 import { createHandler } from '#/helpers/createHandler';
-import { type AppAction } from '#/modules/Command';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { removeClip } from '../../useCases/clip/removeClip';
 import { midiStore } from '#/modules/MIDI';
 import { planRippleDelete, rippleDeleteClips } from '#/modules/Workspace';
-import type { ExtractAction } from '../types';
-
-export const executeRemoveClip = inject({ getTrackStoreState, rippleDeleteClips, removeClip })(
-    ({ getTrackStoreState, rippleDeleteClips, removeClip }) =>
-        function executeRemoveClip(a: ExtractAction<AppAction, 'removeClip'>): void {
-            const state = getTrackStoreState();
-            let trackId: string | null = null;
-            if (state) {
-                for (const track of state.tracks) {
-                    if (track.clips.some((c) => c.id === a.payload.clipId)) {
-                        trackId = track.id;
-                        break;
-                    }
-                }
-            }
-            if (!trackId) {
-                removeClip(a.payload.clipId);
-                return;
-            }
-            const rippleResult = rippleDeleteClips(trackId, [a.payload.clipId]);
-            if (!rippleResult) {
-                removeClip(a.payload.clipId);
-            }
-        }
-);
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { removeClip } from '../../useCases/clip/removeClip';
 
 export const handleRemoveClip = createHandler<'removeClip'>({
-    execute: executeRemoveClip,
+    execute: (a) => {
+        const state = getTrackStoreState();
+        let trackId: string | null = null;
+        if (state) {
+            for (const track of state.tracks) {
+                if (track.clips.some((c) => c.id === a.payload.clipId)) {
+                    trackId = track.id;
+                    break;
+                }
+            }
+        }
+        if (!trackId) {
+            removeClip(a.payload.clipId);
+            return;
+        }
+        const rippleResult = rippleDeleteClips(trackId, [a.payload.clipId]);
+        if (!rippleResult) {
+            removeClip(a.payload.clipId);
+        }
+    },
     describe: (a) => {
         const state = getTrackStoreState();
         let clipSnapshot: unknown = null;

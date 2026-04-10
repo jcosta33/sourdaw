@@ -1,52 +1,33 @@
-import { inject } from '#/infra/di/inject';
-import { createHandler, createHandlers } from '#/helpers/createHandler';
-import { type AppAction } from '#/modules/Command';
+import { createHandler } from '#/helpers/createHandler';
 import { setClipStretchMode, setClipStretchRatio, fitClipToBeats } from '#/modules/Arrangement/useCases/clipStretch';
 
-type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
-
-export const executeSetClipStretchMode = inject({ setClipStretchMode })(
-    ({ setClipStretchMode }) =>
-        function executeSetClipStretchMode(a: Extract<AppAction, 'setClipStretchMode'>): void {
-            setClipStretchMode(a.payload.clipId, a.payload.mode);
-        }
-);
-
-export const executeSetClipStretchRatio = inject({ setClipStretchRatio })(
-    ({ setClipStretchRatio }) =>
-        function executeSetClipStretchRatio(a: Extract<AppAction, 'setClipStretchRatio'>): void {
-            setClipStretchRatio(a.payload.clipId, a.payload.ratio);
-        }
-);
-
-export const executeFitClipToBeats = inject({ fitClipToBeats })(
-    ({ fitClipToBeats }) =>
-        function executeFitClipToBeats(a: Extract<AppAction, 'fitClipToBeats'>): void {
-            fitClipToBeats(a.payload.clipId, a.payload.targetBeats);
-        }
-);
-
-/** Built at handler-module scope — not inside `getArrangementHandlers` or other use cases. */
+/** Built in this module — not inside `getArrangementHandlers`. */
 export const handleSetClipStretchMode = createHandler<'setClipStretchMode'>({
-    execute: executeSetClipStretchMode,
+    execute: (action) => {
+        setClipStretchMode(action.payload.clipId, action.payload.mode);
+    },
     describe: (a) => ({ label: `Set clip stretch mode to ${a.payload.mode}` }),
     undoable: true,
 });
 
 export const handleSetClipStretchRatio = createHandler<'setClipStretchRatio'>({
-    execute: executeSetClipStretchRatio,
+    execute: (action) => {
+        setClipStretchRatio(action.payload.clipId, action.payload.ratio);
+    },
     describe: (a) => ({ label: `Set clip stretch ratio to ${a.payload.ratio}` }),
     undoable: true,
 });
 
 export const handleFitClipToBeats = createHandler<'fitClipToBeats'>({
-    execute: executeFitClipToBeats,
+    execute: (action) => {
+        fitClipToBeats(action.payload.clipId, action.payload.targetBeats);
+    },
     describe: (a) => ({ label: `Fit clip to ${a.payload.targetBeats} beats` }),
     undoable: true,
 });
 
-export const stretchHandlers = createHandlers({
+export const stretchHandlers = {
     setClipStretchMode: handleSetClipStretchMode,
     setClipStretchRatio: handleSetClipStretchRatio,
     fitClipToBeats: handleFitClipToBeats,
-});
+};

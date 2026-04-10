@@ -1,14 +1,11 @@
 import { inject } from '#/infra/di/inject';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import {
-    addDevice,
-    bypassDevice,
-    getTrackStoreState,
-    removeDevice,
-    setDeviceParameter,
-    setSend,
-    removeSend,
-} from '#/modules/Arrangement';
+import { addDevice } from './device/addDevice';
+import { bypassDevice } from './device/bypassDevice';
+import { removeDevice } from './device/removeDevice';
+import { setSend, removeSend } from './device/sendManagement';
+import { setDeviceParameter } from './device/setDeviceParameter';
+import { getTrackStoreState } from './getTrackStoreState';
 import {
     getLatencyReport,
     setMpeEnabled,

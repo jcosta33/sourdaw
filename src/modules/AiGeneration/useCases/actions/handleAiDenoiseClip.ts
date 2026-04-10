@@ -5,14 +5,12 @@ import { audioBufferCache, denoiseAudio, isTauri } from '#/modules/AudioEngine';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
-export const handleAiDenoiseClipDependencies = {
+export const handleAiDenoiseClip = inject({
     denoiseAudio,
     isTauri,
     addTask,
     updateTask,
-} as const;
-
-export const handleAiDenoiseClip = inject(handleAiDenoiseClipDependencies)(
+})(
     ({ denoiseAudio, isTauri, addTask, updateTask }) =>
         async function handleAiDenoiseClip(clipId: string, strength: number = 0.7) {
             const taskId = addTask({ type: 'denoise', status: 'processing' });

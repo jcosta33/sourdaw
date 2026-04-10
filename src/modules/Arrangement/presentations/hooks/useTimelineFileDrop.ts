@@ -1,6 +1,6 @@
 import { type DragEvent, useState } from 'react';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '../../stores/trackStore';
 import { libraryStore } from '#/modules/SampleLibrary';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { notifyUser } from '#/helpers/Notification/notifyUser';

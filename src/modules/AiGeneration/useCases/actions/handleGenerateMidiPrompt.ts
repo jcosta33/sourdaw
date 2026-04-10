@@ -1,10 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine';
-import {
-    addClip,
-    addTrack,
-    trackStore,
-} from '#/modules/Arrangement';
+import { addClip, addTrack, trackStore } from '#/modules/Arrangement';
 import { batchAddMidiNotes, midiStore } from '#/modules/MIDI';
 import { createCallbackUndoEntry, pushUndo } from '#/modules/Command';
 import { getTransportState } from '#/modules/Transport';
@@ -13,7 +9,7 @@ import { generateMidiViaLlm } from '../llmMidiGeneration';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
-export const handleGenerateMidiPromptDependencies = {
+export const handleGenerateMidiPrompt = inject({
     generateMidiAI,
     isTauri,
     addTrack,
@@ -24,9 +20,7 @@ export const handleGenerateMidiPromptDependencies = {
     generateMidiViaLlm,
     addTask,
     updateTask,
-} as const;
-
-export const handleGenerateMidiPrompt = inject(handleGenerateMidiPromptDependencies)(
+})(
     ({
         generateMidiAI,
         isTauri,

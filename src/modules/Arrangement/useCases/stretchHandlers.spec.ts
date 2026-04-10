@@ -1,22 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { executeSetClipStretchMode } from './stretchHandlers';
+import { setClipStretchMode } from './clipStretch';
 
-describe('stretchHandlers injectables', () => {
+describe('clip stretch use case', () => {
     beforeEach(() => {
         Container.clear();
     });
 
-    it('executeSetClipStretchMode forwards clip id and mode', () => {
-        const setClipStretchMode = vi.fn();
-        injectDependencies(executeSetClipStretchMode, { setClipStretchMode });
+    it('setClipStretchMode updates clip stretch mode', () => {
+        const updateClip = vi.fn();
+        injectDependencies(setClipStretchMode, { updateClip });
 
-        executeSetClipStretchMode({
-            type: 'setClipStretchMode',
-            payload: { clipId: 'c1', mode: 'beats' },
-        });
+        setClipStretchMode('c1', 'beats');
 
-        expect(setClipStretchMode).toHaveBeenCalledWith('c1', 'beats');
+        expect(updateClip).toHaveBeenCalled();
     });
 });

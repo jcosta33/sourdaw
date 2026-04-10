@@ -13,11 +13,7 @@ describe('applyChordProgressionToTrack', () => {
         const addMidiNote = vi.fn();
         injectDependencies(applyChordProgressionToTrack, { addClip, addMidiNote });
 
-        applyChordProgressionToTrack(
-            't1',
-            { style: 'pop', key: 0, scale: 'major', bars: 1 },
-            0
-        );
+        applyChordProgressionToTrack('t1', { style: 'pop', key: 0, scale: 'major', bars: 1 }, 0);
 
         expect(addMidiNote).not.toHaveBeenCalled();
     });

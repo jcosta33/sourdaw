@@ -1,37 +1,37 @@
 import { type ActionHandler } from '#/modules/Command';
 import { handleAddTrack } from '../handlers/track/handleAddTrack';
-import { handleArmTrack } from '../handlers/track/handleArmTrack';
-import { handleBounceInPlace } from '../handlers/track/handleBounceInPlace';
-import { handleBounceToNewTrack } from '../handlers/track/handleBounceToNewTrack';
-import { handleClearSolos } from '../handlers/track/handleClearSolos';
+import { handleArmTrack } from '../handlers/track/armTrack';
+import { handleBounceInPlace } from '../handlers/track/bounceInPlace';
+import { handleBounceToNewTrack } from '../handlers/track/bounceToNewTrack';
+import { handleClearSolos } from '../handlers/track/clearSolos';
 import { handleConsolidateAllTracks } from '../handlers/track/handleConsolidateAllTracks';
 import { handleCreateBus } from '../handlers/track/handleCreateBus';
-import { handleCreateFolder } from '../handlers/track/handleCreateFolder';
-import { handleDisableTrack } from '../handlers/track/handleDisableTrack';
-import { handleDuplicateTrack } from '../handlers/track/handleDuplicateTrack';
-import { handleFoldTrack } from '../handlers/track/handleFoldTrack';
-import { handleFreezeTrack } from '../handlers/track/handleFreezeTrack';
-import { handleGroupTracks } from '../handlers/track/handleGroupTracks';
-import { handleHideTrack } from '../handlers/track/handleHideTrack';
-import { handleMuteTrack } from '../handlers/track/handleMuteTrack';
+import { handleCreateFolder } from '../handlers/track/createFolder';
+import { handleDisableTrack } from '../handlers/track/disableTrack';
+import { handleDuplicateTrack } from '../handlers/track/duplicateTrack';
+import { handleFoldTrack } from '../handlers/track/foldTrack';
+import { handleFreezeTrack } from '../handlers/track/freezeTrack';
+import { handleGroupTracks } from '../handlers/track/groupTracks';
+import { handleHideTrack } from '../handlers/track/hideTrack';
+import { handleMuteTrack } from '../handlers/track/muteTrack';
 import { handleRemoveAllTracks } from '../handlers/track/handleRemoveAllTracks';
 import { handleRemoveTrack } from '../handlers/track/handleRemoveTrack';
-import { handleRenameTrack } from '../handlers/track/handleRenameTrack';
-import { handleReorderTrack } from '../handlers/track/handleReorderTrack';
-import { handleSelectTrack } from '../handlers/track/handleSelectTrack';
-import { handleSetAutomationMode } from '../handlers/track/handleSetAutomationMode';
+import { handleRenameTrack } from '../handlers/track/renameTrack';
+import { handleReorderTrack } from '../handlers/track/reorderTrack';
+import { handleSelectTrack } from '../handlers/track/selectTrack';
+import { handleSetAutomationMode } from '../handlers/track/setAutomationMode';
 import { handleSetTrackColor } from '../handlers/track/handleSetTrackColor';
 import { handleSetTrackGain } from '../handlers/track/handleSetTrackGain';
-import { handleSetTrackHeight } from '../handlers/track/handleSetTrackHeight';
+import { handleSetTrackHeight } from '../handlers/track/setTrackHeight';
 import { handleSetTrackInput } from '../handlers/track/handleSetTrackInput';
-import { handleSetTrackNotes } from '../handlers/track/handleSetTrackNotes';
-import { handleSetTrackOutput } from '../handlers/track/handleSetTrackOutput';
+import { handleSetTrackNotes } from '../handlers/track/setTrackNotes';
+import { handleSetTrackOutput } from '../handlers/track/setTrackOutput';
 import { handleSetTrackPan } from '../handlers/track/handleSetTrackPan';
-import { handleSoloTrack } from '../handlers/track/handleSoloTrack';
-import { handleToggleSoloSafe } from '../handlers/track/handleToggleSoloSafe';
-import { handleUngroupTracks } from '../handlers/track/handleUngroupTracks';
-import { handleUnfreezeTrack } from '../handlers/track/handleUnfreezeTrack';
-import { handleZoomTracksVertical } from '../handlers/track/handleZoomTracksVertical';
+import { handleSoloTrack } from '../handlers/track/soloTrack';
+import { handleToggleSoloSafe } from '../handlers/track/toggleSoloSafe';
+import { handleUngroupTracks } from '../handlers/track/ungroupTracks';
+import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
+import { handleZoomTracksVertical } from '../handlers/track/zoomTracksVertical';
 import { batchFeatureHandlers } from './batchFeatureHandlers';
 import { clipHandlers } from './clipHandlers';
 import { deviceHandlers } from './deviceHandlers';
@@ -41,8 +41,7 @@ import { restoreHandlers } from './restoreHandlers';
 import { stretchHandlers } from './stretchHandlers';
 
 /**
- * Sole cross-module entry for Arrangement command-handler maps.
- * Does **not** call `createHandler` / `createHandlers` — those run in handler modules (`export const handleX = createHandler(...)`).
+ * Merges Arrangement handler maps for Command. Does **not** call `createHandler` here.
  */
 export function getArrangementHandlers(): Record<string, ActionHandler<any>> {
     return {

@@ -4,13 +4,8 @@ import { addMidiNote } from '#/modules/MIDI';
 import { type GenerateChordProgressionOptions } from './algorithm';
 import { generateChordProgression } from './algorithm';
 
-export const applyChordProgressionToTrackDependencies = {
-    addClip,
-    addMidiNote,
-} as const;
-
-export const applyChordProgressionToTrack = inject(applyChordProgressionToTrackDependencies)(
-    ({ addClip, addMidiNote }) =>
+export const applyChordProgressionToTrack = inject({ addClip, addMidiNote, generateChordProgression })(
+    ({ addClip, addMidiNote, generateChordProgression }) =>
         function applyChordProgressionToTrack(
             trackId: string,
             options: GenerateChordProgressionOptions,

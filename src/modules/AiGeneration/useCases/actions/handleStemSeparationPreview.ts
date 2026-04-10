@@ -6,6 +6,53 @@ import { audioBufferCache } from '#/modules/AudioEngine';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
+export const handleStemSeparationPreview = inject({
+    addTask,
+    updateTask,
+    separateStems,
+    audioBufferCache,
+})(
+    ({ addTask, updateTask, separateStems }) =>
+        async function handleStemSeparationPreview(clipId: string) {
+            const taskId = addTask({
+                type: 'stem-separation',
+                status: 'processing',
+                prompt: 'Extracting: Drums, Bass, Vocals, Other',
+            });
+            try {
+                const start = performance.now();
+
+                const buffer = audioBufferCache.get(clipId);
+                if (!buffer) {
+                    throw createAiGenerationError('Audio buffer not found for clip');
+                }
+
+                const wavData = audioBufferToWav(buffer);
+                const stemResults = await separateStems(wavData, ['all']);
+
+                const stemNames = Object.keys(stemResults);
+                for (const [name, stemBuffer] of Object.entries(stemResults)) {
+                    audioBufferCache.set(`${clipId}-${name}`, stemBuffer);
+                }
+
+                updateTask(taskId, {
+                    status: 'success',
+                    data: { clipId, stems: stemNames },
+                    durationMs: Math.round(performance.now() - start),
+                });
+            } catch (error: unknown) {
+                updateTask(taskId, {
+                    status: 'error',
+                    error: isAppError(error)
+                        ? error.message
+                        : error instanceof Error
+                          ? error.message
+                          : 'Stem separation failed',
+                });
+            }
+        }
+);
+
 function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
@@ -51,51 +98,3 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
 
     return wavBuffer;
 }
-
-export const handleStemSeparationPreviewDependencies = {
-    addTask,
-    updateTask,
-    separateStems,
-} as const;
-
-export const handleStemSeparationPreview = inject(handleStemSeparationPreviewDependencies)(
-    ({ addTask, updateTask, separateStems }) =>
-        async function handleStemSeparationPreview(clipId: string) {
-            const taskId = addTask({
-                type: 'stem-separation',
-                status: 'processing',
-                prompt: 'Extracting: Drums, Bass, Vocals, Other',
-            });
-            try {
-                const start = performance.now();
-
-                const buffer = audioBufferCache.get(clipId);
-                if (!buffer) {
-                    throw createAiGenerationError('Audio buffer not found for clip');
-                }
-
-                const wavData = audioBufferToWav(buffer);
-                const stemResults = await separateStems(wavData, ['all']);
-
-                const stemNames = Object.keys(stemResults);
-                for (const [name, stemBuffer] of Object.entries(stemResults)) {
-                    audioBufferCache.set(`${clipId}-${name}`, stemBuffer);
-                }
-
-                updateTask(taskId, {
-                    status: 'success',
-                    data: { clipId, stems: stemNames },
-                    durationMs: Math.round(performance.now() - start),
-                });
-            } catch (error: unknown) {
-                updateTask(taskId, {
-                    status: 'error',
-                    error: isAppError(error)
-                        ? error.message
-                        : error instanceof Error
-                          ? error.message
-                          : 'Stem separation failed',
-                });
-            }
-        }
-);

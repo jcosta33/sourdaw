@@ -145,32 +145,41 @@ const dsoSnapshotHandlers: Record<string, ActionHandler<any>> = {
     },
 };
 
+/** Built lazily so `getArrangementHandlers` is not invoked while the Arrangement barrel is still
+ *  initializing (e.g. `batchFeatureHandlers` imports from `#/modules/Arrangement` and re-enters). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- handlers are type-safe at definition site; the registry erases the action subtype for dynamic dispatch
-const handlerRegistry: Record<string, ActionHandler<any>> = {
-    ...getArrangementHandlers(),
-    ...transportHandlers,
-    ...workspaceHandlers,
-    ...automationHandlers,
-    ...generationHandlers,
-    ...analysisHandlers,
-    ...collaborationHandlers,
-    ...pluginHostHandlers,
-    ...aiMidiHandlers,
-    ...trackAlternativeHandlers,
-    ...templateHandlers,
-    ...vcaHandlers,
-    ...midiRoutingHandlers,
-    ...aiOrganizationHandlers,
-    ...chordTrackHandlers,
-    ...scratchPadHandlers,
-    ...patternInstanceHandlers,
-    ...macroHandlers,
-    ...undoTreeHandlers,
-    ...songStructureHandlers,
-    ...versionControlHandlers,
-    ...finalFeatureHandlers,
-    ...dsoSnapshotHandlers,
-};
+let handlerRegistryCache: Record<string, ActionHandler<any>> | null = null;
+
+function getHandlerRegistry(): Record<string, ActionHandler<any>> {
+    if (!handlerRegistryCache) {
+        handlerRegistryCache = {
+            ...getArrangementHandlers(),
+            ...transportHandlers,
+            ...workspaceHandlers,
+            ...automationHandlers,
+            ...generationHandlers,
+            ...analysisHandlers,
+            ...collaborationHandlers,
+            ...pluginHostHandlers,
+            ...aiMidiHandlers,
+            ...trackAlternativeHandlers,
+            ...templateHandlers,
+            ...vcaHandlers,
+            ...midiRoutingHandlers,
+            ...aiOrganizationHandlers,
+            ...chordTrackHandlers,
+            ...scratchPadHandlers,
+            ...patternInstanceHandlers,
+            ...macroHandlers,
+            ...undoTreeHandlers,
+            ...songStructureHandlers,
+            ...versionControlHandlers,
+            ...finalFeatureHandlers,
+            ...dsoSnapshotHandlers,
+        };
+    }
+    return handlerRegistryCache;
+}
 
 export type ExecuteOptions = {
     groupId?: string;
@@ -185,7 +194,7 @@ export const executeAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const handler = handlerRegistry[action.type] as ActionHandler<any> | undefined;
+            const handler = getHandlerRegistry()[action.type] as ActionHandler<any> | undefined;
             if (!handler) {
                 logger.error(new Error(`No handler registered for action: ${action.type}`));
                 return;

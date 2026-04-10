@@ -1,8 +1,8 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
-import { type Track } from '#/modules/Arrangement/models/Track';
-import { renameTrack } from '#/modules/Arrangement';
+import { type Track } from '../../../models/Track';
+import { renameTrack } from '../../../useCases/renameTrack';
 
 type InlineTrackNameProps = {
     track: Track;

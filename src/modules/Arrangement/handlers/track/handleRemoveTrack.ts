@@ -1,22 +1,14 @@
-import { inject } from '#/infra/di/inject';
-import { createHandler } from '#/helpers/createHandler';
-import { automationStore } from '#/modules/Automation';
-import { type AppAction } from '#/modules/Command';
-import { midiStore } from '#/modules/MIDI';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { removeTrack } from '../../useCases/removeTrack';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import type { ExtractAction } from '../types';
-
-const executeRemoveTrack = inject({ removeTrack })(
-    ({ removeTrack }) =>
-        function executeRemoveTrack(a: ExtractAction<AppAction, 'removeTrack'>): void {
-            removeTrack(a.payload.trackId);
-        }
-);
+import { automationStore } from '#/modules/Automation';
+import { createHandler } from '#/helpers/createHandler';
+import { midiStore } from '#/modules/MIDI';
 
 export const handleRemoveTrack = createHandler<'removeTrack'>({
-    execute: executeRemoveTrack,
+    execute: (action) => {
+        removeTrack(action.payload.trackId);
+    },
     describe: (a) => {
         // Snapshot everything that removeTrack will delete, so the inverse
         // action (`restoreTrack`) can replay it. Runs pre-execute.

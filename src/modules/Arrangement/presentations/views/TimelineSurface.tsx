@@ -23,7 +23,9 @@ import {
 import { PresenceOverlay } from '#/modules/Collaboration';
 
 import { automationStore } from '#/modules/Automation';
-import { trackStore, takeLaneStore, markerStore } from '#/modules/Arrangement';
+import { markerStore } from '../../stores/markerStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { trackStore } from '../../stores/trackStore';
 import {
     transportStore,
     playheadPositionRef,

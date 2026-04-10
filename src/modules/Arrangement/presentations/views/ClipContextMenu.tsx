@@ -8,7 +8,7 @@ import { workspaceStore, selectClip, setWorkspaceMode } from '#/modules/Workspac
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { runAiActionWithToast } from '#/modules/AiRuntime';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '../../stores/trackStore';
 import { detectTempo, detectKey } from '#/modules/AudioAnalysis';
 import { exportMidiClip } from '#/modules/MIDI';
 import { executeAppAction } from '#/modules/Command';

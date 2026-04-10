@@ -6,15 +6,13 @@ import { audioBufferCache } from '#/modules/AudioEngine';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
-export const handleGenerateAudioFallbackDependencies = {
+export const handleGenerateAudioFallback = inject({
     addTask,
     updateTask,
     generateAudio,
     isAudioGenerationAvailable,
     audioBufferCache,
-};
-
-export const handleGenerateAudioFallback = inject(handleGenerateAudioFallbackDependencies)(
+})(
     ({ addTask, updateTask, generateAudio, isAudioGenerationAvailable, audioBufferCache: cache }) =>
         async function handleGenerateAudioFallback(prompt: string, durationStr: string, _strength: number = 0.7) {
             const taskId = addTask({ type: 'audio-generation', status: 'processing', prompt });

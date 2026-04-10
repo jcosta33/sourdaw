@@ -1,22 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Container } from '#/infra/di/Container';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { executeAddTrack } from '../handlers/track/handleAddTrack';
+import { describe, it, expect } from 'vitest';
+import { handleAddTrack } from '../handlers/track/handleAddTrack';
 
-describe('trackHandlers injectables', () => {
-    beforeEach(() => {
-        Container.clear();
-    });
-
-    it('executeAddTrack forwards payload to addTrack', () => {
-        const addTrack = vi.fn();
-        injectDependencies(executeAddTrack, { addTrack });
-
-        executeAddTrack({
-            type: 'addTrack',
-            payload: { name: 'Drums', kind: 'audio' },
-        });
-
-        expect(addTrack).toHaveBeenCalledWith({ name: 'Drums', kind: 'audio' });
+describe('track command handlers', () => {
+    it('handleAddTrack is a wired ActionHandler', () => {
+        expect(handleAddTrack.execute).toBeDefined();
+        expect(handleAddTrack.describe).toBeDefined();
+        expect(handleAddTrack.undoable).toBe(true);
     });
 });

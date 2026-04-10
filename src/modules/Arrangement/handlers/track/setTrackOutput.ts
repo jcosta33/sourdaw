@@ -1,18 +1,10 @@
-import { inject } from '#/infra/di/inject';
-import { type AppAction } from '#/modules/Command';
+import { setTrackOutput } from '../../useCases/toggleTrackState/setTrackOutput';
 import { createHandler } from '#/helpers/createHandler';
-import { setTrackOutput } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackOutput';
-import type { ExtractAction } from '../types';
-
-const executeSetTrackOutput = inject({ setTrackOutput })(
-    ({ setTrackOutput }) =>
-        function executeSetTrackOutput(a: ExtractAction<AppAction, 'setTrackOutput'>): void {
-            setTrackOutput(a.payload.trackId, a.payload.outputId);
-        }
-);
 
 export const handleSetTrackOutput = createHandler<'setTrackOutput'>({
-    execute: executeSetTrackOutput,
+    execute: (action) => {
+        setTrackOutput(action.payload.trackId, action.payload.outputId);
+    },
     describe: () => ({ label: 'Set track output' }),
     undoable: true,
 });
