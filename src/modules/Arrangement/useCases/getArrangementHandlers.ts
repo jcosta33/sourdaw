@@ -32,6 +32,17 @@ import { handleToggleSoloSafe } from '../handlers/track/toggleSoloSafe';
 import { handleUngroupTracks } from '../handlers/track/ungroupTracks';
 import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
 import { handleZoomTracksVertical } from '../handlers/track/zoomTracksVertical';
+import { handleCreateTrackAlternative } from '../handlers/trackAlternative/handleCreateTrackAlternative';
+import { handleDeleteTrackAlternative } from '../handlers/trackAlternative/handleDeleteTrackAlternative';
+import { handleRenameTrackAlternative } from '../handlers/trackAlternative/handleRenameTrackAlternative';
+import { handleSwitchTrackAlternative } from '../handlers/trackAlternative/handleSwitchTrackAlternative';
+import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
+import { handleLoadTrackTemplate } from '../handlers/template/handleLoadTrackTemplate';
+import { handleSaveTrackTemplate } from '../handlers/template/handleSaveTrackTemplate';
+import { handleAssignToVca } from '../handlers/vca/handleAssignToVca';
+import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
+import { handleRemoveFromVca } from '../handlers/vca/handleRemoveFromVca';
+import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
 import { batchFeatureHandlers } from './batchFeatureHandlers';
 import { clipHandlers } from './clipHandlers';
 import { deviceHandlers } from './deviceHandlers';
@@ -78,6 +89,17 @@ export function getArrangementHandlers(): Record<string, ActionHandler<any>> {
         zoomTracksVertical: handleZoomTracksVertical,
         consolidateAllTracks: handleConsolidateAllTracks,
         bounceToNewTrack: handleBounceToNewTrack,
+        createTrackAlternative: handleCreateTrackAlternative,
+        switchTrackAlternative: handleSwitchTrackAlternative,
+        renameTrackAlternative: handleRenameTrackAlternative,
+        deleteTrackAlternative: handleDeleteTrackAlternative,
+        saveTrackTemplate: handleSaveTrackTemplate,
+        loadTrackTemplate: handleLoadTrackTemplate,
+        deleteTrackTemplate: handleDeleteTrackTemplate,
+        createVcaGroup: handleCreateVcaGroup,
+        assignToVca: handleAssignToVca,
+        removeFromVca: handleRemoveFromVca,
+        setVcaGain: handleSetVcaGain,
         ...clipHandlers,
         ...restoreHandlers,
         ...deviceHandlers,

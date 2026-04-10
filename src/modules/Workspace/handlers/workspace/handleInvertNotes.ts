@@ -1,0 +1,10 @@
+import { createHandler } from '#/helpers/createHandler';
+import { invertNotes } from '#/modules/MIDI';
+
+export const handleInvertNotes = createHandler<'invertNotes'>({
+    execute: (a) => {
+        invertNotes(a.payload.clipId);
+    },
+    describe: () => ({ label: 'Invert notes' }),
+    undoable: true,
+});

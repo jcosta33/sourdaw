@@ -46,14 +46,10 @@ export type PresenceData = {
     playheadBeat: number | null;
 };
 
-export const getCollaborationStoreValueDependencies = {
-    collaborationStore,
-} as const;
-
 /** Get the current collaboration store value. */
-export const getCollaborationStoreValue = inject(getCollaborationStoreValueDependencies)(
-    ({ collaborationStore: collaborationStoreDep }) =>
-        function getCollaborationStoreValue(): typeof collaborationStoreDep.value {
-            return collaborationStoreDep.value;
+export const getCollaborationStoreValue = inject({ collaborationStore })(
+    ({ collaborationStore }) =>
+        function getCollaborationStoreValue(): typeof collaborationStore.value {
+            return collaborationStore.value;
         }
 );

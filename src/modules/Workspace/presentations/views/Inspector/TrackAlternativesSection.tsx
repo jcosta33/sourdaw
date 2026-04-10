@@ -3,11 +3,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
-import {
-    handleCreateTrackAlternative,
-    handleSwitchTrackAlternative,
-    handleDeleteTrackAlternative,
-} from '#/modules/Command';
+import { executeAppAction } from '#/modules/Command';
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 
@@ -28,7 +24,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         size="icon-xs"
                         onClick={() => {
                             const name = `Alt ${track.alternatives.length + 1}`;
-                            handleCreateTrackAlternative({
+                            executeAppAction({
                                 type: 'createTrackAlternative',
                                 payload: { trackId: track.id, name, duplicateActive: false },
                             });
@@ -48,7 +44,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         selected={alt.id === track.activeAlternativeId}
                         onClick={() => {
                             if (alt.id !== track.activeAlternativeId) {
-                                handleSwitchTrackAlternative({
+                                executeAppAction({
                                     type: 'switchTrackAlternative',
                                     payload: { trackId: track.id, alternativeId: alt.id },
                                 });
@@ -66,7 +62,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                         className="h-6 w-6"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            handleDeleteTrackAlternative({
+                                            executeAppAction({
                                                 type: 'deleteTrackAlternative',
                                                 payload: { trackId: track.id, alternativeId: alt.id },
                                             });

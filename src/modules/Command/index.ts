@@ -67,13 +67,5 @@ export type { Macro } from './useCases/macro/recording';
 // useCases/pushUndoEntry
 export { pushUndoEntry } from './useCases/pushUndoEntry';
 
-// useCases/trackAlternativeHandlers
-export {
-    handleCreateTrackAlternative,
-    handleSwitchTrackAlternative,
-    handleRenameTrackAlternative,
-    handleDeleteTrackAlternative,
-} from './useCases/trackAlternativeHandlers';
-
 // useCases/undoRedo
 export { undo, redo, undoToIndex } from './useCases/undoRedo';

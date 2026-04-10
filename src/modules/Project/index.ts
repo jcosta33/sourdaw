@@ -43,8 +43,8 @@ export { saveProject, renameProject, markDirty } from './useCases/projectPersist
 // useCases/projectTemplates/templateDefinitions.ts
 export { getTemplates, createFromTemplate } from './useCases/projectTemplates/templateDefinitions';
 
-// useCases/songStructureHandlers.ts
-export { songStructureHandlers } from './useCases/songStructureHandlers';
+// useCases/getSongStructureHandlers.ts
+export { getSongStructureHandlers } from './useCases/getSongStructureHandlers';
 
-// useCases/versionControlHandlers.ts
-export { versionControlHandlers } from './useCases/versionControlHandlers';
+// useCases/getVersionControlHandlers.ts
+export { getVersionControlHandlers } from './useCases/getVersionControlHandlers';

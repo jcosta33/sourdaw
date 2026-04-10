@@ -51,6 +51,9 @@ export type { ReplaceCrdtDocInput } from './useCases/replaceCrdtDoc';
 // useCases/restoreSnapshot
 export { restoreSnapshot } from './useCases/restoreSnapshot';
 
+// useCases/getDsoSnapshotHandlers
+export { getDsoSnapshotHandlers } from './useCases/getDsoSnapshotHandlers';
+
 // useCases/revertAction
 export { revertAction, canRevertAction } from './useCases/revertAction';
 

@@ -49,8 +49,8 @@ export {
     isDrawSessionActive,
 } from './useCases/automationDrawMode';
 
-// useCases/automationHandlers
-export { automationHandlers } from './useCases/automationHandlers';
+// useCases/getAutomationHandlers.ts
+export { getAutomationHandlers } from './useCases/getAutomationHandlers';
 
 // useCases/automationRecording/isRecordingAutomation
 export { isRecordingAutomation } from './useCases/automationRecording/isRecordingAutomation';

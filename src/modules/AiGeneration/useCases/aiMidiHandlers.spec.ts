@@ -1,19 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Container } from '#/infra/di/Container';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { executeAddNotes } from './aiMidiHandlers';
+import { handleAddNotes } from '../handlers/aiMidi/handleAddNotes';
 
-describe('aiMidiHandlers injectables', () => {
+vi.mock('#/modules/MIDI', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI')>();
+    return {
+        ...actual,
+        addMidiNote: vi.fn(),
+    };
+});
+
+describe('aiMidiHandlers', () => {
     beforeEach(() => {
-        Container.clear();
+        vi.clearAllMocks();
     });
 
-    it('executeAddNotes forwards notes to addMidiNote', () => {
-        const addMidiNote = vi.fn();
-        const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-        injectDependencies(executeAddNotes, { addMidiNote, logger });
+    it('handleAddNotes forwards notes to addMidiNote', async () => {
+        const { addMidiNote } = await import('#/modules/MIDI');
 
-        executeAddNotes({
+        handleAddNotes.execute({
             type: 'addNotes',
             payload: {
                 clipId: 'clip1',

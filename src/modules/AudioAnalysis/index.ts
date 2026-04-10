@@ -1,5 +1,5 @@
-// useCases/analysisHandlers.ts
-export { analysisHandlers } from './useCases/analysisHandlers';
+// useCases/getAnalysisHandlers.ts
+export { getAnalysisHandlers } from './useCases/getAnalysisHandlers';
 
 // useCases/audioAi.ts
 export {

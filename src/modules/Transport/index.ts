@@ -57,7 +57,7 @@ export { toggleRecording } from './useCases/transportControls/toggleRecording';
 
 export { addTimeSignatureChange, removeTimeSignatureChange } from './useCases/timeSignatureChanges';
 
-export { transportHandlers } from './useCases/transportHandlers';
+export { getTransportHandlers } from './useCases/getTransportHandlers';
 
 export type { TransportState, TempoChange, TimeSignatureChange } from './useCases/transportQueries';
 export {

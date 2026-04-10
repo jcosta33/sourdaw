@@ -23,7 +23,7 @@ export { voiceStatusStore } from './stores/voiceStatusStore';
 export type { VoiceStatus } from './stores/voiceStatusStore';
 
 // ── Use Cases ─────────────────────────────────────────────────────────────────
-export { aiOrganizationHandlers } from './useCases/aiOrganizationHandlers';
+export { getAiOrganizationHandlers } from './useCases/getAiOrganizationHandlers';
 
 export {
     getMixAnalysisStoreValue,

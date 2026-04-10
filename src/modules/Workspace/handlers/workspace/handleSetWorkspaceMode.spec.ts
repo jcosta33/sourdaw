@@ -1,0 +1,78 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { handleSetWorkspaceMode } from './handleSetWorkspaceMode';
+import { handleRemoveAutomationPoint } from './handleRemoveAutomationPoint';
+import { handleImportMidiFile } from './handleImportMidiFile';
+
+vi.mock('../../useCases/setWorkspaceMode', () => ({
+    setWorkspaceMode: vi.fn(),
+}));
+
+vi.mock('#/modules/Automation', () => ({
+    getAutomationStoreState: vi.fn(),
+    removeAutomationPoint: vi.fn(),
+}));
+
+vi.mock('#/modules/MIDI', () => ({
+    importMidiFile: vi.fn(),
+}));
+
+vi.mock('#/modules/Project', () => ({
+    pickFiles: vi.fn(),
+}));
+
+vi.mock('#/helpers/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
+import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
+import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation';
+import { pickFiles } from '#/modules/Project';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
+
+describe('workspace handlers', () => {
+    beforeEach(() => {
+        vi.mocked(setWorkspaceMode).mockReset();
+        vi.mocked(getAutomationStoreState).mockReset();
+        vi.mocked(removeAutomationPoint).mockReset();
+        vi.mocked(pickFiles).mockReset();
+        vi.mocked(notifyUser).mockReset();
+    });
+
+    it('handleSetWorkspaceMode forwards mode', () => {
+        handleSetWorkspaceMode.execute({
+            type: 'setWorkspaceMode',
+            payload: { mode: 'arrange' },
+        });
+
+        expect(setWorkspaceMode).toHaveBeenCalledWith('arrange');
+    });
+
+    it('handleRemoveAutomationPoint removes by lane and point index', () => {
+        vi.mocked(getAutomationStoreState).mockReturnValue({
+            // @ts-expect-error — partial AutomationStoreState for test
+            lanes: [
+                {
+                    id: 'lane-1',
+                    points: [{ beat: 4, value: 0.5, curve: 'linear' as const, tension: 0 }],
+                },
+            ],
+        });
+
+        handleRemoveAutomationPoint.execute({
+            type: 'removeAutomationPoint',
+            payload: { laneId: 'lane-1', pointIndex: 0 },
+        });
+
+        expect(removeAutomationPoint).toHaveBeenCalledWith('lane-1', 4);
+    });
+
+    it('handleImportMidiFile notifies on file dialog failure', async () => {
+        vi.mocked(pickFiles).mockRejectedValue(new Error('dialog'));
+
+        handleImportMidiFile.execute({ type: 'importMidiFile', payload: undefined });
+
+        await vi.waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith('Failed to open file dialog', 'error');
+        });
+    });
+});

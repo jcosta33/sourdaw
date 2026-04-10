@@ -105,8 +105,8 @@ export {
     getLinkStatus,
 } from './useCases/engineAccess';
 
-// finalFeatureHandlers
-export { finalFeatureHandlers } from './useCases/finalFeatureHandlers';
+// getFinalFeatureHandlers
+export { getFinalFeatureHandlers } from './useCases/getFinalFeatureHandlers';
 
 // initializeAudioEngine
 export { initializeAudioEngine } from './useCases/initializeAudioEngine';

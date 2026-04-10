@@ -1,18 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Container } from '#/infra/di/Container';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { executeExtractGroove } from './generationHandlers';
+import { handleExtractGroove } from '../handlers/generation/handleExtractGroove';
 
-describe('generationHandlers injectables', () => {
+vi.mock('./grooveTemplate/operations', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('./grooveTemplate/operations')>();
+    return {
+        ...actual,
+        extractGroove: vi.fn(),
+    };
+});
+
+describe('generation handlers', () => {
     beforeEach(() => {
-        Container.clear();
+        vi.clearAllMocks();
     });
 
-    it('executeExtractGroove forwards clip id', () => {
-        const extractGroove = vi.fn();
-        injectDependencies(executeExtractGroove, { extractGroove });
+    it('handleExtractGroove forwards clip id', async () => {
+        const { extractGroove } = await import('./grooveTemplate/operations');
 
-        executeExtractGroove({ type: 'extractGroove', payload: { clipId: 'c1' } });
+        handleExtractGroove.execute({ type: 'extractGroove', payload: { clipId: 'c1' } });
 
         expect(extractGroove).toHaveBeenCalledWith('c1');
     });

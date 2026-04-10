@@ -1,18 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Container } from '#/infra/di/Container';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { executeCreateCollabSession } from './collaborationHandlers';
+import { handleCreateCollabSession } from '../handlers/collaboration/handleCreateCollabSession';
 
-describe('collaborationHandlers injectables', () => {
+vi.mock('#/modules/Collaboration/useCases/collaboration/sessionManagement', () => ({
+    createSession: vi.fn(),
+    joinSession: vi.fn(),
+    leaveSession: vi.fn(),
+}));
+
+import { createSession } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
+
+describe('collaborationHandlers', () => {
     beforeEach(() => {
-        Container.clear();
+        vi.mocked(createSession).mockClear();
     });
 
-    it('executeCreateCollabSession forwards name', () => {
-        const createSession = vi.fn();
-        injectDependencies(executeCreateCollabSession, { createSession });
-
-        executeCreateCollabSession({ type: 'createCollabSession', payload: { name: 'Jam' } });
+    it('handleCreateCollabSession forwards name', () => {
+        handleCreateCollabSession.execute({ type: 'createCollabSession', payload: { name: 'Jam' } });
 
         expect(createSession).toHaveBeenCalledWith('Jam');
     });

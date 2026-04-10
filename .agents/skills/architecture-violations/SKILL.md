@@ -350,7 +350,42 @@ When in doubt, keep types private to the use case file or use `models/` inside t
 
 Each use case lives in its own file, named after the function. A file that exports many thin wrappers over a repository (e.g. `crdtRepositoryAccess.ts` with 8 re-exports) violates both §6.2 (laundering) and the One Function Per File rule. Split it into N files, one per function, each with a real typed signature.
 
-### 6.6 Summary test
+### 6.5.1 What types a use case file may export
+
+A use case file may declare and export **its own local types** — the function's `Input` / `Output` aliases, an internal DTO it produces, narrowing helpers used only by that function. These are part of the use case's own definition, not borrowed from elsewhere.
+
+What a use case file **must never** export — by re-export or otherwise:
+
+- **Model types or model values** from `../models/...`. Models are private to the owning module. A line like `export type { Track } from '../models/Track'` or `export { createTrack } from '../models/Track'` inside a use case file is **forbidden**: it launders private state through a fake public path. If a use case needs to expose data shaped like a model, it defines its own DTO with only the fields the contract requires.
+- **Repository types or repository values** from `../repositories/...`. Repositories are I/O internals. `export { saveX } from '../repositories/...'` is forbidden under §6.2; the same rule covers `export type`.
+- **Types from `../services/`, `../validators/`, `../transformers/`, `../engine/`, `../errors/`, `../handlers/`**. These folders are private. Their types do not cross via a use case file.
+
+The rule of thumb: if the type is **defined in this file**, exporting it is fine. If the type is **imported from another folder**, re-exporting it from a use case file is laundering — stop and reconsider.
+
+### 6.5.2 Acceptable cross-module type surfaces
+
+Cross-module type consumption goes through the module's root `index.ts` or it does not happen. The legal type surfaces on `index.ts` are:
+
+| Type origin              | Cross-module export rule                                                                                                                           |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `events/` payloads       | **Allowed.** `export type { FooEvent } from './events/FooEvent'` — the canonical shared type surface.                                              |
+| `stores/` value types    | **Allowed.** A `Store<T>` is part of the public contract, so its `T` can be re-exported alongside the store instance.                              |
+| `useCases/` local types  | **Discouraged but legal.** Prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or a local shape in the consumer. If a type genuinely must cross, it goes via an `export type { … } from './useCases/...'` line on `index.ts` — never a deep import. |
+| Anything from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Forbidden** — not from `index.ts`, not laundered through a use case file, not anywhere. |
+
+If you find yourself wanting to re-export a model type so another module can name it, the answer is always: **define a local type in the consumer**. The duplication is intentional (see `AGENTS.md` model isolation).
+
+### 6.6 Command handler registry typing (`get<Module>Handlers`)
+
+**`Record<string, ActionHandler<any>>` erases the relationship between registry keys and `AppAction` variants.** For a fixed domain of actions, derive a precise map type from `AppAction` so each entry is `ActionHandler<ThatAction>` and `execute` / `describe` narrow on the payload.
+
+1. **Union of actions** — `type DomainAppAction = Extract<AppAction, { type: 'foo' }> | Extract<AppAction, { type: 'bar' }> | …` (one `Extract` per discriminant; stays in sync when `commandQueries` payloads change).
+2. **Mapped registry type** — `type DomainHandlersMap = { [Action in DomainAppAction as Action['type']]: ActionHandler<Action> };`
+3. **Assembly** — `get<Module>Handlers` returns a plain object literal `{ actionKey: handle…, … }` with type `DomainHandlersMap`, importing each `handle…` **directly** from `handlers/…` (no intermediate “map barrel” file). `createHandler` builds each handler in `handlers/`. **`get<Module>Handlers`** does not call `createHandler` itself.
+
+Re-export the map type from the `get<Module>Handlers` file when other modules or tests need the same contract.
+
+### 6.7 Summary test
 
 Before committing a use-case file, ask:
 

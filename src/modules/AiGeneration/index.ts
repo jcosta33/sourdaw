@@ -6,9 +6,9 @@ export { handleGenerateMidiPrompt } from './useCases/actions/handleGenerateMidiP
 export { handleStemSeparationPreview } from './useCases/actions/handleStemSeparationPreview';
 export { removeTask } from './useCases/actions/removeTask';
 export { toggleAiPanel } from './useCases/actions/toggleAiPanel';
-export { aiMidiHandlers } from './useCases/aiMidiHandlers';
+export { getAiMidiHandlers } from './useCases/getAiMidiHandlers';
 export { applyChordProgressionToTrack } from './useCases/generateChordProgression/applyToTrack';
 export { applyDrumPatternToTrack } from './useCases/generateDrumPattern/applyToTrack';
 export { applyMelodyToTrack } from './useCases/generateMelody/applyToTrack';
 export { generateMidiVariations } from './useCases/generateMidiVariations';
-export { generationHandlers } from './useCases/generationHandlers';
+export { getGenerationHandlers } from './useCases/getGenerationHandlers';

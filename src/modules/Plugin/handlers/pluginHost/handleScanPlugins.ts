@@ -1,0 +1,10 @@
+import { createHandler } from '#/helpers/createHandler';
+import { startPluginScan } from '../../useCases/pluginScan/scanning';
+
+export const handleScanPlugins = createHandler<'scanPlugins'>({
+    execute: async () => {
+        await startPluginScan();
+    },
+    describe: () => ({ label: 'Scan external plugins' }),
+    undoable: false,
+});

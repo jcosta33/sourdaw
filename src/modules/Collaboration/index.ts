@@ -23,5 +23,5 @@ export {
     getPermissionManager,
 } from './useCases/collaboration/sessionManagement';
 
-// useCases/collaborationHandlers.ts
-export { collaborationHandlers } from './useCases/collaborationHandlers';
+// useCases/getCollaborationHandlers.ts
+export { getCollaborationHandlers } from './useCases/getCollaborationHandlers';

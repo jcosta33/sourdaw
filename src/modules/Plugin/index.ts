@@ -31,8 +31,8 @@ export { toggleNodeView } from './useCases/nodeView/toggleNodeView';
 // pluginBrowserActions
 export { createTrackForPlugin, loadExternalPlugin } from './useCases/pluginBrowserActions';
 
-// pluginHostHandlers
-export { pluginHostHandlers } from './useCases/pluginHostHandlers';
+// useCases/getPluginHostHandlers.ts
+export { getPluginHostHandlers } from './useCases/getPluginHostHandlers';
 
 // pluginLifecycle
 export { loadPlugin, unloadPlugin, processAudioIPC, openPluginGui, closePluginGui } from './useCases/pluginLifecycle';

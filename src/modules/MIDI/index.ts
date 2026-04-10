@@ -22,7 +22,7 @@ export { removeChordEvent } from './useCases/chordTrack/removeChordEvent';
 export { toggleChordTrack } from './useCases/chordTrack/toggleChordTrack';
 export { updateChordEvent } from './useCases/chordTrack/updateChordEvent';
 
-export { chordTrackHandlers } from './useCases/chordTrackHandlers';
+export { getChordTrackHandlers } from './useCases/getChordTrackHandlers';
 
 // ── Use Cases: Note creation ──────────────────────────────────────────────────
 export { createMidiNote } from './useCases/createMidiNote';
@@ -88,9 +88,10 @@ export { transposeNotes } from './useCases/midiNoteTransforms/transposeNotes';
 
 // ── Use Cases: Routing ────────────────────────────────────────────────────────
 export { setMidiOutput, clearMidiOutput } from './useCases/midiRouting';
+export { getMidiRoutingHandlers } from './useCases/getMidiRoutingHandlers';
 
 // ── Use Cases: Pattern Instances ──────────────────────────────────────────────
-export { patternInstanceHandlers } from './useCases/patternInstanceHandlers';
+export { getPatternInstanceHandlers } from './useCases/getPatternInstanceHandlers';
 
 // ── Use Cases: Strum ──────────────────────────────────────────────────────────
 export { strumNotes, restoreStrumOriginals } from './useCases/strumNotes';

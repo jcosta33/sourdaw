@@ -11,8 +11,8 @@ export { openExportDialog, openPreferencesDialog, onDialogOpenExport, onDialogOp
 export type { RippleDeletePlan } from './useCases/rippleEditing';
 export { toggleRippleEditing, planRippleDelete, rippleDeleteClips, undoRippleDelete } from './useCases/rippleEditing';
 
-// useCases/scratchPadHandlers.ts
-export { scratchPadHandlers } from './useCases/scratchPadHandlers';
+// useCases/getScratchPadHandlers.ts
+export { getScratchPadHandlers } from './useCases/getScratchPadHandlers';
 
 // useCases/panels/devicePanels.ts
 export { showDevicePanelForType } from './useCases/panels/devicePanels';
@@ -73,8 +73,8 @@ export {
     onScrollToPlayhead,
 } from './useCases/togglePanel/zoomOperations';
 
-// useCases/workspaceHandlers.ts
-export { workspaceHandlers } from './useCases/workspaceHandlers';
+// useCases/getWorkspaceHandlers.ts
+export { getWorkspaceHandlers } from './useCases/getWorkspaceHandlers';
 
 // useCases/workspaceQueries.ts
 export { gridSnapBeats, TRACK_HEIGHT_VALUES, defaultPreferences } from './useCases/workspaceQueries';

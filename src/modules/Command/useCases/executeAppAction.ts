@@ -1,181 +1,57 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { setSemanticContext, clearSemanticContext, pushActionHistoryEntry } from '#/modules/CrdtDocument';
+import { setSemanticContext, clearSemanticContext, pushActionHistoryEntry, getDsoSnapshotHandlers } from '#/modules/CrdtDocument';
 import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
 import { pushUndo } from '../stores/undoStore';
+import { getArrangementHandlers } from '#/modules/Arrangement';
+import { getTransportHandlers } from '#/modules/Transport';
+import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace';
+import { getAutomationHandlers } from '#/modules/Automation';
+import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration';
+import { getAnalysisHandlers } from '#/modules/AudioAnalysis';
+import { getCollaborationHandlers } from '#/modules/Collaboration';
+import { getPluginHostHandlers } from '#/modules/Plugin';
+import { getAiOrganizationHandlers } from '#/modules/AiRuntime';
 import {
-    getArrangementHandlers,
-    saveTrackAsTemplate,
-    loadTrackTemplate,
-    deleteTrackTemplate,
-    createVcaGroup,
-    assignToVca,
-    removeFromVca,
-    setVcaGain,
-} from '#/modules/Arrangement';
-import { transportHandlers } from '#/modules/Transport';
-import { workspaceHandlers, scratchPadHandlers } from '#/modules/Workspace';
-import { automationHandlers } from '#/modules/Automation';
-import { generationHandlers, aiMidiHandlers } from '#/modules/AiGeneration';
-import { analysisHandlers } from '#/modules/AudioAnalysis';
-import { collaborationHandlers } from '#/modules/Collaboration';
-import { pluginHostHandlers } from '#/modules/Plugin';
-import { aiOrganizationHandlers } from '#/modules/AiRuntime';
-import {
-    chordTrackHandlers,
-    patternInstanceHandlers,
-    setMidiOutput,
-    clearMidiOutput,
+    getChordTrackHandlers,
+    getMidiRoutingHandlers,
+    getPatternInstanceHandlers,
 } from '#/modules/MIDI';
-import { macroHandlers } from '../useCases/macroHandlers';
-import { undoTreeHandlers } from '../useCases/undoTreeHandlers';
-import { songStructureHandlers, versionControlHandlers } from '#/modules/Project';
-import { finalFeatureHandlers } from '#/modules/AudioEngine';
+import { getMacroHandlers } from './getMacroHandlers';
+import { getUndoTreeHandlers } from './getUndoTreeHandlers';
+import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project';
+import { getFinalFeatureHandlers } from '#/modules/AudioEngine';
 import { recordAction } from './macro/recording';
-import {
-    handleCreateTrackAlternative,
-    handleSwitchTrackAlternative,
-    handleRenameTrackAlternative,
-    handleDeleteTrackAlternative,
-} from './trackAlternativeHandlers';
-
-const trackAlternativeHandlers: Record<string, ActionHandler<any>> = {
-    createTrackAlternative: {
-        execute: async (a) => handleCreateTrackAlternative(a),
-        undoable: true,
-        describe: () => ({ label: 'Create Alternative' }),
-    },
-    switchTrackAlternative: {
-        execute: async (a) => handleSwitchTrackAlternative(a),
-        undoable: true,
-        describe: () => ({ label: 'Switch Alternative' }),
-    },
-    renameTrackAlternative: {
-        execute: async (a) => handleRenameTrackAlternative(a),
-        undoable: true,
-        describe: () => ({ label: 'Rename Alternative' }),
-    },
-    deleteTrackAlternative: {
-        execute: async (a) => handleDeleteTrackAlternative(a),
-        undoable: true,
-        describe: () => ({ label: 'Delete Alternative' }),
-    },
-};
-
-const templateHandlers: Record<string, ActionHandler<any>> = {
-    saveTrackTemplate: {
-        execute: async (a) => {
-            saveTrackAsTemplate(a.payload.trackId, a.payload.name, a.payload.category);
-        },
-        undoable: false,
-        describe: () => ({ label: 'Save Track Template' }),
-    },
-    loadTrackTemplate: {
-        execute: async (a) => {
-            loadTrackTemplate(a.payload.templateId);
-        },
-        undoable: true,
-        describe: () => ({ label: 'Load Track Template' }),
-    },
-    deleteTrackTemplate: {
-        execute: async (a) => {
-            deleteTrackTemplate(a.payload.templateId);
-        },
-        undoable: false,
-        describe: () => ({ label: 'Delete Track Template' }),
-    },
-};
-
-const vcaHandlers: Record<string, ActionHandler<any>> = {
-    createVcaGroup: {
-        execute: async (a) => {
-            createVcaGroup(a.payload.name, a.payload.trackIds);
-        },
-        undoable: true,
-        describe: () => ({ label: 'Create VCA Group' }),
-    },
-    assignToVca: {
-        execute: async (a) => {
-            assignToVca(a.payload.trackId, a.payload.vcaGroupId);
-        },
-        undoable: true,
-        describe: () => ({ label: 'Assign to VCA' }),
-    },
-    removeFromVca: {
-        execute: async (a) => {
-            removeFromVca(a.payload.trackId);
-        },
-        undoable: true,
-        describe: () => ({ label: 'Remove from VCA' }),
-    },
-    setVcaGain: {
-        execute: async (a) => {
-            setVcaGain(a.payload.vcaGroupId, a.payload.gain);
-        },
-        undoable: true,
-        describe: () => ({ label: 'Set VCA Gain' }),
-    },
-};
-
-const midiRoutingHandlers: Record<string, ActionHandler<any>> = {
-    setMidiOutput: {
-        execute: async (a) => {
-            setMidiOutput(a.payload.trackId, a.payload.destinationTrackId);
-        },
-        undoable: true,
-        describe: () => ({ label: 'Set MIDI Output' }),
-    },
-    clearMidiOutput: {
-        execute: async (a) => {
-            clearMidiOutput(a.payload.trackId);
-        },
-        undoable: true,
-        describe: () => ({ label: 'Clear MIDI Output' }),
-    },
-};
-
-const dsoSnapshotHandlers: Record<string, ActionHandler<any>> = {
-    restoreDsoSnapshot: {
-        execute: async (action) => {
-            const { restoreSnapshot } = await import('#/modules/CrdtDocument');
-            restoreSnapshot(action.payload.bundle);
-        },
-        undoable: false,
-        describe: () => ({ label: 'Restore DSO Snapshot' }),
-    },
-};
 
 /** Built lazily so `getArrangementHandlers` is not invoked while the Arrangement barrel is still
  *  initializing (e.g. `batchFeatureHandlers` imports from `#/modules/Arrangement` and re-enters). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- handlers are type-safe at definition site; the registry erases the action subtype for dynamic dispatch
 let handlerRegistryCache: Record<string, ActionHandler<any>> | null = null;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getHandlerRegistry(): Record<string, ActionHandler<any>> {
     if (!handlerRegistryCache) {
         handlerRegistryCache = {
             ...getArrangementHandlers(),
-            ...transportHandlers,
-            ...workspaceHandlers,
-            ...automationHandlers,
-            ...generationHandlers,
-            ...analysisHandlers,
-            ...collaborationHandlers,
-            ...pluginHostHandlers,
-            ...aiMidiHandlers,
-            ...trackAlternativeHandlers,
-            ...templateHandlers,
-            ...vcaHandlers,
-            ...midiRoutingHandlers,
-            ...aiOrganizationHandlers,
-            ...chordTrackHandlers,
-            ...scratchPadHandlers,
-            ...patternInstanceHandlers,
-            ...macroHandlers,
-            ...undoTreeHandlers,
-            ...songStructureHandlers,
-            ...versionControlHandlers,
-            ...finalFeatureHandlers,
-            ...dsoSnapshotHandlers,
+            ...getTransportHandlers(),
+            ...getWorkspaceHandlers(),
+            ...getAutomationHandlers(),
+            ...getGenerationHandlers(),
+            ...getAnalysisHandlers(),
+            ...getCollaborationHandlers(),
+            ...getPluginHostHandlers(),
+            ...getAiMidiHandlers(),
+            ...getAiOrganizationHandlers(),
+            ...getChordTrackHandlers(),
+            ...getScratchPadHandlers(),
+            ...getPatternInstanceHandlers(),
+            ...getMidiRoutingHandlers(),
+            ...getMacroHandlers(),
+            ...getUndoTreeHandlers(),
+            ...getSongStructureHandlers(),
+            ...getVersionControlHandlers(),
+            ...getFinalFeatureHandlers(),
+            ...getDsoSnapshotHandlers(),
         };
     }
     return handlerRegistryCache;

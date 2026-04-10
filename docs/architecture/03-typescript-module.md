@@ -414,6 +414,27 @@ Cross-module **named types** for events belong in **`events/`** and may be re-ex
 
 See the `architecture-violations` skill (§6) for detailed rules and examples.
 
+### What a use case file may and may not export
+
+A use case file is a behavioural contract. It exports a single function (rule: **one function per file**), and it may export the **local types** that describe that function's surface (e.g. its `Input` / `Output` aliases, an internal DTO it produces). Those local types are intra-module by default.
+
+What a use case file **must never** export, under any circumstance:
+
+- **Model types or model values** — anything that lives in `models/`. Models are private to the owning module and never cross any other folder. A use case re-exporting a model type (`export type { Track } from '../models/Track'`) launders the private boundary through a fake public path. If a use case needs to expose data shaped like a model, it defines its **own local DTO** with only the fields the contract requires.
+- **Repository types or repository values** — anything from `repositories/`. Repositories are I/O internals. Pure re-exports like `export { saveX } from '../repositories/...'` are forbidden (§6.2 of the `architecture-violations` skill); the same rule applies to `export type`.
+- **Types from `services/`, `validators/`, `transformers/`, `engine/`, `errors/`** — these folders are private. Their types do not cross the module boundary in any form, including via a use case file.
+
+Acceptable type exports from a module's public surface:
+
+| Type origin                  | Cross-module export?                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `events/` event payloads     | **Yes.** Re-export via `index.ts` as `export type { FooEvent } from './events/...'`. This is the canonical shared-type surface across modules.                     |
+| `stores/` store value types  | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via `index.ts` if needed. |
+| `useCases/` local types      | **Intra-module only by default.** Other modules prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or define a local shape. If a use-case input/output type genuinely must be shared cross-module (rare), the only legal way is an `export type { … }` line on the module's root `index.ts` — never a deep import of `#/modules/<X>/useCases/...`. |
+| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from `index.ts`, not from a use case file, not from anywhere. |
+
+The hard rule: **cross-module type consumption goes through the module's root `index.ts` or it does not happen.** A use case file is allowed to declare and export types that describe its own contract, but it is never a back door for promoting model, repository, or other private types to a cross-module surface.
+
 ---
 
 ## 4.5 `handlers/` — `AppAction` handler maps (non-contract)
@@ -429,12 +450,12 @@ This layer is **not** part of the general cross-module contract. Other feature m
 
 ### Construction
 
-- Each **`ActionHandler`** is created **in the handler module**, not in `get<Module>Handlers`. Typical shape: **`export const handleMuteTrack = createHandler<'muteTrack'>({ … })`** (or **`export const handleMuteTrack = () => createHandler<'muteTrack'>({ … })`** when a factory is needed).
-- The per-file map (e.g. `trackHandlers`) uses **`createHandlers`** to assemble **references** to those `handle…` exports — **`createHandler` / `createHandlers` do not run inside `get<Module>Handlers`**, which only spreads already-built maps.
+- Each **`ActionHandler`** is created **in the handler module**, not in `get<Module>Handlers`. Typical shape: **`export const handleMuteTrack = createHandler<'muteTrack'>({ … })`** (or **`export const handleMuteTrack = () => createHandler<'muteTrack'>({ … })`** when a factory is needed). Import **`createHandler`** from **`#/helpers/createHandler`**.
+- **`get<Module>Handlers`** assembles the registry by **direct imports** of each `handle…` and a typed object literal `{ … }` — no intermediate wrapper around the map. **Do not** add a second “handlers map” file that only re-exports the same object; the merge lives in **`get<Module>Handlers`** (or, until migration, a legacy `*Handlers.ts` that is still typed as the domain map).
 
 ### Cross-module access
 
-- Only **`get<Module>Handlers`** **use cases** in `useCases/` merge handler maps and return `Record<string, ActionHandler<any>>` for **Command**. They perform **no** `createHandler` calls — only object spread of maps exported from handler modules.
+- Only **`get<Module>Handlers`** **use cases** in `useCases/` merge handler maps for **Command**. Return **`Record<string, ActionHandler<any>>`** only when the domain is open-ended; for a **fixed** set of `AppAction` discriminants, prefer a **domain map type** derived from `AppAction` (union of `Extract<AppAction, { type: '…' }>` plus `{ [Action in … as Action['type']]: ActionHandler<Action> }`) so each key stays tied to its payload type. They perform **no** `createHandler` calls — only object spread of maps exported from handler modules.
 - Presentation and other domains **do not** import handler maps; they dispatch **`executeAppAction`** or call granular use cases.
 
 ---
@@ -609,9 +630,10 @@ Transformers should be:
 
 - pure
 - side-effect-free
-- module-private unless explicitly exposed
+- **module-private. Always.** Transformers never cross module boundaries — not via direct import, not via re-export through `useCases/`, `index.ts`, or any other folder. If module B finds itself reaching for a transformer in module A, the answer is one of: (1) module B owns its own transformer with its own shape, (2) the work belongs in a use case in module A that module B calls, or (3) the symbol was misclassified — it is not a transformer at all and belongs in `services/` or as a use case. "Sharing" a transformer is the signal that the design is wrong.
+- consumed only by use cases (and other intra-module transformers/services). **Hooks, components, and any other presentation-layer code must consume use cases, never transformers, services, validators, or repositories directly.** The presentation layer has exactly one downstream neighbour: `useCases/`.
 
-Transformers are not mini-services with hidden behavior.
+Transformers are not mini-services with hidden behavior, and they are not a public API. The same rule applies to `services/` and `validators/`: pure, intra-module, called only by use cases (or by other services in the same module).
 
 ---
 
