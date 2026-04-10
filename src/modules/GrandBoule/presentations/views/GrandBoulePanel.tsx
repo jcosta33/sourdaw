@@ -16,7 +16,9 @@ import { releaseGrandBouleNote } from '../../useCases/releaseGrandBouleNote';
 import { resolveGrandBouleEngine, type ResolvedGrandBouleEngine } from '../../useCases/resolveGrandBouleEngine';
 import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
 import { setGrandBouleSostenuto } from '../../useCases/setGrandBouleSostenuto';
+import { setGrandBouleAttackBite } from '../../useCases/setGrandBouleAttackBite';
 import { setGrandBouleSoundboardSend } from '../../useCases/setGrandBouleSoundboardSend';
+import { setGrandBouleStretchAmount } from '../../useCases/setGrandBouleStretchAmount';
 import { setGrandBouleSustain } from '../../useCases/setGrandBouleSustain';
 import { setGrandBouleSympatheticSend } from '../../useCases/setGrandBouleSympatheticSend';
 import { setGrandBouleTemperament } from '../../useCases/setGrandBouleTemperament';
@@ -320,6 +322,37 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 step={0.01}
                                 defaultValue={0.25}
                                 readout={`${Math.round(config.sympatheticSend * 100)}%`}
+                            />
+                        </div>
+                    </SectionCard>
+                    <SectionCard
+                        title="Realism"
+                        detail="Stretched tuning + attack bite (appendix §A6, §A8)."
+                    >
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-3">
+                            <Knob
+                                value={config.stretchAmount}
+                                onChange={(value) =>
+                                    setGrandBouleStretchAmount({ engine, amount: value })
+                                }
+                                label="Stretch"
+                                min={0}
+                                max={2}
+                                step={0.01}
+                                defaultValue={1.0}
+                                readout={`${Math.round(config.stretchAmount * 100)}%`}
+                            />
+                            <Knob
+                                value={config.attackBite}
+                                onChange={(value) =>
+                                    setGrandBouleAttackBite({ engine, amount: value })
+                                }
+                                label="Bite"
+                                min={0}
+                                max={2}
+                                step={0.01}
+                                defaultValue={1.0}
+                                readout={`${Math.round(config.attackBite * 100)}%`}
                             />
                         </div>
                     </SectionCard>

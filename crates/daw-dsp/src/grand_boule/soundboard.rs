@@ -25,6 +25,22 @@ const MODE_MIN_HZ: f32 = 30.0;
 /// the radiation HF hump and contribute little.
 const MODE_MAX_HZ: f32 = 7_800.0;
 
+/// Plate↔waveguide transition frequency (§A3 of the realism appendix —
+/// Chaigne, Cotté & Viggiano 2013, JASA 133(4)). Below this frequency the
+/// soundboard vibrates as a single homogeneous orthotropic plate; above it
+/// the inter-rib spaces act as waveguides and the modes localise. The
+/// implication for synthesis is that the plate region has a *lower* modal
+/// density (Skudrzyk mean admittance) and a *broader* radiation pattern,
+/// while the waveguide region has higher modal density and decorrelated
+/// stereo radiation.
+const PLATE_WAVEGUIDE_HZ: f32 = 1_100.0;
+
+/// Fraction of soundboard modes allocated to the plate region (below
+/// 1.1 kHz). The plate region is broad and structural — about a third of
+/// the modes get parked there, the rest live in the dense waveguide
+/// region.
+const PLATE_FRACTION: f32 = 0.32;
+
 /// Frequency-independent input-drive coefficient. Scales the bridge signal
 /// feeding the soundboard modes. The soundboard is the primary sound radiator
 /// in a real piano — the direct string signal should be a minority component.
@@ -77,6 +93,15 @@ impl Soundboard {
 
     /// Rebuild mode coefficients. Called from `new` and whenever the sample
     /// rate changes.
+    ///
+    /// The mode set is split at `PLATE_WAVEGUIDE_HZ` per §A3:
+    ///
+    /// * **Plate region** (≤ 1.1 kHz, ~32 % of modes): low density, high Q
+    ///   in the lows, broadly correlated L/R radiation (most plate modes
+    ///   span the whole soundboard so both channels see them).
+    /// * **Waveguide region** (> 1.1 kHz, remaining modes): higher density,
+    ///   moderate Q, *decorrelated* L/R radiation because the modes are
+    ///   localised to individual inter-rib waveguides.
     pub fn rebuild_modes(&mut self) {
         use core::f32::consts::{PI, TAU};
 
@@ -92,35 +117,75 @@ impl Soundboard {
             (rng_state >> 8) as f32 / (1 << 24) as f32
         };
 
-        let log_min = MODE_MIN_HZ.ln();
-        let log_max = MODE_MAX_HZ.ln();
-        for index in 0..SOUNDBOARD_MODES {
-            // Log-spaced base frequency with up to ±15% jitter.
-            let fraction = index as f32 / (SOUNDBOARD_MODES - 1) as f32;
-            let log_f = log_min + fraction * (log_max - log_min);
-            let jitter = 1.0 + 0.15 * (2.0 * next_rand() - 1.0);
-            let freq = log_f.exp() * jitter;
-            let freq = freq.clamp(MODE_MIN_HZ, nyquist * 0.98);
+        let plate_count = ((SOUNDBOARD_MODES as f32 * PLATE_FRACTION) as usize).max(1);
+        let waveguide_count = SOUNDBOARD_MODES - plate_count;
+        let log_plate_lo = MODE_MIN_HZ.ln();
+        let log_plate_hi = PLATE_WAVEGUIDE_HZ.ln();
+        let log_wg_lo = PLATE_WAVEGUIDE_HZ.ln();
+        let log_wg_hi = MODE_MAX_HZ.ln();
 
-            // Soundboard Q: ~40 at bass, ~200 at treble. Higher Q modes in
-            // the midrange give the characteristic "zing" of a grand.
-            let q_mid_bias = 1.0 - ((fraction - 0.55).abs() * 2.0).min(1.0);
-            let q = 40.0 + 160.0 * q_mid_bias;
+        for index in 0..SOUNDBOARD_MODES {
+            // Plate vs waveguide membership and log-spaced frequency.
+            let (freq_nominal, is_plate) = if index < plate_count {
+                let local = index as f32 / (plate_count.max(1) as f32 - 1.0).max(1.0);
+                (
+                    (log_plate_lo + local.clamp(0.0, 1.0) * (log_plate_hi - log_plate_lo)).exp(),
+                    true,
+                )
+            } else {
+                let local = (index - plate_count) as f32
+                    / (waveguide_count.max(1) as f32 - 1.0).max(1.0);
+                (
+                    (log_wg_lo + local.clamp(0.0, 1.0) * (log_wg_hi - log_wg_lo)).exp(),
+                    false,
+                )
+            };
+            let jitter = 1.0 + 0.15 * (2.0 * next_rand() - 1.0);
+            let freq = (freq_nominal * jitter).clamp(MODE_MIN_HZ, nyquist * 0.98);
+
+            // Plate modes carry low-mid energy with high Q (long ringing
+            // body resonances). Waveguide modes are more lossy and add the
+            // characteristic upper-mid "shimmer" without dominating.
+            let q = if is_plate {
+                // Lowest plate modes are highly resonant (Suzuki 1986).
+                let bass_bias = 1.0 - ((freq - MODE_MIN_HZ) / (PLATE_WAVEGUIDE_HZ - MODE_MIN_HZ))
+                    .clamp(0.0, 1.0);
+                60.0 + 180.0 * bass_bias
+            } else {
+                // Waveguide region modes — moderate Q with mild peak around
+                // 2 kHz where coincidence radiation is most efficient.
+                let peak_bias = 1.0 - ((freq.ln() - 2_000.0_f32.ln()).abs() * 0.7).min(1.0);
+                60.0 + 90.0 * peak_bias
+            };
             let bandwidth = freq / q;
 
             let theta = TAU * freq / self.sample_rate;
             let r = (-PI * bandwidth / self.sample_rate).exp();
 
             // Amplitude rolls off slightly with frequency (~ -3 dB/oct).
-            let amp = 1.0 / freq.sqrt();
+            // Plate modes carry slightly more energy because they radiate
+            // efficiently across the whole board.
+            let plate_boost = if is_plate { 1.20 } else { 1.0 };
+            let amp = plate_boost / freq.sqrt();
 
             self.c0[index] = DRIVE * amp * (1.0 - r * r) * theta.sin() * 0.5;
             self.c1[index] = 2.0 * r * theta.cos();
             self.c2[index] = -(r * r);
 
-            // Stereo spread: random L/R balance, sum of squares = 1.
+            // Stereo placement.
+            //
+            // Plate modes span the whole board → near-mono with a small
+            // ±7.65° spread either side of centre. Waveguide modes are
+            // localised to inter-rib bays → strongly decorrelated, allowed
+            // any pan angle.
             let pan = next_rand();
-            let angle = pan * PI * 0.5;
+            let angle = if is_plate {
+                // Confine to (45° ± 7.65°) — broadly mono with a touch of
+                // perspective. PI*0.085 ≈ 0.267 rad ≈ 15.3° peak-to-peak.
+                PI * 0.25 + (pan - 0.5) * (PI * 0.085)
+            } else {
+                pan * PI * 0.5
+            };
             self.gain_left[index] = angle.cos();
             self.gain_right[index] = angle.sin();
         }

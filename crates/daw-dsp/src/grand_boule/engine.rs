@@ -6,7 +6,9 @@
 
 use super::attack_sampler::AttackSampleSet;
 use super::mechanical_noise::{MechanicalNoise, NoiseEvent};
-use super::parameters::{key_fundamental_hz, midi_to_key, temperament_offset_cents, Temperament};
+use super::parameters::{
+    key_fundamental_hz, midi_to_key, railsback_smooth_cents, temperament_offset_cents, Temperament,
+};
 use super::pedals::PedalState;
 use super::soundboard::Soundboard;
 use super::sympathetic::Sympathetic;
@@ -54,6 +56,15 @@ pub struct GrandBouleEngine {
     body_resonance: f32,
     /// Overall tone color offset from piano model (-1..+1).
     tone_color: f32,
+    /// Multiplier for the Steinway D Railsback stretched-tuning curve
+    /// (§A8). 0.0 = no stretch (equal-tempered fundamentals), 1.0 = the
+    /// measured Jaatinen & Pätynen Steinway D curve, > 1.0 = exaggerated
+    /// stretch. Per-note jitter is preserved at full strength.
+    stretch_amount: f32,
+    /// Velocity multiplier for the §A6 string-precursor "bite" noise burst.
+    /// 0.0 disables the burst entirely, 1.0 = neutral (matches the
+    /// hammer's actual MIDI velocity), > 1.0 over-emphasises the chirp.
+    attack_bite: f32,
 }
 
 impl GrandBouleEngine {
@@ -85,6 +96,8 @@ impl GrandBouleEngine {
             sympathetic_level: 0.5,
             body_resonance: 0.6,
             tone_color: 0.0,
+            stretch_amount: 1.0,
+            attack_bite: 1.0,
         }
     }
 
@@ -120,7 +133,16 @@ impl GrandBouleEngine {
         // Apply historical temperament offset on top of the caller's pitch ratio.
         let temperament_cents = temperament_offset_cents(self.temperament, midi_note);
         let temperament_ratio = (2.0_f32).powf(temperament_cents / 1200.0);
-        let combined_ratio = pitch_ratio * temperament_ratio;
+        // Stretched-tuning amount (§A8). The default Railsback curve baked
+        // into `key_fundamental_hz` is the full Steinway D measurement
+        // (Jaatinen & Pätynen 2022). Users who want less or more stretch
+        // dial that in via the `stretch_amount` knob (0..2). We compute
+        // the residual cent offset against equal temperament and apply
+        // `(stretch_amount − 1)` worth of it as a multiplicative ratio.
+        let smooth_cents = railsback_smooth_cents(key);
+        let stretch_offset_cents = (self.stretch_amount - 1.0) * smooth_cents;
+        let stretch_ratio = (2.0_f32).powf(stretch_offset_cents / 1200.0);
+        let combined_ratio = pitch_ratio * temperament_ratio * stretch_ratio;
         // Combine una-corda pedal scale, preset hammer hardness offset, and
         // piano model hammer scale. offset -1 → 0.5×, 0 → 1×, +1 → 2×.
         let hardness_scale = (2.0_f32).powf(self.hammer_hardness_offset);
@@ -130,6 +152,17 @@ impl GrandBouleEngine {
         self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
         self.noise
             .trigger(NoiseEvent::HammerLetoff, shaped_velocity);
+        // §A6 string-precursor "bite" — the longitudinal pulse that
+        // reaches the bridge before the transverse wave. Velocity-scaled
+        // so soft notes barely whisper it but ff hits get a clear chirp.
+        // The `attack_bite` user knob multiplies that velocity, letting
+        // listeners dial the chirp from off (0.0) through neutral (1.0)
+        // to over-emphasised (2.0).
+        let bite_velocity = (shaped_velocity * self.attack_bite).clamp(0.0, 1.0);
+        if bite_velocity > 0.0 {
+            self.noise
+                .trigger(NoiseEvent::StringPrecursor, bite_velocity);
+        }
 
         // Retrigger the same voice if this note is already held.
         for voice in self.voices.iter_mut() {
@@ -286,6 +319,8 @@ impl GrandBouleEngine {
             "sympathetic_level" => self.sympathetic_level = value.clamp(0.0, 1.0),
             "body_resonance" => self.body_resonance = value.clamp(0.0, 1.0),
             "tone_color" => self.tone_color = value.clamp(-1.0, 1.0),
+            "stretch_amount" => self.stretch_amount = value.clamp(0.0, 2.0),
+            "attack_bite" => self.attack_bite = value.clamp(0.0, 2.0),
             _ => {}
         }
     }
@@ -547,6 +582,71 @@ mod tests {
         assert!(
             peak_range > 0.001 || energy_range > 0.01,
             "model params should produce different peak/energy: peak_range={peak_range}, energy_range={energy_range}"
+        );
+    }
+
+    #[test]
+    fn stretch_amount_changes_audio_output_at_treble() {
+        // Property: at C8 the smooth Steinway D Railsback offset is ~+45 c,
+        // so an engine with `stretch_amount = 0` (correction folded back to
+        // equal temperament) must produce a *different* sample stream than
+        // one with `stretch_amount = 1` (full stretch). We render both for
+        // a few hundred samples and require their L²-distance to be
+        // measurably non-zero. If the parameter were silently dropped, the
+        // outputs would be bit-identical and this test would fail.
+        let render = |stretch: f32| -> Vec<f32> {
+            let mut engine = GrandBouleEngine::new(48_000.0, 2);
+            engine.set_param("stretch_amount", stretch);
+            engine.note_on(108, 0.8); // C8 — where stretch is largest
+            let mut left = vec![0.0_f32; 1024];
+            let mut right = vec![0.0_f32; 1024];
+            engine.process_block(&mut left, &mut right);
+            left
+        };
+        let full = render(1.0);
+        let none = render(0.0);
+        let l2: f32 = full
+            .iter()
+            .zip(none.iter())
+            .map(|(a, b)| (a - b) * (a - b))
+            .sum();
+        assert!(
+            l2 > 1.0e-8,
+            "stretch_amount should measurably change C8 output (l2 = {l2})"
+        );
+    }
+
+    #[test]
+    fn attack_bite_zero_reduces_high_frequency_attack_energy() {
+        // Property: with `attack_bite = 0` the StringPrecursor burst is
+        // suppressed. The precursor sits at ~3.5 kHz centre / 4.5 kHz BW,
+        // so its dominant signature is high-frequency energy in the first
+        // few ms. Compare the *first-difference energy* (a proxy for HF
+        // content) between bite=1 and bite=0; the former must contain
+        // more HF energy than the latter. If the parameter were silently
+        // dropped, both renders would be bit-identical and this test
+        // would fail.
+        let render_hf_energy = |bite: f32| -> f32 {
+            let mut engine = GrandBouleEngine::new(48_000.0, 2);
+            engine.set_param("attack_bite", bite);
+            engine.note_on(60, 0.8);
+            let mut left = vec![0.0_f32; 256];
+            let mut right = vec![0.0_f32; 256];
+            engine.process_block(&mut left, &mut right);
+            left.windows(2).map(|w| (w[1] - w[0]).powi(2)).sum::<f32>()
+        };
+        let with_bite = render_hf_energy(1.0);
+        let without_bite = render_hf_energy(0.0);
+        assert!(
+            with_bite > without_bite,
+            "attack_bite=1 should produce more HF attack energy than bite=0 \
+             (with={with_bite}, without={without_bite})"
+        );
+        // Voice path must still generate audio when bite is off.
+        assert!(
+            without_bite > 0.0,
+            "voice should still produce HF energy at attack_bite=0 \
+             (the rest of the synthesis path is untouched)"
         );
     }
 

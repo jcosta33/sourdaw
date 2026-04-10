@@ -20,6 +20,21 @@ export type GrandBouleConfig = {
     sympatheticSend: number;
     /** Whether the hybrid sampled-attack pathway is active. */
     sampledAttackEnabled: boolean;
+    /**
+     * Stretched-tuning amount (0.0 – 2.0). Scales the smooth Steinway D
+     * Railsback curve baked into the engine. 0 = equal temperament (with
+     * per-note jitter still applied), 1 = full Jaatinen & Pätynen 2022
+     * Steinway D measurement (default), 2 = exaggerated stretch.
+     * Realism appendix §A8.
+     */
+    stretchAmount: number;
+    /**
+     * Attack bite (0.0 – 2.0). Velocity multiplier for the longitudinal
+     * "string precursor" noise burst that gives the attack its bright
+     * chirp. 0 = no bite, 1 = neutral, 2 = exaggerated. Realism appendix
+     * §A6.
+     */
+    attackBite: number;
 };
 
 export const createDefaultGrandBouleConfig = (): GrandBouleConfig => ({
@@ -30,4 +45,6 @@ export const createDefaultGrandBouleConfig = (): GrandBouleConfig => ({
     soundboardSend: 0.6,
     sympatheticSend: 0.25,
     sampledAttackEnabled: false,
+    stretchAmount: 1.0,
+    attackBite: 1.0,
 });
