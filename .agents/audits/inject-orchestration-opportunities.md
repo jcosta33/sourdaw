@@ -213,7 +213,7 @@ The following were already addressed in the **earlier inject migration** (handle
 - **`Routing/useCases/busControls.ts`** — **`ensureBusStrip`**, **`setBusGain`**, **`setSend`** each `inject({ …Engine })` over **`engineAccess`**.
 - **`Routing/useCases/sidechain.ts`** — **`addSidechainRoute`**, **`removeSidechainRoute`**, **`setSidechainRoutes`** = `inject(sidechainRouteMutationDependencies)`; store reads (**`getAllSidechainRoutes`**, etc.) stay plain.
 - **`Transport/useCases/ensureTrackStrips.ts`** — **`ensureTrackStrips`** = `inject(ensureTrackStripsDependencies)` (track store + **`busControls`** + track audio / device).
-- **`Workspace/useCases/rippleEditing.ts`** — **`toggleRippleEditing`**, **`planRippleDelete`**, **`rippleDeleteClips`**, **`undoRippleDelete`** use `inject()`; **`rippleDeleteClips`** depends on injectable **`planRippleDelete`**.
+- **`Workspace/useCases/rippleEditing.ts`** — **`toggleRippleEditing`** remains Workspace-owned and uses `inject({ workspaceStore })`; ripple-delete plan/apply/undo moved to `Arrangement/useCases/rippleDelete/*` so the Arrangement write path no longer lives in Workspace.
 - **`Command/useCases/pushUndoEntry.ts`** — **`pushUndoEntry`** = `inject({ pushUndo })`.
 - **`Arrangement/useCases/timelineInteractions/setPlayheadFromClick.ts`** — **`inject({ getTransportState, updateTransportState })`**; **`setPlayheadFromClick.spec.ts`** (smoke).
 - **`Arrangement/useCases/clipboard/copySelectedClip.ts`** / **`cutSelectedClip.ts`** — **`inject({ getWorkspaceState })`** / **`inject({ getWorkspaceState, removeClip })`**; **`copySelectedClip.spec.ts`** / **`cutSelectedClip.spec.ts`** (smoke).
@@ -329,3 +329,52 @@ Pure store/math helpers and **type-only** imports may stay plain per **`docs/arc
 - `pnpm typecheck`
 - `pnpm test:run`
 - After cross-module import churn: `pnpm deps:validate` (per `AGENTS.md`)
+
+---
+
+## Coverage backfill — orphan use case / repository tracking (2026-04 pass)
+
+**Goal:** Every `useCases/**/*.ts` and `repositories/**/*.ts` should have either (a) a sibling `*.spec.ts` smoke test or (b) a documented exemption (pure helper, single-store CRUD with no orchestration, static data, type re-export).
+
+**Total orphans found at start of pass:** 460 useCases, 94 repositories across 31 modules.
+
+**Per-module orphan inventory at session start:**
+
+| Module | useCases orphans |
+|---|---|
+| Arrangement | 93 |
+| AudioEngine | 72 |
+| MIDI | 48 |
+| Plugin | 34 |
+| Automation | 27 |
+| Yeast | 23 |
+| CrdtDocument | 19 |
+| Project | 17 |
+| GrandBoule | 17 |
+| SoundLibrary | 15 |
+| Command | 13 |
+| AiRuntime | 11 |
+| AiGeneration | 10 |
+| Sampler | 9 |
+| AudioAnalysis | 8 |
+| Toaster | 6 |
+| Transport | 5 |
+| Synth | 5 |
+| SampleLibrary | 4 |
+| Workspace | 3 |
+| Routing | 3 |
+| Fermenter | 3 |
+| Collaboration | 3 |
+| Scoring | 2 |
+| Levain | 2 |
+| Gluten | 2 |
+| Crust | 2 |
+| Proof | 1 |
+| Knead | 1 |
+| Grinder | 1 |
+| Bacteria | 1 |
+
+### Progress log
+
+| Date | Module | Files added | Files exempted | Notes |
+|---|---|---|---|---|

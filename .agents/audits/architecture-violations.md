@@ -102,9 +102,7 @@ Every line above is a fake boundary: the consumer imports a private repository s
 | ---- | ---- | --------- |
 | `src/modules/AiRuntime/useCases/aiRuntimeQueries.ts` | 172 | `export { detectIssues, generateSuggestions } from '../transformers/mixAnalysisTransformers';` |
 | `src/modules/AiRuntime/useCases/aiRuntimeQueries.ts` | 176 | `export { isComplexPrompt } from '../transformers/promptParser/parsing';` |
-| `src/modules/AiRuntime/useCases/parsePromptToActions.ts` | 16 | `export { isComplexPrompt } from '../transformers/promptParser/parsing';` (re-exported a *second* time from a different use case) |
-
-`isComplexPrompt` is laundered twice — once via `aiRuntimeQueries.ts` and once via `parsePromptToActions.ts`. Two use cases now both pretend to own a transformer that belongs to neither of them. Per the architecture doc §4.10, transformers are pure, intra-module, and never cross any boundary. The fact that `isComplexPrompt` is being shared across modules at all is the signal that the symbol is misclassified — it is either (a) a thing that belongs in a `services/` file inside the consumer, (b) a thing that should be wrapped in a real use case with a typed signature, or (c) duplicated in each consumer with its own shape.
+| ~~`src/modules/AiRuntime/useCases/parsePromptToActions.ts` line 16~~ | ~~16~~ | **RESOLVED** — duplicate launder of `isComplexPrompt` deleted in this audit pass. The symbol still leaks via `aiRuntimeQueries.ts:176`. | Per the architecture doc §4.10, transformers are pure, intra-module, and never cross any boundary. The fact that `isComplexPrompt` is being shared across modules at all is the signal that the symbol is misclassified — it is either (a) a thing that belongs in a `services/` file inside the consumer, (b) a thing that should be wrapped in a real use case with a typed signature, or (c) duplicated in each consumer with its own shape.
 
 **Handlers laundered through `useCases/` (must never reach `index.ts` either):**
 
@@ -149,7 +147,7 @@ Other modules with the same pattern (count of cross-module use-case type exports
 - `Plugin/index.ts` — 4 (`FaustModule`, `FaustParamDescriptor`, `ModulatorPreset`, `ScannedPlugin`, `WAMDescriptor`, `WAMInstance`)
 - `AudioAnalysis/index.ts` — 5 (`AudioFeatures*`, `AudioToMidi*`, `Pitch*`, `PolyphonicAudioToMidi*`, `InsertPolyphonicMidiNotesResult`)
 - `AudioEngine/index.ts` — 6 (`AudioDeviceInfo`, `SynthParams`, `MpeParams`, `DrumKit*`, `DeviceNodeEntry`, `BuildDeviceChainOutput`, `MidiGenerationResult`, `MidiGenerationNote`, `DenoiseResult`, `OfflineRenderOptions`, `MidiInputInfo`)
-- `Workspace/index.ts` — 2 (`RippleDeletePlan`, `Preferences`/`GridSnapOption`/`WorkspaceState`/`EditingTool`)
+- `Workspace/index.ts` — 1 (`Preferences`/`GridSnapOption`/`WorkspaceState`/`EditingTool`)
 - `Transport/index.ts` — 1 (`TransportState`/`TempoChange`/`TimeSignatureChange`)
 - `CrdtDocument/index.ts` — 3 (`DocId`/`DocumentBundle`/`MergeResult`, `MutateCrdtDocInput`, `ReplaceCrdtDocInput`)
 - `Synth/index.ts` — 1 (`DrumKitVoice`/`DrumKit` — note: AudioEngine also re-exports `DrumKit`/`DrumKitVoice`. Two modules co-own the same identity.)
@@ -252,7 +250,164 @@ These overlap with `.agents/audits/handlers-pattern.md` but the worst legacy spi
 
 These should migrate to `handlers/` per module, with `createHandler` per action (one file per handler), assembled by a single `get<Module>Handlers` use case (see handlers-pattern audit for the canonical shape).
 
-### F10. React/TS convention smells (lower priority but visible)
+### F10a. Stateful classes living in `useCases/` (HIGH)
+
+`useCases/` is for write-boundary functions, not for long-lived stateful objects with `process`, `reset`, `setBypassed`, etc. Per §4.4 a use case "expresses user or system intent" and is invoked, not instantiated. Stateful processors belong in `services/` (or `engine/` if they participate in the audio graph).
+
+| File | Class | What it actually is |
+| ---- | ----- | -------------------- |
+| `src/modules/Yeast/useCases/processors/Arpeggiator.ts` | `Arpeggiator` | Stateful MIDI processor with `processMidi`/`reset`/`setParam`/`setBypassed`. |
+| `src/modules/Yeast/useCases/processors/Transposer.ts` | `Transposer` | Same shape. |
+| `src/modules/Yeast/useCases/processors/ScaleQuantizer.ts` | `ScaleQuantizer` | Same. |
+| `src/modules/Yeast/useCases/processors/NoteRepeater.ts` | `NoteRepeater` | Same. |
+| `src/modules/Yeast/useCases/processors/NoteFilter.ts` | `NoteFilter` | Same. |
+| `src/modules/Yeast/useCases/processors/MutationEngine.ts` | `MutationEngine` | Same. |
+| `src/modules/Yeast/useCases/processors/MarkovChain.ts` | `MarkovChain` | Same. |
+| `src/modules/Yeast/useCases/processors/Humanizer.ts` | `Humanizer` | Same. |
+| `src/modules/Yeast/useCases/processors/Harmonizer.ts` | `Harmonizer` | Same. |
+| `src/modules/Yeast/useCases/processors/GrooveModule.ts` | `GrooveModule` | Same. |
+| `src/modules/Yeast/useCases/processors/EuclideanGenerator.ts` | `EuclideanGenerator` | Same. |
+| `src/modules/Yeast/useCases/processors/ChordMemory.ts` | `ChordMemory` | Same. |
+| `src/modules/Yeast/useCases/processors/ChordGenerator.ts` | `ChordGenerator` | Same. |
+| `src/modules/Yeast/useCases/processors/CCGenerator.ts` | `CCGenerator` | Same. |
+| `src/modules/Yeast/useCases/MidiRack.ts` | `MidiRack` | Container that owns/orchestrates the processor chain. |
+| `src/modules/AudioEngine/useCases/advancedMetering/lufs.ts` | `ShortTermLUFS`, `IntegratedLUFS` | Stateful loudness meters. |
+| `src/modules/AudioEngine/useCases/advancedMetering/phaseCorrelation.ts` | `PhaseCorrelationMeter` | Stateful meter. |
+| `src/modules/AudioEngine/useCases/advancedMetering/vuMeter.ts` | `VUMeter` | Stateful meter. |
+| `src/modules/Collaboration/useCases/assetTransfer.ts` | `AssetTransfer` | Stateful manager. |
+| `src/modules/Collaboration/useCases/permissions.ts` | `PermissionManager` | Stateful manager. |
+| `src/modules/Collaboration/useCases/automergeSync.ts` | `AutomergeSync` | Stateful sync engine. |
+
+Yeast alone has **15** processor classes in `useCases/`. They are textbook services or engine modules, not use cases.
+
+### F10b. Class with mutable state inside `models/` (HIGH)
+
+`src/modules/Yeast/models/MidiProcessor.ts:48` defines:
+
+```ts
+export class ScheduledEventQueue {
+    private events: MidiEvent[] = [];
+    push(event: MidiEvent): void { … }
+    drainRange(startSamples, endSamples): MidiEvent[] { … }
+    flushAllNotesOff(...): void { … }
+}
+```
+
+Per §4.1: "Models do not own behavior through class methods." A class with `private` mutable state is by definition not a serializable, framework-free, runtime-handle-free data shape. This belongs in `services/` (alongside the processors that use it) or in `engine/` if it touches the audio thread. The `MidiProcessor` *type* in the same file is fine — that's a contract type. The `ScheduledEventQueue` class is the violation.
+
+### F10c. Repositories acting as cross-module orchestrators (CRITICAL)
+
+Per §4.9 repositories "translate inputs/outputs, call external APIs, remain thin, contain no business workflow logic." Several repositories in `AudioEngine` and `Arrangement` violate this directly by importing other modules' barrels and orchestrating across them. A repository should be I/O at the leaf — not a coordination layer.
+
+| File | Imports |
+| ---- | ------- |
+| `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts:12` | `import { getTrackStoreState } from '#/modules/Arrangement';` |
+| `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts:28` | `import { getTransportStoreValue, playheadPositionRef } from '#/modules/Transport';` |
+| `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts:29` | `import { processRealtimeMidiInput } from '#/modules/Yeast';` |
+| `src/modules/AudioEngine/repositories/webMidi/lifecycle.ts:6` | `import { trackStore } from '#/modules/Arrangement';` |
+| `src/modules/AudioEngine/repositories/faustDeviceFactory.ts:14` | `import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin';` |
+| `src/modules/Arrangement/repositories/presets/factoryPresets.ts:24` | `import { FERMENTER_PRESETS } from '#/modules/Fermenter';` |
+
+`webMidi/messageHandlers.ts` is the worst case: a repository that reads Arrangement state, reads Transport state, and pushes events into Yeast. That is a cross-module workflow — it belongs in a use case (`AudioEngine/useCases/...`), with the repository reduced to "receive Web MIDI events" and the workflow code calling Arrangement / Transport / Yeast through their public surfaces from the use case layer.
+
+`Arrangement/repositories/presets/factoryPresets.ts` reaches into `Fermenter` — a repository in one module pulling preset data from another module. Either the data should be local to Arrangement, or the orchestration should move into a use case.
+
+### F10d. Cross-module deep import into a foreign use case folder from a repository (CRITICAL)
+
+`src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts:1`:
+
+```ts
+import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
+```
+
+Three rules collapse:
+
+1. Cross-module deep imports are forbidden (§3.3 rule 1).
+2. Repositories are thin I/O — they should not be importing types from another module's use cases at all.
+3. `TempoChange` is a use-case type that already crosses the barrier on `Transport/index.ts` (one of the F3 cases). Even via the barrel, this would be a discouraged use-case-type cross-module import.
+
+The same file at lines 4–5 imports `beatToSeconds` from `#/modules/AudioEngine/services/beatConversion` and `resolveDeviceParam` from `#/modules/AudioEngine/services/deviceResolution` via the alias path — intra-module, but should be relative.
+
+### F10e. Cross-module model import into a store (CRITICAL)
+
+`src/modules/Arrangement/stores/chordTrackStore.ts:2`:
+
+```ts
+import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
+```
+
+A store in Arrangement imports a model type directly from MIDI's private `models/` folder. This is the §4.1 model-isolation rule broken at the deepest layer of the codebase: an Arrangement store is structurally bound to the exact memory shape of a MIDI model. Any change to `MIDI/models/ChordEvent` will silently change the persisted state stored at `localStorage.setItem('sourdaw_chord_track', ...)` (line 29).
+
+### F10f. Sub-module nested inside another module (HIGH)
+
+`src/modules/Plugin/ProofChamber/` exists as a full mini-module (with `models/`, `stores/`, `presentations/`) **inside** the Plugin module — and there is also a top-level `src/modules/ProofChamber/` module with the same name.
+
+```
+src/modules/Plugin/ProofChamber/
+  ├── models/
+  ├── presentations/
+  └── stores/
+
+src/modules/ProofChamber/    ← also exists at top level
+  ├── models/
+  ├── presentations/
+  ├── repositories/
+  └── useCases/
+```
+
+Two modules with the same name, one nested inside another. This is structurally incoherent — there is no rule for what files in `Plugin/ProofChamber/` are private to (Plugin? ProofChamber?), no `index.ts`, and consumers can target either copy. Either the nested folder is the *real* ProofChamber and the top-level should be deleted/merged, or vice versa, or `Plugin/ProofChamber/` is a vestigial folder from a half-done refactor that should not exist at all.
+
+### F10g. Namespace imports used as a workaround for multi-export repository files (MEDIUM)
+
+`AGENTS.md` forbids namespace imports (`import * as X`). They appear in 13 files, most legitimately importing `Automerge` (an external library that ships only as a namespace). The illegitimate ones are workarounds for the F7 multi-export repository files:
+
+| File | Line | Import |
+| ---- | ---- | ------ |
+| `src/modules/Sampler/useCases/samplerParamBridge.ts` | 8 | `import * as bridge from '../repositories/samplerBridge';` |
+| `src/modules/Sampler/useCases/samplerLifecycle.ts` | 6 | same |
+| `src/modules/Sampler/useCases/loadSample.ts` | 7 | same |
+| `src/modules/Sampler/useCases/setSamplerMode.ts` | 7 | same |
+| `src/modules/Sampler/useCases/updateSliceMarker.ts` | 7 | same |
+| `src/modules/Sampler/useCases/positionTracking.ts` | 7 | same |
+| `src/modules/Sampler/useCases/triggerPad.ts` | 5 | same |
+| `src/modules/Workspace/useCases/togglePanel/zoomOperations.spec.ts` | 12 | `import * as workspaceRepo from '../../repositories/workspace';` |
+
+The Sampler ones tell you exactly why `samplerBridge.ts` is the wrong shape — it has 16 exports, so consumers reach for it via namespace because spelling out 16 named imports is unworkable. Splitting `samplerBridge.ts` into one function per file (Issue 10) deletes both violations at once.
+
+### F10h. `interface` declarations where `type` is required (LOW)
+
+Per AGENTS.md: "Prefer `type` over `interface`." Excluding global augmentation (`declare global { interface Window { … } }` is the only legal use), the offenders:
+
+| File | Line | Declaration |
+| ---- | ---- | ----------- |
+| `src/modules/AudioEngine/engine/TrackNode.ts` | 9 | `export interface TrackNodeDeps { … }` |
+| `src/modules/Knead/models/KneadBlob.ts` | 1 | `export interface NoteBlob { … }` |
+| `src/modules/Knead/models/KneadBlob.ts` | 16 | `export interface KneadTrackState { … }` |
+| `src/modules/Plugin/ProofChamber/models/ProofChamberState.ts` | 3 | `export interface ProofChamberEngineState { … }` |
+| `src/modules/Plugin/ProofChamber/models/ProofChamberState.ts` | 20 | `export interface ProofChamberPluginState { … }` |
+| `src/modules/Plugin/ProofChamber/stores/chamberStore.ts` | 8 | `export interface ChamberStoreState { … }` |
+| `src/modules/Arrangement/presentations/hooks/useTimelineGestures.ts` | 12 | `interface GestureEvent extends UIEvent { … }` |
+| `src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts` | 4 | `export interface AudioDeviceStrategy { … }` |
+
+### F10i. Presentation hooks reach into their own module's `models/` (LOW–MEDIUM)
+
+Per the updated rule (§4.10 of the doc), the presentation layer consumes use cases and stores — not models. Several Workspace and Arrangement hooks import directly from `../../models/`:
+
+| File | Import |
+| ---- | ------ |
+| `src/modules/Workspace/presentations/hooks/usePianoRollRenderer.ts:36` | `import { type MidiNote } from '../../models/MidiNoteViewTypes';` |
+| `src/modules/Workspace/presentations/hooks/usePromptExecution.ts:25` | `import { defaultWorkspaceState } from '../../models/WorkspaceState';` |
+| `src/modules/Workspace/presentations/hooks/useWorkspaceState.ts:3` | `import { defaultWorkspaceState, type WorkspaceState } from '../../models/WorkspaceState';` |
+| `src/modules/Workspace/presentations/hooks/useTracks.ts:7` | `import { type Track } from '../../models/TrackViewTypes';` |
+| `src/modules/Workspace/presentations/hooks/useChannelStripActions.ts:19` | `import { type Track } from '../../models/TrackViewTypes';` |
+| `src/modules/Workspace/presentations/hooks/usePianoRollInteractions.ts:30` | `import { type MidiNote } from '../../models/MidiNoteViewTypes';` |
+| `src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts:13` | `import { type AutomationPoint } from '../../models/AutomationViewTypes';` |
+
+These are intra-module model imports from the presentation layer, which is a softer violation than cross-module. The cross-module variant (Arrangement view importing Arrangement model) was already covered as F8 (cross-module deep imports) and the broader case under F6.
+
+A nuance: file names like `MidiNoteViewTypes.ts` and `TrackViewTypes.ts` strongly suggest these are *view models* — types that exist specifically to be consumed by the presentation layer. If that is the intent, the convention should make it explicit by living under `presentations/types/` (or a similar location), not in `models/` where they get conflated with domain models. Otherwise, the presentation layer should use `ReturnType<typeof useCase>` or accept these as plain props from a use case's output type.
+
+### F11. React/TS convention smells (lower priority but visible)
 
 Sampled, not exhaustive — included because they often co-occur with the structural issues above and are easy to spot during the same passes:
 
@@ -399,6 +554,90 @@ After Issues 3, 4, and 5 close the most dangerous cases, ~30 `export type { … 
 
 The five `React.memo` files, the one bare `interface` declaration, and the `&&` JSX usages should each be replaced. This is unrelated to the architectural work and can be addressed independently.
 
+### Issue 14 — Yeast MIDI processors live in `useCases/` but are stateful services (HIGH)
+
+15 processor classes in `src/modules/Yeast/useCases/processors/` plus `MidiRack.ts` are long-lived stateful objects, not use cases. Each implements `processMidi`/`reset`/`setBypassed`/`setParam`. They are not invoked once with intent — they are instantiated by `MidiRack`, hold per-instance state across blocks, and run on every audio callback.
+
+**Needed:** move `Yeast/useCases/processors/*.ts` and `Yeast/useCases/MidiRack.ts` to `Yeast/services/` (or `Yeast/engine/` if any of them touch the audio thread directly — `processMidi` runs in the audio worklet thread per the file headers, so `engine/` is the more accurate destination). Update imports: `MidiRack` consumers move to relative paths to `../services/` (or `../engine/`). Re-evaluate whether any `Yeast` use case actually needs to expose these classes via a wrapper function — the public surface should be a use case like `processYeastMidi(input)` (which already exists at `index.ts:5`), not the processor classes themselves.
+
+This issue overlaps with Issue 4 (`Yeast/index.ts` re-exporting from `models/`): the rewrite of Yeast's internal layout should happen in one pass, with `MidiProcessor.ts` and `MidiEvent.ts` audited at the same time (see Issue 15).
+
+### Issue 15 — `Yeast/models/MidiProcessor.ts` contains a stateful class (HIGH)
+
+`ScheduledEventQueue` (line 48) is a class with mutable internal state living in `models/`. The `MidiProcessor` *type* in the same file is a legitimate model — a contract type. The class is the violation.
+
+**Needed:** move the `ScheduledEventQueue` class out of `models/` into the same destination chosen for Issue 14 (`Yeast/services/` or `Yeast/engine/`). Leave the `MidiProcessor` type alone (or rename `MidiProcessor.ts` → `MidiProcessorTypes.ts` so the file's purpose is unambiguous after the class moves).
+
+### Issue 16 — Stateful classes in `useCases/` outside Yeast (MEDIUM)
+
+Same shape as Issue 14, lower volume:
+
+| Module | Files | Destination |
+| ------ | ----- | ----------- |
+| AudioEngine | `useCases/advancedMetering/{lufs,phaseCorrelation,vuMeter}.ts` (4 classes total: `ShortTermLUFS`, `IntegratedLUFS`, `PhaseCorrelationMeter`, `VUMeter`) | `services/advancedMetering/` (these are pure DSP state machines, not engine-thread code, so `services/` fits) |
+| Collaboration | `useCases/{assetTransfer,permissions,automergeSync}.ts` (3 classes: `AssetTransfer`, `PermissionManager`, `AutomergeSync`) | `services/` (each is a stateful manager that uses cases call into) |
+
+**Needed:** move each class to the indicated destination. The use case layer keeps a thin function wrapper that exposes the behaviour through a typed entry point — that wrapper is what `index.ts` re-exports for cross-module access.
+
+### Issue 17 — `AudioEngine/repositories/webMidi/messageHandlers.ts` is a cross-module orchestrator (CRITICAL)
+
+The file imports `getTrackStoreState` from `#/modules/Arrangement`, `getTransportStoreValue` and `playheadPositionRef` from `#/modules/Transport`, and `processRealtimeMidiInput` from `#/modules/Yeast`, then coordinates a workflow across all three. Repositories must be thin I/O.
+
+**Needed:** split the file into:
+
+1. A repository that owns *only* the Web MIDI event source (subscribe/unsubscribe to MIDI input, translate raw events into a typed shape).
+2. A use case (`AudioEngine/useCases/handleIncomingMidiEvent.ts` or similar) that reads the cross-module state and dispatches to Yeast. This is where the orchestration belongs.
+3. A subscription wired in bootstrap that connects the repository's output to the use case.
+
+The same pattern applies to `webMidi/lifecycle.ts:6` (`trackStore` from Arrangement) — split the lifecycle code that touches another module into a use case.
+
+### Issue 18 — `AudioEngine/repositories/offlineScheduler/automationScheduling.ts` reaches into `Transport/useCases/...` (CRITICAL)
+
+Line 1: `import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';`
+
+Three rules collapse: cross-module deep import, repository reaching outside its module, and importing a use-case type that should not cross modules.
+
+**Needed:** define a local `OfflineTempoChange` shape in the offline scheduler with only the fields that file uses (`time`, `bpm`, whatever is actually read), and make the *caller* (a use case in AudioEngine that drives the offline scheduler) translate `Transport`'s representation into the local shape at the boundary. The offline scheduler stops importing anything from Transport.
+
+While editing the file, also convert lines 4–5 (`#/modules/AudioEngine/services/...` deep imports to its own module) to relative paths.
+
+### Issue 19 — `Arrangement/stores/chordTrackStore.ts` imports a MIDI model directly (CRITICAL)
+
+Line 2: `import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';`
+
+A persisted store in Arrangement is structurally bound to MIDI's private model shape, **and** the store serialises it to `localStorage` (line 29). Any change to MIDI's `ChordEvent` silently changes the on-disk schema.
+
+**Needed:** define a local `ArrangementChordEvent` (or just `ChordEvent` inside Arrangement) with only the fields needed by the chord track. If MIDI emits chord events at the boundary, an Arrangement use case translates from MIDI's shape to the local store shape. The persisted localStorage schema becomes an Arrangement concern, not a MIDI one.
+
+This is the most dangerous of the model-leak issues because it has a *runtime* failure mode (corrupted persisted state on schema drift) on top of the compile-time coupling.
+
+### Issue 20 — `Arrangement/repositories/presets/factoryPresets.ts` reaches into `Fermenter` (HIGH)
+
+Line 24: `import { FERMENTER_PRESETS } from '#/modules/Fermenter';`
+
+A repository in Arrangement is pulling preset data from Fermenter at module load time. Two clean fixes are possible:
+
+1. **Inline the data.** If `FERMENTER_PRESETS` is static, copy it into Arrangement's preset registry. This decouples the modules and is the simplest fix.
+2. **Move the orchestration up a layer.** A use case in Arrangement (`getFactoryPresets`) calls Fermenter via its barrel and merges the result into Arrangement's catalogue. The repository stops importing other modules entirely.
+
+**Needed:** pick one of the two and apply. If Fermenter is the only foreign module reached from `factoryPresets.ts`, option 2 keeps the data normalised; if there are several similar imports, option 1 collapses the dependencies.
+
+### Issue 21 — `Plugin/ProofChamber/` and top-level `ProofChamber/` are two modules with the same name (HIGH)
+
+`src/modules/Plugin/ProofChamber/` is a partial mini-module (with `models/`, `stores/`, `presentations/`, no `useCases/`, no `index.ts`) nested inside the `Plugin` module. There is also a top-level `src/modules/ProofChamber/` module (with `useCases/`, `repositories/`, `models/`, `presentations/`).
+
+This is structurally incoherent. There is no rule for what `Plugin/ProofChamber/` is private to (Plugin? itself?), no public surface, and any consumer can pick either copy of the name. The two `models/ProofChamberState.ts` files might (or might not) define the same shape.
+
+**Needed:** audit which copy is actually used in the live application, then either delete the unused one or merge the two. This is a discovery step that requires reading the imports of every file under both folders. **Recommend doing this as a research task** before any cleanup, because deleting the wrong one will silently break the plugin host.
+
+### Issue 22 — Namespace imports (`import * as`) used as multi-export workarounds (MEDIUM)
+
+8 use case files in `Sampler/` use `import * as bridge from '../repositories/samplerBridge';` because `samplerBridge.ts` has 16 named exports. This is the symptom; Issue 10 (split multi-export repository files) is the cause. Splitting `samplerBridge.ts` into one file per function and converting the bridge calls to named imports closes both at once.
+
+The Automerge namespace imports (`import * as Automerge from '@automerge/automerge'`) are legal — Automerge ships only as a namespace.
+
+**Needed:** addressed by Issue 10 — no separate work needed.
+
 ---
 
 ## Priorities
@@ -408,17 +647,26 @@ In order of impact:
 1. **Issue 1** — `engineAccess.ts` (concentrates F1 + F2 + F3 + F5 in one file).
 2. **Issue 2** — `aiRuntimeQueries.ts` (shadow public surface for an entire repository tree).
 2b. **Issue 2b** — `isComplexPrompt` and the AiRuntime transformer launders (presentation layer reaches a foreign transformer; same fix pass as Issue 2).
-3. **Issue 3** — `SidechainRoute` co-ownership (cross-module identity coupling).
-4. **Issue 6** — Cross-module deep imports of `Arrangement/models/Track` (model isolation).
-5. **Issue 4** — `Yeast/index.ts` direct model re-export (smallest fix, highest signal).
-6. **Issue 5** — `DrumKit` / `AutomationShapeType` co-ownership.
-7. **Issue 7** — Self-barrel and intra-module deep imports inside `Arrangement` (162 files).
-8. **Issue 8** — Multi-use-case files (248 files; the 24 worst offenders first).
-9. **Issue 9** — Lowercase non-model files in `models/` (52 files; AiRuntime first).
-10. **Issue 10** — Multi-export repository files (56 files).
-11. **Issue 11** — Sub-folder barrels (2 files).
-12. **Issue 12** — Discouraged use-case type re-exports on module roots.
-13. **Issue 13** — React/TS convention smells.
+3. **Issue 17** — `webMidi/messageHandlers.ts` cross-module orchestrator (repository doing workflow).
+4. **Issue 18** — `automationScheduling.ts` deep imports `Transport/useCases/...` (repository → foreign use case folder).
+5. **Issue 19** — `chordTrackStore.ts` imports a MIDI model (cross-module model leak in a *persisted* store — runtime risk).
+6. **Issue 3** — `SidechainRoute` co-ownership (cross-module identity coupling).
+7. **Issue 6** — Cross-module deep imports of `Arrangement/models/Track`.
+8. **Issue 21** — Two `ProofChamber` modules (one nested inside Plugin) — discovery required first.
+9. **Issue 4** — `Yeast/index.ts` direct model re-export (smallest fix, highest signal).
+10. **Issue 5** — `DrumKit` / `AutomationShapeType` co-ownership.
+11. **Issue 14** — Yeast processors in `useCases/` (15 stateful classes).
+12. **Issue 15** — `ScheduledEventQueue` class in `Yeast/models/`.
+13. **Issue 16** — Stateful classes in `useCases/` outside Yeast (AudioEngine metering, Collaboration managers).
+14. **Issue 20** — `factoryPresets.ts` reaches into Fermenter from a repository.
+15. **Issue 7** — Self-barrel and intra-module deep imports inside `Arrangement` (162 files).
+16. **Issue 8** — Multi-use-case files (248 files; the 24 worst offenders first).
+17. **Issue 9** — Lowercase non-model files in `models/` (52 files; AiRuntime first).
+18. **Issue 10** — Multi-export repository files (56 files) — closes Issue 22 as a side effect.
+19. **Issue 11** — Sub-folder barrels (2 files).
+20. **Issue 12** — Discouraged use-case type re-exports on module roots.
+21. **Issue 13** — React/TS convention smells.
+22. **Issue 22** — Namespace-import workarounds (collapses into Issue 10).
 
 ---
 
@@ -429,7 +677,10 @@ In order of impact:
 - **Multi-export use-case files actively obscure other violations.** Files like `engineAccess.ts` and `aiRuntimeQueries.ts` are large enough that grepping for `export type { Foo }` would have caught the model leak years ago — but the violations are buried in 200+ line files. F1 makes every other class of violation harder to detect.
 - **Self-barrel imports cause initialisation-order bugs.** The 162 `Arrangement` files importing from `#/modules/Arrangement` are at risk of circular initialisation — the symptom is `undefined is not a function` errors at module load time, often only at production bundle time. This is a latent bug factory.
 - **Lowercase files in `models/`** train new contributors (and AI agents) to put non-model code in `models/`. The convention erodes faster the longer it is broken.
-- **Bulk fixes are dangerous.** Per `AGENTS.md` and the user's standing memory, bulk edits (sed/awk/codemods) are forbidden. The total volume of changes implied by this audit (~500 files across all issues) means the work must be planned in small, validated batches with `pnpm deps:validate` between them.
+- **Bulk fixes are dangerous.** Per `AGENTS.md` and the user's standing memory, bulk edits (sed/awk/codemods) are forbidden. The total volume of changes implied by this audit (~600 files across all issues) means the work must be planned in small, validated batches with `pnpm deps:validate` between them.
+- **Persisted state is structurally coupled across modules.** Issue 19 means the on-disk schema for the chord track is tied to MIDI's private model. A future MIDI refactor will not break compilation — it will silently corrupt user projects on next load. This is the highest *runtime* risk in the audit and is not visible from a normal type check.
+- **Repository-as-orchestrator hides workflows in the wrong layer.** Issue 17 means the Web MIDI input flow does not appear in any use case file at all. Anyone reading `AudioEngine/useCases/` and looking for "what happens when MIDI arrives" will not find it. This is a maintainability landmine and a likely cause of duplicated logic — someone trying to add a new MIDI input path will not know the existing one is in `repositories/` and will write a second one in `useCases/`.
+- **Two modules with the same name (Issue 21) are a deletion-risk landmine.** Touching either copy without first auditing usage could remove the live one and silently break the plugin host. This issue requires research before fix.
 
 ---
 
@@ -457,4 +708,29 @@ These are directional only. A proper spec should be written before any of this w
 
 ## Resolved
 
-(none yet — this is a fresh audit)
+All resolved items below were verified with `pnpm typecheck` (clean) and `pnpm deps:validate` (zero violations) after each change.
+
+- **Duplicate `isComplexPrompt` launder** in `AiRuntime/useCases/parsePromptToActions.ts:16` — removed. The symbol still leaks via `aiRuntimeQueries.ts:176` (Issue 2b remains open).
+- **`cloudApiManagement.ts:13` repository launder** — `export { isCloudAvailable } from '../repositories/cloudLlm/keyManagement'` replaced by a real one-line typed wrapper function with the same name. Cross-module consumer (`Workspace/.../PreferencesDialog.tsx`) unaffected. The function now is the boundary.
+- **`offlineRender.ts:41-43` audio-encoder launders** — replaced by three new use case files (`audioBufferToWav.ts`, `audioBufferToMp3.ts`, `audioBufferToFlac.ts`), each a thin typed wrapper around its repository function. `AudioEngine/index.ts` updated to re-export from the new files. Closes the launder *and* the one-function-per-file violation for these three exports.
+- **`bacteriaParamBridge.ts:341` model-type launder** — `export type { BacteriaPatch } from '../models/BacteriaPatch'` deleted. Was dead code: no consumer outside the Bacteria module imported `BacteriaPatch`, and `Bacteria/index.ts` does not re-export it. Pure cleanup.
+- **Issue 3 — `SidechainRoute` co-ownership** — RESOLVED.
+  - Created `Routing/models/SidechainRoute.ts` with the local type and `createSidechainRoute` factory.
+  - Updated `Routing/useCases/sidechain.ts` to import the type/factory locally; only `wireSidechainRoute` / `unwireSidechainRoute` (which take primitive args) still come from `#/modules/AudioEngine`.
+  - Updated `Routing/stores/sidechainStore.ts` to import from `../models/SidechainRoute`.
+  - Removed the dead cross-module type re-export from `Routing/index.ts:4` (no consumer imported it).
+  - Removed `engineAccess.ts:78-79` (`export type { SidechainRoute }` and `export { createSidechainRoute }` model launders).
+  - Removed `SidechainRoute` and `createSidechainRoute` from `AudioEngine/index.ts`.
+  - **`src/modules/AudioEngine/models/SidechainRoute.ts` is now fully orphaned** — no file imports it. Per the safety rule I did not delete it; it should be deleted in a follow-up explicit-deletion pass.
+- **Issue 4 — `Yeast/index.ts:4` direct model re-export** — RESOLVED.
+  - Defined local `MidiEvent` / `TransportInfo` shapes inside the only cross-module consumer (`Transport/useCases/scheduling/scheduleMidiNotes.ts`), structurally compatible with what Yeast's `processBlock` accepts.
+  - Removed the cross-module type imports from that file.
+  - Removed `export type { MidiEvent, TransportInfo } from './models/MidiEvent'` from `Yeast/index.ts`.
+- **Issue 5 (partial) — `DrumKit` / `DrumKitVoice` co-ownership** — RESOLVED. Both `Synth/index.ts:8` (`export type { DrumKitVoice, DrumKit } from './useCases/drumKitSynth'`) and `AudioEngine/index.ts:44` (`export type { … DrumKit, DrumKitVoice } from './useCases/audioEngineQueries'`) re-exported the same identity. Both barrel exports were dead — no file outside Synth or AudioEngine imported the type. Removed both. The local types remain in their module's use case files (where they are still consumed intra-module).
+- **Issue 5 (partial) — `AutomationShapeType` co-ownership** — RESOLVED. The type originated in `Arrangement/transformers/automationTransformers.ts:137` (transformers must never cross modules), was laundered through `Arrangement/useCases/automationQueries.ts`, re-exported on `Arrangement/index.ts:274`, imported cross-module by `Automation/useCases/automationShapes.ts:1`, and re-exported again from `Automation/index.ts:80`. Defined a local string-literal-union `AutomationShapeType` inside `Automation/useCases/automationShapes.ts` (structurally compatible with what `generateShapePoints` accepts), removed the `import { type AutomationShapeType, … } from '#/modules/Arrangement'`, removed the re-export at line 43 of the same file, removed `Automation/index.ts:80`, removed `AutomationShapeType` from `Arrangement/index.ts:274`. Workspace already defined its own local copies — no further changes needed there.
+
+### Follow-ups (small, deferred)
+
+- **Delete `src/modules/AudioEngine/models/SidechainRoute.ts`** — file is now orphaned (no imports). Requires explicit human instruction per the safety rule.
+- **Delete the dead `AutomationShapeType` definition in `Arrangement/useCases/automationQueries.ts:13`** — `Arrangement/index.ts` no longer re-exports it; check for in-module callers and either delete or leave as private.
+- **`VelocityCurve`** at `Arrangement/index.ts:274` is still re-exported (consumed by `MIDI/useCases/midiNoteTransforms/scaleVelocities.ts` and `Workspace/handlers/workspace/handleScaleVelocities.ts`). Same triage as `AutomationShapeType` should be applied — local shapes in the consumer.

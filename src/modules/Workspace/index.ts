@@ -8,8 +8,7 @@ export { workspaceStore } from './stores/workspaceStore';
 export { openExportDialog, openPreferencesDialog, onDialogOpenExport, onDialogOpenPreferences } from './useCases/dialogs';
 
 // useCases/rippleEditing.ts
-export type { RippleDeletePlan } from './useCases/rippleEditing';
-export { toggleRippleEditing, planRippleDelete, rippleDeleteClips, undoRippleDelete } from './useCases/rippleEditing';
+export { toggleRippleEditing } from './useCases/rippleEditing';
 
 // useCases/getScratchPadHandlers.ts
 export { getScratchPadHandlers } from './useCases/getScratchPadHandlers';

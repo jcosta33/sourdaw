@@ -271,7 +271,7 @@ export {
     generateShapePoints,
     applyVelocityCurve,
 } from './useCases/automationQueries';
-export type { AutomationShapeType, VelocityCurve } from './useCases/automationQueries';
+export type { VelocityCurve } from './useCases/automationQueries';
 export { getMarkerState } from './useCases/timelineQueries';
 export type { MarkerStoreState as TimelineMarkerStoreState } from './useCases/timelineQueries';
 export { detectSongStructure, detectAndApplySongStructure } from './useCases/songStructureDetection';

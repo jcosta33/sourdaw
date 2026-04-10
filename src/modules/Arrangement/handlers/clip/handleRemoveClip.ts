@@ -1,8 +1,9 @@
 import { createHandler } from '#/helpers/createHandler';
 import { midiStore } from '#/modules/MIDI';
-import { planRippleDelete, rippleDeleteClips } from '#/modules/Workspace';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { removeClip } from '../../useCases/clip/removeClip';
+import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
+import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
 export const handleRemoveClip = createHandler<'removeClip'>({
     execute: (a) => {
@@ -20,7 +21,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             removeClip(a.payload.clipId);
             return;
         }
-        const rippleResult = rippleDeleteClips(trackId, [a.payload.clipId]);
+        const rippleResult = rippleDeleteClips({ trackId, clipIds: [a.payload.clipId] });
         if (!rippleResult) {
             removeClip(a.payload.clipId);
         }
@@ -43,7 +44,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             return { label: 'Remove clip' };
         }
 
-        const plan = planRippleDelete(trackId, [a.payload.clipId]);
+        const plan = planRippleDelete({ trackId, clipIds: [a.payload.clipId] });
         const ripplePlan = plan
             ? {
                   removedClips: structuredClone(plan.removedClips) as unknown[],

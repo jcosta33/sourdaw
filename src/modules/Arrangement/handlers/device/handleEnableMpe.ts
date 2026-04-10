@@ -1,0 +1,10 @@
+import { createHandler } from '#/helpers/createHandler';
+import { setMpeEnabled } from '#/modules/AudioEngine';
+
+export const handleEnableMpe = createHandler<'enableMpe'>({
+    execute: () => {
+        setMpeEnabled(true);
+    },
+    describe: () => ({ label: 'Enable MPE' }),
+    undoable: false,
+});

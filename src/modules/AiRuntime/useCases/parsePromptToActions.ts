@@ -12,9 +12,6 @@ import {
     requiresConfirmation,
 } from '../transformers/promptParser/parsing';
 
-// Re-export for consumers
-export { isComplexPrompt } from '../transformers/promptParser/parsing';
-
 /**
  * Two-tier prompt parsing:
  * 1. Fast-path: fuzzy-match against preset action registry (instant, no LLM)

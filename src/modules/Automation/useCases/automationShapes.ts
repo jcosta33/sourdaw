@@ -1,6 +1,17 @@
-import { type AutomationShapeType, generateShapePoints } from '#/modules/Arrangement';
+import { generateShapePoints } from '#/modules/Arrangement';
 import { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 import { automationStore } from '../stores/automationStore';
+
+// Local shape (AGENTS.md model isolation). Structurally compatible with what
+// Arrangement's `generateShapePoints` accepts; we do not import the type from
+// another module's transformer or use case surface.
+export type AutomationShapeType =
+    | 'sine'
+    | 'triangle'
+    | 'sawtooth-up'
+    | 'sawtooth-down'
+    | 'square'
+    | 'random';
 
 /**
  * Insert a predefined automation shape into a lane at a given beat range.
@@ -39,5 +50,3 @@ export function insertAutomationShape(
 
     batchAddAutomationPoints(laneId, allPoints);
 }
-
-export type { AutomationShapeType };

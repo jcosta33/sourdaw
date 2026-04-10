@@ -77,7 +77,6 @@ export {
 
 // useCases/automationShapes
 export { insertAutomationShape } from './useCases/automationShapes';
-export type { AutomationShapeType } from './useCases/automationShapes';
 
 // useCases/automationZoom
 export { zoomToUsedRange, resetYZoom, adjustYZoom, toggleVirginTerritory } from './useCases/automationZoom';

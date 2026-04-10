@@ -7,10 +7,20 @@
  */
 
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
-import { setCloudApiKey, clearCloudApiKey } from '../repositories/cloudLlm/keyManagement';
+import {
+    setCloudApiKey,
+    clearCloudApiKey,
+    isCloudAvailable as repoIsCloudAvailable,
+} from '../repositories/cloudLlm/keyManagement';
 
-// Re-export for UI consumers
-export { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
+/**
+ * Public boundary for "is the cloud AI backend configured?".
+ * Wraps the repository so consumers depend on this use case rather
+ * than the repository's internals.
+ */
+export function isCloudAvailable(): boolean {
+    return repoIsCloudAvailable();
+}
 
 /**
  * Configure the cloud AI backend with an API key.

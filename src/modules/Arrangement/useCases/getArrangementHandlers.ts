@@ -1,4 +1,4 @@
-import { type ActionHandler } from '#/modules/Command';
+import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleAddTrack } from '../handlers/track/handleAddTrack';
 import { handleArmTrack } from '../handlers/track/armTrack';
 import { handleBounceInPlace } from '../handlers/track/bounceInPlace';
@@ -43,18 +43,48 @@ import { handleAssignToVca } from '../handlers/vca/handleAssignToVca';
 import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
 import { handleRemoveFromVca } from '../handlers/vca/handleRemoveFromVca';
 import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
-import { batchFeatureHandlers } from './batchFeatureHandlers';
-import { clipHandlers } from './clipHandlers';
-import { deviceHandlers } from './deviceHandlers';
-import { newFeatureHandlers } from './newFeatureHandlers';
-import { presetHandlers } from './presetHandlers';
-import { restoreHandlers } from './restoreHandlers';
-import { stretchHandlers } from './stretchHandlers';
+import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
+import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
+import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
+import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
+import { handleSavePreset } from '../handlers/preset/handleSavePreset';
+import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
+import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
+import { handleAddDevice } from '../handlers/device/handleAddDevice';
+import { handleAddSend } from '../handlers/device/handleAddSend';
+import { handleAddSidechainRoute } from '../handlers/device/handleAddSidechainRoute';
+import { handleBypassDevice } from '../handlers/device/handleBypassDevice';
+import { handleDisableMpe } from '../handlers/device/handleDisableMpe';
+import { handleEnableMpe } from '../handlers/device/handleEnableMpe';
+import { handleGetLatencyReport } from '../handlers/device/handleGetLatencyReport';
+import { handleRemoveDevice } from '../handlers/device/handleRemoveDevice';
+import { handleRemoveSend } from '../handlers/device/handleRemoveSend';
+import { handleRemoveSidechainRoute } from '../handlers/device/handleRemoveSidechainRoute';
+import { handleSetDeviceParameter } from '../handlers/device/handleSetDeviceParameter';
+import { handleSetSend } from '../handlers/device/handleSetSend';
+import { handleCompareToReference } from '../handlers/newFeature/handleCompareToReference';
+import { handleGenerateAllTransitions } from '../handlers/newFeature/handleGenerateAllTransitions';
+import { handleGenerateFill } from '../handlers/newFeature/handleGenerateFill';
+import { handleGetMentorTips } from '../handlers/newFeature/handleGetMentorTips';
+import { handleSwitchMonitor } from '../handlers/newFeature/handleSwitchMonitor';
+import { handleToggleControlRoomDim } from '../handlers/newFeature/handleToggleControlRoomDim';
+import { handleToggleControlRoomMono } from '../handlers/newFeature/handleToggleControlRoomMono';
+import { handleCreateAdjustmentLayer } from '../handlers/batchFeature/handleCreateAdjustmentLayer';
+import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
+import { handleNextSetlistItem } from '../handlers/batchFeature/handleNextSetlistItem';
+import { handlePreviousSetlistItem } from '../handlers/batchFeature/handlePreviousSetlistItem';
+import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
+import { handleToggleLoopRecord } from '../handlers/batchFeature/handleToggleLoopRecord';
+import { handleTogglePunchRecording } from '../handlers/batchFeature/handleTogglePunchRecording';
+import { handleTriggerScene } from '../handlers/batchFeature/handleTriggerScene';
 
 /**
  * Merges Arrangement handler maps for Command. Does **not** call `createHandler` here.
+ *
+ * Return type is inferred — TypeScript builds the precise object literal type
+ * where every entry keeps its `ActionHandler<Extract<AppAction, …>>` shape.
  */
-export function getArrangementHandlers(): Record<string, ActionHandler<any>> {
+export function getArrangementHandlers() {
     return {
         addTrack: handleAddTrack,
         removeTrack: handleRemoveTrack,
@@ -100,12 +130,40 @@ export function getArrangementHandlers(): Record<string, ActionHandler<any>> {
         assignToVca: handleAssignToVca,
         removeFromVca: handleRemoveFromVca,
         setVcaGain: handleSetVcaGain,
+        setClipStretchMode: handleSetClipStretchMode,
+        setClipStretchRatio: handleSetClipStretchRatio,
+        fitClipToBeats: handleFitClipToBeats,
+        loadPreset: handleLoadPreset,
+        savePreset: handleSavePreset,
+        restoreTrack: handleRestoreTrack,
+        restoreClip: handleRestoreClip,
+        addDevice: handleAddDevice,
+        bypassDevice: handleBypassDevice,
+        removeDevice: handleRemoveDevice,
+        setDeviceParameter: handleSetDeviceParameter,
+        setSend: handleSetSend,
+        addSend: handleAddSend,
+        removeSend: handleRemoveSend,
+        enableMpe: handleEnableMpe,
+        disableMpe: handleDisableMpe,
+        getLatencyReport: handleGetLatencyReport,
+        addSidechainRoute: handleAddSidechainRoute,
+        removeSidechainRoute: handleRemoveSidechainRoute,
+        generateFill: handleGenerateFill,
+        generateAllTransitions: handleGenerateAllTransitions,
+        compareToReference: handleCompareToReference,
+        toggleControlRoomMono: handleToggleControlRoomMono,
+        toggleControlRoomDim: handleToggleControlRoomDim,
+        switchMonitor: handleSwitchMonitor,
+        getMentorTips: handleGetMentorTips,
+        searchSamples: handleSearchSamples,
+        createCompGroup: handleCreateCompGroup,
+        togglePunchRecording: handleTogglePunchRecording,
+        toggleLoopRecord: handleToggleLoopRecord,
+        triggerScene: handleTriggerScene,
+        nextSetlistItem: handleNextSetlistItem,
+        previousSetlistItem: handlePreviousSetlistItem,
+        createAdjustmentLayer: handleCreateAdjustmentLayer,
         ...clipHandlers,
-        ...restoreHandlers,
-        ...deviceHandlers,
-        ...presetHandlers,
-        ...stretchHandlers,
-        ...newFeatureHandlers,
-        ...batchFeatureHandlers,
     };
 }

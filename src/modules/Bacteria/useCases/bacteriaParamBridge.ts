@@ -338,4 +338,3 @@ export const setBacteriaBandParamWithAudio = inject(bacteriaParamBridgeDependenc
         };
     }
 );
-export type { BacteriaPatch } from '../models/BacteriaPatch';

@@ -41,7 +41,7 @@ export {
 } from './useCases/audioDeviceSelection';
 
 // audioEngineQueries
-export type { SynthParams, MpeParams, DrumKit, DrumKitVoice } from './useCases/audioEngineQueries';
+export type { SynthParams, MpeParams } from './useCases/audioEngineQueries';
 export {
     defaultSynthParams,
     getDrumKitById,
@@ -79,9 +79,7 @@ export {
 } from './useCases/deviceControls';
 
 // engineAccess
-export type { SidechainRoute } from './useCases/engineAccess';
 export {
-    createSidechainRoute,
     getAudioContext,
     getEngineState,
     resumeEngine,
@@ -127,15 +125,10 @@ export { isTauri, generateMidiAI, denoiseAudio } from './useCases/nativeAiBridge
 
 // offlineRender
 export type { OfflineRenderOptions } from './useCases/offlineRender';
-export {
-    cancelExport,
-    isExportActive,
-    renderOffline,
-    exportStems,
-    audioBufferToWav,
-    audioBufferToMp3,
-    audioBufferToFlac,
-} from './useCases/offlineRender';
+export { cancelExport, isExportActive, renderOffline, exportStems } from './useCases/offlineRender';
+export { audioBufferToWav } from './useCases/audioBufferToWav';
+export { audioBufferToMp3 } from './useCases/audioBufferToMp3';
+export { audioBufferToFlac } from './useCases/audioBufferToFlac';
 
 // scheduling
 export { scheduleClick, stopAllScheduled, getCurrentTime, createBufferSource } from './useCases/scheduling';

@@ -5,7 +5,6 @@ export { scheduleNote, getSynthParamsFromDevices, getSynthParamsForTrack, schedu
 export { addCvOutput, removeCvOutput, setCvValue, setVoltageStandard, setClockDivision } from './useCases/cvGate/cvOutputOperations';
 
 // drumKitSynth.ts
-export type { DrumKitVoice, DrumKit } from './useCases/drumKitSynth';
 export { scheduleKitNote } from './useCases/drumKitSynth';
 
 // drumSynthEngine/kitDefinitions.ts

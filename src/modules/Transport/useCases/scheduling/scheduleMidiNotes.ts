@@ -39,7 +39,35 @@ type DrumKit = {
     name: string;
     voices: Array<{ name: string; pitchRange: [number, number]; params: SynthParams }>;
 };
-import { getYeastRack, getYeastWorkletNodeAsync, type MidiEvent, type TransportInfo } from '#/modules/Yeast';
+import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast';
+
+// Transport-local shapes (AGENTS.md model isolation). Structurally compatible
+// with what Yeast's processors and worklet accept; we do not import Yeast's model.
+type YeastMidiEventKind =
+    | { type: 'noteOn'; channel: number; note: number; velocity: number }
+    | { type: 'noteOff'; channel: number; note: number }
+    | { type: 'cc'; channel: number; cc: number; value: number }
+    | { type: 'pitchBend'; channel: number; value: number }
+    | { type: 'channelPressure'; channel: number; value: number };
+
+type MidiEvent = {
+    timeSamples: number;
+    kind: YeastMidiEventKind;
+};
+
+type TransportInfo = {
+    sampleRate: number;
+    bpm: number;
+    ppqPosition: number;
+    isPlaying: boolean;
+    barIndex: number;
+    beatInBar: number;
+    timeSigNum: number;
+    timeSigDen: number;
+    loopEnabled: boolean;
+    loopStartPpq: number;
+    loopEndPpq: number;
+};
 
 // Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
 type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;

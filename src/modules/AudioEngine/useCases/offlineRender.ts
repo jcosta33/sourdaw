@@ -37,11 +37,6 @@ type OfflineRenderDeps = {
     scheduleDrumKitNote: typeof scheduleDrumKitNote;
 };
 
-// Re-export encoders for consumers
-export { audioBufferToWav } from '../repositories/audioEncoders/wavEncoder';
-export { audioBufferToMp3 } from '../repositories/audioEncoders/mp3Encoder';
-export { audioBufferToFlac } from '../repositories/audioEncoders/flacEncoder';
-
 // ── Cancel token ─────────────────────────────────────────────────────
 let cancelFlag = false;
 /**

@@ -1,15 +1,9 @@
 import { inject } from '#/infra/di/inject';
-import {
-    createSidechainRoute,
-    type SidechainRoute,
-    unwireSidechainRoute,
-    wireSidechainRoute,
-} from '#/modules/AudioEngine';
+import { unwireSidechainRoute, wireSidechainRoute } from '#/modules/AudioEngine';
 
+import { createSidechainRoute, type SidechainRoute } from '../models/SidechainRoute';
 import { sidechainStore } from '../stores/sidechainStore';
 import { SidechainCycleError } from '../errors/RoutingErrors';
-
-export type { SidechainRoute };
 
 const sidechainRouteMutationDependencies = {
     createSidechainRoute,
