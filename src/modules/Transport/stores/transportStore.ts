@@ -1,8 +1,9 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
-import { DOC_PREFIX_ROOT } from '#/modules/CrdtDocument';
 
 import { defaultTransportState, type TransportState } from '../useCases/transportQueries';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export const transportStore = createStore<TransportState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'transport', {

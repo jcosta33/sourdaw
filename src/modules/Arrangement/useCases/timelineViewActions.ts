@@ -41,7 +41,8 @@ import { pasteClip as pasteClipImpl } from '#/modules/Arrangement/useCases/clipb
 import { selectTrack as selectTrackImpl } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
 import { addTrack as addTrackImpl } from '#/modules/Arrangement/useCases/addTrack';
 import { addDevice as addDeviceImpl } from '#/modules/Arrangement/useCases/device/addDevice';
-import { exportMidiClip as exportMidiClipImpl, importMidiFile as importMidiFileImpl } from '#/modules/MIDI';
+import { exportMidiClip as exportMidiClipImpl } from '#/modules/Arrangement/useCases/exportMidiClip';
+import { importMidiFile as importMidiFileImpl } from '#/modules/Arrangement/useCases/importMidiFile';
 import { stripSilence as stripSilenceImpl } from '#/modules/Arrangement/useCases/stripSilence';
 
 // ── Track: automation ─────────────────────────────────────────────

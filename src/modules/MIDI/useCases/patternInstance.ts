@@ -6,7 +6,11 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { getTrackStoreState, setTrackState, updateClip } from '#/modules/Arrangement';
+import {
+    getTrackStoreState as getTrackStoreStateDependency,
+    setTrackState as setTrackStateDependency,
+    updateClip as updateClipDependency,
+} from '#/modules/Arrangement';
 import { type Clip } from '../models/TrackViewTypes';
 import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 import { setNotesForClip } from './midiNoteCrud/setNotesForClip';
@@ -14,9 +18,9 @@ import { setNotesForClip } from './midiNoteCrud/setNotesForClip';
 let nextInstanceId = 5000;
 
 export const patternInstanceDependencies = {
-    getTrackStoreState,
-    updateClip,
-    setTrackState,
+    getTrackStoreStateDependency: () => getTrackStoreStateDependency,
+    updateClipDependency: () => updateClipDependency,
+    setTrackStateDependency: () => setTrackStateDependency,
     getNotesForClip,
     setNotesForClip,
 } as const;
@@ -26,8 +30,10 @@ export const patternInstanceDependencies = {
  * The instance inherits MIDI notes and properties from the parent.
  */
 export const createPatternInstance = inject(patternInstanceDependencies)(
-    ({ getTrackStoreState, setTrackState, getNotesForClip, setNotesForClip }) =>
+    ({ getTrackStoreStateDependency, setTrackStateDependency, getNotesForClip, setNotesForClip }) =>
         function createPatternInstance(sourceClipId: string, targetTrackId: string, startBeat: number): string | null {
+            const getTrackStoreState = getTrackStoreStateDependency();
+            const setTrackState = setTrackStateDependency();
             const state = getTrackStoreState();
             if (!state) {
                 return null;
@@ -97,8 +103,9 @@ export const createPatternInstance = inject(patternInstanceDependencies)(
  * Detach a pattern instance — break the link, making it independent.
  */
 export const detachPatternInstance = inject(patternInstanceDependencies)(
-    ({ updateClip }) =>
+    ({ updateClipDependency }) =>
         function detachPatternInstance(clipId: string): void {
+            const updateClip = updateClipDependency();
             updateClip(clipId, (c) => {
                 if (!c.parentClipId) {
                     return c;
@@ -113,8 +120,9 @@ export const detachPatternInstance = inject(patternInstanceDependencies)(
  * Get all instance clip IDs linked to a parent.
  */
 export const getPatternInstances = inject(patternInstanceDependencies)(
-    ({ getTrackStoreState }) =>
+    ({ getTrackStoreStateDependency }) =>
         function getPatternInstances(parentClipId: string): string[] {
+            const getTrackStoreState = getTrackStoreStateDependency();
             const state = getTrackStoreState();
             if (!state) {
                 return [];
@@ -138,8 +146,9 @@ export const getPatternInstances = inject(patternInstanceDependencies)(
  * Instances that override 'notes' are skipped.
  */
 export const propagateParentChanges = inject(patternInstanceDependencies)(
-    ({ getTrackStoreState, getNotesForClip, setNotesForClip }) =>
+    ({ getTrackStoreStateDependency, getNotesForClip, setNotesForClip }) =>
         function propagateParentChanges(parentClipId: string): void {
+            const getTrackStoreState = getTrackStoreStateDependency();
             const state = getTrackStoreState();
             if (!state) {
                 return;

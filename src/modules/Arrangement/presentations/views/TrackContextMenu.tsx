@@ -13,9 +13,9 @@ import { bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce/bou
 import { armTrack } from '../../useCases/recording';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
+import { importMidiFile } from '../../useCases/importMidiFile';
 import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
 import { setTrackColor, setInputMonitoring } from '../../useCases/setTrackGainPan';
-import { importMidiFile } from '#/modules/MIDI';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';

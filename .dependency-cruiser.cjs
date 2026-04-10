@@ -95,9 +95,57 @@ module.exports = {
             },
         },
 
+        {
+            name: 'no-models-repos-transformers-in-index',
+            severity: 'error',
+            comment: 'Module index.ts files must never import or re-export models, repositories, or transformers from anywhere.',
+            from: {
+                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
+            },
+            to: {
+                path: '/(models|repositories|transformers)/',
+            },
+        },
+
+        {
+            name: 'no-self-barrel-import',
+            severity: 'error',
+            comment: 'Files inside a module must not import from their own module root index.ts. Use relative paths to the implementation files.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + '(?!index\\.ts)',
+            },
+            to: {
+                path: '^$1$2/index\\.ts$',
+            },
+        },
+
+        {
+            name: 'no-usecase-type-exports-on-index',
+            severity: 'error',
+            comment: 'Module index.ts files must not re-export types from useCases/. Types from useCases/ are private. Other modules should use ReturnType/Parameters or define local shapes.',
+            from: {
+                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
+            },
+            to: {
+                path: '^$1/useCases/',
+                dependencyTypes: ['type-only'],
+            },
+        },
+
         // --------------------------------------------------------------------
         // Presentation boundaries
         // --------------------------------------------------------------------
+        {
+            name: 'presentation-no-direct-services-validators-transformers',
+            severity: 'error',
+            comment: 'Presentation code must not access services, validators, or transformers directly. Consume use cases instead.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^$1$2/(services|validators|transformers)/.+' + SOURCE_FILE_RE,
+            },
+        },
         {
             name: 'presentation-stores-private-even-intra-module',
             severity: 'error',
@@ -338,6 +386,15 @@ module.exports = {
         // --------------------------------------------------------------------
         // General hygiene
         // --------------------------------------------------------------------
+        {
+            name: 'models-must-be-title-case',
+            severity: 'error',
+            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
+            from: {},
+            to: {
+                path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
+            },
+        },
         {
             name: 'not-to-spec',
             severity: 'error',

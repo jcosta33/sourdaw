@@ -8,7 +8,7 @@ import {
     reorderDevices,
     getPlatformPlugins,
 } from '#/modules/Arrangement';
-import { openInspector } from '#/modules/Workspace';
+import { openInspector } from '../../../useCases/togglePanel/panelToggles';
 import { type Track } from '../../../models/TrackViewTypes';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';

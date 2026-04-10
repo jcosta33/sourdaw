@@ -4,6 +4,7 @@ import {
     audioBufferCache,
     getAudioContext,
     initWebMidi,
+    setMasterGainValue,
 } from '#/modules/AudioEngine';
 import {
     verifyAudioBufferReferences,
@@ -14,7 +15,7 @@ import {
 import { registerBuiltinPlugins, registerBuiltinFaustDSP, registerProModulationEffects } from '#/modules/Plugin';
 import { registerProSynthInstruments } from '#/modules/Synth';
 import { hasCrdtProject } from '#/modules/CrdtDocument';
-import { ensureTrackStrips } from '#/modules/Transport';
+import { ensureTrackStrips, getTransportState } from '#/modules/Transport';
 import { restoreLibrary } from '#/modules/SampleLibrary';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { trackStore } from '#/modules/Arrangement';
@@ -34,6 +35,10 @@ export const useAppInitialization = (): void => {
                 audioInitialized.current = true;
                 (async () => {
                     await initializeAudioEngine();
+                    const transport = getTransportState();
+                    if (transport) {
+                        setMasterGainValue(transport.masterGain / 100);
+                    }
                     // Restore audio buffers from IndexedDB now that a valid AudioContext
                     // exists. The CRDT load path runs before any user gesture so it
                     // cannot create or use an AudioContext — this is the earliest safe

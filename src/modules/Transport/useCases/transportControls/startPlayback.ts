@@ -5,13 +5,18 @@ import { resumeEngine } from '#/modules/AudioEngine';
 import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 
-export const startPlayback = inject({
-    getTransportState,
-    updateTransportState,
-    resumeEngine,
-    ensureTrackStrips,
-    startPlayheadScheduler,
-})(
+export const startPlayback = inject(
+    {
+        getTransportState,
+        updateTransportState,
+        get resumeEngine() {
+            return resumeEngine;
+        },
+        ensureTrackStrips,
+        startPlayheadScheduler,
+    },
+    { lazy: true }
+)(
     ({ getTransportState, updateTransportState, resumeEngine, ensureTrackStrips, startPlayheadScheduler }) =>
         function startPlayback(): void {
             const state = getTransportState();

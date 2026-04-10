@@ -10,16 +10,17 @@ import {
 } from '#/modules/Arrangement';
 import { pushUndoEntry } from '#/modules/Command';
 import { saveProject } from '#/modules/Project';
+import { workspaceStore } from '../../stores/workspaceStore';
+
 import {
-    workspaceStore,
     toggleChatPanel,
     toggleSidebar,
     toggleInspector,
     toggleMixer,
     toggleTrackList,
-    clearClipSelection,
     toggleVirtualKeyboard,
-} from '#/modules/Workspace';
+    clearClipSelection,
+} from '../../useCases/togglePanel/panelToggles';
 
 type ShortcutCallbacks = {
     onOpenExport: () => void;

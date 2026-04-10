@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
+import { importMidiFile } from '#/modules/Arrangement';
 import { saveProject, newProject } from '#/modules/Project';
 import { undo, redo } from '#/modules/Command';
-import { importMidiFile } from '#/modules/MIDI';
 import { onDialogOpenExport, onDialogOpenPreferences } from '../../useCases/dialogs';
 import { onProjectSave, onProjectNew, onCommandUndo, onCommandRedo, onMidiImport } from '../../useCases/appEventSubscribers';
 

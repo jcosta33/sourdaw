@@ -20,22 +20,45 @@ import { startPlayback } from './startPlayback';
 let activeRecordingClipIds: string[] = [];
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 
-export const toggleRecording = inject({
-    getTransportState,
-    updateTransportState,
-    getTrackStoreState,
-    updateClip,
-    resumeEngine,
-    getAudioContext,
-    scheduleClick,
-    startAudioRecording,
-    stopAudioRecording,
-    startRecording,
-    stopRecording,
-    audioBufferCache,
-    ensureTrackStrips,
-    startPlayback,
-})(
+export const toggleRecording = inject(
+    {
+        getTransportState,
+        updateTransportState,
+        get getTrackStoreState() {
+            return getTrackStoreState;
+        },
+        get updateClip() {
+            return updateClip;
+        },
+        get resumeEngine() {
+            return resumeEngine;
+        },
+        get getAudioContext() {
+            return getAudioContext;
+        },
+        get scheduleClick() {
+            return scheduleClick;
+        },
+        get startAudioRecording() {
+            return startAudioRecording;
+        },
+        get stopAudioRecording() {
+            return stopAudioRecording;
+        },
+        get startRecording() {
+            return startRecording;
+        },
+        get stopRecording() {
+            return stopRecording;
+        },
+        get audioBufferCache() {
+            return audioBufferCache;
+        },
+        ensureTrackStrips,
+        startPlayback,
+    },
+    { lazy: true }
+)(
     ({
         getTransportState,
         updateTransportState,

@@ -15,7 +15,9 @@ export const injectDependencies = <TInjectable extends InjectableFunction, TMock
     }
 
     for (const [key, mockValue] of Object.entries(mocks)) {
-        const originalDep = injectable._deps[key];
+        const originalDep = injectable._options?.lazy
+            ? Object.getOwnPropertyDescriptor(injectable._deps, key)?.get ?? injectable._deps[key]
+            : injectable._deps[key];
         testOverrides.set(originalDep, mockValue);
     }
 

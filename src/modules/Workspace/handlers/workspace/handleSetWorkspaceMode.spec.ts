@@ -12,7 +12,7 @@ vi.mock('#/modules/Automation', () => ({
     removeAutomationPoint: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI', () => ({
+vi.mock('#/modules/Arrangement', () => ({
     importMidiFile: vi.fn(),
 }));
 

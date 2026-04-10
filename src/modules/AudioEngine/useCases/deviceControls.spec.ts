@@ -1,19 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Container } from '#/infra/di/Container';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { addDeviceToStrip } from './deviceControls';
+import { audioEngine } from '../repositories/createWebAudioEngine';
 
 describe('addDeviceToStrip', () => {
     beforeEach(() => {
-        Container.clear();
+        vi.restoreAllMocks();
     });
 
-    it('does not touch the engine when the device type is unsupported', () => {
-        const isDeviceSupportedOnCurrentPlatform = vi.fn().mockReturnValue(false);
-        injectDependencies(addDeviceToStrip, { isDeviceSupportedOnCurrentPlatform });
+    it('forwards add-device requests to the engine', () => {
+        const addDeviceSpy = vi.spyOn(audioEngine, 'addDeviceToStrip').mockImplementation(() => {});
 
-        addDeviceToStrip('track', 'dev', 'unsupported-type');
+        addDeviceToStrip('track', 'dev', 'device-type', 'external-instance');
 
-        expect(isDeviceSupportedOnCurrentPlatform).toHaveBeenCalledWith('unsupported-type');
+        expect(addDeviceSpy).toHaveBeenCalledWith('track', 'dev', 'device-type', 'external-instance');
     });
 });

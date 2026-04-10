@@ -107,9 +107,13 @@ vi.mock('#/modules/Arrangement/useCases/trackViewActions', () => ({
     decodeAudioFile: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases/importMidiFile', () => ({
-    importMidiFile: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement')>();
+    return {
+        ...actual,
+        importMidiFile: vi.fn(),
+    };
+});
 
 vi.mock('#/helpers/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),

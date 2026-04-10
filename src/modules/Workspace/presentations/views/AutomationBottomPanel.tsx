@@ -18,7 +18,7 @@ import {
     BeatRulerBar,
     TimelineChromeSurface,
 } from '#/modules/Arrangement';
-import { workspaceStore } from '#/modules/Workspace';
+import { workspaceStore } from '../../stores/workspaceStore';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
 import { AutomationSidebarCell } from './AutomationView/AutomationSidebarCell';

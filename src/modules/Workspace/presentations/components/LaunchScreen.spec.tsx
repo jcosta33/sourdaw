@@ -11,21 +11,21 @@ vi.mock('#/modules/Project/useCases/projectTemplates/templateDefinitions', () =>
     getTemplates: vi.fn(() => []),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({
-    addTrack: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine')>();
+    return {
+        ...actual,
+        decodeAudioFile: vi.fn(),
+    };
+});
 
-vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
-    addClip: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine', () => ({
-    decodeAudioFile: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/importMidiFile', () => ({
-    importMidiFile: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement')>();
+    return {
+        ...actual,
+        importMidiFile: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Transport/stores/transportStore', () => ({
     transportStore: { value: { tempo: 120 } },

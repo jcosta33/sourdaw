@@ -17,7 +17,7 @@ import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers
 import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';
 import { transportStore, defaultTransportState } from '#/modules/Transport';
 import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement';
-import { workspaceStore } from '#/modules/Workspace';
+import { workspaceStore } from '../../../stores/workspaceStore';
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
 import { AutomationLaneHeader } from './AutomationLaneHeader';
 import { AutomationLaneControls } from './AutomationLaneControls';

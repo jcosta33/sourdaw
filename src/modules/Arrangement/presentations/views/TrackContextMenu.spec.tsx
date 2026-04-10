@@ -51,7 +51,7 @@ vi.mock('../../useCases/setTrackGainPan', () => ({
     setInputMonitoring: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases/importMidiFile', () => ({
+vi.mock('../../useCases/importMidiFile', () => ({
     importMidiFile: vi.fn(),
 }));
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
-import { addTrack } from '../../useCases/timelineViewActions';
+import { addTrack } from '../../useCases/addTrack';
 
 // Mock external dependencies
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
@@ -22,11 +22,19 @@ vi.mock('#/modules/Command/useCases/executeAppAction', () => ({
 }));
 
 vi.mock('../../useCases/timelineViewActions', () => ({
-    addTrack: vi.fn(),
-    addClip: vi.fn(),
-    decodeAudioFile: vi.fn(),
-    importMidiFile: vi.fn(),
     pasteClip: vi.fn(),
+}));
+
+vi.mock('../../useCases/importMidiFile', () => ({
+    importMidiFile: vi.fn(),
+}));
+
+vi.mock('../../useCases/addTrack', () => ({
+    addTrack: vi.fn(),
+}));
+
+vi.mock('../../useCases/clip/addClip', () => ({
+    addClip: vi.fn(),
 }));
 
 vi.mock('../../useCases/marker/markerOperations', () => ({

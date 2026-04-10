@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { spy } from './spy';
 import { createMock } from './createMock';
 import { injectDependencies } from './injectDependencies';
 import { inject } from '../inject';
 import { Container } from '../Container';
+import { resetContainerState } from '../internal/containerState';
 
 describe('DI Testing Helpers', () => {
+    beforeEach(() => {
+        resetContainerState();
+    });
+
     it('should capture calls with correct typing via spy()', () => {
         const mySpy = spy<{ foo: (a: string) => number }>();
 
@@ -35,5 +40,24 @@ describe('DI Testing Helpers', () => {
         expect(myFn()).toBe('mocked');
 
         expect(() => Container.get('any')).toThrow();
+    });
+
+    it('should override lazy getter dependencies without invoking their getters', () => {
+        let getterCalls = 0;
+        const myFn = inject(
+            {
+                get myDep() {
+                    getterCalls++;
+                    return () => 'real';
+                },
+            },
+            { lazy: true }
+        )((deps) => () => deps.myDep());
+
+        injectDependencies(myFn, { myDep: () => 'mocked' });
+
+        expect(getterCalls).toBe(0);
+        expect(myFn()).toBe('mocked');
+        expect(getterCalls).toBe(0);
     });
 });

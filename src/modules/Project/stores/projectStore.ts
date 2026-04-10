@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
-import { DOC_PREFIX_ROOT } from '#/modules/CrdtDocument';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export type ProjectStoreState = {
     name: string;

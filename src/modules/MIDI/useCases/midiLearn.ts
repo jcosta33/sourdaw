@@ -7,11 +7,11 @@ import {
     type MidiMappingTargetType,
 } from '../stores/midiLearnStore';
 import {
-    setTrackGain,
-    setTrackPan,
-    setDeviceParameter,
-    getTrackStoreState,
-    getAllTracks,
+    setTrackGain as setTrackGainDependency,
+    setTrackPan as setTrackPanDependency,
+    setDeviceParameter as setDeviceParameterDependency,
+    getTrackStoreState as getTrackStoreStateDependency,
+    getAllTracks as getAllTracksDependency,
 } from '#/modules/Arrangement';
 import { setTrackGain as engineSetTrackGain, setTrackPan as engineSetTrackPan } from '#/modules/AudioEngine';
 import { setFermenterMappedParam } from '#/modules/Fermenter';
@@ -111,30 +111,35 @@ export const completeMidiLearn = inject({ logger })(
 );
 
 export const handleMidiMessage = inject({
-    setTrackGain,
-    setTrackPan,
+    setTrackGainDependency: () => setTrackGainDependency,
+    setTrackPanDependency: () => setTrackPanDependency,
     engineSetTrackGain,
     engineSetTrackPan,
-    setDeviceParameter,
+    setDeviceParameterDependency: () => setDeviceParameterDependency,
     setFermenterMappedParam,
     getTransportState,
     recordAutomationValue,
-    getAllTracks,
-    getTrackStoreState,
+    getAllTracksDependency: () => getAllTracksDependency,
+    getTrackStoreStateDependency: () => getTrackStoreStateDependency,
 })(
     ({
-        setTrackGain,
-        setTrackPan,
+        setTrackGainDependency,
+        setTrackPanDependency,
         engineSetTrackGain,
         engineSetTrackPan,
-        setDeviceParameter,
+        setDeviceParameterDependency,
         setFermenterMappedParam,
         getTransportState,
         recordAutomationValue,
-        getAllTracks,
-        getTrackStoreState,
+        getAllTracksDependency,
+        getTrackStoreStateDependency,
     }) =>
         function handleMidiMessage(channel: number, cc: number, value: number): void {
+            const setTrackGain = setTrackGainDependency();
+            const setTrackPan = setTrackPanDependency();
+            const setDeviceParameter = setDeviceParameterDependency();
+            const getAllTracks = getAllTracksDependency();
+            const getTrackStoreState = getTrackStoreStateDependency();
             const state = midiLearnStore.value;
             if (!state) {
                 return;

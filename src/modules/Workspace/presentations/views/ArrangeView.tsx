@@ -21,15 +21,15 @@ import {
     TrackListView,
     addTrack,
     addClip,
+    importMidiFile,
     markerStore,
     chordTrackStore,
 } from '#/modules/Arrangement';
 import { useTracks } from '../hooks/useTracks';
-import { importMidiFile } from '#/modules/MIDI';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
-import { setTrackListWidth, closeScratchPad } from '#/modules/Workspace';
+import { setTrackListWidth, closeScratchPad } from '../../useCases/togglePanel/panelToggles';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
 import { Piano, Upload, Headphones } from 'lucide-react';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';

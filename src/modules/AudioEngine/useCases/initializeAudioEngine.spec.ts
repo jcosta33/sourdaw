@@ -15,12 +15,10 @@ describe('initializeAudioEngine', () => {
         const requestMic = vi.fn();
         const engineStub = {
             initialize,
-            setMasterGain: vi.fn(),
             context: null as AudioContext | null,
         };
         injectDependencies(initializeAudioEngine, {
             audioEngine: engineStub as typeof engineStub & { context: AudioContext | null },
-            getTransportStoreValue: () => null,
             requestMicPermission: requestMic,
             registerBuiltinPlugins: registerPlugins,
             registerBuiltinFaustDSP: registerFaustDsp,

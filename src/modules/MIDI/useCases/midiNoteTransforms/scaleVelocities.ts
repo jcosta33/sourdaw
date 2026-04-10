@@ -1,14 +1,15 @@
 import { inject } from '#/infra/di/inject';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { applyVelocityCurve, type VelocityCurve } from '#/modules/Arrangement';
+import { applyVelocityCurve as applyVelocityCurveDependency, type VelocityCurve } from '#/modules/Arrangement';
 
 export const scaleVelocitiesDependencies = {
-    applyVelocityCurve,
+    applyVelocityCurveDependency: () => applyVelocityCurveDependency,
 } as const;
 
 export const scaleVelocities = inject(scaleVelocitiesDependencies)(
-    ({ applyVelocityCurve }) =>
+    ({ applyVelocityCurveDependency }) =>
         function scaleVelocities(clipId: string, curve: VelocityCurve, minVelocity = 1, maxVelocity = 127): void {
+            const applyVelocityCurve = applyVelocityCurveDependency();
             const state = midiStore.value;
             if (!state) {
                 return;

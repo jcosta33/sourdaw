@@ -2,7 +2,6 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement';
 import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 
 export type DeviceNodeEntry = {
@@ -52,11 +51,6 @@ export const buildDeviceChain = inject({ logger })(
             let prev: AudioNode = inputNode;
 
             for (const device of activeDevices) {
-                // Skip devices not supported on the current platform (e.g. native-only on web)
-                if (!isDeviceSupportedOnCurrentPlatform(device.type)) {
-                    continue;
-                }
-
                 let strategy: AudioDeviceStrategy | null = null;
                 try {
                     strategy = await deviceRegistry.createDevice(ctx, device);

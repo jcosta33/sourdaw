@@ -18,21 +18,44 @@ import {
 } from '#/modules/AudioEngine';
 import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing';
 
-const ensureTrackStripsDependencies = {
-    trackStore,
-    ensureTrackStrip,
-    setTrackGain,
-    setTrackPan,
-    setTrackMute,
-    setTrackOutput,
-    addDeviceToStrip,
-    updateDeviceParam,
-    ensureBusStrip,
-    setBusGain,
-    setSend,
-} as const;
-
-export const ensureTrackStrips = inject(ensureTrackStripsDependencies)(
+export const ensureTrackStrips = inject(
+    {
+        get trackStore() {
+            return trackStore;
+        },
+        get ensureTrackStrip() {
+            return ensureTrackStrip;
+        },
+        get setTrackGain() {
+            return setTrackGain;
+        },
+        get setTrackPan() {
+            return setTrackPan;
+        },
+        get setTrackMute() {
+            return setTrackMute;
+        },
+        get setTrackOutput() {
+            return setTrackOutput;
+        },
+        get addDeviceToStrip() {
+            return addDeviceToStrip;
+        },
+        get updateDeviceParam() {
+            return updateDeviceParam;
+        },
+        get ensureBusStrip() {
+            return ensureBusStrip;
+        },
+        get setBusGain() {
+            return setBusGain;
+        },
+        get setSend() {
+            return setSend;
+        },
+    },
+    { lazy: true }
+)(
     ({
         trackStore,
         ensureTrackStrip,

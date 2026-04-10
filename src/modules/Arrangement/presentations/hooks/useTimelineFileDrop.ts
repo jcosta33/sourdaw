@@ -7,10 +7,10 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
 import { getAssetTransfer } from '#/modules/Collaboration';
 import { decodeAudioFile } from '#/modules/AudioEngine';
-import { importMidiFile } from '#/modules/MIDI';
 import { addClip } from '../../useCases/clip/addClip';
 import { addDevice } from '../../useCases/device/addDevice';
 import { addTrack } from '../../useCases/addTrack';
+import { importMidiFile } from '../../useCases/importMidiFile';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
 type GetBeatFromX = (x: number) => number;

@@ -6,18 +6,20 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { updateTrack } from '#/modules/Arrangement';
+import { updateTrack as updateTrackDependency } from '#/modules/Arrangement';
 
-export const setMidiOutput = inject({ updateTrack })(
-    ({ updateTrack }) =>
+export const setMidiOutput = inject({ updateTrackDependency: () => updateTrackDependency })(
+    ({ updateTrackDependency }) =>
         function setMidiOutput(trackId: string, destinationTrackId: string): void {
+            const updateTrack = updateTrackDependency();
             updateTrack(trackId, (t) => ({ ...t, midiOutputTrackId: destinationTrackId }));
         }
 );
 
-export const clearMidiOutput = inject({ updateTrack })(
-    ({ updateTrack }) =>
+export const clearMidiOutput = inject({ updateTrackDependency: () => updateTrackDependency })(
+    ({ updateTrackDependency }) =>
         function clearMidiOutput(trackId: string): void {
+            const updateTrack = updateTrackDependency();
             updateTrack(trackId, (t) => ({ ...t, midiOutputTrackId: null }));
         }
 );

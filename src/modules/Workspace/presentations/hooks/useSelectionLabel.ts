@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { workspaceStore } from '#/modules/Workspace';
+import { workspaceStore } from '../../stores/workspaceStore';
 import { trackStore } from '#/modules/Arrangement';
 
 const subscribe = (cb: () => void): (() => void) => {

@@ -24,7 +24,7 @@ import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCap
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
-import { showDevicePanelForType } from '#/modules/Workspace';
+import { showDevicePanelForType } from '../../../useCases/panels/devicePanels';
 
 type TrackDevicesSectionProps = {
     track: Track;

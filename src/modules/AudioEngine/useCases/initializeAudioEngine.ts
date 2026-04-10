@@ -1,12 +1,10 @@
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '../repositories/createWebAudioEngine';
-import { getTransportStoreValue } from '#/modules/Transport';
 import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin';
 import { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export const initializeAudioEngineDependencies = {
     audioEngine,
-    getTransportStoreValue,
     requestMicPermission,
     registerBuiltinPlugins,
     registerBuiltinFaustDSP,
@@ -16,7 +14,6 @@ export const initializeAudioEngineDependencies = {
 export const initializeAudioEngine = inject(initializeAudioEngineDependencies)(
     ({
         audioEngine: engine,
-        getTransportStoreValue: getTransport,
         requestMicPermission: requestMic,
         registerBuiltinPlugins: registerPlugins,
         registerBuiltinFaustDSP: registerFaustDsp,
@@ -28,11 +25,6 @@ export const initializeAudioEngine = inject(initializeAudioEngineDependencies)(
             // Request mic permission early so the prompt appears on first user
             // interaction instead of at the first record attempt.
             requestMic();
-
-            const transport = getTransport();
-            if (transport) {
-                engine.setMasterGain(transport.masterGain / 100);
-            }
 
             // Register WAM 2.0 builtin plugins and Faust DSP modules
             registerPlugins();

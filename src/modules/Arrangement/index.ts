@@ -51,6 +51,8 @@ export { getTrackStoreState } from './useCases/getTrackStoreState';
 export { setTrackState } from './useCases/setTrackState';
 export { setTrackStoreState } from './useCases/setTrackStoreState';
 export { setTrackInput } from './useCases/setTrackInput';
+export { exportMidiClip } from './useCases/exportMidiClip';
+export { importMidiFile } from './useCases/importMidiFile';
 export { importAudioFile } from './useCases/importAudioFile';
 
 export {

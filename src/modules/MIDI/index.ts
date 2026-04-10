@@ -28,8 +28,8 @@ export { getChordTrackHandlers } from './useCases/getChordTrackHandlers';
 export { createMidiNote } from './useCases/createMidiNote';
 
 // ── Use Cases: File I/O ───────────────────────────────────────────────────────
-export { exportMidiClip } from './useCases/exportMidiFile';
-export { importMidiFile } from './useCases/importMidiFile';
+export { downloadMidiFile } from './useCases/exportMidiFile';
+export { readMidiFile } from './useCases/importMidiFile';
 
 // ── Use Cases: Formatting ─────────────────────────────────────────────────────
 export { formatChordName } from './useCases/formatChordName';

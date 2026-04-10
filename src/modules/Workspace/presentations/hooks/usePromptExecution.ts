@@ -21,7 +21,7 @@ import {
     describeAction,
 } from '#/modules/Command';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement';
-import { workspaceStore } from '#/modules/Workspace';
+import { workspaceStore } from '../../stores/workspaceStore';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };

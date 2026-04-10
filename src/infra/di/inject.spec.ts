@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { inject } from './inject';
 import { Container } from './Container';
+import { resetContainerState } from './internal/containerState';
 
 describe('inject', () => {
     beforeEach(() => {
+        resetContainerState();
         Container.clear();
     });
 
@@ -41,6 +43,26 @@ describe('inject', () => {
         myFn();
         myFn();
         expect(factoryCalls).toBe(1);
+    });
+
+    it('should resolve getter-backed dependencies only when lazy injectables are invoked', () => {
+        let getterCalls = 0;
+        const myFn = inject(
+            {
+                get value() {
+                    getterCalls++;
+                    return 42;
+                },
+            },
+            { lazy: true }
+        )((deps) => () => deps.value);
+
+        expect(getterCalls).toBe(0);
+        expect(myFn()).toBe(42);
+        expect(getterCalls).toBe(1);
+
+        myFn();
+        expect(getterCalls).toBe(1);
     });
 
     it('should throw with full chain on circular dependencies', () => {

@@ -10,10 +10,10 @@ import { markerStore } from '../../stores/markerStore';
 import { trackStore } from '../../stores/trackStore';
 import { transportStore } from '#/modules/Transport';
 import { decodeAudioFile } from '#/modules/AudioEngine';
-import { importMidiFile } from '#/modules/MIDI';
 import { addClip } from '../../useCases/clip/addClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { addTrack } from '../../useCases/addTrack';
+import { importMidiFile } from '../../useCases/importMidiFile';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 // ── Marker color presets ──────────────────────────────────────────────

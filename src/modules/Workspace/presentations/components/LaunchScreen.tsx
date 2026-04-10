@@ -16,9 +16,8 @@ import {
 } from 'lucide-react';
 import { SourdawLogo } from './SourdawLogo';
 import { newProject, createFromTemplate, getTemplates } from '#/modules/Project';
-import { addTrack, addClip } from '#/modules/Arrangement';
+import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement';
 import { decodeAudioFile } from '#/modules/AudioEngine';
-import { importMidiFile } from '#/modules/MIDI';
 import { transportStore } from '#/modules/Transport';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 

@@ -1,6 +1,4 @@
 import { inject } from '#/infra/di/inject';
-import { getAllTracks } from '#/modules/Arrangement';
-import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
 import { downloadBlob } from '../repositories/downloadFile';
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
 
@@ -79,34 +77,21 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     return trackBytes;
 }
 
-export const exportMidiClip = inject({ downloadBlob, getAllTracks, getMidiStoreState })(
-    ({ downloadBlob, getAllTracks, getMidiStoreState }) =>
-        function exportMidiClip(clipId: string): void {
-            const tracks = getAllTracks();
-            const midi = getMidiStoreState();
-            if (tracks.length === 0 || !midi) {
-                return;
-            }
+type DownloadMidiFileInput = {
+    clipName: string;
+    clipStartBeat: number;
+    notes: MidiNote[];
+    ccs: MidiCC[];
+};
 
-            let clipName = 'export';
-            const clipStartBeat = 0;
-            for (const track of tracks) {
-                const clip = track.clips.find((c) => c.id === clipId);
-                if (clip) {
-                    clipName = clip.name || track.name;
-                    break;
-                }
-            }
-
-            const notes = midi.notesByClipId[clipId] ?? [];
-            const ccs = midi.ccByClipId[clipId] ?? [];
-
+export const downloadMidiFile = inject({ downloadBlob })(
+    ({ downloadBlob }) =>
+        function downloadMidiFile({ clipName, clipStartBeat, notes, ccs }: DownloadMidiFileInput): void {
             if (notes.length === 0 && ccs.length === 0) {
                 return;
             }
 
             const trackData = buildTrackEvents(notes, ccs, clipStartBeat, clipName);
-
             const headerChunk = [
                 ...writeString('MThd'),
                 ...write32(6),

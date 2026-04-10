@@ -24,7 +24,7 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import { aiStore, toggleAiPanel } from '#/modules/AiGeneration';
 import { linkStatusStore, defaultLinkStatus, enableLink, disableLink } from '#/modules/AudioEngine';
-import { openPreferencesDialog } from '#/modules/Workspace';
+import { openPreferencesDialog } from '../../../useCases/dialogs';
 
 type AiPanelState = {
     isPanelOpen: boolean;
