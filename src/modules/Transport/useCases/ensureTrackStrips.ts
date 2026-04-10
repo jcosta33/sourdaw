@@ -6,16 +6,17 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement';
 import {
+    addDeviceToStrip,
     ensureTrackStrip,
     setTrackGain,
-    setTrackPan,
     setTrackMute,
     setTrackOutput,
-} from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing/useCases/busControls';
+    setTrackPan,
+    updateDeviceParam,
+} from '#/modules/AudioEngine';
+import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing';
 
 const ensureTrackStripsDependencies = {
     trackStore,

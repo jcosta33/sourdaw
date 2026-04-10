@@ -1,9 +1,7 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { startPluginScan } from '#/modules/Plugin/useCases/pluginScan/scanning';
-import { findPluginByName } from '#/modules/Plugin/useCases/pluginScan/queries';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addExternalDevice } from '#/modules/Arrangement/useCases/device/addExternalDevice';
+import { addExternalDevice, addTrack } from '#/modules/Arrangement';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { findPluginByName, startPluginScan } from '#/modules/Plugin';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

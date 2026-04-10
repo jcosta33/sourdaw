@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { analyzeMix } from '#/modules/AudioAnalysis';
 import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime';
 
@@ -31,7 +31,7 @@ export const executeAutoFixMixAction = inject({
 })(
     ({ getMixAnalysisStoreValue, setMixAnalysisStoreValue, analyzeMix }) =>
         async function executeAutoFixMixAction(): Promise<void> {
-            const { executeAppAction } = await import('#/modules/Command/useCases/executeAppAction');
+            const { executeAppAction } = await import('#/modules/Command');
             const state = getMixAnalysisStoreValue();
             if (!state) {
                 return;

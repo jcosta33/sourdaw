@@ -304,14 +304,15 @@ export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 export type AppActionType = AppAction['type'];
 
-type ActionResult = {
+/** Return shape of `ActionHandler.describe` — exported for `#/helpers/createHandler`. */
+export type HandlerDescribeResult = {
     label: string;
     inverseAction?: AppAction | null;
 };
 
 export type ActionHandler<T extends AppAction = AppAction> = {
     execute: (action: T) => void | Promise<void>;
-    describe: (action: T) => ActionResult;
+    describe: (action: T) => HandlerDescribeResult;
     undoable: boolean;
 };
 

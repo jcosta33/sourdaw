@@ -11,22 +11,19 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
-import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
-import { setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/setNotesForClip';
-import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { stripSilence as stripSilenceFromClip } from '#/modules/Arrangement/useCases/stripSilence';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { addMidiNote, createMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI';
 import {
-    detectTempo as detectClipTempo,
-    detectKey as detectClipKey,
+    addClip,
+    addTrack,
     audioToMidi as runAudioToMidiConversion,
-} from '#/modules/Arrangement/useCases/audioAnalysis';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration/inference';
+    detectKey as detectClipKey,
+    detectTempo as detectClipTempo,
+    stripSilence as stripSilenceFromClip,
+    trackStore,
+} from '#/modules/Arrangement';
+import { audioBufferCache } from '#/modules/AudioEngine';
+import { generateToolCalls } from '#/modules/AiRuntime';
 import { logger } from '#/infra/logger/appLogger';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
@@ -225,8 +222,7 @@ export const executeAudioToMidiAiMidi = inject({ runAudioToMidiConversion, logge
 export const executeGenerateAudioAiMidi = inject({ addTrack, addClip, logger, audioBufferCache })(
     ({ addTrack, addClip, logger, audioBufferCache: bufferCache }) =>
         async function executeGenerateAudioAiMidi(a: Extract<AppAction, 'generateAudio'>): Promise<void> {
-            const { generateAudio: genAudio, isAudioGenerationAvailable } =
-                await import('#/modules/AudioAnalysis/useCases/audioAi');
+            const { generateAudio: genAudio, isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis');
 
             if (!isAudioGenerationAvailable()) {
                 logger.warn('[Audio AI] Audio generation requires the Sourdaw desktop app');
@@ -278,7 +274,7 @@ export const executeGenerateAudioAiMidi = inject({ addTrack, addClip, logger, au
 export const executeStemSeparate = inject({ addTrack, addClip, logger, audioBufferCache, trackStore })(
     ({ addTrack, addClip, logger, audioBufferCache: bufferCache, trackStore: tracks }) =>
         async function executeStemSeparate(a: Extract<AppAction, 'stemSeparate'>): Promise<void> {
-            const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis/useCases/audioAi');
+            const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis');
 
             const stems = a.payload.stems ?? ['all'];
             logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);

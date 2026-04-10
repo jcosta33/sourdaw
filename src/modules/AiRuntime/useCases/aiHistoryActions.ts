@@ -6,8 +6,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { executeAppAction, undoStore } from '#/modules/Command';
 import { type AiActionGroup, markGroupReverted } from '../stores/aiActionHistoryStore';
 
 export const revertAiActionGroup = inject({ executeAppAction, undoStore, markGroupReverted })(

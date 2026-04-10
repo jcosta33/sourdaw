@@ -6,11 +6,9 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { buildDeviceChain } from '#/modules/AudioEngine/useCases/buildDeviceChain';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { audioBufferCache, buildDeviceChain, getAudioContext } from '#/modules/AudioEngine';
+import { midiStore } from '#/modules/MIDI';
+import { transportStore } from '#/modules/Transport';
 import { type Track } from '../../models/Track';
 
 const MIDI_FREQUENCIES: Record<number, number> = {};

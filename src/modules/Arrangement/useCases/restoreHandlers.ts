@@ -1,12 +1,14 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { undoRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
+import {
+    getTrackStoreState,
+    setTrackState,
+    takeLaneStore,
+    updateTrack,
+} from '#/modules/Arrangement';
+import { automationStore } from '#/modules/Automation';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { midiStore } from '#/modules/MIDI';
+import { undoRippleDelete } from '#/modules/Workspace';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

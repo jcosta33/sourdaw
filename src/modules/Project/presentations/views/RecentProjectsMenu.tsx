@@ -25,7 +25,7 @@ import { newProject } from '../../useCases/projectPersistence/newProject';
 import { saveProject } from '../../useCases/projectPersistence/saveProject';
 import { exportProjectFile, pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO';
 import { TemplateChooser } from './TemplateChooser';
-import { openExportDialog } from '#/modules/Workspace/useCases/dialogs';
+import { openExportDialog } from '#/modules/Workspace';
 
 const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();

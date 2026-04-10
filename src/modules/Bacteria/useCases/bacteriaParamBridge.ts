@@ -4,9 +4,8 @@
  * Same rAF-throttled pattern as glutenParamBridge.
  */
 import { inject } from '#/infra/di/inject';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getAllTracks, persistDeviceParam } from '#/modules/Arrangement';
+import { updateDeviceParam } from '#/modules/AudioEngine';
 import { type BacteriaPatch } from '../models/BacteriaPatch';
 import { loadBacteriaPatch, setBacteriaParam, setBacteriaBandParam } from '../stores/bacteriaStore';
 

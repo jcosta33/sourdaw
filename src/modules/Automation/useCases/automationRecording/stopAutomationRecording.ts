@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getAllTracks } from '#/modules/Arrangement';
 import {
     activeRecording,
     pendingPoints,

@@ -41,32 +41,21 @@ import { pasteClip as pasteClipImpl } from '#/modules/Arrangement/useCases/clipb
 import { selectTrack as selectTrackImpl } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
 import { addTrack as addTrackImpl } from '#/modules/Arrangement/useCases/addTrack';
 import { addDevice as addDeviceImpl } from '#/modules/Arrangement/useCases/device/addDevice';
-import { exportMidiClip as exportMidiClipImpl } from '#/modules/MIDI/useCases/exportMidiFile';
-import { importMidiFile as importMidiFileImpl } from '#/modules/MIDI/useCases/importMidiFile';
+import { exportMidiClip as exportMidiClipImpl, importMidiFile as importMidiFileImpl } from '#/modules/MIDI';
 import { stripSilence as stripSilenceImpl } from '#/modules/Arrangement/useCases/stripSilence';
 
 // ── Track: automation ─────────────────────────────────────────────
-import { addAutomationPoint as addAutomationPointImpl } from '#/modules/Automation/useCases/automation/addAutomationPoint';
-import { addAutomationLane as addAutomationLaneImpl } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { removeAutomationPoint as removeAutomationPointImpl } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { batchAddAutomationPoints as batchAddAutomationPointsImpl } from '#/modules/Automation/useCases/automation/batchAddAutomationPoints';
-
-// ── AudioAnalysis ─────────────────────────────────────────────────
-import { detectTempo as detectTempoImpl } from '#/modules/AudioAnalysis/useCases/tempoDetection';
-import { detectKey as detectKeyImpl } from '#/modules/AudioAnalysis/useCases/keyDetection';
-
-// ── AudioEngine ───────────────────────────────────────────────────
-import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine/useCases/decodeAudioFile';
-
-// ── Command ───────────────────────────────────────────────────────
-import { pushUndoEntry as pushUndoEntryImpl } from '#/modules/Command/useCases/pushUndoEntry';
-import { executeAppAction as executeAppActionImpl } from '#/modules/Command/useCases/executeAppAction';
-
-// ── Workspace ─────────────────────────────────────────────────────
-import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace/useCases/setWorkspaceMode';
-
-// ── Transport ─────────────────────────────────────────────────────
-import { setLoopRegion as setLoopRegionImpl } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
+import {
+    addAutomationLane as addAutomationLaneImpl,
+    addAutomationPoint as addAutomationPointImpl,
+    batchAddAutomationPoints as batchAddAutomationPointsImpl,
+    removeAutomationPoint as removeAutomationPointImpl,
+} from '#/modules/Automation';
+import { detectKey as detectKeyImpl, detectTempo as detectTempoImpl } from '#/modules/AudioAnalysis';
+import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine';
+import { executeAppAction as executeAppActionImpl, pushUndoEntry as pushUndoEntryImpl } from '#/modules/Command';
+import { setLoopRegion as setLoopRegionImpl } from '#/modules/Transport';
+import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace';
 
 export const splitClip = inject({ splitClipImpl })(
     ({ splitClipImpl }) =>

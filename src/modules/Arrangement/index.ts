@@ -50,6 +50,7 @@ export { getTrackById } from './useCases/getTrackById';
 export { getTrackStoreState } from './useCases/getTrackStoreState';
 export { setTrackState } from './useCases/setTrackState';
 export { setTrackStoreState } from './useCases/setTrackStoreState';
+export { setTrackInput } from './useCases/setTrackInput';
 export { importAudioFile } from './useCases/importAudioFile';
 
 export {
@@ -64,6 +65,7 @@ export {
 
 export { addClip } from './useCases/clip/addClip';
 export { removeClip } from './useCases/clip/removeClip';
+export { moveClip } from './useCases/clip/moveClip';
 export { duplicateClip } from './useCases/clip/duplicateClip';
 export { duplicateClipToNextBar } from './useCases/clip/duplicateClipToNextBar';
 export { acceptGhostClip } from './useCases/clip/acceptGhostClip';
@@ -85,6 +87,15 @@ export { setClipGain } from './useCases/clipEditing/setClipGain';
 export { splitClip } from './useCases/clipEditing/splitClip';
 export { trimClipEnd } from './useCases/clipEditing/trimClipEnd';
 export { trimClipStart } from './useCases/clipEditing/trimClipStart';
+export { crossfadeClips } from './useCases/clipEditing/crossfadeClips';
+export { glueClips } from './useCases/clipEditing/glueClips';
+export { lockClip } from './useCases/clipEditing/lockClip';
+export { muteClip } from './useCases/clipEditing/muteClip';
+export { nudgeClip } from './useCases/clipEditing/nudgeClip';
+
+// ── UseCases: Clip loop ─────────────────────────────────────────────────────
+
+export { setClipLoop, setClipLoopLength } from './useCases/clipLoop';
 
 // ── UseCases: Clip Gain Envelope ───────────────────────────────────────────
 
@@ -113,6 +124,13 @@ export { setCompRegion } from './useCases/comping/setCompRegion';
 export { resolveClipsWithComping } from './useCases/resolveComping';
 export type { ResolvedClip } from './useCases/resolveComping';
 
+export { createCompGroup } from './useCases/groupComping/compGroupOperations';
+
+// ── UseCases: Adjustment layer ─────────────────────────────────────────────
+
+export { createAdjustmentLayer } from './useCases/adjustmentLayer/createAdjustmentLayer';
+export type { AdjustmentEffectType } from './stores/adjustmentLayer';
+
 // ── UseCases: Device ───────────────────────────────────────────────────────
 
 export { addDevice } from './useCases/device/addDevice';
@@ -126,6 +144,11 @@ export { setDeviceParameter, persistDeviceParam } from './useCases/device/setDev
 // ── UseCases: Freeze / Bounce ──────────────────────────────────────────────
 
 export { freezeTrack, unfreezeTrack } from './useCases/freezeBounce/freezeTrack';
+export { bounceSelection } from './useCases/freezeBounce/bounceOperations';
+
+// ── UseCases: Time operations ──────────────────────────────────────────────
+
+export { deleteTime, insertTime, duplicateTimeRange } from './useCases/timeOperations';
 
 // ── UseCases: Marker ───────────────────────────────────────────────────────
 
@@ -260,13 +283,6 @@ export { getPlatformPlugins } from './useCases/getPlatformPlugins';
 export { getPluginById } from './useCases/getPluginById';
 export { isDeviceSupportedOnCurrentPlatform } from './useCases/isDeviceSupportedOnCurrentPlatform';
 
-// ── UseCases: Handler Maps ─────────────────────────────────────────────────
+// ── UseCases: Command handler access (handler maps are non-contract — see AGENTS.md) ─
 
-export { batchFeatureHandlers } from './useCases/batchFeatureHandlers';
-export { clipHandlers } from './useCases/clipHandlers';
-export { deviceHandlers } from './useCases/deviceHandlers';
-export { newFeatureHandlers } from './useCases/newFeatureHandlers';
-export { presetHandlers } from './useCases/presetHandlers';
-export { restoreHandlers } from './useCases/restoreHandlers';
-export { stretchHandlers } from './useCases/stretchHandlers';
-export { trackHandlers } from './useCases/trackHandlers';
+export { getArrangementHandlers } from './useCases/getArrangementHandlers';

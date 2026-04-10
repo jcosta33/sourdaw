@@ -79,7 +79,9 @@ export {
 } from './useCases/deviceControls';
 
 // engineAccess
+export type { SidechainRoute } from './useCases/engineAccess';
 export {
+    createSidechainRoute,
     getAudioContext,
     getEngineState,
     resumeEngine,

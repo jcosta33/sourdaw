@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import { applyDrumPatternToTrack } from '#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack';
 import { type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern/algorithm';
 import { applyMelodyToTrack } from '#/modules/AiGeneration/useCases/generateMelody/applyToTrack';
@@ -11,9 +11,8 @@ import {
 } from '#/modules/AiGeneration/useCases/generateChordProgression/algorithm';
 import { extractGroove, applyGroove } from '#/modules/AiGeneration/useCases/grooveTemplate/operations';
 import { getGrooveById } from '#/modules/AiGeneration/models/factoryGrooves';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { addTrack, getTrackStoreState } from '#/modules/Arrangement';
+import { getTransportState } from '#/modules/Transport';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

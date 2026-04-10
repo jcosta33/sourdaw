@@ -75,6 +75,9 @@ export function setSend(sourceTrackId: string, busId: string, level: number, pre
 
 // ─── Sidechain operations ──────────────────────────────────────────────────────
 
+export type { SidechainRoute } from '../models/SidechainRoute';
+export { createSidechainRoute } from '../models/SidechainRoute';
+
 export function wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
     audioEngine.wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
 }

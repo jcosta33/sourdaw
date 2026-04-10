@@ -1,15 +1,11 @@
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement';
+import { automationStore } from '#/modules/Automation';
+import { stopPlayback, undoStore } from '#/modules/Command';
+import { midiStore } from '#/modules/MIDI';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport';
 import { arrangementStore } from '../stores/arrangementStore';
 import { type ArrangementSnapshot } from '../stores/arrangementStore';
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
 import { markDirty } from './projectPersistence/saveProject';
 
 export const arrangementOrchestrationDependencies = {

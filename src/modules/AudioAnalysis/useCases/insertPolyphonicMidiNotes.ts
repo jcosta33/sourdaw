@@ -1,10 +1,8 @@
 import { type NoteEventTime } from '@spotify/basic-pitch';
 import { inject } from '#/infra/di/inject';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud/batchAddMidiNotes';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addClip, addTrack, getAllTracks } from '#/modules/Arrangement';
+import { batchAddMidiNotes } from '#/modules/MIDI';
+import { getTransportState } from '#/modules/Transport';
 
 type SourceClip = {
     startBeat: number;

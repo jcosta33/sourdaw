@@ -6,21 +6,22 @@
  */
 import { inject } from '#/infra/di/inject';
 import { type Dso } from '../../models/DsoTypes';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { setSend } from '#/modules/Arrangement/useCases/device/sendManagement';
-import { setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
-import { disableLooping } from '#/modules/Transport/useCases/setLooping';
-import { applyMelodyToTrack } from '#/modules/AiGeneration/useCases/generateMelody/applyToTrack';
-import { applyChordProgressionToTrack } from '#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack';
-import { applyDrumPatternToTrack } from '#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack';
-import { humanizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes';
+import {
+    addClip,
+    addDevice,
+    addTrack,
+    removeTrack,
+    setSend,
+    trackStore,
+} from '#/modules/Arrangement';
+import {
+    applyChordProgressionToTrack,
+    applyDrumPatternToTrack,
+    applyMelodyToTrack,
+} from '#/modules/AiGeneration';
+import { executeAppAction } from '#/modules/Command';
+import { humanizeNotes, midiStore } from '#/modules/MIDI';
+import { disableLooping, setLoopRegion, transportStore } from '#/modules/Transport';
 // Local type aliases — duplicated from AiGeneration algorithm files to avoid
 // a circular module dependency (AiGeneration already imports from AiRuntime).
 type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';

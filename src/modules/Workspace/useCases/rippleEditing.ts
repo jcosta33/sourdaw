@@ -8,8 +8,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { workspaceStore } from '../stores/workspaceStore';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import { getTrackStoreState, setTrackState } from '#/modules/Arrangement';
 import { type Clip } from '../models/TrackViewTypes';
 
 export const toggleRippleEditing = inject({ workspaceStore })(

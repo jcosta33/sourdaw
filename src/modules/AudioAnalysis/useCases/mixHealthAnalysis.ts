@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
+import { getTrackStoreState } from '#/modules/Arrangement';
+import { streamCloudChatCompletion } from '#/modules/AiRuntime';
 import { summarizeFeatures } from './audioFeatures';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 
 export const mixHealthAnalysis = inject({ getTrackStoreState, streamCloudChatCompletion, summarizeFeatures })(
     ({ getTrackStoreState, streamCloudChatCompletion, summarizeFeatures }) =>

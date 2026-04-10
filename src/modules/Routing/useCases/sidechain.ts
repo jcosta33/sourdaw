@@ -1,6 +1,10 @@
 import { inject } from '#/infra/di/inject';
-import { createSidechainRoute, type SidechainRoute } from '#/modules/AudioEngine/models/SidechainRoute';
-import { wireSidechainRoute, unwireSidechainRoute } from '#/modules/AudioEngine/useCases/engineAccess';
+import {
+    createSidechainRoute,
+    type SidechainRoute,
+    unwireSidechainRoute,
+    wireSidechainRoute,
+} from '#/modules/AudioEngine';
 
 import { sidechainStore } from '../stores/sidechainStore';
 import { SidechainCycleError } from '../errors/RoutingErrors';

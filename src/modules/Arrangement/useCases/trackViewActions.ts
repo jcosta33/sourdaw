@@ -5,12 +5,12 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace/useCases/setWorkspaceMode';
 import {
     type AudioDeviceInfo,
+    decodeAudioFile as decodeAudioFileImpl,
     getAudioDevices as getAudioDevicesImpl,
-} from '#/modules/AudioEngine/useCases/audioDeviceSelection';
-import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine/useCases/decodeAudioFile';
+} from '#/modules/AudioEngine';
+import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace';
 
 export type { AudioDeviceInfo };
 

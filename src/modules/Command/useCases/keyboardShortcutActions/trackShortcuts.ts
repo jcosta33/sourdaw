@@ -2,12 +2,14 @@
  * Track/Clip keyboard shortcut delegates.
  */
 import { inject } from '#/infra/di/inject';
-import { clearSolos as clearSolosImpl } from '#/modules/Arrangement/useCases/toggleTrackState/clearSolos';
-import { addTrack as addTrackImpl } from '#/modules/Arrangement/useCases/addTrack';
-import { duplicateTrack as duplicateTrackImpl } from '#/modules/Arrangement/useCases/duplicateTrack';
-import { duplicateClip as duplicateClipImpl } from '#/modules/Arrangement/useCases/clip/duplicateClip';
-import { duplicateClipToNextBar as duplicateClipToNextBarImpl } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
-import { zoomTracksVertical as zoomTracksVerticalImpl } from '#/modules/Arrangement/useCases/trackZoom';
+import {
+    addTrack as addTrackImpl,
+    clearSolos as clearSolosImpl,
+    duplicateClip as duplicateClipImpl,
+    duplicateClipToNextBar as duplicateClipToNextBarImpl,
+    duplicateTrack as duplicateTrackImpl,
+    zoomTracksVertical as zoomTracksVerticalImpl,
+} from '#/modules/Arrangement';
 
 export const trackShortcutsDependencies = {
     clearSolos: clearSolosImpl,

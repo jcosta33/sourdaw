@@ -5,9 +5,8 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { undo } from '#/modules/Command/useCases/undoRedo';
-import { toggleChatPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { executeAppAction, undo } from '#/modules/Command';
+import { toggleChatPanel } from '#/modules/Workspace';
 
 // AiRuntime-local shape (AGENTS.md §95 — derive from Command's public use-case signature
 // rather than importing the AppAction union directly). Passed through opaquely.

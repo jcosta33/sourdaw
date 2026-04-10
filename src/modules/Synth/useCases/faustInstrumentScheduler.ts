@@ -13,8 +13,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { scheduleDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getCurrentTime } from '#/modules/AudioEngine/useCases/scheduling';
+import { getCurrentTime, scheduleDeviceParam } from '#/modules/AudioEngine';
 
 /**
  * Schedule a note on a Faust instrument.

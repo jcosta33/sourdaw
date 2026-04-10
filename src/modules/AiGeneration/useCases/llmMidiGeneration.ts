@@ -7,15 +7,15 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
 import {
-    generateWebLlmCompletion,
+    filterTemplates,
     generateNativeCompletion,
+    generateWebLlmCompletion,
     isNativeEngineReady,
     PATTERN_TEMPLATES,
-    filterTemplates,
-} from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { type GeneratedNote } from '#/modules/AudioEngine/models/GeneratedNote';
+    resolveBackend,
+} from '#/modules/AiRuntime';
+import { type MidiGenerationNote } from '#/modules/AudioEngine';
 
 // ── System prompt for music generation ──
 
@@ -61,7 +61,7 @@ export const generateMidiViaLlmDependencies = {
 
 /**
  * Generate MIDI notes using the LLM (WebLLM in browser or native mistral.rs).
- * Returns GeneratedNote[] compatible with the existing clip insertion pipeline.
+ * Returns MidiGenerationNote[] compatible with the existing clip insertion pipeline.
  */
 export const generateMidiViaLlm = inject(generateMidiViaLlmDependencies)(
     ({
@@ -76,13 +76,13 @@ export const generateMidiViaLlm = inject(generateMidiViaLlmDependencies)(
             prompt: string,
             numNotes: number = 32,
             creativity: number = 0.65
-        ): Promise<GeneratedNote[]> {
+        ): Promise<MidiGenerationNote[]> {
             const userMessage = buildUserMessage(prompt, numNotes, creativity);
 
             const backend = resolveBackend();
             let rawResponse: string;
 
-            function fallbackToPatternMatch(promptText: string): GeneratedNote[] {
+            function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
                 const q = promptText.toLowerCase();
 
                 const matched =
@@ -151,7 +151,7 @@ function buildUserMessage(prompt: string, numNotes: number, creativity: number):
 - Output ONLY the JSON object, nothing else.`;
 }
 
-function parseMidiResponse(raw: string): GeneratedNote[] {
+function parseMidiResponse(raw: string): MidiGenerationNote[] {
     try {
         const jsonMatch = raw.match(/\{[\s\S]*"notes"[\s\S]*\}/);
         if (!jsonMatch) {

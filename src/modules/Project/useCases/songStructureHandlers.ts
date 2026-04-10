@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { detectAndApplySongStructure } from '#/modules/Arrangement/useCases/songStructureDetection';
+import { detectAndApplySongStructure } from '#/modules/Arrangement';
+import { type ActionHandler } from '#/modules/Command';
 
 export const executeDetectSongStructure = inject({ detectAndApplySongStructure, notifyUser })(
     ({ detectAndApplySongStructure, notifyUser }) =>

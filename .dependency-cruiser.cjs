@@ -83,7 +83,7 @@ module.exports = {
                 'Module index.ts is the public contract surface. ' +
                 'It may only re-export from useCases/, events/, stores/, and presentations/views/ within the same module. ' +
                 'Do not re-export types from useCases/ for other modules (see AGENTS.md — use-case types stay private). ' +
-                'Importing from models/, repositories/, services/, validators/, transformers/, ' +
+                'Importing from handlers/, models/, repositories/, services/, validators/, transformers/, ' +
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
                 'engine/, runtime/, or worklets/ is forbidden.',
             from: {

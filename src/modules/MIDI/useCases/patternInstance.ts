@@ -6,9 +6,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
-import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+import { getTrackStoreState, setTrackState, updateClip } from '#/modules/Arrangement';
 import { type Clip } from '../models/TrackViewTypes';
 import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 import { setNotesForClip } from './midiNoteCrud/setNotesForClip';

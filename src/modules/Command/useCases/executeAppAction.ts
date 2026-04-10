@@ -4,14 +4,7 @@ import { setSemanticContext, clearSemanticContext, pushActionHistoryEntry } from
 import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
 import { pushUndo } from '../stores/undoStore';
 import {
-    trackHandlers,
-    clipHandlers,
-    restoreHandlers,
-    deviceHandlers,
-    presetHandlers,
-    stretchHandlers,
-    newFeatureHandlers,
-    batchFeatureHandlers,
+    getArrangementHandlers,
     saveTrackAsTemplate,
     loadTrackTemplate,
     deleteTrackTemplate,
@@ -154,16 +147,11 @@ const dsoSnapshotHandlers: Record<string, ActionHandler<any>> = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- handlers are type-safe at definition site; the registry erases the action subtype for dynamic dispatch
 const handlerRegistry: Record<string, ActionHandler<any>> = {
-    ...trackHandlers,
-    ...clipHandlers,
-    ...restoreHandlers,
+    ...getArrangementHandlers(),
     ...transportHandlers,
-    ...deviceHandlers,
     ...workspaceHandlers,
     ...automationHandlers,
-    ...presetHandlers,
     ...generationHandlers,
-    ...stretchHandlers,
     ...analysisHandlers,
     ...collaborationHandlers,
     ...pluginHostHandlers,
@@ -180,8 +168,6 @@ const handlerRegistry: Record<string, ActionHandler<any>> = {
     ...undoTreeHandlers,
     ...songStructureHandlers,
     ...versionControlHandlers,
-    ...newFeatureHandlers,
-    ...batchFeatureHandlers,
     ...finalFeatureHandlers,
     ...dsoSnapshotHandlers,
 };

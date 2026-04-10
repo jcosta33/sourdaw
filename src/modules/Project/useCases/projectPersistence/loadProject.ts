@@ -1,7 +1,10 @@
 import { inject } from '#/infra/di/inject';
-import { loadCrdtProject, createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
-import { projectCrdtToStores } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
-import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
+import {
+    createCrdtProject,
+    loadCrdtProject,
+    projectCrdtToStores,
+    startCrdtAutoSave,
+} from '#/modules/CrdtDocument';
 
 import { projectStore } from '../../stores/projectStore';
 import { clearUndoHistory } from './helpers';

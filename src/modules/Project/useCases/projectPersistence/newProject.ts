@@ -1,11 +1,8 @@
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
-import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import { addTrack, trackStore } from '#/modules/Arrangement';
+import { audioBufferCache, resetAudioGraph } from '#/modules/AudioEngine';
+import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument';
+import { stopPlayback } from '#/modules/Command';
 
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';

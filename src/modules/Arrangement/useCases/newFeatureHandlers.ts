@@ -1,15 +1,13 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import {
     generateDrumFill,
     generateAllTransitionFills,
 } from '#/modules/Arrangement/useCases/fillTransitionGeneration/generation';
-import { compareToReference } from '#/modules/AudioAnalysis/useCases/referenceMixComparison/compareMixes';
-import { toggleMono } from '#/modules/AudioEngine/useCases/controlRoom/toggleMono';
-import { toggleDim } from '#/modules/AudioEngine/useCases/controlRoom/toggleDim';
-import { switchMonitor } from '#/modules/AudioEngine/useCases/controlRoom/switchMonitor';
-import { generateMentorLessons } from '#/modules/AiRuntime/useCases/musicMentor/generateLessons';
+import { compareToReference } from '#/modules/AudioAnalysis';
+import { generateMentorLessons } from '#/modules/AiRuntime';
+import { switchMonitor, toggleDim, toggleMono } from '#/modules/AudioEngine';
+import { type ActionHandler } from '#/modules/Command';
 
 export const executeGenerateFill = inject({ generateDrumFill, notifyUser })(
     ({ generateDrumFill, notifyUser }) =>

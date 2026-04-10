@@ -6,9 +6,8 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getAllTracks, persistDeviceParam } from '#/modules/Arrangement';
+import { updateDeviceParam } from '#/modules/AudioEngine';
 import { type FermenterPatch } from '../models/FermenterPatch';
 import { loadFermenterPatch, setFermenterParam } from '../stores/fermenterStore';
 

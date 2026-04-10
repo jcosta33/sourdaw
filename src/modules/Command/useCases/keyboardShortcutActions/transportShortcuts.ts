@@ -3,12 +3,14 @@
  * Thin wrappers satisfying module boundary rules.
  */
 import { inject } from '#/infra/di/inject';
-import { togglePlayback as togglePlaybackImpl } from '#/modules/Transport/useCases/transportControls/togglePlayback';
-import { stopPlayback as stopPlaybackImpl } from '#/modules/Transport/useCases/transportControls/stopPlayback';
-import { toggleLoop as toggleLoopImpl } from '#/modules/Transport/useCases/transportControls/toggleLoop';
-import { toggleMetronome as toggleMetronomeImpl } from '#/modules/Transport/useCases/transportControls/toggleMetronome';
-import { toggleRecording as toggleRecordingImpl } from '#/modules/Transport/useCases/transportControls/toggleRecording';
-import { seekPlayhead as seekPlayheadImpl } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
+import {
+    seekPlayhead as seekPlayheadImpl,
+    stopPlayback as stopPlaybackImpl,
+    toggleLoop as toggleLoopImpl,
+    toggleMetronome as toggleMetronomeImpl,
+    togglePlayback as togglePlaybackImpl,
+    toggleRecording as toggleRecordingImpl,
+} from '#/modules/Transport';
 
 export const transportShortcutsDependencies = {
     togglePlayback: togglePlaybackImpl,

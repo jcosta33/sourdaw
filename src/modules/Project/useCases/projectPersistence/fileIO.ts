@@ -1,17 +1,21 @@
 import { inject } from '#/infra/di/inject';
 import { open } from '@tauri-apps/plugin-dialog';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess';
-import { stopPlayback } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
-import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
+import { automationStore } from '#/modules/Automation';
+import {
+    markerStore,
+    takeLaneStore,
+    trackStore,
+    type TrackStoreState,
+} from '#/modules/Arrangement';
+import { audioBufferCache, getAudioContext, resetAudioGraph } from '#/modules/AudioEngine';
+import { stopPlayback } from '#/modules/Command';
+import { midiStore } from '#/modules/MIDI';
+import { getAllSidechainRoutes } from '#/modules/Routing';
+import {
+    tempoMapStore,
+    timeSignatureMapStore,
+    transportStore,
+} from '#/modules/Transport';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
 

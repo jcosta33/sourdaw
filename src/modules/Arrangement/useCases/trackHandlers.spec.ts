@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { executeAddTrack } from './trackHandlers';
+import { executeAddTrack } from '../handlers/track/handleAddTrack';
 
 describe('trackHandlers injectables', () => {
     beforeEach(() => {

@@ -1,7 +1,6 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { eventBus } from '#/app/registerDependencies';
-import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
-import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
+import { newProject, saveProject } from '#/modules/Project';
 
 /** Project commands — new, save, export audio, import/export files, version control. */
 export const projectCommands: CommandEntry[] = [
@@ -61,7 +60,7 @@ export const projectCommands: CommandEntry[] = [
         description: 'Import a .sourdaw project file',
         category: 'Project',
         action: async () => {
-            const { pickAndImportProjectFile } = await import('#/modules/Project/useCases/projectPersistence/fileIO');
+            const { pickAndImportProjectFile } = await import('#/modules/Project');
             await pickAndImportProjectFile();
         },
     },

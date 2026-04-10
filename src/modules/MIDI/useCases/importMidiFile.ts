@@ -1,15 +1,16 @@
 import { inject } from '#/infra/di/inject';
 import { createMidiError } from '../errors/MidiError';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
-import { midiStore } from '../stores/midiStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
-import { getNextClipId } from '#/modules/Arrangement/useCases/getNextClipId';
+import {
+    createTrack,
+    getNextClipId,
+    getTrackStoreState,
+    setTrackState,
+    trackStore,
+} from '#/modules/Arrangement';
+import { createCallbackUndoEntry, pushUndo } from '#/modules/Command';
 import { type Clip } from '../models/TrackViewTypes';
 import { type MidiNote } from '../models/MidiNote';
-import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';
+import { midiStore } from '../stores/midiStore';
 
 type ParsedTrack = {
     name: string;

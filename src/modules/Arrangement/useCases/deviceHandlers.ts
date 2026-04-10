@@ -1,20 +1,25 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
-import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
-import { setSend, removeSend } from '#/modules/Arrangement/useCases/device/sendManagement';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getLatencyReport } from '#/modules/AudioEngine/useCases/latencyCompensation/compensation';
-import { setMpeEnabled } from '#/modules/AudioEngine/useCases/webMidiInput';
+import {
+    addDevice,
+    bypassDevice,
+    getTrackStoreState,
+    removeDevice,
+    setDeviceParameter,
+    setSend,
+    removeSend,
+} from '#/modules/Arrangement';
+import {
+    getLatencyReport,
+    setMpeEnabled,
+    updateDeviceParam,
+} from '#/modules/AudioEngine';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
 import {
     addSidechainRoute,
     removeSidechainRoute as removeSidechainRouteUseCase,
     getSidechainRoutesForTrack,
-} from '#/modules/Routing/useCases/sidechain';
+} from '#/modules/Routing';
 
 type ExtractAction<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

@@ -11,11 +11,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type OfflineDeviceNode } from './deviceNodeFactory';
-import {
-    createFaustNode,
-    compileFaustDSP,
-    isFaustModule,
-} from '#/modules/Plugin/useCases/faustEngine/compilerEngine';
+import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin';
 
 export { isFaustModule };
 

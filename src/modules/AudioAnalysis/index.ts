@@ -40,7 +40,7 @@ export { polyphonicAudioToMidi } from './useCases/polyphonicAudioToMidi';
 export { analyzeMix } from './useCases/analyzeMix';
 
 // useCases/referenceMixComparison/analyzeMix.ts
-export { createReferenceAnalysis } from './useCases/referenceMixComparison/analyzeMix';
+export { createReferenceAnalysis, analyzeMix as analyzeMixFromTrackLayout } from './useCases/referenceMixComparison/analyzeMix';
 
 // useCases/referenceMixComparison/compareMixes.ts
 export { compareMixes, compareToReference } from './useCases/referenceMixComparison/compareMixes';

@@ -3,11 +3,9 @@
  * keyboard-shortcut handlers.
  */
 import { inject } from '#/infra/di/inject';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getMarkerState } from '#/modules/Arrangement/useCases/timelineQueries';
-import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
-import { getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
+import { getMarkerState, getTrackStoreState } from '#/modules/Arrangement';
+import { getTransportStoreValue, seekPlayhead } from '#/modules/Transport';
+import { getWorkspaceState } from '#/modules/Workspace';
 
 export const selectionHelpersDependencies = {
     getTrackStoreState,

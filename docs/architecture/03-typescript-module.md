@@ -124,7 +124,7 @@ presentations/views/
 
 | Folder / origin        | Role                             | Cross-module access |
 | ---------------------- | -------------------------------- | -------------------- |
-| `useCases/`            | public write boundary (functions) | `export { fn }` from `index.ts` only — **no** `export type` from `useCases/` on `index.ts` |
+| `useCases/`            | public write boundary (functions) | `export { fn }` from `index.ts` only — **no** `export type` from `useCases/` on `index.ts`. Includes **`get<Module>Handlers`** only — not raw handler maps (see §4.5). |
 | `events/`              | meaningful domain event payloads | `export type` / values via `index.ts` as needed |
 | `stores/`              | shared business/read state       | via `index.ts` re-exports only |
 | `presentations/views/` | composable UI entry points       | via `index.ts` re-exports only |
@@ -135,6 +135,7 @@ presentations/views/
 These are implementation details and may change freely inside the module.
 
 ```text
+handlers/
 models/
 validators/
 services/
@@ -149,6 +150,8 @@ engine/
 worklets/
 runtime/
 ```
+
+`handlers/` holds `AppAction` → `ActionHandler` maps; it is **never** re-exported from `index.ts` (see §4.5). Access cross-module only via **`get<Module>Handlers`** use cases.
 
 These are private unless explicitly promoted to the contract surface.
 
@@ -402,7 +405,30 @@ See the `architecture-violations` skill (§6) for detailed rules and examples.
 
 ---
 
-## 4.5 `stores/`
+## 4.5 `handlers/` — `AppAction` handler maps (non-contract)
+
+**Handler maps** wire `AppAction` discriminant types to `ActionHandler` (`execute`, `describe`, `undoable`) for `executeAppAction`. They **orchestrate** granular use cases (often across modules) and own undo **description** for the command layer.
+
+This layer is **not** part of the general cross-module contract. Other feature modules must **not** import `trackHandlers`-style maps from peers.
+
+### Placement
+
+- Prefer **`handlers/`** at the module root (same depth as `useCases/`). Until migration, legacy `useCases/*Handlers.ts` files are acceptable; new work should use `handlers/`.
+- **`handlers/` is private** — it is **not** re-exported from `index.ts`. Dependency-cruiser treats it like other internals.
+
+### Construction
+
+- Each **`ActionHandler`** is created **in the handler module**, not in `get<Module>Handlers`. Typical shape: **`export const handleMuteTrack = createHandler<'muteTrack'>({ … })`** (or **`export const handleMuteTrack = () => createHandler<'muteTrack'>({ … })`** when a factory is needed).
+- The per-file map (e.g. `trackHandlers`) uses **`createHandlers`** to assemble **references** to those `handle…` exports — **`createHandler` / `createHandlers` do not run inside `get<Module>Handlers`**, which only spreads already-built maps.
+
+### Cross-module access
+
+- Only **`get<Module>Handlers`** **use cases** in `useCases/` merge handler maps and return `Record<string, ActionHandler<any>>` for **Command**. They perform **no** `createHandler` calls — only object spread of maps exported from handler modules.
+- Presentation and other domains **do not** import handler maps; they dispatch **`executeAppAction`** or call granular use cases.
+
+---
+
+## 4.6 `stores/`
 
 `stores/` are **business-layer stores**, not presentation-layer stores.
 
@@ -438,7 +464,7 @@ Meaningful writes still go through public use cases.
 
 ---
 
-## 4.6 `validators/`
+## 4.7 `validators/`
 
 Validators enforce invariants.
 
@@ -471,7 +497,7 @@ Validators are not a public contract.
 
 ---
 
-## 4.7 `services/`
+## 4.8 `services/`
 
 Services contain stateless business logic that spans multiple entities or concepts but does not belong in one use case.
 
@@ -501,7 +527,7 @@ Services are not generic “helpers.”
 
 ---
 
-## 4.8 `repositories/`
+## 4.9 `repositories/`
 
 Repositories are the **I/O layer**.
 
@@ -547,7 +573,7 @@ Each repository file should export exactly one function.
 
 ---
 
-## 4.9 `transformers/`
+## 4.10 `transformers/`
 
 Transformers are pure mapping functions between representations.
 
@@ -578,7 +604,7 @@ Transformers are not mini-services with hidden behavior.
 
 ---
 
-## 4.10 Dependency injection with `inject()`
+## 4.11 Dependency injection with `inject()`
 
 Use cases and other injectable functions declare their dependencies explicitly using `inject()` from `#/infra/di/inject`. This is the canonical DI mechanism for the business layer.
 
@@ -676,7 +702,7 @@ In tests, call `injectDependencies(injectable, mocks)` from `#/infra/di/testing/
 
 ---
 
-## 4.11 `presentations/`
+## 4.12 `presentations/`
 
 This is the UI-facing layer inside a module.
 

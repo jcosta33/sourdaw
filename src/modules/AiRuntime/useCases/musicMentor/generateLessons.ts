@@ -6,14 +6,14 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { analyzeMix } from '#/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix';
+import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis';
+import { trackStore } from '#/modules/Arrangement';
 import { type MentorCategory, type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
 
 let lessonCounter = 0;
 
 export const generateMentorLessonsDependencies = {
-    analyzeMix,
+    analyzeMix: analyzeMixFromTrackLayout,
 } as const;
 
 function createLesson(

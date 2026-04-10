@@ -5,7 +5,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getAudioTime } from '#/modules/AudioEngine';
 import { triggerToasterPad } from './triggerPad';
 
 type NoteRepeatState = {

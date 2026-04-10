@@ -42,6 +42,9 @@ export { seekPlayhead } from './useCases/transportControls/seekPlayhead';
 export { setCountInBars } from './useCases/transportControls/setCountInBars';
 export { setLoopRegion } from './useCases/transportControls/setLoopRegion';
 export { setMetronomeVolume } from './useCases/transportControls/setMetronomeVolume';
+export { setPreRollBars } from './useCases/transportControls/setPreRollBars';
+export { setPunchIn } from './useCases/transportControls/setPunchIn';
+export { setPunchOut } from './useCases/transportControls/setPunchOut';
 export { stopPlayback } from './useCases/transportControls/stopPlayback';
 export { toggleCountIn } from './useCases/transportControls/toggleCountIn';
 export { toggleLoop } from './useCases/transportControls/toggleLoop';
@@ -49,7 +52,10 @@ export { toggleMetronome } from './useCases/transportControls/toggleMetronome';
 export { toggleOverdub } from './useCases/transportControls/toggleOverdub';
 export { togglePlayback } from './useCases/transportControls/togglePlayback';
 export { togglePunchEnabled } from './useCases/transportControls/togglePunchEnabled';
+export { togglePreRoll } from './useCases/transportControls/togglePreRoll';
 export { toggleRecording } from './useCases/transportControls/toggleRecording';
+
+export { addTimeSignatureChange, removeTimeSignatureChange } from './useCases/timeSignatureChanges';
 
 export { transportHandlers } from './useCases/transportHandlers';
 

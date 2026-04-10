@@ -21,6 +21,7 @@ export type {
     AppAction,
     AppActionType,
     ActionHandler,
+    HandlerDescribeResult,
 } from './useCases/commandQueries';
 export {
     generateGroupId,

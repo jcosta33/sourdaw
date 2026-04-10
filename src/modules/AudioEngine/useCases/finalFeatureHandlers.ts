@@ -1,12 +1,10 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { toggleNodeView } from '#/modules/Plugin/useCases/nodeView/toggleNodeView';
+import { connectPush, disconnectPush, toggleNodeView } from '#/modules/Plugin';
+import { addCvOutput } from '#/modules/Synth';
+import { type ActionHandler } from '#/modules/Command';
 import { setProtocol } from '#/modules/AudioEngine/useCases/controlSurface/setProtocol';
 import { type ControlSurfaceProtocol } from '#/modules/AudioEngine/stores/controlSurface';
-import { addCvOutput } from '#/modules/Synth/useCases/cvGate/cvOutputOperations';
-import { connectPush } from '#/modules/Plugin/useCases/pushIntegration/connectPush';
-import { disconnectPush } from '#/modules/Plugin/useCases/pushIntegration/disconnectPush';
 import { loadModel } from '#/modules/AudioEngine/useCases/rave/loadModel';
 import { setTransferBlend } from '#/modules/AudioEngine/useCases/rave/setTransferBlend';
 import { enableWarping } from '#/modules/AudioEngine/useCases/audioWarping/enableWarping';

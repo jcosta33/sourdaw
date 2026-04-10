@@ -1,39 +1,41 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-import { moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
-import { duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
-import { duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
-import { splitClip } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
-import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
-import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
-import { setClipFade } from '#/modules/Arrangement/useCases/clipEditing/setClipFade';
-import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
-import { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
-import { glueClips } from '#/modules/Arrangement/useCases/clipEditing/glueClips';
-import { nudgeClip } from '#/modules/Arrangement/useCases/clipEditing/nudgeClip';
-import { setClipGain } from '#/modules/Arrangement/useCases/clipEditing/setClipGain';
-import { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
-import { lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
-import { crossfadeClips } from '#/modules/Arrangement/useCases/clipEditing/crossfadeClips';
-import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
-import { muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
-import { bounceSelection } from '#/modules/Arrangement/useCases/freezeBounce/bounceOperations';
-import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
-import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
-import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
-import { setClipLoop, setClipLoopLength } from '#/modules/Arrangement/useCases/clipLoop';
-import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
-import { detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
-import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/MIDI/useCases/arpeggiator';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Arrangement/useCases/timeOperations';
-import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { rippleDeleteClips, planRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
+import {
+    addClip,
+    bounceSelection,
+    copySelectedClip,
+    crossfadeClips,
+    cutSelectedClip,
+    deleteTime,
+    duplicateClip,
+    duplicateClipToNextBar,
+    duplicateTimeRange,
+    getTrackStoreState,
+    glueClips,
+    insertTime,
+    lockClip,
+    moveClip,
+    muteClip,
+    normalizeClip,
+    nudgeClip,
+    pasteClip,
+    removeClip,
+    renameClip,
+    reverseClip,
+    setClipColor,
+    setClipFade,
+    setClipGain,
+    setClipLoop,
+    setClipLoopLength,
+    splitClip,
+    stripSilence,
+    trimClipEnd,
+    trimClipStart,
+} from '#/modules/Arrangement';
+import { audioToMidi, detectKey, detectTempo } from '#/modules/AudioAnalysis';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { arpeggiate, type ArpPattern, type ArpRate, midiStore } from '#/modules/MIDI';
+import { planRippleDelete, rippleDeleteClips } from '#/modules/Workspace';
 
 type ExtractAction<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

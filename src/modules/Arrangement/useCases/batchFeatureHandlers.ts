@@ -1,16 +1,20 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabase/searchSamples';
-import { createCompGroup } from '#/modules/Arrangement/useCases/groupComping/compGroupOperations';
-import { togglePunchRecording } from '#/modules/Transport/useCases/punchRecording/togglePunchRecording';
-import { toggleRecord } from '#/modules/Transport/useCases/loopStation/toggleRecord';
-import { triggerScene } from '#/modules/Transport/useCases/loopStation/triggerScene';
-import { nextItem } from '#/modules/Transport/useCases/setlist/nextItem';
-import { previousItem } from '#/modules/Transport/useCases/setlist/previousItem';
-import { detectProjectTempo } from '#/modules/Transport/useCases/tempoMapping/operations';
-import { createAdjustmentLayer } from '#/modules/Arrangement/useCases/adjustmentLayer/createAdjustmentLayer';
-import type { AdjustmentEffectType } from '#/modules/Arrangement/stores/adjustmentLayer';
+import {
+    createAdjustmentLayer,
+    createCompGroup,
+    type AdjustmentEffectType,
+} from '#/modules/Arrangement';
+import { type ActionHandler } from '#/modules/Command';
+import { searchSamples } from '#/modules/SoundLibrary';
+import {
+    detectProjectTempo,
+    nextItem,
+    previousItem,
+    togglePunchRecording,
+    toggleRecord,
+    triggerScene,
+} from '#/modules/Transport';
 
 export const executeSearchSamples = inject({ searchSamples })(
     ({ searchSamples }) =>

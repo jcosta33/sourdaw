@@ -4,8 +4,8 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getAllTracks } from '#/modules/Arrangement';
+import { ensureTrackStrip } from '#/modules/AudioEngine';
 
 export const triggerToasterPadDependencies = {
     getAllTracks,

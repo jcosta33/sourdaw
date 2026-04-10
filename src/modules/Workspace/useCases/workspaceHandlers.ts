@@ -1,40 +1,53 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
 import {
+    addAutomationLane,
+    addAutomationPoint,
+    getAutomationStoreState,
+    removeAutomationPoint,
+} from '#/modules/Automation';
+import {
+    addMarker,
+    addSection,
+    importAudioFile,
+    removeMarker,
+    removeSection,
+    renameSection,
+    setMarkerColor,
+    type VelocityCurve,
+} from '#/modules/Arrangement';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
+import {
+    exportMidiClip,
+    humanizeNotes,
+    importMidiFile,
+    invertNotes,
+    quantizeNoteLengths,
+    quantizeNotes,
+    retrogradeNotes,
+    scaleAllVelocities,
+    scaleVelocities,
+    setAllVelocities,
+    transposeNotes,
+} from '#/modules/MIDI';
+import {
+    exportProjectFile,
+    newProject,
+    pickFiles,
+    saveProject,
+} from '#/modules/Project';
+import {
+    type EditingTool,
+    setEditingTool,
+    setSnapValue,
+    setWorkspaceMode,
+    toggleChatPanel,
+    toggleInspector,
     toggleMixer,
     toggleSidebar,
-    toggleInspector,
-    toggleChatPanel,
-    setSnapValue,
-} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { zoomToFit, zoomToSelection } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
-import { setEditingTool } from '#/modules/Workspace/useCases/setEditingTool';
-import { addMarker, removeMarker, setMarkerColor } from '#/modules/Arrangement/useCases/marker/markerOperations';
-import { addSection, removeSection, renameSection } from '#/modules/Arrangement/useCases/marker/sectionOperations';
-import { quantizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNotes';
-import { quantizeNoteLengths } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNoteLengths';
-import { transposeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes';
-import { humanizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes';
-import { invertNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/invertNotes';
-import { retrogradeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/retrogradeNotes';
-import { scaleVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/scaleVelocities';
-import { scaleAllVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/scaleAllVelocities';
-import { setAllVelocities } from '#/modules/MIDI/useCases/midiNoteTransforms/setAllVelocities';
-import { type VelocityCurve } from '#/modules/Arrangement/useCases/automationQueries';
-import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
-import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
-import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
-import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
-import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
-import { exportProjectFile } from '#/modules/Project/useCases/projectPersistence/fileIO';
-import { exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
-import { pickFiles } from '#/modules/Project/useCases/fileDialog';
-import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
-import { importAudioFile } from '#/modules/Arrangement/useCases/importAudioFile';
-import { type EditingTool } from '#/modules/Workspace/models/EditingTool';
+    zoomToFit,
+    zoomToSelection,
+} from '#/modules/Workspace';
 
 type ExtractAction<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

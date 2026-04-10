@@ -1,23 +1,26 @@
 import { inject } from '#/infra/di/inject';
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { setTempo } from '#/modules/Transport/useCases/setTempo';
-import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';
-import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
-import { toggleLoop } from '#/modules/Transport/useCases/transportControls/toggleLoop';
-import { toggleMetronome } from '#/modules/Transport/useCases/transportControls/toggleMetronome';
-import { setMetronomeVolume } from '#/modules/Transport/useCases/transportControls/setMetronomeVolume';
-import { toggleRecording } from '#/modules/Transport/useCases/transportControls/toggleRecording';
-import { setLoopRegion } from '#/modules/Transport/useCases/transportControls/setLoopRegion';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
-import { setPunchIn } from '#/modules/Transport/useCases/transportControls/setPunchIn';
-import { setPunchOut } from '#/modules/Transport/useCases/transportControls/setPunchOut';
-import { togglePunchEnabled } from '#/modules/Transport/useCases/transportControls/togglePunchEnabled';
-import { toggleCountIn } from '#/modules/Transport/useCases/transportControls/toggleCountIn';
-import { setCountInBars } from '#/modules/Transport/useCases/transportControls/setCountInBars';
-import { togglePreRoll } from '#/modules/Transport/useCases/transportControls/togglePreRoll';
-import { setPreRollBars } from '#/modules/Transport/useCases/transportControls/setPreRollBars';
-import { addTimeSignatureChange, removeTimeSignatureChange } from '#/modules/Transport/useCases/timeSignatureChanges';
-import { setMasterGain } from '#/modules/AudioEngine/useCases/setMasterGain';
+import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { setMasterGain } from '#/modules/AudioEngine';
+import {
+    addTimeSignatureChange,
+    removeTimeSignatureChange,
+    seekPlayhead,
+    setCountInBars,
+    setLoopRegion,
+    setMetronomeVolume,
+    setPreRollBars,
+    setPunchIn,
+    setPunchOut,
+    setTempo,
+    stopPlayback,
+    toggleCountIn,
+    toggleLoop,
+    toggleMetronome,
+    togglePlayback,
+    togglePreRoll,
+    togglePunchEnabled,
+    toggleRecording,
+} from '#/modules/Transport';
 
 type ExtractAction<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

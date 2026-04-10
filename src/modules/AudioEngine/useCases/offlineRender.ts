@@ -1,16 +1,18 @@
 import { inject } from '#/infra/di/inject';
+import { resolveClipsWithComping, getTrackStoreState } from '#/modules/Arrangement';
+import { getAutomationLanes } from '#/modules/Automation';
+import { getMidiStoreState } from '#/modules/MIDI';
+import {
+    getDrumKitDefByIndex,
+    getSynthParamsFromDevices,
+    scheduleDrumKitNote,
+    scheduleKitNote,
+    scheduleNoteOffline,
+} from '#/modules/Synth';
+import { getTempoMapState, getTransportStoreValue, type TempoChange } from '#/modules/Transport';
 import { createExportError } from '../errors/ExportError';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
-import { getAutomationLanes } from '#/modules/Automation/useCases/getAutomationLanes';
-import { getTransportStoreValue, getTempoMapState } from '#/modules/Transport/useCases/transportQueries';
-import { type TempoChange } from '#/modules/Transport/models/TempoMap';
 import { audioBufferCache } from '../stores/audioBufferCache';
 import { buildDeviceChain } from './buildDeviceChain';
-import { scheduleNoteOffline, getSynthParamsFromDevices } from '#/modules/Synth/useCases/builtinSynth';
-import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
 import { type Track } from '#/modules/Arrangement/models/Track';
 import { beatToSeconds } from '#/modules/AudioEngine/services/beatConversion';
 import { resolveDrumKit } from '#/modules/AudioEngine/services/deviceResolution';

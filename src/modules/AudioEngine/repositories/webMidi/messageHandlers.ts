@@ -9,19 +9,25 @@
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { eventBus } from '#/app/registerDependencies';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { getMidiStoreState } from '#/modules/MIDI/useCases/getMidiStoreState';
-import { setMidiStoreState } from '#/modules/MIDI/useCases/setMidiStoreState';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { getMidiLearnState } from '#/modules/MIDI/useCases/getMidiLearnState';
-import { createMidiNote } from '#/modules/MIDI/useCases/createMidiNote';
-import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
-import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/MIDI/useCases/midiLearn';
-import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
-import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
+import { getTrackStoreState } from '#/modules/Arrangement';
+import {
+    completeMidiLearn,
+    createMidiNote,
+    getMidiLearnState,
+    getMidiStoreState,
+    handleMidiMessage as applyMidiMappings,
+    setMidiStoreState,
+} from '#/modules/MIDI';
+import {
+    getDrumKitDefByIndex,
+    getSynthParamsForTrack,
+    scheduleDrumKitNote,
+    scheduleKitNote,
+    scheduleNote,
+} from '#/modules/Synth';
+import { getTransportStoreValue, playheadPositionRef } from '#/modules/Transport';
+import { processRealtimeMidiInput } from '#/modules/Yeast';
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
-import { processRealtimeMidiInput } from '#/modules/Yeast/useCases/yeastSchedulingBridge';
 import {
     MIDI_NOTE_ON,
     MIDI_NOTE_OFF,

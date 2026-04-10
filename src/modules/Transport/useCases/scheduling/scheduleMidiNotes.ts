@@ -3,28 +3,34 @@
  * so tests can substitute them without **`vi.mock`** on whole modules.
  */
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { getChordAtBeat, midiStore, transposeForChordTrack } from '#/modules/MIDI';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import {
+    audioBufferCache,
+    createBufferSource,
     ensureTrackStrip,
+    getAudioContext,
+    getCompensationDelay,
+    getCurrentTime,
+    getDrumKitByIndex,
     setTrackGain as engineSetTrackGain,
-} from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { getCurrentTime, createBufferSource } from '#/modules/AudioEngine/useCases/scheduling';
-import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
-import { scheduleNote, getSynthParamsForTrack } from '#/modules/Synth/useCases/builtinSynth';
+} from '#/modules/AudioEngine';
+import { resolveClipsWithComping, trackStore } from '#/modules/Arrangement';
+import {
+    getDrumKitDefByIndex,
+    getSynthParamsForTrack,
+    scheduleDrumKitNote,
+    scheduleFaustNote,
+    scheduleKitNote,
+    scheduleNote,
+} from '#/modules/Synth';
 
 // Transport-local shape (AGENTS.md §95 — derive from Synth's public use-case signature;
 // params are passed opaquely to scheduleKitNote, no fields read here).
 type SynthParams = ReturnType<typeof getSynthParamsForTrack>;
-import { scheduleFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
-import { scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
-import { getDrumKitByIndex } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 
 // Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible
 // with the drum kit shape scheduleKitNote / getDrumKitByIndex operate on.
@@ -33,15 +39,10 @@ type DrumKit = {
     name: string;
     voices: Array<{ name: string; pitchRange: [number, number]; params: SynthParams }>;
 };
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine/kitDefinitions';
-import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation/compensation';
+import { getYeastRack, getYeastWorkletNodeAsync, type MidiEvent, type TransportInfo } from '#/modules/Yeast';
 
 // Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
 type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;
-import { getChordAtBeat } from '#/modules/MIDI/useCases/chordTrack/getChordAtBeat';
-import { transposeForChordTrack } from '#/modules/MIDI/useCases/transposeForChordTrack';
-import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores/yeastStore';
-import { type MidiEvent, type TransportInfo } from '#/modules/Yeast/models/MidiEvent';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
     const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');

@@ -4,14 +4,14 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
+import { getTrackById } from '#/modules/Arrangement';
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
 import {
-    type SynthParams,
     defaultSynthParams,
     type MpeParams,
-} from '#/modules/AudioEngine/useCases/audioEngineQueries';
+    type SynthParams,
+} from '#/modules/AudioEngine';
 
 const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'waveform',
