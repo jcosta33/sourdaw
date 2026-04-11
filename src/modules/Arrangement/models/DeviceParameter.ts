@@ -1,64 +1,23 @@
 /**
- * Device parameter type definitions and plugin descriptors.
+ * Built-in plugin catalog and aggregation helpers.
  *
- * This file owns the shared types and utility functions. The descriptor data
- * is split by family in the `./pluginDescriptors/` sub-directory.
+ * Type definitions live in `./DeviceParameterTypes.ts`; descriptor data is
+ * split by family in `./pluginDescriptors/`. This file only owns the
+ * variant builders, the aggregated `BUILTIN_PLUGINS` array, and the
+ * platform/availability helpers. It re-exports the shared types so existing
+ * in-module callers do not need to update their import paths.
  */
 
-// ── Shared types ─────────────────────────────────────────────────────────────
+import { type PluginDescriptor } from './DeviceParameterTypes';
 
-export type DeviceParameterType = 'float' | 'int' | 'bool' | 'choice';
-
-export type DeviceParameter = {
-    id: string;
-    deviceId: string;
-    name: string;
-    type: DeviceParameterType;
-    value: number;
-    defaultValue: number;
-    minValue: number;
-    maxValue: number;
-    unit: string;
-    scaling?: 'log' | 'linear';
-    choices?: string[];
-    automatable: boolean;
-    hasAutomation: boolean;
-};
-
-/**
- * Minimal parameter definition shape used by plugin descriptors within
- * this module. Each instrument module owns its own full param-def type;
- * this local type captures only the fields the descriptor mapping needs.
- * Models must not cross module boundaries — each descriptor file inlines
- * its own param array using this type rather than importing from the
- * instrument module.
- */
-export type PluginParamDef = {
-    id: string;
-    label: string;
-    min: number;
-    max: number;
-    default: number;
-    unit: string;
-    step?: number;
-    scaling?: 'log' | 'linear';
-};
-
-export type PluginFormat = 'builtin' | 'vst3' | 'clap' | 'au';
-
-export type PluginPlatform = 'web' | 'native' | 'both';
-
-export type PluginDescriptor = {
-    id: string;
-    name: string;
-    vendor: string;
-    format: PluginFormat;
-    category: 'instrument' | 'effect' | 'analyzer' | 'utility';
-    parameters: DeviceParameter[];
-    hasCustomUI: boolean;
-    /** Which runtime this plugin is available on. Defaults to 'both'. */
-    platform?: PluginPlatform;
-};
+export type {
+    DeviceParameterType,
+    DeviceParameter,
+    PluginParamDef,
+    PluginFormat,
+    PluginPlatform,
+    PluginDescriptor,
+} from './DeviceParameterTypes';
 
 // ── Descriptor sub-modules ─────────────────────────────────────────────────
 import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDescriptors';

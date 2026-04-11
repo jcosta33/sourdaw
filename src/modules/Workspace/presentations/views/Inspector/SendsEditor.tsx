@@ -9,7 +9,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { useTracks } from '../../hooks/useTracks';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
-import { setSend, toggleSendPreFader, addTrack } from '#/modules/Arrangement';
+import { setSend, toggleSendPreFader, addTrack } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 
 type SendsEditorProps = {

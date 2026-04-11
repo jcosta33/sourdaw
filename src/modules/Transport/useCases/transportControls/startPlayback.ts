@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { resumeEngine } from '#/modules/AudioEngine';
+import { resumeEngine } from '#/modules/AudioEngine/useCases';
 import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 

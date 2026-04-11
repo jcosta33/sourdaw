@@ -24,7 +24,7 @@ import {
     EyeOff,
     LayoutTemplate,
 } from 'lucide-react';
-import { MidiDevicePicker, AudioDevicePicker, PluginScanSettings } from '#/modules/AudioEngine';
+import { MidiDevicePicker, AudioDevicePicker, PluginScanSettings } from '#/modules/AudioEngine/presentations/views';
 import { useStore } from '#/infra/store/useStore';
 import { preferencesStore } from '../../stores/preferencesStore';
 import {

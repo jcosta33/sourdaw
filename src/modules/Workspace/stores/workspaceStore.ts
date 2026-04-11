@@ -1,5 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
-import { type WorkspaceState } from '../useCases/workspaceQueries';
+import { type WorkspaceState } from '../models/WorkspaceState';
 
 const defaultWorkspaceState: WorkspaceState = {
     mode: 'arrange',

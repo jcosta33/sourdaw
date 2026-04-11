@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { detectKey as detectClipKey } from '#/modules/Arrangement';
+import { detectKey as detectClipKey } from '#/modules/Arrangement/useCases';
 
 export const handleDetectKeyAiMidi = createHandler<'detectKey'>({
     execute: async (a) => {

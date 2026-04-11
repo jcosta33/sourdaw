@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
-    clearUndoHistory,
     hydrateModuleStoresFromProjectData,
     resetModuleStoresToDefault,
     verifyAudioBufferReferences,

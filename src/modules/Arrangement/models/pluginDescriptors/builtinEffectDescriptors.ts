@@ -1,4 +1,4 @@
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 /** Built-in effect plugin descriptors (EQ, Compressor, Reverb, Delay, etc.) */
 export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [

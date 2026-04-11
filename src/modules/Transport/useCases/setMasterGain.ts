@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { getTransportState, updateTransportState } from '../repositories/transport';
-import { setMasterGainValue } from '#/modules/AudioEngine';
+import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
 
 /**
  * Set the master gain. This updates both the store (for UI reactivity) and the

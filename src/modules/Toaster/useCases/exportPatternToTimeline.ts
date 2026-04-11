@@ -4,9 +4,9 @@
 
 import { inject } from '#/infra/di/inject';
 import { toasterStore } from '../stores/toasterStore';
-import { getAllTracks, addClip } from '#/modules/Arrangement';
+import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI';
-import { playheadPositionRef } from '#/modules/Transport';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 export const exportPatternToTimelineDependencies = {
     getAllTracks,

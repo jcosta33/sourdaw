@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { addTrack, getTrackStoreState } from '#/modules/Arrangement';
+import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { applyChordProgressionToTrack } from '../../useCases/generateChordProgression/applyToTrack';
 import {
     type ChordProgressionStyle,

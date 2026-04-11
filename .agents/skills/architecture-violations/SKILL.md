@@ -1,6 +1,6 @@
 ---
 name: architecture-violations
-description: Apply when fixing architecture violations, refactoring modules, restructuring boundaries, or performing codebase audits. Contains mandatory rules for addressing violations properly without hacking around the architecture. Prevents ad-hoc barrel re-exports (other than the module root index.ts), fake use cases, dumping unrelated logic into single files, shadow shared layers, and other forms of malicious or fake compliance.
+description: Apply when fixing architecture violations, refactoring modules, restructuring boundaries, or performing codebase audits. Contains mandatory rules for addressing violations properly without hacking around the architecture. Prevents ad-hoc barrel re-exports outside contract-folder barrels, fake use cases, dumping unrelated logic into single files, shadow shared layers, and other forms of malicious or fake compliance.
 ---
 
 # Architecture Violations Skill
@@ -11,7 +11,7 @@ It applies to both AI agents and human maintainers.
 
 This is not another architecture overview. It is a guardrail document for preventing architectural drift, shortcut-driven refactors, validator gaming, and code that "passes the rules" without preserving the meaning of the rules.
 
-**Canonical module-boundary reference:** `docs/architecture/03-typescript-module.md` §3.3 (`index.ts`) and §5.1 (public surface).
+**Canonical module-boundary reference:** `docs/architecture/03-typescript-module.md` §3.3 (contract-folder barrels) and §3.1 (public contract surface).
 
 ---
 
@@ -40,7 +40,7 @@ If a violation exists, the correct fix is to establish the proper architecture s
 Never:
 
 - change validation rules to make violations pass
-- create barrel exports (other than the module root `index.ts`) of non-contract entities to bypass restrictions
+- create barrel exports (other than the four contract-folder `index.ts` files) of non-contract entities to bypass restrictions
 - move code into a "fake" use case, action, or projection file just to make imports legal
 - rename files or folders to trick the validator
 - move forbidden logic into `src/helpers/`, `src/shared/`, `utils/`, or other ungoverned escape hatches
@@ -179,72 +179,78 @@ If you cannot complete the refactor in the current session, leave the annotation
 
 ---
 
-## 5. Module Boundary: `index.ts`
+## 5. Module Boundary: contract-folder barrels
 
-The **only** file other modules may import from is the module's root `index.ts`.
-
-```text
-src/modules/ModuleName/index.ts   ← sole cross-module import target
-```
-
-`index.ts` may only re-export from these internal folders:
+Each module exposes **four independently-importable contract surfaces**. There is **no module-root `index.ts`**.
 
 ```text
-useCases/                 → business operations (functions/constants — not cross-module type exports)
-events/                   → typed event payload types (plain objects in AppEvents map)
-stores/                   → Store<T> instances (business-layer, cross-module)
-presentations/views/      → composable UI entry points (cross-module only through index.ts)
+src/modules/ModuleName/useCases/index.ts          ← business operations
+src/modules/ModuleName/stores/index.ts            ← Store<T> instances
+src/modules/ModuleName/events/index.ts            ← typed event payload types (if any)
+src/modules/ModuleName/presentations/views/index.ts  ← composable UI entry points (if any)
 ```
 
-Everything else — `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/hooks/`, `presentations/stores/`, `presentations/context/`, `presentations/components/`, `presentations/renderers/`, `engine/`, `runtime/`, `worklets/`, `errors/` — is private to the module. External consumers never import those paths directly; the module promotes symbols only through curated `index.ts` re-exports from the four allowed roots (error types that must cross the boundary surface via `useCases/` or `events/`, not from `errors/` in `index.ts`).
+Each `<contract>/index.ts` may only re-export from files within its own folder. `useCases/index.ts` must not import from `stores/`, and vice versa.
+
+Everything else — `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/hooks/`, `presentations/stores/`, `presentations/context/`, `presentations/components/`, `presentations/renderers/`, `engine/`, `runtime/`, `worklets/`, `errors/`, `handlers/` — is private. External consumers never import those paths directly.
 
 ### Importing cross-module
 
 ```ts
-// CORRECT — import from module root index.ts
-import { addTrack, trackStore } from '#/modules/Arrangement';
+// CORRECT — import from contract-folder barrel
+import { addTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import type { TrackAddedEvent } from '#/modules/Arrangement/events';
+import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
 
-// FORBIDDEN — direct folder access from outside the module
+// FORBIDDEN — direct file access from outside the module
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+
+// FORBIDDEN — root index.ts does not exist in a migrated module
+import { addTrack, trackStore } from '#/modules/Arrangement';
 ```
 
-### Importing inside the same module (never the own barrel)
+### Importing inside the same module (never own contract barrels)
 
-**`index.ts` is only the contract for *other* modules.** Files under `src/modules/<Name>/` must **not** import from `#/modules/<Name>` — that self-imports the barrel and is wrong for in-module code.
-
-Use **relative** paths to the file that defines the symbol (`./useCases/…`, `../stores/…`, `../../models/…`, etc.). Same rule applies to use cases, stores, models, and presentation files: reach siblings and parents with relative imports, not the public barrel.
+Files under `src/modules/<Name>/` must **not** import from `#/modules/<Name>/useCases`, `#/modules/<Name>/stores`, etc. Use **relative** paths.
 
 ```ts
 // CORRECT — Arrangement file importing Arrangement internals
 import { trackStore } from '../stores/trackStore';
 import { addClip } from './useCases/clip/addClip';
 
-// FORBIDDEN — same module importing its own index.ts
-import { trackStore, addClip } from '#/modules/Arrangement';
+// FORBIDDEN — same module importing its own contract barrel
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip } from '#/modules/Arrangement/useCases';
 ```
 
-When editing `index.ts`, add or keep re-exports only for APIs that **another module** actually imports. Do not grow the barrel so in-module files can avoid relative paths — that is fake convenience and breaks the “external surface only” rule.
-
-### Writing `index.ts`
+### Writing a contract-folder barrel
 
 ```ts
-// src/modules/Arrangement/index.ts — sole allowed barrel; curated public surface
-export { addTrack } from './useCases/addTrack';
-export { removeTrack } from './useCases/removeTrack';
-export { trackStore } from './stores/trackStore';
-export type { TrackAddedEvent } from './events/TrackAddedEvent';
-export { ArrangementView } from './presentations/views/ArrangementView';
+// src/modules/Arrangement/useCases/index.ts — curated use cases barrel
+export { addTrack } from './addTrack';
+export { removeTrack } from './removeTrack';
+export { getArrangementHandlers } from './getArrangementHandlers';
 
-// FORBIDDEN inside index.ts
-export type { SomeDto } from './useCases/getThing'; // use-case types do not cross modules
-export { Track } from './models/Track';           // models/ is private
-export { getTrackById } from './repositories/...'; // repositories/ is private
+// FORBIDDEN inside useCases/index.ts:
+export type { SomeDto } from './getThing';     // use-case types do not cross modules
+export { Track } from '../models/Track';       // models/ is private; wrong folder
+export { trackStore } from '../stores/trackStore'; // wrong folder — use stores/index.ts
 ```
 
-### `index.ts` and the no-barrel rule
+```ts
+// src/modules/Arrangement/stores/index.ts — curated stores barrel
+export { trackStore, defaultTrackState } from './trackStore';
+export type { TrackStoreState } from './trackStore';
 
-**Only** the module root `index.ts` may act as a re-export barrel. Do not add other `index.ts` or `contracts.ts` shims. This file is still a **curated** list of intentionally public symbols — not a full re-export of the module. Most files in a module should not appear in `index.ts`. If you find yourself re-exporting everything just to pass the validator, that is fake compliance.
+// FORBIDDEN inside stores/index.ts:
+export { addTrack } from '../useCases/addTrack'; // wrong folder — use useCases/index.ts
+```
+
+### No module-root `index.ts`
+
+Do not add `<module>/index.ts` or `<module>/contract.ts` aggregation shims. If a module you're working in still has a root `index.ts`, that is a legacy module awaiting migration — do not add new exports to it. Create or extend the contract-folder barrels instead.
 
 ---
 
@@ -277,22 +283,23 @@ The repository is free to change its internal implementation; the use case absor
 
 ### 6.2 What is forbidden
 
-**Importing cross-module directly into a folder instead of through `index.ts`:**
+**Importing cross-module directly into a file instead of through a contract-folder barrel:**
 
 ```ts
-// FORBIDDEN — bypasses the module boundary
+// FORBIDDEN — bypasses the module boundary (direct file access)
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
-// CORRECT — goes through the module's public surface
-import { addTrack, trackStore } from '#/modules/Arrangement';
+// CORRECT — goes through the contract-folder barrel
+import { addTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 ```
 
 **Importing use-case types from another module:**
 
 ```ts
 // FORBIDDEN — types defined in useCases/ are not a cross-module surface
-import type { TrackSummary } from '#/modules/Arrangement';
+import type { TrackSummary } from '#/modules/Arrangement/useCases';
 
 // Prefer: local shape, or ReturnType<typeof getTrackSummary> after importing the function
 ```
@@ -307,14 +314,15 @@ export * from '../repositories/automergeRepository';
 
 This creates no boundary. The consumer imports the repository symbol verbatim, under a different path. If the repository signature changes, every consumer breaks. There is no translation, no contract, no ownership change across the file.
 
-**Re-exporting non-contract internals from `index.ts`:**
+**Re-exporting non-contract internals from a contract-folder barrel:**
 
 ```ts
-// FORBIDDEN — index.ts may only re-export from useCases/, events/, stores/, presentations/views/
-export { Track } from './models/Track';
-export { getTrackById } from './repositories/track/getTrackById';
-export { TrackNotFoundError } from './errors/TrackNotFoundError';
-export type { TrackSummary } from './useCases/getTrackSummary'; // use-case types do not cross
+// FORBIDDEN — useCases/index.ts may only re-export from useCases/**
+export { Track } from '../models/Track';
+export { getTrackById } from '../repositories/track/getTrackById';
+export { TrackNotFoundError } from '../errors/TrackNotFoundError';
+export type { TrackSummary } from './getTrackSummary'; // use-case types do not cross
+export { trackStore } from '../stores/trackStore'; // wrong folder
 ```
 
 These patterns are non-compliant even if `deps:validate` passes — a fake public surface does not become a real one just because the path resolves.
@@ -364,14 +372,14 @@ The rule of thumb: if the type is **defined in this file**, exporting it is fine
 
 ### 6.5.2 Acceptable cross-module type surfaces
 
-Cross-module type consumption goes through the module's root `index.ts` or it does not happen. The legal type surfaces on `index.ts` are:
+Cross-module type consumption goes through the module's contract-folder barrel or it does not happen. The legal type surfaces are:
 
 | Type origin              | Cross-module export rule                                                                                                                           |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `events/` payloads       | **Allowed.** `export type { FooEvent } from './events/FooEvent'` — the canonical shared type surface.                                              |
-| `stores/` value types    | **Allowed.** A `Store<T>` is part of the public contract, so its `T` can be re-exported alongside the store instance.                              |
-| `useCases/` local types  | **Discouraged but legal.** Prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or a local shape in the consumer. If a type genuinely must cross, it goes via an `export type { … } from './useCases/...'` line on `index.ts` — never a deep import. |
-| Anything from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Forbidden** — not from `index.ts`, not laundered through a use case file, not anywhere. |
+| `events/` payloads       | **Allowed.** `export type { FooEvent } from './FooEvent'` in `events/index.ts` — the canonical shared type surface.                               |
+| `stores/` value types    | **Allowed.** A `Store<T>` is part of the public contract, so its `T` can be re-exported alongside the store instance from `stores/index.ts`.     |
+| `useCases/` local types  | **Discouraged but legal.** Prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or a local shape in the consumer. If a type genuinely must cross, it goes via an `export type { … } from './...'` line on `useCases/index.ts` — never a deep import. |
+| Anything from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Forbidden** — not from any barrel, not laundered through a use case file, not anywhere. |
 
 If you find yourself wanting to re-export a model type so another module can name it, the answer is always: **define a local type in the consumer**. The duplication is intentional (see `AGENTS.md` model isolation).
 

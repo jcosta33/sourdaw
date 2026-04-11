@@ -4,7 +4,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { addExternalDevice, addTrack } from '#/modules/Arrangement';
+import { addExternalDevice, addTrack } from '#/modules/Arrangement/useCases';
 
 type TrackInfo = {
     id: string;

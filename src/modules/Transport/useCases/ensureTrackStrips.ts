@@ -6,7 +6,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
@@ -15,7 +15,7 @@ import {
     setTrackOutput,
     setTrackPan,
     updateDeviceParam,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing';
 
 export const ensureTrackStrips = inject(

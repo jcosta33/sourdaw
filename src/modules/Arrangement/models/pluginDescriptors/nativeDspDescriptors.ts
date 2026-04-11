@@ -1,4 +1,4 @@
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 /** Premium WASM plugin descriptors (Dutch Oven, Scoring). */
 export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [

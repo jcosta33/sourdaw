@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { addSection } from '#/modules/Arrangement';
+import { addSection } from '#/modules/Arrangement/useCases';
 
 export const handleAddSection = createHandler<'addSection'>({
     execute: (a) => {

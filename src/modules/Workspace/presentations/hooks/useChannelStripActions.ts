@@ -14,7 +14,7 @@ import {
     toggleVcaMembership,
     createAndAssignVcaGroup,
     removeTrackFromVCA,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation';
 import { type Track } from '../../models/TrackViewTypes';
 

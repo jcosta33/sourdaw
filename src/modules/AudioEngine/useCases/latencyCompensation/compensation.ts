@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { getTrackStoreState } from '#/modules/Arrangement';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { type TrackLatency, type LatencyReport } from '#/modules/AudioEngine/models/LatencyCompensationTypes';
 

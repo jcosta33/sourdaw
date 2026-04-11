@@ -20,9 +20,9 @@ import {
     selectClip,
 } from '#/modules/Workspace';
 import { trackStore } from '../../stores/trackStore';
-import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport';
+import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { setWorkspaceMode } from '#/modules/Workspace';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { addClip } from '../../useCases/clip/addClip';

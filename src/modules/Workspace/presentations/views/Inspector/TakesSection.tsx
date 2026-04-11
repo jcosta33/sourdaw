@@ -3,7 +3,8 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { takeLaneStore, setCompRegion, selectTake, flattenComp } from '#/modules/Arrangement';
+import { takeLaneStore } from '#/modules/Arrangement/stores';
+import { setCompRegion, selectTake, flattenComp } from '#/modules/Arrangement/useCases';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { MetaText } from '../../components/Inspector/MetaText';
 

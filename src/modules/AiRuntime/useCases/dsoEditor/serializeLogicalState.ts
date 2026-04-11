@@ -7,9 +7,9 @@
  *
  * Selective state injection: only include domains relevant to the request.
  */
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI';
-import { transportStore } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/Workspace';
 
 // ── Types ────────────────────────────────────────────────────────────────────

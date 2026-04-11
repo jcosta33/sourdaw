@@ -8,7 +8,7 @@ import {
     ensureBusStrip as ensureBusStripEngine,
     setBusGain as setBusGainEngine,
     setSend as setSendEngine,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 
 const busStripDependencies = { ensureBusStripEngine } as const;
 

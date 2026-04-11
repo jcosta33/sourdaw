@@ -3,11 +3,12 @@ import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { createTrack } from '../models/Track';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { decodeAudioFile } from '#/modules/AudioEngine';
-import { getTransportState } from '#/modules/Transport';
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { trackStore } from '../stores/trackStore';
-import { pushUndo, createCallbackUndoEntry } from '#/modules/Command';
+import { pushUndo } from '#/modules/Command/stores';
+import { createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration';
 
 export const importAudioFile = inject({ getTrackState, setTrackState })(

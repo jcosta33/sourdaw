@@ -1,24 +1,13 @@
 import { inject } from '#/infra/di/inject';
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement';
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { automationStore } from '#/modules/Automation';
-import { undoStore } from '#/modules/Command';
 import { midiStore } from '#/modules/MIDI';
 import { setSidechainRoutes } from '#/modules/Routing';
-import {
-    defaultTransportState,
-    tempoMapStore,
-    timeSignatureMapStore,
-    transportStore,
-} from '#/modules/Transport';
+import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type ProjectData } from '../../models/ProjectData';
-
-export const clearUndoHistory = inject({ undoStore })(({ undoStore: store }) => {
-    return function clearUndoHistory(): void {
-        store.set({ past: [], future: [] });
-    };
-});
 
 const moduleStoreResetDependencies = {
     trackStore,

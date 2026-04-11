@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { stopPlayback, toggleMetronome, seekPlayhead } from './transportShortcuts';
+import { stopPlayback, toggleMetronome, seekPlayhead } from '#/modules/Transport/useCases';
 import {
     clearSolos,
     addTrack,
@@ -20,7 +20,7 @@ import {
     type EditingTool,
     TOOL_SHORTCUTS,
 } from '#/modules/Workspace';
-import { trackStore, zoomTimeline } from '#/modules/Arrangement';
+import { trackStore, zoomTimeline } from '#/modules/Arrangement/stores';
 import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../selectionHelpers';
 import { eventBus } from '#/app/registerDependencies';
 

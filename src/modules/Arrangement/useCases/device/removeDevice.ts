@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
-import { removeDeviceFromStrip } from '#/modules/AudioEngine';
+import { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/Plugin';
 
 export const removeDevice = inject({ getTrackState, mapAllTracks })(

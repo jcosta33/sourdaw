@@ -3,7 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { useTracks } from '../../hooks/useTracks';
-import { setTrackOutput } from '#/modules/Arrangement';
+import { setTrackOutput } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { MixerMicroReadout } from '../../components/Mixer/MixerMicroReadout';
 import { MixerSection } from '../../components/Mixer/MixerSection';

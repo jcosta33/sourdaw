@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { nextItem } from '#/modules/Transport';
+import { nextItem } from '#/modules/Transport/useCases';
 
 export const handleNextSetlistItem = createHandler<'nextSetlistItem'>({
     execute: () => {

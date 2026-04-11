@@ -12,10 +12,12 @@
  * sections are omitted. Notes use **clip-relative** beats and GM pitches `36 + padIndex`.
  * Toaster folder + pad tracks use **muted oklch** strip/clip colors (not the kit’s bright PAD_COLORS).
  */
-import { trackStore, markerStore, createTrack } from '#/modules/Arrangement';
+import { trackStore, markerStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI';
 import { projectStore } from '../../../stores/projectStore';
-import { transportStore, defaultTransportState } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
 import { automationStore, createAutomationLane } from '#/modules/Automation';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
 import { note, applyPreset, createMidiClip, syncArrangement } from '../demoUtils';

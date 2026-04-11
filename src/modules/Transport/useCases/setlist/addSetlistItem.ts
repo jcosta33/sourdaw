@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { setlistStore, type SetlistItem } from '#/modules/Transport/stores/setlistStore';
-import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '#/modules/Transport/models/setlistItemHelpers';
+import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '../../repositories/setlistItemIdCounter';
 
 export const addSetlistItem = inject({ setlistStore, getNextSetlistItemId, SETLIST_ITEM_COLORS })(
     ({ setlistStore: store, getNextSetlistItemId: nextId, SETLIST_ITEM_COLORS: colors }) => {

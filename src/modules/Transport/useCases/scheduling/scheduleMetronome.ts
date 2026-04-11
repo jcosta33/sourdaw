@@ -4,7 +4,7 @@ import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { type TransportState } from '../../models/TransportState';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
-import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine';
+import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases';
 
 export let lastMetronomeBeat = -1;
 

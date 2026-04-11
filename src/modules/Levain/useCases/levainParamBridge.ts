@@ -10,7 +10,7 @@ import { inject } from '#/infra/di/inject';
 import { type LevainPatch } from '../models/LevainPatch';
 import { levainStore, setLevainParam, setMacro } from '../stores/levainStore';
 import { autoLoadLevainSamples } from './autoLoadSamples';
-import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement';
+import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
 
 type LevainDevice = {
     setParam: (name: string, value: number) => void;

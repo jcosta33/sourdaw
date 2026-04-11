@@ -22,7 +22,7 @@ import {
 import { type LucideIcon } from 'lucide-react';
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
-import { addDevice } from '#/modules/Arrangement';
+import { addDevice } from '#/modules/Arrangement/useCases';
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 
 // ── Types ───────────────────────────────────────────────────────────────────

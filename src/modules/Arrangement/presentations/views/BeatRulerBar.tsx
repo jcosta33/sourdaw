@@ -1,14 +1,13 @@
 import { useRef, useEffect, type MouseEvent } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
+import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
-    transportStore,
     type TransportState,
-    playheadPositionRef,
     seekPlayhead,
     setLoopRegion,
     disableLooping,
-} from '#/modules/Transport';
+} from '#/modules/Transport/useCases';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 

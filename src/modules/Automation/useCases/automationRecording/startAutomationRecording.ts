@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { getAllTracks } from '#/modules/Arrangement';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import {
     RECORDING_MODES,
@@ -9,11 +9,9 @@ import {
     makeKey,
 } from '#/modules/Automation/stores/automationRecordingState';
 
-export const startAutomationRecordingDependencies = {
+export const startAutomationRecording = inject({
     getAllTracks,
-} as const;
-
-export const startAutomationRecording = inject(startAutomationRecordingDependencies)(
+})(
     ({ getAllTracks }) =>
         function startAutomationRecording(): void {
             activeRecording.clear();

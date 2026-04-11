@@ -59,7 +59,7 @@ import { CrustPanel } from '#/modules/Crust';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard';
 import { toggleVirtualKeyboard, closeBranchManager } from '../../useCases/togglePanel/panelToggles';
 
-import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command';
+import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { NotificationToast } from '../components/NotificationToast';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration';

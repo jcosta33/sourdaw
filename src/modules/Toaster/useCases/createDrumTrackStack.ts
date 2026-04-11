@@ -11,8 +11,8 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { createTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement';
-import { addDeviceToStrip } from '#/modules/AudioEngine';
+import { createTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
 import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
 import { eventBus } from '#/app/registerDependencies';
 

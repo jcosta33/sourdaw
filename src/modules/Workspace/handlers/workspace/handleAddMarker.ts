@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { addMarker } from '#/modules/Arrangement';
+import { addMarker } from '#/modules/Arrangement/useCases';
 
 export const handleAddMarker = createHandler<'addMarker'>({
     execute: (a) => {

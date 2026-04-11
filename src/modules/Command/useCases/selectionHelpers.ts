@@ -3,8 +3,8 @@
  * keyboard-shortcut handlers.
  */
 import { inject } from '#/infra/di/inject';
-import { getMarkerState, getTrackStoreState } from '#/modules/Arrangement';
-import { getTransportStoreValue, seekPlayhead } from '#/modules/Transport';
+import { getMarkerState, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { getTransportStoreValue, seekPlayhead } from '#/modules/Transport/useCases';
 import { getWorkspaceState } from '#/modules/Workspace';
 
 export const selectionHelpersDependencies = {

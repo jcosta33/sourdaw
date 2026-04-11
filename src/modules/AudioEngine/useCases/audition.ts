@@ -1,13 +1,13 @@
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import {
-    getSynthParamsForTrack,
     scheduleNote,
     startFaustNote,
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
 } from '#/modules/Synth';
-import { getTrackById, trackStore } from '#/modules/Arrangement';
+import { getTrackById, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 export const playAuditionNoteDependencies = {
     audioEngine,

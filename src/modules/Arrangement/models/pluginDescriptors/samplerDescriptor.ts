@@ -3,7 +3,7 @@
  * Registers the Sampler as a proper instrument with custom UI (bottom panel).
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 export const SAMPLER_DESCRIPTOR: PluginDescriptor = {
     id: 'builtin-sampler',

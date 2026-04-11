@@ -13,7 +13,7 @@ import {
     summarizeFeatures,
     audioToMidi,
 } from '#/modules/AudioAnalysis';
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';

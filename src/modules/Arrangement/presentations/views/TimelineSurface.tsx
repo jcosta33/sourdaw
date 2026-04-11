@@ -31,7 +31,7 @@ import {
     playheadPositionRef,
     tempoMapStore,
     timeSignatureMapStore,
-} from '#/modules/Transport';
+} from '#/modules/Transport/stores';
 
 export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);

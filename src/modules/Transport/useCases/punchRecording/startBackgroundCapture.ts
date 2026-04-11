@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { punchRecordingStore, type BackgroundCapture } from '#/modules/Transport/stores/punchRecordingStore';
-import { getNextCaptureId } from '#/modules/Transport/models/punchRecordingHelpers';
+import { getNextCaptureId } from '../../repositories/punchRecordingIdCounter';
 
 export const startBackgroundCapture = inject({ punchRecordingStore, getNextCaptureId })(
     ({ punchRecordingStore: store, getNextCaptureId: nextId }) => {

@@ -11,7 +11,7 @@ import {
     computeMomentaryLUFS,
     ShortTermLUFS,
     IntegratedLUFS,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type LUFSMeterProps = {

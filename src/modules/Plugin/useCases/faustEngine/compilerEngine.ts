@@ -21,6 +21,7 @@ import {
 import { createFaustError } from '#/modules/Plugin/errors/FaustError';
 import { isAppError } from '#/infra/errors/isAppError';
 import { registerWAMPlugin, type WAMDescriptor } from '../wamPluginHost/hostOperations';
+import { registerPluginLoader } from '../../services/pluginLoaderRegistry';
 import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/models/FaustEngineTypes';
 
 // Module registry (raw Map singleton)
@@ -255,3 +256,21 @@ export function isFaustModule(moduleId: string): boolean {
 }
 
 export type { FaustModule, FaustParamDescriptor };
+
+// ── Plugin loader registration ─────────────────────────────────────────────
+//
+// Register the Faust loader against the format-agnostic
+// `pluginLoaderRegistry` at module init. This inverts the dependency: the
+// WAM host no longer imports compilerEngine to load `faust.*` plugins —
+// it consults the registry instead. Side-effect at module load is required
+// because nothing imports the registry directly from the host side.
+
+registerPluginLoader('faust.', async (pluginId, context) => {
+    const faustModuleId = pluginId.replace('faust.', '');
+    const compiled = await compileFaustDSP(faustModuleId);
+    if (!compiled) {
+        return null;
+    }
+    const faustNode = await createFaustNode(faustModuleId, context);
+    return (faustNode as unknown as AudioNode | null) ?? null;
+});

@@ -19,8 +19,8 @@ import {
     executeAppAction,
     generateGroupId,
     describeAction,
-} from '#/modules/Command';
-import { defaultTrackState, trackStore } from '#/modules/Arrangement';
+} from '#/modules/Command/useCases';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { workspaceStore } from '../../stores/workspaceStore';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 

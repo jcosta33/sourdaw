@@ -10,7 +10,7 @@ import {
     getTrackStoreState as getTrackStoreStateDependency,
     setTrackState as setTrackStateDependency,
     updateClip as updateClipDependency,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { type Clip } from '../models/TrackViewTypes';
 import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 import { setNotesForClip } from './midiNoteCrud/setNotesForClip';

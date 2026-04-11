@@ -14,7 +14,7 @@ import {
     createTrackFromPreset,
     loadPresetToTrack,
     getAllTracks,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
 import { createDrumTrackStack } from '#/modules/Toaster';
 import { createGrandBouleTrack } from '#/modules/GrandBoule';
@@ -33,7 +33,7 @@ import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
-import { type SidebarRoute } from '../Sidebar';
+import { type SidebarRoute } from './SidebarTypes';
 import { eventBus } from '#/app/registerDependencies';
 
 // ── Instrument Family Groups ────────────────────────────────────────────────

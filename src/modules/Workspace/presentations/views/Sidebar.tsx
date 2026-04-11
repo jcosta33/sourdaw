@@ -6,27 +6,21 @@ import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync } from 'luc
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles';
 import { useTracks } from '../hooks/useTracks';
-import { getPlatformPlugins } from '#/modules/Arrangement';
-import { decodeAudioFile } from '#/modules/AudioEngine';
+import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
+import { type SidebarRoute } from './Sidebar/SidebarTypes';
 import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';
 import { EffectsTab } from './Sidebar/EffectsTab';
+
+export type { SidebarRoute };
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 import { MacrosPanel } from './Sidebar/MacrosPanel';
 import { LibraryBrowser } from '#/modules/SampleLibrary';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
 import { RailTabBar } from '../components/Sidebar/RailTabBar';
 
-export type SidebarRoute = {
-    id: string;
-    title: string;
-    payload?: Record<string, any>;
-    /** Optional icon component for the back bar */
-    icon?: React.ComponentType<{ className?: string }>;
-    /** Optional color class for the icon */
-    iconColor?: string;
-};
 
 type UserSample = {
     id: string;

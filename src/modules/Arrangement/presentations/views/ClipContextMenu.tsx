@@ -10,7 +10,7 @@ import { runAiActionWithToast } from '#/modules/AiRuntime';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration';
 import { trackStore } from '../../stores/trackStore';
 import { detectTempo, detectKey } from '#/modules/AudioAnalysis';
-import { executeAppAction } from '#/modules/Command';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
 import { normalizeClip } from '../../useCases/clipEditing/normalizeClip';
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';

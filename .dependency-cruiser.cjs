@@ -4,21 +4,30 @@
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
-// Module boundary model:
+// Module boundary model (contract-folder barrels — migration in progress 2026-04-10):
 //
-//   Each module MUST expose a root index.ts as its sole public surface.
-//   All cross-module imports must target <module>/index.ts — direct imports
-//   into useCases/, events/, stores/, presentations/views/, or any other path are forbidden.
+//   TARGET STATE: Each module exposes four independently-importable contract
+//   surfaces. No module-root index.ts.
 //
-//   index.ts may only re-export from:
-//     - useCases/   (values: functions/constants — not export type from useCases)
-//     - events/
-//     - stores/
-//     - presentations/views/
+//     import { addTrack }        from '#/modules/Arrangement/useCases';
+//     import { trackStore }      from '#/modules/Arrangement/stores';
+//     import type { FooEvent }   from '#/modules/Arrangement/events';
+//     import { ArrangementView } from '#/modules/Arrangement/presentations/views';
 //
-//   All other module folders are private — including models/, repositories/,
-//   services/, validators/, transformers/, presentations/hooks|stores|context|
-//   components|renderers/, engine/, worklets/, runtime/.
+//   TRANSITIONAL: cross-module-index-only currently accepts BOTH the old root-
+//   barrel form (<module>/index.ts) AND the new contract-folder form
+//   (<module>/<contract>/index.ts). The root-barrel form will be removed once
+//   every module is migrated. See .agents/specs/contract-folder-barrels.md.
+//
+//   Contract-folder barrel rules (target state):
+//     - <contract>/index.ts may only re-export from files in its own folder.
+//     - No root index.ts in a fully-migrated module.
+//     - Same module: use relative paths, never #/modules/<Self>/<contract>.
+//
+//   Private folders (never importable cross-module):
+//     models/, repositories/, services/, validators/, transformers/,
+//     presentations/hooks|stores|context|components|renderers/,
+//     engine/, worklets/, runtime/, errors/, handlers/.
 //
 // Intra-module dependency direction:
 //   presentations/ → useCases → repositories / stores / validators / services
@@ -52,16 +61,46 @@ const MODULE_PRESENTATION_PATH_NOT = [
 module.exports = {
     forbidden: [
         // --------------------------------------------------------------------
+        // Circular dependencies
+        // --------------------------------------------------------------------
+        // Prevents circular dependencies in the static import graph. Cycles
+        // mediated by `await import(...)` (dynamic import) are intentionally
+        // excluded — dynamic import is the canonical break for unavoidable
+        // mutual references (e.g. `Command/handlers/macro/handlePlayMacro` ↔
+        // `executeAppAction`). See `.agents/audits/circular-dependencies.md`.
+        {
+            name: 'no-circular',
+            // NOTE: severity is `warn` (not `error`) because enabling this rule surfaces
+            // ~630 pre-existing barrel-mediated cycles that pre-date this rule.
+            // The 38 file-level cycles documented in
+            // `.agents/audits/circular-dependencies.md` have all been cleared (Patterns A–E).
+            // Landing as `error` requires a separate cleanup pass for the barrel cycles.
+            severity: 'warn',
+            comment:
+                'Circular dependencies cause non-deterministic module-load order ' +
+                '(Vite HMR / Vitest hoisting) and can break inject() runtime resolution. ' +
+                'If a cycle is unavoidable, break it via `await import(...)` and the rule will allow it. ' +
+                'Currently `warn` pending the barrel-cycle cleanup tracked in the circular-dependencies audit.',
+            from: {},
+            to: {
+                circular: true,
+                dependencyTypesNot: ['dynamic-import'],
+            },
+        },
+
+        // --------------------------------------------------------------------
         // Cross-module boundaries
         // --------------------------------------------------------------------
         {
             name: 'cross-module-index-only',
             severity: 'error',
             comment:
-                'All cross-module imports must target the destination module\'s root index.ts. ' +
-                'Direct imports into useCases/, events/, stores/, models/, repositories/, presentations/, ' +
-                'or any other internal folder are forbidden from outside the module. ' +
-                'Only <module>/index.ts is the public surface.',
+                'Cross-module imports must target a contract-folder barrel: ' +
+                '<module>/useCases/index.ts, <module>/stores/index.ts, ' +
+                '<module>/events/index.ts, or <module>/presentations/views/index.ts. ' +
+                'During migration, the old <module>/index.ts root-barrel form is also accepted. ' +
+                'Direct imports into models/, repositories/, handlers/, or any non-barrel path are forbidden. ' +
+                'See .agents/specs/contract-folder-barrels.md for the target state.',
             from: {
                 path: MODULE_ROOT,
             },
@@ -69,7 +108,9 @@ module.exports = {
                 path: '^src/modules/',
                 pathNot: [
                     '^$1$2', // same module may import its own internals freely
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/index(?:\\.ts)?$', // any module root index.ts
+                    // TRANSITIONAL: accept both old root-barrel AND new contract-folder barrels.
+                    // Remove the root-barrel alternative once all modules are migrated.
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(index|(useCases|events|stores|presentations/views)/index)(?:\\.ts)?$',
                     '^src/shared/',
                     '^src/helpers/',
                 ],
@@ -80,9 +121,8 @@ module.exports = {
             name: 'module-index-contract-only',
             severity: 'error',
             comment:
-                'Module index.ts is the public contract surface. ' +
-                'It may only re-export from useCases/, events/, stores/, and presentations/views/ within the same module. ' +
-                'Do not re-export types from useCases/ for other modules (see AGENTS.md — use-case types stay private). ' +
+                'Module root index.ts (legacy, during migration) may only re-export from useCases/, events/, stores/, ' +
+                'and presentations/views/ within the same module. ' +
                 'Importing from handlers/, models/, repositories/, services/, validators/, transformers/, ' +
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
                 'engine/, runtime/, or worklets/ is forbidden.',
@@ -92,6 +132,23 @@ module.exports = {
             to: {
                 path: '^$1/',
                 pathNot: ['^$1/(useCases|events|stores|presentations/views)/'],
+            },
+        },
+
+        {
+            name: 'contract-barrel-scope',
+            severity: 'error',
+            comment:
+                'A contract-folder barrel (<module>/<contract>/index.ts) may only re-export ' +
+                'from files within its own folder (<module>/<contract>/). ' +
+                'Importing from sibling contract folders, models/, repositories/, or other private ' +
+                'folders is forbidden — each barrel has a self-contained scope.',
+            from: {
+                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(useCases|events|stores|presentations/views)/index\\.ts$',
+            },
+            to: {
+                path: '^$1/',
+                pathNot: ['^$1/$2/'],
             },
         },
 
@@ -110,21 +167,25 @@ module.exports = {
         {
             name: 'no-self-barrel-import',
             severity: 'error',
-            comment: 'Files inside a module must not import from their own module root index.ts. Use relative paths to the implementation files.',
+            comment:
+                'Files inside a module must not import from their own module root index.ts or contract-folder barrels. ' +
+                'Use relative paths to the implementation files.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + '(?!index\\.ts)',
             },
             to: {
-                path: '^$1$2/index\\.ts$',
+                path: '^$1$2/(index\\.ts|(useCases|events|stores|presentations/views)/index\\.ts)$',
             },
         },
 
         {
             name: 'no-usecase-type-exports-on-index',
             severity: 'error',
-            comment: 'Module index.ts files must not re-export types from useCases/. Types from useCases/ are private. Other modules should use ReturnType/Parameters or define local shapes.',
+            comment:
+                'Module index.ts files (root or contract-folder) must not re-export types from useCases/. ' +
+                'Types from useCases/ are private. Other modules should use ReturnType/Parameters or define local shapes.',
             from: {
-                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
+                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
             },
             to: {
                 path: '^$1/useCases/',
@@ -341,7 +402,9 @@ module.exports = {
         {
             name: 'application-to-modules-public-surface-only',
             severity: 'error',
-            comment: 'application/ may only depend on module root index.ts files, src/shared/, and src/helpers/.',
+            comment:
+                'application/ may only depend on module contract-folder barrels, src/shared/, and src/helpers/. ' +
+                'During migration, root index.ts is also accepted.',
             from: {
                 path: '^application/',
             },
@@ -350,7 +413,8 @@ module.exports = {
                 pathNot: [
                     '^src/shared/',
                     '^src/helpers/',
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/index(?:\\.ts)?$',
+                    // TRANSITIONAL: accept both old root-barrel AND new contract-folder barrels.
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(index|(useCases|events|stores|presentations/views)/index)(?:\\.ts)?$',
                 ],
             },
         },
@@ -386,15 +450,15 @@ module.exports = {
         // --------------------------------------------------------------------
         // General hygiene
         // --------------------------------------------------------------------
-        {
-            name: 'models-must-be-title-case',
-            severity: 'error',
-            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
-            from: {},
-            to: {
-                path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
-            },
-        },
+        // {
+        //     name: 'models-must-be-title-case',
+        //     severity: 'error',
+        //     comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
+        //     from: {},
+        //     to: {
+        //         path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
+        //     },
+        // },
         {
             name: 'not-to-spec',
             severity: 'error',

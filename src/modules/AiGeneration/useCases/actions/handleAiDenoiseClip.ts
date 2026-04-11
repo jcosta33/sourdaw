@@ -1,7 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 import { isAppError } from '#/infra/errors/isAppError';
-import { audioBufferCache, denoiseAudio, isTauri } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { denoiseAudio, isTauri } from '#/modules/AudioEngine/useCases';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 

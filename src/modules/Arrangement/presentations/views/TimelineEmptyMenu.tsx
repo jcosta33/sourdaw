@@ -4,12 +4,12 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations';
-import { executeAppAction } from '#/modules/Command';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { isTauri } from '#/helpers/tauriBridge';
 import { markerStore } from '../../stores/markerStore';
 import { trackStore } from '../../stores/trackStore';
-import { transportStore } from '#/modules/Transport';
-import { decodeAudioFile } from '#/modules/AudioEngine';
+import { transportStore } from '#/modules/Transport/stores';
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { addClip } from '../../useCases/clip/addClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { addTrack } from '../../useCases/addTrack';

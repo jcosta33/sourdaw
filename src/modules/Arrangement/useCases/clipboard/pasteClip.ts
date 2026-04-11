@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { getTransportState, playheadPositionRef } from '#/modules/Transport';
+import { playheadPositionRef } from '#/modules/Transport/stores';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { midiStore, createMidiNote } from '#/modules/MIDI';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { type MidiNote } from '#/modules/Arrangement/models/MidiNoteViewTypes';

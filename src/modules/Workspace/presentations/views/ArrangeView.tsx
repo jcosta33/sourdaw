@@ -8,7 +8,9 @@ import {
     useLayoutEffect,
 } from 'react';
 import { useStore } from '#/infra/store/useStore';
-import { decodeAudioFile } from '#/modules/AudioEngine';
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { timelineViewStore, setScrollX, markerStore, chordTrackStore } from '#/modules/Arrangement/stores';
+import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import {
     TimelineSurface,
     TimelineMinimap,
@@ -16,18 +18,11 @@ import {
     MarkerLane,
     BeatRulerBar,
     TimelineChromeSurface,
-    timelineViewStore,
-    setScrollX,
     TrackListView,
-    addTrack,
-    addClip,
-    importMidiFile,
-    markerStore,
-    chordTrackStore,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/presentations/views';
 import { useTracks } from '../hooks/useTracks';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { transportStore } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
 import { setTrackListWidth, closeScratchPad } from '../../useCases/togglePanel/panelToggles';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';

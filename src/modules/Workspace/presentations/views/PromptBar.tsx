@@ -25,7 +25,7 @@ import {
     AlertTriangle,
 } from 'lucide-react';
 import { toggleAiHistoryPanel } from '#/modules/AiRuntime';
-import { describeAction } from '#/modules/Command';
+import { describeAction } from '#/modules/Command/useCases';
 import { usePromptExecution, type PromptFuzzyResult, type SelectionTag } from '../hooks/usePromptExecution';
 import { LlmStatusBadge } from './Prompt/LlmStatusBadge';
 

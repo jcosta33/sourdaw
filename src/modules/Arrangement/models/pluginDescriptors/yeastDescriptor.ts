@@ -3,7 +3,7 @@
  * Registers Yeast as a MIDI effect that can be added to MIDI tracks.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 export const YEAST_DESCRIPTOR: PluginDescriptor = {
     id: 'yeast',

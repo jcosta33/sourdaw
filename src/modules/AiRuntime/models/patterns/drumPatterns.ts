@@ -1,4 +1,4 @@
-import { type PatternTemplate, type PatternNote, type PatternGenre } from '../midiPatternLibrary';
+import { type PatternTemplate, type PatternNote, type PatternGenre } from '../MidiPatternType';
 
 // GM drum constants
 const KK = 36,

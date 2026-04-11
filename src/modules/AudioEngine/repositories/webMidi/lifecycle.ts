@@ -3,7 +3,7 @@
  */
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 import { type MidiInputInfo, MIDI_CC } from '#/modules/AudioEngine/models/WebMidiTypes';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     midiAccess,
     activeInput,

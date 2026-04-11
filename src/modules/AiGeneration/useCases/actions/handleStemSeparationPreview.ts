@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 import { isAppError } from '#/infra/errors/isAppError';
 import { separateStems } from '#/modules/AudioAnalysis';
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 

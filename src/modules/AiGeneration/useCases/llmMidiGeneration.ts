@@ -15,7 +15,7 @@ import {
     PATTERN_TEMPLATES,
     resolveBackend,
 } from '#/modules/AiRuntime';
-import { type MidiGenerationNote } from '#/modules/AudioEngine';
+import { type MidiGenerationNote } from '#/modules/AudioEngine/useCases';
 
 // ── System prompt for music generation ──
 
@@ -48,22 +48,20 @@ type LlmMidiResponse = {
     }>;
 };
 
-export const generateMidiViaLlmDependencies = {
-    resolveBackend,
-    generateWebLlmCompletion,
-    generateNativeCompletion,
-    isNativeEngineReady,
-    filterTemplates,
-    patternTemplates: PATTERN_TEMPLATES,
-} as const;
-
 // ── Core generation ──
 
 /**
  * Generate MIDI notes using the LLM (WebLLM in browser or native mistral.rs).
  * Returns MidiGenerationNote[] compatible with the existing clip insertion pipeline.
  */
-export const generateMidiViaLlm = inject(generateMidiViaLlmDependencies)(
+export const generateMidiViaLlm = inject({
+    resolveBackend,
+    generateWebLlmCompletion,
+    generateNativeCompletion,
+    isNativeEngineReady,
+    filterTemplates,
+    patternTemplates: PATTERN_TEMPLATES,
+})(
     ({
         resolveBackend,
         generateWebLlmCompletion,

@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 import { handleLoadExternalPlugin } from '../handlers/pluginHost/handleLoadExternalPlugin';
 import { handleScanPlugins } from '../handlers/pluginHost/handleScanPlugins';
 

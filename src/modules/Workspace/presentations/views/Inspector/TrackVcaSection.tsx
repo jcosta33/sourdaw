@@ -8,7 +8,7 @@ import {
     removeFromVca,
     getVcaGroups,
     createVcaGroup,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 

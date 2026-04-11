@@ -16,7 +16,7 @@ import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 import { type Track } from '../../../models/TrackViewTypes';
-import { getAllVCAGroups } from '#/modules/Arrangement';
+import { getAllVCAGroups } from '#/modules/Arrangement/useCases';
 import { useChannelStripActions } from '../../hooks/useChannelStripActions';
 import { MixerLevelReadout } from './MixerLevelReadout';
 import { MixerPopupLabel, MixerPopupMenu, MixerPopupOption, MixerPopupSeparator } from './MixerPopupMenu';

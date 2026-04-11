@@ -17,7 +17,7 @@ import {
     useState,
 } from 'react';
 
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
     removeMidiNote,
@@ -28,7 +28,7 @@ import {
     removeNotesByIds,
 } from '#/modules/MIDI';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
-import { playAuditionNote } from '#/modules/AudioEngine';
+import { playAuditionNote } from '#/modules/AudioEngine/useCases';
 
 import {
     ROW_HEIGHT,

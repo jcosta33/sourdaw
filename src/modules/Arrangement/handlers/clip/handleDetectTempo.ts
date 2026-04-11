@@ -1,7 +1,7 @@
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { createHandler } from '#/helpers/createHandler';
 import { detectTempo as detectTempoFromBuffer } from '#/modules/AudioAnalysis';
-import { detectProjectTempo } from '#/modules/Transport';
+import { detectProjectTempo } from '#/modules/Transport/useCases';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleDetectTempo = createHandler<'detectTempo'>({

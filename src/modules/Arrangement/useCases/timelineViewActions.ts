@@ -53,9 +53,9 @@ import {
     removeAutomationPoint as removeAutomationPointImpl,
 } from '#/modules/Automation';
 import { detectKey as detectKeyImpl, detectTempo as detectTempoImpl } from '#/modules/AudioAnalysis';
-import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine';
-import { executeAppAction as executeAppActionImpl, pushUndoEntry as pushUndoEntryImpl } from '#/modules/Command';
-import { setLoopRegion as setLoopRegionImpl } from '#/modules/Transport';
+import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine/useCases';
+import { executeAppAction as executeAppActionImpl, pushUndoEntry as pushUndoEntryImpl } from '#/modules/Command/useCases';
+import { setLoopRegion as setLoopRegionImpl } from '#/modules/Transport/useCases';
 import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace';
 
 export const splitClip = inject({ splitClipImpl })(

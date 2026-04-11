@@ -10,7 +10,7 @@
 
 import { PitchDetector } from 'pitchy';
 
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 // ── Types ───────────────────────────────────────────────────────────────
 

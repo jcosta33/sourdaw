@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Slider } from '#/components/ui/slider';
 import { registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
-import { setDeviceParameter } from '#/modules/Arrangement';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 export const HammondB3Layout = ({ device, trackId }: any): ReactElement | null => {

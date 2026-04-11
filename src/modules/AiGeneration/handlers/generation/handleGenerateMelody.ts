@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { addTrack, getTrackStoreState } from '#/modules/Arrangement';
+import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { applyMelodyToTrack } from '../../useCases/generateMelody/applyToTrack';
 import { type ScaleType } from '../../useCases/generateMelody/algorithm';
 import { getPlayheadBeat, resolveOrCreateMidiTrack, VALID_MELODY_STYLES, VALID_SCALES } from './generationHandlerHelpers';

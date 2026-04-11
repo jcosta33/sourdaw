@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { rdpSimplify } from '#/modules/Arrangement';
+import { rdpSimplify } from '#/modules/Arrangement/useCases';
 
 export const thinAutomationPointsDependencies = {
     rdpSimplify,

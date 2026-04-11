@@ -1,7 +1,9 @@
-import { trackStore, markerStore, createTrack } from '#/modules/Arrangement';
+import { trackStore, markerStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI';
 import { projectStore } from '../../../stores/projectStore';
-import { transportStore, defaultTransportState } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
 import { automationStore, createAutomationLane } from '#/modules/Automation';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
 import { note, applyPreset, createMidiClip, syncArrangement } from '../demoUtils';

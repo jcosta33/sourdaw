@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { interpolateAutomationValue } from '#/modules/Arrangement';
+import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
 
 export const getAutomationValueAtBeat = inject({ interpolateAutomationValue })(
     ({ interpolateAutomationValue }) =>

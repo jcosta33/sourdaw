@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { automationStore } from '../stores/automationStore';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 export const deleteSelectedPointsDependencies = {
     pushUndoEntry,

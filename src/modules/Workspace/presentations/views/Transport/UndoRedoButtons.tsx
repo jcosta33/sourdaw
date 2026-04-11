@@ -3,7 +3,7 @@ import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { undo, redo } from '#/modules/Command';
+import { undo, redo } from '#/modules/Command/useCases';
 
 type UndoRedoButtonsProps = {
     canUndo: boolean;

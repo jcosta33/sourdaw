@@ -4,7 +4,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
-import { getMasterAnalyser } from '#/modules/AudioEngine';
+import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type GoniometerProps = {

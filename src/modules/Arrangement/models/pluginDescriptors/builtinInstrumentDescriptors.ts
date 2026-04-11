@@ -1,4 +1,4 @@
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 /** Built-in instrument plugin descriptors (Synth, Drum Kit). */
 export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [

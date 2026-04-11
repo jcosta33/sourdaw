@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
-import { addClip, addTrack, getAllTracks } from '#/modules/Arrangement';
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { addClip, addTrack, getAllTracks } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { addMidiNote } from '#/modules/MIDI';
-import { getTransportState } from '#/modules/Transport';
+import { getTransportState } from '#/modules/Transport/useCases';
 
 export const audioAnalysisAudioToMidiDependencies = {
     getTransportState,

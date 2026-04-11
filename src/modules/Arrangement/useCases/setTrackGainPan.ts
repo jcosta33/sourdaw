@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { updateTrack } from '../repositories/track/updateTrack';
-import { getTransportState } from '#/modules/Transport';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
 import { recordAutomationValue } from '#/modules/Automation';
 import { type AutomationMode, type InputMonitoring } from '../stores/trackStore';
@@ -11,7 +11,7 @@ import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
     updateDeviceParam,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 

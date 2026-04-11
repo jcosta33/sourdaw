@@ -4,7 +4,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
-import { getBuiltinPlugins } from '#/modules/Arrangement';
+import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
 import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane, automationStore } from '#/modules/Automation';
 import { useStore } from '#/infra/store/useStore';
 import { type Track } from '../../../models/TrackViewTypes';

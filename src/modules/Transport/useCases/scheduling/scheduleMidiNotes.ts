@@ -8,8 +8,8 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
-    audioBufferCache,
     createBufferSource,
     ensureTrackStrip,
     getAudioContext,
@@ -17,20 +17,17 @@ import {
     getCurrentTime,
     getDrumKitByIndex,
     setTrackGain as engineSetTrackGain,
-} from '#/modules/AudioEngine';
-import { resolveClipsWithComping, trackStore } from '#/modules/Arrangement';
+} from '#/modules/AudioEngine/useCases';
+import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     getDrumKitDefByIndex,
-    getSynthParamsForTrack,
     scheduleDrumKitNote,
     scheduleFaustNote,
     scheduleKitNote,
     scheduleNote,
 } from '#/modules/Synth';
-
-// Transport-local shape (AGENTS.md §95 — derive from Synth's public use-case signature;
-// params are passed opaquely to scheduleKitNote, no fields read here).
-type SynthParams = ReturnType<typeof getSynthParamsForTrack>;
+import type { SynthParams } from '#/modules/AudioEngine/useCases';
 
 // Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible
 // with the drum kit shape scheduleKitNote / getDrumKitByIndex operate on.

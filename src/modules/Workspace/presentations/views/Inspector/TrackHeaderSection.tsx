@@ -7,7 +7,7 @@ import {
     setTrackColor,
     freezeTrack,
     unfreezeTrack,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';

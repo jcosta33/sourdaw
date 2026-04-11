@@ -5,7 +5,7 @@
  * module. Models must not cross module boundaries; duplication is intentional.
  */
 
-import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameter';
+import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
 const CRUST_PARAMS: readonly PluginParamDef[] = [
     { id: 'gain', label: 'Gain', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },

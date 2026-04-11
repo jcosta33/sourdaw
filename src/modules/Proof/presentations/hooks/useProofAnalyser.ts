@@ -6,7 +6,7 @@
  * that reads FFT data.
  */
 import { useRef, useEffect, useState } from 'react';
-import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine';
+import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
 export function useProofAnalyser(): {
     fftData: Float32Array<ArrayBuffer> | null;

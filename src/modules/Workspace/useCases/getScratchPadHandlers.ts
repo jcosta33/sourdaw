@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 import { handleCaptureScratchPad } from '../handlers/scratchPad/handleCaptureScratchPad';
 import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
 import { handleCommitScratchPad } from '../handlers/scratchPad/handleCommitScratchPad';

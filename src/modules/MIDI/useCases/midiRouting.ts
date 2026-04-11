@@ -6,7 +6,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { updateTrack as updateTrackDependency } from '#/modules/Arrangement';
+import { updateTrack as updateTrackDependency } from '#/modules/Arrangement/useCases';
 
 export const setMidiOutput = inject({ updateTrackDependency: () => updateTrackDependency })(
     ({ updateTrackDependency }) =>

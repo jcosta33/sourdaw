@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     computeNormalizationScale,
     type NormalizationMode,

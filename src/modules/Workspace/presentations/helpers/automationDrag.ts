@@ -16,7 +16,7 @@ import {
     selectPointsInRange,
     automationStore,
 } from '#/modules/Automation';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { startMouseDrag } from './mouseDrag';
 
 type SetStateFn<T> = (updater: T | ((prev: T) => T)) => void;

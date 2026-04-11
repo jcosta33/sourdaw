@@ -6,9 +6,10 @@ import {
     PEER_COLORS,
 } from '../../models/CollaborationTypes';
 import { createCollaborationError } from '../../errors/CollaborationError';
-import { transportStore } from '#/modules/Transport';
-import { trackStore } from '#/modules/Arrangement';
-import { audioBufferCache, getAudioContext } from '#/modules/AudioEngine';
+import { transportStore } from '#/modules/Transport/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
 
 import {

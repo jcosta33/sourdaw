@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { stopPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
-import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine';
+import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases';
 
 export const pausePlayback = inject({ getTransportState, updateTransportState })(
     ({ getTransportState, updateTransportState }) =>

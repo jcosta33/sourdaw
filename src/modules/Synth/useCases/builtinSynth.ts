@@ -3,15 +3,14 @@
  * Delegates to SynthModels for types/defaults.
  */
 
-import { inject } from '#/infra/di/inject';
-import { getTrackById } from '#/modules/Arrangement';
-// Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
-type Device = { type: string; parameterValues: Record<string, number> };
 import {
     defaultSynthParams,
     type MpeParams,
     type SynthParams,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
+
+// Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
+type Device = { type: string; parameterValues: Record<string, number> };
 
 const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'waveform',
@@ -334,24 +333,6 @@ export function getSynthParamsFromDevices(devices: Device[]): SynthParams {
 
     return result;
 }
-
-/**
- * Reads synth params from the live track store by track ID.
- *
- * Valid for live-engine consumers (transport, mixer, live preview) that always
- * want the current store value. For offline rendering, prefer
- * `getSynthParamsFromDevices(track.devices)` to use a stable snapshot and
- * avoid a live-store read mid-render.
- */
-export const getSynthParamsForTrack = inject({ getTrackById })(({ getTrackById: getTrack }) => {
-    return function getSynthParamsForTrack(trackId: string): SynthParams {
-        const track = getTrack(trackId);
-        if (!track) {
-            return { ...defaultSynthParams };
-        }
-        return getSynthParamsFromDevices(track.devices);
-    };
-});
 
 /**
  * Lightweight note scheduling for offline rendering.

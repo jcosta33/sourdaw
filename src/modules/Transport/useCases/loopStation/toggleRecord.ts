@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { loopStationStore, type LoopLayer } from '#/modules/Transport/stores/loopStationStore';
-import { getNextLayerId } from '#/modules/Transport/models/loopStationHelpers';
+import { getNextLayerId } from '../../repositories/loopStationIdCounter';
 
 export const toggleRecord = inject({ loopStationStore })(({ loopStationStore: store }) => {
     return function toggleRecord(slotId: string): void {

@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { togglePunchRecording } from '#/modules/Transport';
+import { togglePunchRecording } from '#/modules/Transport/useCases';
 
 export const handleTogglePunchRecording = createHandler<'togglePunchRecording'>({
     execute: () => {

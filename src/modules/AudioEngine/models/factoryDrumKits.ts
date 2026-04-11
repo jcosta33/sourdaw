@@ -1,9 +1,12 @@
 /**
- * Model: Factory drum kit preset data.
- * Static kit definitions — no I/O, no logic beyond data access.
+ * Factory drum kit preset data.
+ *
+ * Static const definitions of built-in drum kits, plus pure accessors.
+ * No I/O — this is a model registry, co-located with the `DrumKit` /
+ * `DrumKitVoice` shapes in `SynthModels.ts`.
  */
 
-import { type SynthParams, defaultSynthParams, type DrumKit, type DrumKitVoice } from '../models/SynthModels';
+import { type SynthParams, defaultSynthParams, type DrumKit, type DrumKitVoice } from './SynthModels';
 
 function voice(name: string, pitch: number, overrides: Partial<SynthParams>): DrumKitVoice {
     return {

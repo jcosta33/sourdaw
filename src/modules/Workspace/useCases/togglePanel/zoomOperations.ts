@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { getWorkspaceState } from '../../repositories/workspace';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { eventBus } from '#/app/registerDependencies';
 import { type ZoomToSelectionPayload } from '../../events/WorkspaceEvents';
 

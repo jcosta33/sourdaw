@@ -1,4 +1,4 @@
-import { generateShapePoints } from '#/modules/Arrangement';
+import { generateShapePoints } from '#/modules/Arrangement/useCases';
 import { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 import { automationStore } from '../stores/automationStore';
 

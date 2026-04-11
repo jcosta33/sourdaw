@@ -3,7 +3,7 @@
  * Registers Toaster as a proper instrument that can be added to MIDI tracks.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 export const TOASTER_DESCRIPTOR: PluginDescriptor = {
     id: 'toaster',

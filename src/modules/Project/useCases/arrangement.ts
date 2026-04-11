@@ -1,9 +1,10 @@
 import { inject } from '#/infra/di/inject';
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement';
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation';
-import { stopPlayback, undoStore } from '#/modules/Command';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI';
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+import { stopPlayback } from '#/modules/Transport/useCases';
 import { arrangementStore } from '../stores/arrangementStore';
 import { type ArrangementSnapshot } from '../stores/arrangementStore';
 import { markDirty } from './projectPersistence/saveProject';
@@ -86,7 +87,7 @@ export const switchArrangement = inject(arrangementOrchestrationDependencies)(
             loadSnapshot(target);
 
             // Clear undo history because IDs might have been reused or destroyed
-            undoStore.set({ past: [], future: [] });
+            clearUndoHistory();
 
             arrangementStore.set({
                 ...arrangementStore.value!,
@@ -123,7 +124,7 @@ export const createArrangement = inject(arrangementOrchestrationDependencies)(
             });
 
             loadSnapshot(newArrangement);
-            undoStore.set({ past: [], future: [] });
+            clearUndoHistory();
             markDirty();
         }
 );
@@ -154,7 +155,7 @@ export const duplicateArrangement = inject(arrangementOrchestrationDependencies)
             });
 
             loadSnapshot(clone);
-            undoStore.set({ past: [], future: [] });
+            clearUndoHistory();
             markDirty();
         }
 );

@@ -3,23 +3,17 @@ import { transportStore } from '../stores/transportStore';
 import { playheadPositionRef } from '../stores/playheadPositionRef';
 import { tempoMapStore } from '../stores/tempoMapStore';
 import { getTempoAtBeat } from '../models/TempoMap';
-import {
-    trackStore,
-    startRecording,
-    stopRecording,
-    addTakeLane,
-    addTake,
-    takeLaneStore,
-} from '#/modules/Arrangement';
+import { startRecording, stopRecording, addTakeLane, addTake } from '#/modules/Arrangement/useCases';
+import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { evaluateFollowActions } from './evaluateFollowActions';
 import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     stopAllScheduled,
-    audioBufferCache,
     startAudioRecording,
     stopAudioRecording,
     getAudioContext,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 import { scheduleAudioClips } from './scheduling/scheduleAudioClips';

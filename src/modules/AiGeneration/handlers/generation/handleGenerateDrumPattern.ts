@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { addTrack, getTrackStoreState } from '#/modules/Arrangement';
+import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { applyDrumPatternToTrack } from '../../useCases/generateDrumPattern/applyToTrack';
 import { type DrumPatternStyle } from '../../useCases/generateDrumPattern/algorithm';
 import { getPlayheadBeat, resolveOrCreateMidiTrack, VALID_DRUM_STYLES } from './generationHandlerHelpers';

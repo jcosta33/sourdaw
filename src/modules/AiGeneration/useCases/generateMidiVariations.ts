@@ -1,19 +1,17 @@
 import { inject } from '#/infra/di/inject';
 import { createAiGenerationError } from '../errors/AiGenerationError';
-import { createAlternativeClips, getTrackStoreState as getTrackState } from '#/modules/Arrangement';
+import { createAlternativeClips, getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
 import { streamCloudChatCompletion } from '#/modules/AiRuntime';
 import { getNotesForClip } from '#/modules/MIDI';
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
 type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
 
-export const generateMidiVariationsDependencies = {
+export const generateMidiVariations = inject({
     getTrackState,
     streamCloudChatCompletion,
     getNotesForClip,
     createAlternativeClips,
-} as const;
-
-export const generateMidiVariations = inject(generateMidiVariationsDependencies)(
+})(
     ({ getTrackState, streamCloudChatCompletion, getNotesForClip, createAlternativeClips }) =>
         async function generateMidiVariations(clipId: string): Promise<void> {
             const state = getTrackState();

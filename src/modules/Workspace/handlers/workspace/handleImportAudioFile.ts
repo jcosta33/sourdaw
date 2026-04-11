@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { importAudioFile } from '#/modules/Arrangement';
+import { importAudioFile } from '#/modules/Arrangement/useCases';
 import { pickFiles } from '#/modules/Project';
 
 export const handleImportAudioFile = createHandler<'importAudioFile'>({

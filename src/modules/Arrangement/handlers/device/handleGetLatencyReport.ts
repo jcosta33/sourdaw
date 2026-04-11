@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { getLatencyReport } from '#/modules/AudioEngine';
+import { getLatencyReport } from '#/modules/AudioEngine/useCases';
 
 export const handleGetLatencyReport = createHandler<'getLatencyReport'>({
     execute: () => {

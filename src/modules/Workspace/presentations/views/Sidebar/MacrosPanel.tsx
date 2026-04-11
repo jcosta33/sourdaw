@@ -12,7 +12,8 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
-import { macroStore, startMacroRecording, stopMacroRecording, playMacro, deleteMacro, renameMacro } from '#/modules/Command';
+import { macroStore } from '#/modules/Command/stores';
+import { startMacroRecording, stopMacroRecording, playMacro, deleteMacro, renameMacro } from '#/modules/Command/useCases';
 import { cn } from '#/helpers/Styles/cn';
 
 type MacroView = {

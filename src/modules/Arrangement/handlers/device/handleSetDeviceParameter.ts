@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { updateDeviceParam } from '#/modules/AudioEngine';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 

@@ -1,15 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { scratchPadStore } from '../../stores/scratchPadStore';
-import { createScratchPadSection } from '../../models/ScratchPadSection';
+import { createScratchPadSection, type ScratchPadSection } from '../../models/ScratchPadSection';
 
-export type ScratchPadSection = {
-    id: string;
-    startBeat: number;
-    endBeat: number;
-    name: string;
-    color: string;
-    order: number;
-};
+export type { ScratchPadSection };
 
 export const addScratchPadSection = inject({ scratchPadStore })(({ scratchPadStore: store }) => {
     return function addScratchPadSection(startBeat: number, endBeat: number, name: string, color: string): void {

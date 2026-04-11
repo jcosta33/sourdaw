@@ -23,7 +23,8 @@ import {
 } from '../../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore, toggleAiPanel } from '#/modules/AiGeneration';
-import { linkStatusStore, defaultLinkStatus, enableLink, disableLink } from '#/modules/AudioEngine';
+import { linkStatusStore, defaultLinkStatus } from '#/modules/AudioEngine/stores';
+import { enableLink, disableLink } from '#/modules/AudioEngine/useCases';
 import { openPreferencesDialog } from '../../../useCases/dialogs';
 
 type AiPanelState = {

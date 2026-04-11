@@ -14,8 +14,8 @@ import { type NoteEventTime } from '@spotify/basic-pitch';
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { audioBufferCache } from '#/modules/AudioEngine';
-import { getAllTracks } from '#/modules/Arrangement';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 
 // ── Types ───────────────────────────────────────────────────────────────
 

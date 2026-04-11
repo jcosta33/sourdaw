@@ -5,15 +5,15 @@ import {
     updateClip,
     startRecording,
     stopRecording,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     resumeEngine,
     getAudioContext,
     scheduleClick,
     startAudioRecording,
     stopAudioRecording,
-    audioBufferCache,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 import { startPlayback } from './startPlayback';
 

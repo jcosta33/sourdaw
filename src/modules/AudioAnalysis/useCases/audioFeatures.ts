@@ -10,7 +10,7 @@
 
 import Meyda from 'meyda';
 
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 // ── Types ───────────────────────────────────────────────────────────────
 

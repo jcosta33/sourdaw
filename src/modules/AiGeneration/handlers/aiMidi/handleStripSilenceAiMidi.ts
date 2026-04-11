@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { stripSilence as stripSilenceFromClip } from '#/modules/Arrangement';
+import { stripSilence as stripSilenceFromClip } from '#/modules/Arrangement/useCases';
 
 export const handleStripSilenceAiMidi = createHandler<'stripSilence'>({
     execute: (a) => {

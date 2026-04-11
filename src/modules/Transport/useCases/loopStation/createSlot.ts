@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { loopStationStore, type LoopSlot } from '#/modules/Transport/stores/loopStationStore';
-import { getNextSlotId } from '#/modules/Transport/models/loopStationHelpers';
+import { getNextSlotId } from '../../repositories/loopStationIdCounter';
 
 export const createSlot = inject({ loopStationStore })(({ loopStationStore: store }) => {
     return function createSlot(trackId: string, row: number, column: number): void {

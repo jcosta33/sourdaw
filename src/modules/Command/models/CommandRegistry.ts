@@ -2,20 +2,21 @@
  * Command registry — aggregates all commands from per-category sub-files.
  *
  * To add a new command: find the relevant sub-file in `./commands/` and add it there.
- * This file owns the `CommandEntry` type, the aggregated `commandRegistry` array,
- * and the `fuzzyMatch` / `searchCommands` utilities.
+ * The `CommandEntry` type lives in `./CommandEntry.ts`; pure search helpers
+ * (`fuzzyMatch`, `searchCommands`) live in `../services/commandSearch.ts`.
+ *
+ * This file owns only the aggregation and a thin search wrapper bound to the
+ * aggregated catalog. Re-exports the type and helpers so existing in-module
+ * consumers (e.g. CommandPalette.tsx) keep working.
  */
 
-import { type AppAction } from '../useCases/commandQueries';
+import { type CommandEntry } from './CommandEntry';
+import { searchCommands as searchCommandsImpl } from '../services/commandSearch';
 
-export type CommandEntry = {
-    id: string;
-    label: string;
-    description: string;
-    category: string;
-    shortcut?: string;
-    action: AppAction | (() => void);
-};
+// ── Re-exports for in-module consumers ────────────────────────────────────
+
+export type { CommandEntry } from './CommandEntry';
+export { fuzzyMatch } from '../services/commandSearch';
 
 // ── Category sub-modules ───────────────────────────────────────────────────
 import { transportCommands } from './commands/transportCommands';
@@ -44,25 +45,7 @@ export const commandRegistry: CommandEntry[] = [
     ...miscCommands,
 ];
 
-// ── Search utilities ───────────────────────────────────────────────────────
-
-export function fuzzyMatch(query: string, text: string): boolean {
-    const q = query.toLowerCase();
-    const t = text.toLowerCase();
-    let qi = 0;
-    for (let ti = 0; ti < t.length && qi < q.length; ti++) {
-        if (t[ti] === q[qi]) {
-            qi++;
-        }
-    }
-    return qi === q.length;
-}
-
+/** Search the aggregated catalog. */
 export function searchCommands(query: string): CommandEntry[] {
-    if (!query.trim()) {
-        return commandRegistry;
-    }
-    return commandRegistry.filter(
-        (cmd) => fuzzyMatch(query, cmd.label) || fuzzyMatch(query, cmd.description) || fuzzyMatch(query, cmd.category)
-    );
+    return searchCommandsImpl(commandRegistry, query);
 }

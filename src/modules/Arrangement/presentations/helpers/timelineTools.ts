@@ -13,7 +13,7 @@ import { removeClip } from '../../useCases/clip/removeClip';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { automationStore, addAutomationPoint, addAutomationLane } from '#/modules/Automation';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
 import { timelineViewStore } from '../../stores/timelineViewStore';

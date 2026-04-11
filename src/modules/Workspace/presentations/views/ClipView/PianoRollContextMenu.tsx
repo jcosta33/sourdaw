@@ -6,7 +6,7 @@ import { type ReactElement, useRef } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
     removeMidiNote,
@@ -22,8 +22,8 @@ import {
     applyGrooveToClip,
     restoreGrooveOriginals,
 } from '#/modules/MIDI';
-import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement';
-import { generateMidiAI, isTauri } from '#/modules/AudioEngine';
+import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 

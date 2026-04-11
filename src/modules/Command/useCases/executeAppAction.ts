@@ -3,8 +3,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { setSemanticContext, clearSemanticContext, pushActionHistoryEntry, getDsoSnapshotHandlers } from '#/modules/CrdtDocument';
 import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
 import { pushUndo } from '../stores/undoStore';
-import { getArrangementHandlers } from '#/modules/Arrangement';
-import { getTransportHandlers } from '#/modules/Transport';
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace';
 import { getAutomationHandlers } from '#/modules/Automation';
 import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration';
@@ -20,7 +20,7 @@ import {
 import { getMacroHandlers } from './getMacroHandlers';
 import { getUndoTreeHandlers } from './getUndoTreeHandlers';
 import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project';
-import { getFinalFeatureHandlers } from '#/modules/AudioEngine';
+import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { recordAction } from './macro/recording';
 
 /** Built lazily so `getArrangementHandlers` is not invoked while the Arrangement barrel is still

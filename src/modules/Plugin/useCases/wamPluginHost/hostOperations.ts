@@ -1,4 +1,5 @@
 import { type WAMDescriptor, type WAMInstance } from '#/modules/Plugin/models/WamPluginHostTypes';
+import { findPluginLoader } from '../../services/pluginLoaderRegistry';
 export type { WAMDescriptor, WAMInstance };
 // In-memory registries (raw Map singletons — not Store<T>)
 const registry = new Map<string, WAMDescriptor>();
@@ -36,20 +37,13 @@ export async function loadWAMPlugin(
 
     let node: AudioNode;
 
-    if (pluginId.startsWith('faust.')) {
-        const faustModuleId = pluginId.replace('faust.', '');
-        const { compileFaustDSP, createFaustNode } = await import('../faustEngine/compilerEngine');
-        const compiled = await compileFaustDSP(faustModuleId);
-        if (compiled) {
-            const faustNode = await createFaustNode(faustModuleId, context);
-            if (faustNode) {
-                node = faustNode as unknown as AudioNode;
-            } else {
-                console.warn(`[WAM] Faust node creation failed for ${pluginId}, using passthrough`);
-                node = context.createGain();
-            }
+    const customLoader = findPluginLoader(pluginId);
+    if (customLoader) {
+        const customNode = await customLoader(pluginId, context);
+        if (customNode) {
+            node = customNode;
         } else {
-            console.warn(`[WAM] Faust compilation failed for ${pluginId}, using passthrough`);
+            console.warn(`[WAM] Custom loader returned null for ${pluginId}, using passthrough`);
             node = context.createGain();
         }
     } else if (descriptor.isHighEnd) {

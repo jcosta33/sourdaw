@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { exportMidiClip } from '#/modules/Arrangement';
+import { exportMidiClip } from '#/modules/Arrangement/useCases';
 
 export const handleExportMidi = createHandler<'exportMidi'>({
     execute: (a) => {

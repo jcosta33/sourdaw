@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
-import { setTrackNotes } from '#/modules/Arrangement';
+import { setTrackNotes } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';

@@ -5,8 +5,8 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { getAllTracks } from '#/modules/Arrangement';
-import { getTrackStrip } from '#/modules/AudioEngine';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { updateKit, updatePad } from '../stores/toasterStore';
 import { type PadState, type ToasterKit } from '../models/ToasterKit';
 

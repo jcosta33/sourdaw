@@ -1,4 +1,4 @@
-import { type CommandEntry } from '../CommandRegistry';
+import { type CommandEntry } from '../CommandEntry';
 import { eventBus } from '#/app/registerDependencies';
 import { newProject, saveProject } from '#/modules/Project';
 

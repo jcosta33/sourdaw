@@ -24,9 +24,10 @@ import {
     type ScaleType,
     type GenerationParams,
 } from '../../models/midiPatternLibrary';
-import { trackStore, addClip } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI';
-import { getTransportState } from '#/modules/Transport';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { selectClip } from '#/modules/Workspace';
 
 // ── Mini piano-roll preview ──

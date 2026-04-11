@@ -7,7 +7,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { type MentorCategory, type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
 
 let lessonCounter = 0;

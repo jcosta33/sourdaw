@@ -16,8 +16,8 @@ import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
+import { scratchPadStore } from '#/modules/Arrangement/stores';
 import {
-    scratchPadStore,
     removeScratchPadSection,
     renameScratchPadSection,
     setScratchPadSectionColor,
@@ -25,7 +25,7 @@ import {
     clearScratchPad,
     captureArrangementToScratchPad,
     commitScratchPadToArrangement,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { cn } from '#/helpers/Styles/cn';
 
 type ScratchPadSectionView = {

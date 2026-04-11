@@ -1,7 +1,8 @@
 import { createHandler } from '#/helpers/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { addClip, addTrack, trackStore } from '#/modules/Arrangement';
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { audioBufferToWav } from './audioBufferToWav';
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({

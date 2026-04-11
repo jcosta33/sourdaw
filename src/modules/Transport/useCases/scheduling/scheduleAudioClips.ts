@@ -7,15 +7,16 @@ import { getAssetTransfer, collaborationStore } from '#/modules/Collaboration';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
-    audioBufferCache,
     createBufferSource,
     ensureTrackStrip,
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
-} from '#/modules/AudioEngine';
-import { getGainAtBeat, resolveClipsWithComping, trackStore } from '#/modules/Arrangement';
+} from '#/modules/AudioEngine/useCases';
+import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
 

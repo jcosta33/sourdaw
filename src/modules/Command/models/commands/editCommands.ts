@@ -1,6 +1,6 @@
-import { type CommandEntry } from '../CommandRegistry';
+import { type CommandEntry } from '../CommandEntry';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement';
+import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases';
 import { selectAllClips } from '#/modules/Command/useCases/selectAllClips';
 import { deselectAllClips } from '#/modules/Command/useCases/deselectAllClips';
 

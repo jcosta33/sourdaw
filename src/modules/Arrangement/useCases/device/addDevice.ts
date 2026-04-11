@@ -3,7 +3,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getPlatformPlugins } from '../getPlatformPlugins';
 import { type Device } from '../../stores/trackStore';
-import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine';
+import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { compileFaustDSP } from '#/modules/Plugin';
 
 function nextDeviceIdStr(): string {

@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { detectTempo as detectClipTempo } from '#/modules/Arrangement';
+import { detectTempo as detectClipTempo } from '#/modules/Arrangement/useCases';
 
 export const handleDetectTempoAiMidi = createHandler<'detectTempo'>({
     execute: async (a) => {

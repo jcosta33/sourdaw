@@ -6,7 +6,7 @@ import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderMode
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
 import { getAssetTransfer } from '#/modules/Collaboration';
-import { decodeAudioFile } from '#/modules/AudioEngine';
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { addClip } from '../../useCases/clip/addClip';
 import { addDevice } from '../../useCases/device/addDevice';
 import { addTrack } from '../../useCases/addTrack';

@@ -4,7 +4,7 @@ import {
     groupTracks,
     renameTrack,
     setTrackColor,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 
 export const handleAutoOrganizeProject = createHandler<'autoOrganizeProject'>({
     execute: async (a) => {

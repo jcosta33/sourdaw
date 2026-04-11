@@ -9,8 +9,8 @@
 import { inject } from '#/infra/di/inject';
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 import { getYeastRack } from '../stores/yeastStore';
-import { getAudioContext } from '#/modules/AudioEngine';
-import { transportStore } from '#/modules/Transport';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 export const processYeastMidiDependencies = {
     getYeastRack,

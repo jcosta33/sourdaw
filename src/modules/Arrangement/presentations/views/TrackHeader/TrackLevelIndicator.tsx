@@ -7,7 +7,7 @@
  * Uses requestAnimationFrame with no React state updates for zero re-render cost.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { getTrackAnalyser } from '#/modules/AudioEngine';
+import { getTrackAnalyser } from '#/modules/AudioEngine/useCases';
 
 type TrackLevelIndicatorProps = {
     trackId: string;

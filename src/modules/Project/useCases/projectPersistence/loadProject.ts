@@ -1,4 +1,5 @@
 import { inject } from '#/infra/di/inject';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,
@@ -7,7 +8,6 @@ import {
 } from '#/modules/CrdtDocument';
 
 import { projectStore } from '../../stores/projectStore';
-import { clearUndoHistory } from './helpers';
 
 let stopAutoSave: (() => void) | null = null;
 

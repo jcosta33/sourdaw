@@ -7,7 +7,7 @@ import {
     removeDevice,
     reorderDevices,
     getPlatformPlugins,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { openInspector } from '../../../useCases/togglePanel/panelToggles';
 import { type Track } from '../../../models/TrackViewTypes';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin';

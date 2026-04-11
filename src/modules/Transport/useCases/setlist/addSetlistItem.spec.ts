@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type SetlistState } from '#/modules/Transport/stores/setlistStore';
-import { SETLIST_ITEM_COLORS } from '#/modules/Transport/models/setlistItemHelpers';
+import { SETLIST_ITEM_COLORS } from '../../repositories/setlistItemIdCounter';
 import { addSetlistItem } from './addSetlistItem';
 
 describe('addSetlistItem', () => {

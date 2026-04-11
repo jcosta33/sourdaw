@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { getTrackStoreState } from '#/modules/Arrangement';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { streamCloudChatCompletion } from '#/modules/AiRuntime';
 import { summarizeFeatures } from './audioFeatures';
 

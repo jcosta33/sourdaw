@@ -1,7 +1,7 @@
 import { createHandler } from '#/helpers/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { addClip, addTrack } from '#/modules/Arrangement';
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
     execute: async (a) => {

@@ -12,16 +12,17 @@ import {
     addTrack,
     removeTrack,
     setSend,
-    trackStore,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     applyChordProgressionToTrack,
     applyDrumPatternToTrack,
     applyMelodyToTrack,
 } from '#/modules/AiGeneration';
-import { executeAppAction } from '#/modules/Command';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { humanizeNotes, midiStore } from '#/modules/MIDI';
-import { disableLooping, setLoopRegion, transportStore } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
+import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
 // Local type aliases — duplicated from AiGeneration algorithm files to avoid
 // a circular module dependency (AiGeneration already imports from AiRuntime).
 type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';

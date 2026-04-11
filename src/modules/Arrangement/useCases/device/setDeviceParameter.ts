@@ -1,9 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTransportState } from '#/modules/Transport';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { type AutomationMode } from '../../stores/trackStore';
-import { updateDeviceParam } from '#/modules/AudioEngine';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);

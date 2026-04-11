@@ -1,4 +1,4 @@
-import { type RuntimeAction } from '../../../models/RuntimeAction';
+import { type RuntimeAction } from '../../RuntimeAction';
 
 // ── Context passed to every preset builder ──────────────────────────────
 

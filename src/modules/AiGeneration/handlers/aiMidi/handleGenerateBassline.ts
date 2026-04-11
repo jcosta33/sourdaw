@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { addTrack } from '#/modules/Arrangement';
+import { addTrack } from '#/modules/Arrangement/useCases';
 import { generateToolCalls } from '#/modules/AiRuntime';
 import { addMidiNote, getNotesForClip } from '#/modules/MIDI';
 import { llmGenerateNotes } from './llmNoteHelpers';

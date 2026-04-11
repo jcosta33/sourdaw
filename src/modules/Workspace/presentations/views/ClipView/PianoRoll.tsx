@@ -13,7 +13,7 @@ import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayou
 
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { useStore } from '#/infra/store/useStore';
 
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';

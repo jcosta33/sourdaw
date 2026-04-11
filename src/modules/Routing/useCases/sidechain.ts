@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { unwireSidechainRoute, wireSidechainRoute } from '#/modules/AudioEngine';
+import { unwireSidechainRoute, wireSidechainRoute } from '#/modules/AudioEngine/useCases';
 
 import { createSidechainRoute, type SidechainRoute } from '../models/SidechainRoute';
 import { sidechainStore } from '../stores/sidechainStore';

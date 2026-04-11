@@ -22,7 +22,7 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { Slider } from '#/components/ui/slider';
-import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine';
+import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine/useCases';
 import {
     workspaceStore,
     type WorkspaceState,

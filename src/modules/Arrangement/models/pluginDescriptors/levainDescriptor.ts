@@ -3,7 +3,7 @@
  * Registers the Levain suite as a proper instrument that can be added to MIDI tracks.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 export const LEVAIN_DESCRIPTOR: PluginDescriptor = {
     id: 'levain',

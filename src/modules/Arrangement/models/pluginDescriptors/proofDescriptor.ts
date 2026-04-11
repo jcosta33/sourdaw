@@ -3,7 +3,7 @@
  * Registers Proof as an effect with custom UI that opens a bottom panel.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 export const PROOF_DESCRIPTOR: PluginDescriptor = {
     id: 'proof',

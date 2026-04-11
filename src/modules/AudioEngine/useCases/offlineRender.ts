@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { resolveClipsWithComping, getTrackStoreState } from '#/modules/Arrangement';
+import { resolveClipsWithComping, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getAutomationLanes } from '#/modules/Automation';
 import { getMidiStoreState } from '#/modules/MIDI';
 import {
@@ -9,7 +9,7 @@ import {
     scheduleKitNote,
     scheduleNoteOffline,
 } from '#/modules/Synth';
-import { getTempoMapState, getTransportStoreValue, type TempoChange } from '#/modules/Transport';
+import { getTempoMapState, getTransportStoreValue, type TempoChange } from '#/modules/Transport/useCases';
 import { createExportError } from '../errors/ExportError';
 import { audioBufferCache } from '../stores/audioBufferCache';
 import { buildDeviceChain } from './buildDeviceChain';

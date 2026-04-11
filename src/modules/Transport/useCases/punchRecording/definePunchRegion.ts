@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { punchRecordingStore, type PunchRegion } from '#/modules/Transport/stores/punchRecordingStore';
-import { getNextPunchId } from '#/modules/Transport/models/punchRecordingHelpers';
+import { getNextPunchId } from '../../repositories/punchRecordingIdCounter';
 
 export const definePunchRegion = inject({ punchRecordingStore, getNextPunchId })(
     ({ punchRecordingStore: store, getNextPunchId: nextId }) => {

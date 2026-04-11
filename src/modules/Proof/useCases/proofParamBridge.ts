@@ -8,7 +8,7 @@
 import { inject } from '#/infra/di/inject';
 import { type ProofPatch } from '../models/ProofPatch';
 import { loadProofPatch, updateProofPatch, getProofState } from '../stores/proofStore';
-import { persistDeviceParam } from '#/modules/Arrangement';
+import { persistDeviceParam } from '#/modules/Arrangement/useCases';
 
 type ProofAudioBridge = {
     setParam: (name: string, value: number) => void;

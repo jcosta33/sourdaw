@@ -2,7 +2,7 @@ import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 import { kneadStore, ingestDspAnalysis, updateTrackKneadState } from '#/modules/Knead';
 import { useStore } from '#/infra/store/useStore';
 import { useTracks } from '../../hooks/useTracks';
-import { addDevice } from '#/modules/Arrangement';
+import { addDevice } from '#/modules/Arrangement/useCases';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';

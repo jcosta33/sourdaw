@@ -9,7 +9,7 @@ import {
     type AudioDeviceInfo,
     decodeAudioFile as decodeAudioFileImpl,
     getAudioDevices as getAudioDevicesImpl,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 import { setWorkspaceMode as setWorkspaceModeImpl } from '#/modules/Workspace';
 
 export type { AudioDeviceInfo };

@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { commitScratchPadToArrangement } from '#/modules/Arrangement';
+import { commitScratchPadToArrangement } from '#/modules/Arrangement/useCases';
 
 export const handleCommitScratchPad = createHandler<'commitScratchPad'>({
     execute: () => {

@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     initializeAudioEngine,
-    audioBufferCache,
     getAudioContext,
     initWebMidi,
     setMasterGainValue,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 import {
     verifyAudioBufferReferences,
     loadProject,
@@ -15,10 +15,10 @@ import {
 import { registerBuiltinPlugins, registerBuiltinFaustDSP, registerProModulationEffects } from '#/modules/Plugin';
 import { registerProSynthInstruments } from '#/modules/Synth';
 import { hasCrdtProject } from '#/modules/CrdtDocument';
-import { ensureTrackStrips, getTransportState } from '#/modules/Transport';
+import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
 import { restoreLibrary } from '#/modules/SampleLibrary';
 import { preferencesStore } from '../../stores/preferencesStore';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 /**
  * Handles one-time app startup: audio engine + plugins on first user interaction,

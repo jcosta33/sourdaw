@@ -5,7 +5,7 @@ import { useTransportState } from '../hooks/useTransportState';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
 import { useUndoState } from '../hooks/useUndoState';
 import { useProjectState } from '../hooks/useProjectState';
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { type Track } from '../../models/TrackViewTypes';
 import { TransportControls } from './Transport/TransportControls';
 import { AutoScrollToggle } from './Transport/AutoScrollToggle';

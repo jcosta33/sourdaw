@@ -1,15 +1,17 @@
 import { inject } from '#/infra/di/inject';
 import { type ShortcutAction, shortcutStore } from '../models/Shortcuts';
 import {
+    duplicateClipToNextBar,
+    undo,
+    redo,
+} from '#/modules/Command/useCases';
+import {
     togglePlayback,
     stopPlayback,
     toggleRecording,
     toggleLoop,
-    duplicateClipToNextBar,
-    undo,
-    redo,
-} from '#/modules/Command';
-import { copySelectedClip, pasteClip, removeClip } from '#/modules/Arrangement';
+} from '#/modules/Transport/useCases';
+import { copySelectedClip, pasteClip, removeClip } from '#/modules/Arrangement/useCases';
 import { saveProject } from '#/modules/Project';
 import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel/panelToggles';
 import { workspaceStore } from '../stores/workspaceStore';

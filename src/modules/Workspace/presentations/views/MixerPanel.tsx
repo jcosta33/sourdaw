@@ -20,9 +20,9 @@ import {
     deleteMixerSnapshot,
     renameMixerSnapshot,
     restoreMixerChannels,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { MixHealthDialog } from './Mixer/MixHealthDialog';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used by this view.
 type MixerSnapshot = { id: string; name: string };

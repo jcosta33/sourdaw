@@ -1,15 +1,13 @@
 import { inject } from '#/infra/di/inject';
-import { addClip } from '#/modules/Arrangement';
+import { addClip } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI';
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
 
-export const applyDrumPatternToTrackDependencies = {
+export const applyDrumPatternToTrack = inject({
     addClip,
     addMidiNote,
-} as const;
-
-export const applyDrumPatternToTrack = inject(applyDrumPatternToTrackDependencies)(
+})(
     ({ addClip, addMidiNote }) =>
         function applyDrumPatternToTrack(
             trackId: string,

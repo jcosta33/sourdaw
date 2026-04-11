@@ -9,7 +9,7 @@ import {
     addGainEnvelopePoint,
     removeGainEnvelopePoint,
     resetClipGainEnvelope,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
 

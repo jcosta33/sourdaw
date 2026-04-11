@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { setMpeEnabled } from '#/modules/AudioEngine';
+import { setMpeEnabled } from '#/modules/AudioEngine/useCases';
 
 export const handleEnableMpe = createHandler<'enableMpe'>({
     execute: () => {

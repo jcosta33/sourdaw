@@ -19,7 +19,7 @@ import {
     togglePunchEnabled,
     toggleCountIn,
     setCountInBars,
-} from '#/modules/Transport';
+} from '#/modules/Transport/useCases';
 
 type TransportControlsProps = {
     isPlaying: boolean;

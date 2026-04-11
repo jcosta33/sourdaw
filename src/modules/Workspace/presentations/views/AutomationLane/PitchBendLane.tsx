@@ -2,7 +2,7 @@ import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore, addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
 import { PITCH_BEND_CENTER } from '../../helpers/laneConstants';
 import { useStore } from '#/infra/store/useStore';

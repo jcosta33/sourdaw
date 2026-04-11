@@ -9,7 +9,7 @@
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { eventBus } from '#/app/registerDependencies';
-import { getTrackStoreState } from '#/modules/Arrangement';
+import { getTrackStoreState, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
     completeMidiLearn,
     createMidiNote,
@@ -20,12 +20,12 @@ import {
 } from '#/modules/MIDI';
 import {
     getDrumKitDefByIndex,
-    getSynthParamsForTrack,
     scheduleDrumKitNote,
     scheduleKitNote,
     scheduleNote,
 } from '#/modules/Synth';
-import { getTransportStoreValue, playheadPositionRef } from '#/modules/Transport';
+import { playheadPositionRef } from '#/modules/Transport/stores';
+import { getTransportStoreValue } from '#/modules/Transport/useCases';
 import { processRealtimeMidiInput } from '#/modules/Yeast';
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
 import {

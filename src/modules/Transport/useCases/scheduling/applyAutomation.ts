@@ -4,13 +4,14 @@ import {
     getAutomationValueAtBeat,
     isRecordingAutomation,
 } from '#/modules/Automation';
-import { getEffectiveGain, trackStore } from '#/modules/Arrangement';
+import { getEffectiveGain } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     ensureTrackStrip,
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
     updateDeviceParam,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 
 /**
  * Per-parameter exponential slew state for plugin automation.

@@ -1,13 +1,16 @@
 import { inject } from '#/infra/di/inject';
-import { addTrack, trackStore } from '#/modules/Arrangement';
-import { audioBufferCache, resetAudioGraph } from '#/modules/AudioEngine';
+import { addTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument';
-import { stopPlayback } from '#/modules/Command';
+import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 import { removeProjectJson } from '../../repositories/project/storageOperations';
-import { clearUndoHistory, resetModuleStoresToDefault } from './helpers';
+import { resetModuleStoresToDefault } from './helpers';
 
 let stopAutoSave: (() => void) | null = null;
 

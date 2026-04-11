@@ -13,7 +13,7 @@ import {
     setClipColor,
     renameClip,
     setClipFollowAction,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { type Clip } from '../../../models/TrackViewTypes';
 import { CLIP_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';

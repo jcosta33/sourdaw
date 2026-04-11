@@ -12,11 +12,11 @@ import {
     setDeviceParameter as setDeviceParameterDependency,
     getTrackStoreState as getTrackStoreStateDependency,
     getAllTracks as getAllTracksDependency,
-} from '#/modules/Arrangement';
-import { setTrackGain as engineSetTrackGain, setTrackPan as engineSetTrackPan } from '#/modules/AudioEngine';
+} from '#/modules/Arrangement/useCases';
+import { setTrackGain as engineSetTrackGain, setTrackPan as engineSetTrackPan } from '#/modules/AudioEngine/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter';
 import { recordAutomationValue } from '#/modules/Automation';
-import { getTransportState } from '#/modules/Transport';
+import { getTransportState } from '#/modules/Transport/useCases';
 
 let nextMappingId = 1;
 

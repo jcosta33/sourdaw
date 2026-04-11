@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { getTrackLatency, getCompensationDelay } from '#/modules/AudioEngine';
+import { getTrackLatency, getCompensationDelay } from '#/modules/AudioEngine/useCases';
 
 type TrackLatencySectionProps = {
     trackId: string;

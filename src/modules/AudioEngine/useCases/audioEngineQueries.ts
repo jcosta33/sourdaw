@@ -1,7 +1,7 @@
 import {
     getDrumKitById as getDrumKitByIdFromFactory,
     getDrumKitByIndex as getDrumKitByIndexFromFactory,
-} from '#/modules/AudioEngine/models/factoryDrumKits';
+} from '../models/factoryDrumKits';
 
 export type SynthWaveform = 'sine' | 'triangle' | 'sawtooth' | 'square';
 export type SynthFilterType = 'lowpass' | 'highpass' | 'bandpass';

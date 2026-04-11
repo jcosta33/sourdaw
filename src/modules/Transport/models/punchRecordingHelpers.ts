@@ -1,14 +1,8 @@
 /**
- * Punch recording ID counters — shared by punch recording use cases.
+ * @deprecated MOVED — see `Transport/repositories/punchRecordingIdCounter.ts`.
+ *
+ * This file is awaiting explicit deletion approval. It is no longer imported
+ * anywhere; it sits here only because the audit safety rule forbids deletes
+ * without explicit human authorization.
  */
-
-let captureId = 1;
-let punchId = 1;
-
-export function getNextCaptureId(): string {
-    return `cap-${captureId++}`;
-}
-
-export function getNextPunchId(): string {
-    return `punch-${punchId++}`;
-}
+export {};

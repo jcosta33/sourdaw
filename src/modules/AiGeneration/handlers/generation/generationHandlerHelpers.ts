@@ -1,5 +1,5 @@
-import { addTrack, getTrackStoreState } from '#/modules/Arrangement';
-import { getTransportState } from '#/modules/Transport';
+import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { getTransportState } from '#/modules/Transport/useCases';
 
 export const VALID_DRUM_STYLES: ReadonlySet<string> = new Set([
     'four-on-floor',

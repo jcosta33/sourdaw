@@ -5,7 +5,7 @@
  */
 
 import { inject } from '#/infra/di/inject';
-import { getAudioTime } from '#/modules/AudioEngine';
+import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { toasterStore } from '../stores/toasterStore';
 import { type Step, type Pattern } from '../models/ToasterKit';
 import { triggerToasterPad } from './triggerPad';

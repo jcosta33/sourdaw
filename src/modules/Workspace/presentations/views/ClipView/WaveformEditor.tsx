@@ -13,9 +13,10 @@ import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { audioBufferCache, decodeAudioFile, isTauri } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
-    trackStore,
     replaceClipAudioBuffer,
     normalizeClip,
     reverseClip,
@@ -26,7 +27,7 @@ import {
     addWarpMarker,
     removeWarpMarker,
     moveWarpMarker,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis';

@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { type FrequencyBand, type MixAnalysis } from '#/modules/AudioAnalysis/models/MixComparisonTypes';
 
 function estimateFrequencyProfile(tracks: Array<{ kind: string; gain?: number }>): Record<FrequencyBand, number> {

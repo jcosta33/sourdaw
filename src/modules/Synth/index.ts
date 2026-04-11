@@ -1,5 +1,5 @@
 // builtinSynth.ts
-export { scheduleNote, getSynthParamsFromDevices, getSynthParamsForTrack, scheduleNoteOffline } from './useCases/builtinSynth';
+export { scheduleNote, getSynthParamsFromDevices, scheduleNoteOffline } from './useCases/builtinSynth';
 
 // cvGate/cvOutputOperations.ts
 export { addCvOutput, removeCvOutput, setCvValue, setVoltageStandard, setClockDivision } from './useCases/cvGate/cvOutputOperations';

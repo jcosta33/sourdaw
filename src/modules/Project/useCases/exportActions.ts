@@ -13,4 +13,4 @@ export {
     audioBufferToMp3 as encodeMp3,
     audioBufferToFlac as encodeFlac,
     type OfflineRenderOptions,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';

@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { switchMonitor } from '#/modules/AudioEngine';
+import { switchMonitor } from '#/modules/AudioEngine/useCases';
 
 export const handleSwitchMonitor = createHandler<'switchMonitor'>({
     execute: (a) => {

@@ -28,7 +28,8 @@ import { getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
-import { createUndoEntry, generateGroupId, pushUndo } from '#/modules/Command';
+import { pushUndo } from '#/modules/Command/stores';
+import { createUndoEntry, generateGroupId } from '#/modules/Command/useCases';
 import { saveSnapshot } from '#/modules/CrdtDocument';
 
 export type DsoEditResult = {

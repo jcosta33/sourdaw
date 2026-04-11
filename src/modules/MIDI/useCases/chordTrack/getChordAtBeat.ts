@@ -1,4 +1,4 @@
-import { chordTrackStore } from '#/modules/Arrangement';
+import { chordTrackStore } from '#/modules/Arrangement/stores';
 import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
 
 /** Returns the active chord event at the given beat, or null if none. */

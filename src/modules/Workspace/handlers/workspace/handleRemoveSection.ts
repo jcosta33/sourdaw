@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { removeSection } from '#/modules/Arrangement';
+import { removeSection } from '#/modules/Arrangement/useCases';
 
 export const handleRemoveSection = createHandler<'removeSection'>({
     execute: (a) => {

@@ -1,11 +1,12 @@
-import { addTrack, addDevice, trackStore } from '#/modules/Arrangement';
+import { addTrack, addDevice } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { newProject } from '../projectPersistence/newProject';
 import { demo1_TheCompleteMix } from '../demoProjects/resonance/createResonanceDemo';
 import { demo_SweetDreams } from '../demoProjects/sweetDreams/createSweetDreamsDemo';
 import { demo4_NativeShowcase } from '../demoProjects/synthwave/createSynthwaveDemo';
 import { demo5_NebulaDrift } from '../demoProjects/nebulaDrift/createNebulaDriftDemo';
-import { stopPlayback } from '#/modules/Command';
-import { resetAudioGraph } from '#/modules/AudioEngine';
+import { stopPlayback } from '#/modules/Transport/useCases';
+import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 
 export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 

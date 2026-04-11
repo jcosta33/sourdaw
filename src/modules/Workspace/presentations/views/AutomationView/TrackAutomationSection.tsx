@@ -7,7 +7,7 @@ import { AutomationAddLaneControl, AutomationModeControl } from './AutomationCon
 import { getAutomatableParams } from '../../helpers/automationViewHelpers';
 import { type AutomationMode } from '../../../models/TrackViewTypes';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
-import { setAutomationMode } from '#/modules/Arrangement';
+import { setAutomationMode } from '#/modules/Arrangement/useCases';
 import { useStore } from '#/infra/store/useStore';
 
 type TrackAutomationSectionProps = {

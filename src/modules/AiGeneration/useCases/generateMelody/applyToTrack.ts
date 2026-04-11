@@ -1,15 +1,13 @@
 import { inject } from '#/infra/di/inject';
-import { addClip } from '#/modules/Arrangement';
+import { addClip } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI';
 import { type GenerateMelodyOptions } from './algorithm';
 import { generateMelody } from './algorithm';
 
-export const applyMelodyToTrackDependencies = {
+export const applyMelodyToTrack = inject({
     addClip,
     addMidiNote,
-} as const;
-
-export const applyMelodyToTrack = inject(applyMelodyToTrackDependencies)(
+})(
     ({ addClip, addMidiNote }) =>
         function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptions, startBeat: number = 0): void {
             const bars = options.bars ?? 4;

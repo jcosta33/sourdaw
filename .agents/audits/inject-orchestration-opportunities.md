@@ -378,3 +378,19 @@ Pure store/math helpers and **type-only** imports may stay plain per **`docs/arc
 
 | Date | Module | Files added | Files exempted | Notes |
 |---|---|---|---|---|
+| 2026-04-10 | Bacteria | 1 | 0 | Preset schema test. |
+| 2026-04-10 | Grinder | 1 | 0 | Preset schema test. |
+| 2026-04-10 | Proof | 1 | 0 | Preset schema test. |
+| 2026-04-10 | Knead | 1 | 0 | DSP pitch parser smoke test. |
+| 2026-04-10 | Crust | 2 | 0 | Presets + paramBridge (rAF stub + `injectDependencies`). |
+| 2026-04-10 | Gluten | 2 | 0 | Presets + paramBridge. |
+| 2026-04-10 | Levain | 2 | 0 | `loadPreset` + `autoLoadSamples` (Tauri mocks). |
+| 2026-04-10 | Scoring | 2 | 0 | Single-store CRUD smoke tests. |
+| 2026-04-10 | Collaboration | 3 | 0 | `getCollaborationHandlers` factory + `PermissionManager` + `AssetTransfer`. |
+| 2026-04-10 | Fermenter | 3 | 0 | `fermenterQueries`, `presetMorph` (lerp/bilinear math), `setFermenterMappedParam` warn-on-unknown. |
+| 2026-04-10 | Routing | 3 | 0 | `sidechain` (cycle detection, idempotent add, set/replace), `busControls`, `hydrateSidechainRoutes`. |
+| 2026-04-10 | Workspace | 3 | 0 | `getWorkspaceHandlers`, `getScratchPadHandlers`, `setTrackHeight`. |
+| 2026-04-10 | SampleLibrary | 4 | 0 | `buildFolderTree` (tree assembly), `connectFolder` (cancel/rescan smoke), `requestPermission` / `restoreLibrary` (delegate smoke). |
+| 2026-04-10 | Synth | 5 | 0 | `cvConversion` (1V/oct + Hz/V + clock), `cvOutputOperations` (CRUD + clamping), `proSynthInstruments` (registers 4 Faust DSPs), `drumKitSynth`, `kitDefinitions`. |
+| 2026-04-10 | Transport | 5 | 0 | `evaluateFollowActions` (stop / play_next / play_first branches), `tempoMap`, `timeSignatureChanges`, `getTransportHandlers`, `ensureTrackStrips` (`injectDependencies` over engine seam). |
+| 2026-04-10 | Toaster | 6 | 0 | `euclidean` (Bjorklund + rotation), `applyEuclidean`, `setMorphPosition`, `soundLocks`, `patternMorph`, `toasterQueries`. |

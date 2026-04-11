@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Slider } from '#/components/ui/slider';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { useTracks } from '../../hooks/useTracks';
-import { setSend, toggleSendPreFader } from '#/modules/Arrangement';
+import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { MixerSection } from '../../components/Mixer/MixerSection';
 

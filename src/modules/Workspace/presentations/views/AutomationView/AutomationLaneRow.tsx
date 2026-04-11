@@ -12,11 +12,12 @@ import {
     zoomToUsedRange,
     toggleVirginTerritory,
 } from '#/modules/Automation';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
 import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';
-import { transportStore, defaultTransportState } from '#/modules/Transport';
-import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement';
+import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
+import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases';
 import { workspaceStore } from '../../../stores/workspaceStore';
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
 import { AutomationLaneHeader } from './AutomationLaneHeader';

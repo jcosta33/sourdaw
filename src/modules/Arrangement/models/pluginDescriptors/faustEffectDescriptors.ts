@@ -1,4 +1,4 @@
-import { type PluginDescriptor, type DeviceParameter } from '../DeviceParameter';
+import { type PluginDescriptor, type DeviceParameter } from '../DeviceParameterTypes';
 
 /**
  * Plugin descriptors for Faust DSP effects.

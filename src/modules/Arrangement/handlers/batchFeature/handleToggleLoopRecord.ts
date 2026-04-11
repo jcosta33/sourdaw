@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { toggleRecord } from '#/modules/Transport';
+import { toggleRecord } from '#/modules/Transport/useCases';
 
 export const handleToggleLoopRecord = createHandler<'toggleLoopRecord'>({
     execute: (a) => {

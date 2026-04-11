@@ -7,7 +7,7 @@ import {
     timelineViewStore,
 } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
-import { transportStore } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
 
 interface GestureEvent extends UIEvent {
     readonly scale: number;

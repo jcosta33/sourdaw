@@ -2,7 +2,7 @@ import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore, addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI';
-import { pushUndoEntry } from '#/modules/Command';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
 import { useStore } from '#/infra/store/useStore';
 

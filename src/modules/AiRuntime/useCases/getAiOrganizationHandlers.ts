@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 import { handleAutoOrganizeProject } from '../handlers/aiOrganization/handleAutoOrganizeProject';
 
 type AiOrganizationAppAction = Extract<AppAction, { type: 'autoOrganizeProject' }>;

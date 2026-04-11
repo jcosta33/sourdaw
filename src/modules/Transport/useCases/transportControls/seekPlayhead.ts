@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { startPlayheadScheduler, stopPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
-import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine';
+import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases';
 
 export const seekPlayhead = inject({ getTransportState, updateTransportState })(
     ({ getTransportState, updateTransportState }) =>

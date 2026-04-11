@@ -97,7 +97,7 @@ useCases
                       models
 
 Cross-module access is narrow:
-- other modules import only from the destination module’s root **`index.ts`** (curated re-exports)
+- other modules import only from one of the four contract-folder barrels (see §3.3)
 - private internals stay private
 ```
 
@@ -109,26 +109,27 @@ A TypeScript module is composed of a **public contract surface** and **private i
 
 ## 3.1 Public contract surface
 
-Other modules **never** import these folders by path. They depend on **`index.ts` only**, which re-exports a curated subset from:
+Each module exposes **four independently-importable contract surfaces**. Other modules target exactly one of these per import:
 
 ```text
-events/
-useCases/
-stores/
-presentations/views/
+<module>/useCases/index.ts
+<module>/events/index.ts
+<module>/stores/index.ts
+<module>/presentations/views/index.ts
 ```
 
-`errors/` stays internal. Cross-module **named types** use **`events/`** (re-exported from `index.ts`) or a **local duplicate** in the consumer — not `export type` from `useCases/`.
+`errors/` stays internal. Cross-module **named types** surface through **`events/index.ts`** or as a **local duplicate** in the consumer — not via `export type` from `useCases/`.
 
-### Meaning of each re-export root
+### Contract folder roles
 
-| Folder / origin        | Role                             | Cross-module access |
-| ---------------------- | -------------------------------- | -------------------- |
-| `useCases/`            | public write boundary (functions) | `export { fn }` from `index.ts` only — **no** `export type` from `useCases/` on `index.ts`. Includes **`get<Module>Handlers`** only — not raw handler maps (see §4.5). |
-| `events/`              | meaningful domain event payloads | `export type` / values via `index.ts` as needed |
-| `stores/`              | shared business/read state       | via `index.ts` re-exports only |
-| `presentations/views/` | composable UI entry points       | via `index.ts` re-exports only |
-| `errors/`              | internal error types             | not re-exported from `index.ts`; surface error *semantics* through `events/` or local types |
+| Contract folder        | Role                              | Import target |
+| ---------------------- | --------------------------------- | ------------- |
+| `useCases/`            | public write boundary (functions) | `#/modules/<M>/useCases` — `export { fn }` only, **no** `export type` from `useCases/`. Includes **`get<Module>Handlers`** (see §4.5). |
+| `events/`              | domain event payload types        | `#/modules/<M>/events` — `export type` / values as needed |
+| `stores/`              | shared business/read state        | `#/modules/<M>/stores` |
+| `presentations/views/` | composable UI entry points        | `#/modules/<M>/presentations/views` |
+
+Modules with no events do not need an `events/index.ts`. Modules with no cross-module views do not need a `presentations/views/index.ts`.
 
 ## 3.2 Private internals
 
@@ -151,71 +152,83 @@ worklets/
 runtime/
 ```
 
-`handlers/` holds `AppAction` → `ActionHandler` maps; it is **never** re-exported from `index.ts` (see §4.5). Access cross-module only via **`get<Module>Handlers`** use cases.
+`handlers/` holds `AppAction` → `ActionHandler` maps; it is **never** importable cross-module (see §4.5). Access cross-module only via **`get<Module>Handlers`** use cases.
 
-These are private unless explicitly promoted to the contract surface.
+These are private unless explicitly promoted to a contract-folder barrel.
 
-## 3.3 `index.ts` — the module boundary
+## 3.3 Module boundaries — contract-folder barrels
 
-Every module must expose a root `index.ts` as its **sole cross-module import target**.
+No module has a root `index.ts`. Each module exposes up to four `<contract-folder>/index.ts` files. Each barrel is self-contained: it re-exports only from files within its own folder.
 
 ```text
 ModuleName/
-  index.ts          ← only file other modules may import from
   useCases/
-  events/
+    index.ts        ← re-exports from useCases/** only
+    addTrack.ts
+    ...
   stores/
+    index.ts        ← re-exports from stores/** only
+    trackStore.ts
+    ...
+  events/
+    index.ts        ← re-exports from events/** only (if module emits events)
+    ...
   presentations/
-    views/          ← composable views; cross-module only via re-exports in index.ts
-  ...               ← all other paths private to the module
+    views/
+      index.ts      ← re-exports from presentations/views/** only (if views cross modules)
+      ...
+  models/           ← private
+  repositories/     ← private
+  ...
 ```
 
 ### Rules
 
-1. **All cross-module imports must target `<module>/index.ts`** — direct imports to `useCases/`, `events/`, `stores/`, `presentations/views/`, or any other folder from outside the module are forbidden.
-2. **`index.ts` may only re-export from `useCases/`, `events/`, `stores/`, and `presentations/views/`** — it must not import from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `presentations/hooks/`, `presentations/stores/`, `presentations/context/`, `presentations/components/`, `presentations/renderers/`, `engine/`, `runtime/`, `worklets/`, or `errors/`. From `useCases/`, re-export **functions (and constants)** only — not `export type` (see rule 5). Shared **named types** cross via **`events/`** or consumer-local types.
-3. **Exception to the no-barrel rule:** the module root `index.ts` is the **only** allowed barrel-style file. Do not add other `index.ts` re-export shims or files like `contracts.ts` to bypass boundaries.
-4. **`index.ts` is a curated surface** — only export what external consumers genuinely need. Omitting things is correct; re-exporting “everything” to satisfy imports is not.
-5. **No use-case types cross the boundary** — `index.ts` may re-export **functions** (and constants) from `useCases/`, not `export type { … }` sourced from `useCases/`. Other modules define their own types or use `ReturnType` / `Parameters` on imported functions. **Typed event payloads** remain the exception: `export type { … } from './events/...'` is allowed.
-6. **Same module — never this module’s barrel** — Files inside `src/modules/<ModuleName>/` must **not** import from `#/modules/<ModuleName>`. Use **relative** imports to the implementation (`./useCases/…`, `../stores/…`, etc.). Self-imports through `index.ts` obscure the graph and can create circular module initialization; the barrel exists only for **other** modules.
-7. **Curate `index.ts` for cross-module need only** — Export from `index.ts` only symbols that **another module** is allowed to consume. Do not re-export APIs solely so in-module files can import them from the barrel; internal call sites use relative paths (rule 6).
+1. **Cross-module imports must target a contract-folder barrel** — `<module>/useCases`, `<module>/stores`, `<module>/events`, or `<module>/presentations/views`. Importing any other path from outside the module is forbidden.
+2. **Each `<contract>/index.ts` re-exports only from its own folder** — `useCases/index.ts` must not import from `stores/`, `models/`, `repositories/`, or any other folder. `stores/index.ts` must not import from `useCases/`. Each barrel is self-contained.
+3. **No module-root `index.ts`** — the aggregated root barrel pattern is retired. Do not add a `<module>/index.ts` or `<module>/contract.ts` aggregation shim.
+4. **Same module — never import from own contract barrels** — files inside `src/modules/<M>/` must **not** import from `#/modules/<M>/useCases`, `#/modules/<M>/stores`, etc. Use **relative** imports to the implementation (`./useCases/…`, `../stores/…`, etc.).
+5. **No use-case types cross the boundary** — `useCases/index.ts` may re-export **functions** (and constants) from `useCases/`, not `export type { … }`. Other modules define their own types or use `ReturnType` / `Parameters`. **Typed event payloads** from `events/index.ts` are the canonical cross-module type surface.
+6. **Curate each barrel for cross-module need only** — export from `<contract>/index.ts` only symbols that **another module** actually consumes. Most files in a module do not appear in any barrel.
 
-### Why `index.ts` instead of direct folder access
+### Why four contract-folder barrels instead of one root barrel
 
-Previously, cross-module imports targeted specific folders directly (`useCases/`, `stores/`, etc.). That approach had two problems:
+The root `index.ts` pattern was retired because ES module re-exports are not lazy: `import { oneStore } from ‘#/modules/Arrangement’` evaluates all 200+ exports in the root barrel, including every use-case transitive dependency. This made the blast radius of any single import equal to the entire module’s transitive closure, creating circular-dependency exposure and `inject()` TDZ crashes.
 
-- Any file in any public folder became implicitly part of the contract, making the surface unbounded.
-- Consumers bypassed the module's curation — they could reach internal utilities that happened to live in a contract folder.
-
-With `index.ts`, the module author explicitly controls what is public. Consumers import from one stable location regardless of how the module reorganizes its internals.
+Four smaller barrels break this amplification: importing from `stores/index.ts` only evaluates stores and their transitive dependencies (models, storage adapters). It does not evaluate use cases, views, or their deps. Each barrel is independently narrow.
 
 ### Example
 
 ```ts
-// src/modules/Arrangement/index.ts
-export { addTrack } from './useCases/addTrack';
-export { removeTrack } from './useCases/removeTrack';
-export { trackStore } from './stores/trackStore';
-export type { TrackAddedEvent } from './events/TrackAddedEvent';
-export { ArrangementView } from './presentations/views/ArrangementView';
+// Another module — correct
+import { addTrack } from ‘#/modules/Arrangement/useCases’;
+import { trackStore } from ‘#/modules/Arrangement/stores’;
+import type { TrackAddedEvent } from ‘#/modules/Arrangement/events’;
+import { ArrangementBar } from ‘#/modules/Arrangement/presentations/views’;
+
+// Another module — FORBIDDEN (direct file access)
+import { addTrack } from ‘#/modules/Arrangement/useCases/addTrack’;
+import { trackStore } from ‘#/modules/Arrangement/stores/trackStore’;
 ```
 
 ```ts
-// Another module — correct
-import { addTrack, trackStore } from '#/modules/Arrangement';
-
-// Another module — FORBIDDEN (direct folder access)
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+// src/modules/Arrangement/useCases/index.ts — curated useCases barrel
+export { addTrack } from ‘./addTrack’;
+export { removeTrack } from ‘./removeTrack’;
+export { getArrangementHandlers } from ‘./getArrangementHandlers’;
+// FORBIDDEN inside useCases/index.ts:
+// export type { TrackSummary } from ‘./getTrackSummary’; // use-case types stay private
+// export { trackStore } from ‘../stores/trackStore’;     // wrong folder
 ```
 
 ```ts
 // Inside Arrangement — correct (relative)
-import { trackStore } from '../stores/trackStore';
-import { addClip } from './useCases/clip/addClip';
+import { trackStore } from ‘../stores/trackStore’;
+import { addClip } from ‘./useCases/clip/addClip’;
 
-// Inside Arrangement — FORBIDDEN (own barrel)
-import { trackStore, addClip } from '#/modules/Arrangement';
+// Inside Arrangement — FORBIDDEN (own contract barrel)
+import { trackStore } from ‘#/modules/Arrangement/stores’;
+import { addClip } from ‘#/modules/Arrangement/useCases’;
 ```
 
 ---

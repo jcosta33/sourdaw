@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { getTransportState, updateTransportState } from '#/modules/Transport';
+import { getTransportState, updateTransportState } from '#/modules/Transport/useCases';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 
 export const setPlayheadFromClick = inject({ getTransportState, updateTransportState })(

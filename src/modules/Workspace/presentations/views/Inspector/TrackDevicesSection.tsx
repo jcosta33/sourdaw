@@ -12,7 +12,7 @@ import {
     addDevice,
     addExternalDevice,
     reorderDevices,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { useStore } from '#/infra/store/useStore';
 import {
     pluginScanStore,

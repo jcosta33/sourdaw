@@ -12,7 +12,7 @@ import { getProjectContext } from './getProjectContext';
 import { type ChatMessage } from '../models/Chat';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { parsePromptToActions } from './parsePromptToActions';
-import { describeAction, executeAppAction, generateGroupId } from '#/modules/Command';
+import { describeAction, executeAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
 import { notifyAiChange } from './notifyAiChange';
 import { setActiveAborter } from '../stores/chatStore';

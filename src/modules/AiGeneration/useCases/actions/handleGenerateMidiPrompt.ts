@@ -1,9 +1,11 @@
 import { inject } from '#/infra/di/inject';
-import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine';
-import { addClip, addTrack, trackStore } from '#/modules/Arrangement';
+import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { batchAddMidiNotes, midiStore } from '#/modules/MIDI';
-import { createCallbackUndoEntry, pushUndo } from '#/modules/Command';
-import { getTransportState } from '#/modules/Transport';
+import { pushUndo } from '#/modules/Command/stores';
+import { createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { workspaceStore } from '#/modules/Workspace';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 import { addTask } from './addTask';

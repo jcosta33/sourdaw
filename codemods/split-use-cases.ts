@@ -24,6 +24,7 @@ function getAllTsFiles(dir: string): string[] {
 interface NodeMeta {
   astNode: any;
   isExported: boolean;
+  isBehavioral: boolean;
   definedNames: string[];
   referencedNames: Set<string>;
   dependencies: Set<NodeMeta>;
@@ -41,6 +42,8 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
 
   const extractDefinedNames = (decl: any) => {
     const names: string[] = [];
+    if (!decl) return names;
+
     if (
       decl.type === 'FunctionDeclaration' || 
       decl.type === 'ClassDeclaration' || 
@@ -54,11 +57,35 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     } else if (decl.type === 'VariableDeclaration') {
       decl.declarations.forEach((d: any) => {
         if (d.type === 'VariableDeclarator') {
-           j(d.id).find(j.Identifier).forEach(p => names.push(p.node.name));
+           if (d.id.type === 'Identifier') {
+             names.push(d.id.name);
+           } else {
+             // Handle destructuring
+             j(d.id).find(j.Identifier).forEach(p => names.push(p.node.name));
+           }
         }
       });
     }
     return names;
+  };
+
+  const isBehavioralNode = (node: any): boolean => {
+    if (node.type === 'ExportNamedDeclaration') {
+      if (node.declaration) return isBehavioralNode(node.declaration);
+      if (node.exportKind === 'type') return false;
+      return true; 
+    }
+    if (node.type === 'ExportDefaultDeclaration') {
+      return true;
+    }
+    if (
+      node.type === 'FunctionDeclaration' || 
+      node.type === 'ClassDeclaration' || 
+      node.type === 'VariableDeclaration'
+    ) {
+      return true;
+    }
+    return false;
   };
 
   topLevelNodes.forEach((node: any) => {
@@ -67,6 +94,7 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     const meta: NodeMeta = {
       astNode: node,
       isExported: false,
+      isBehavioral: isBehavioralNode(node),
       definedNames: [],
       referencedNames: new Set(),
       dependencies: new Set()
@@ -77,8 +105,11 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
       if (node.declaration) {
         meta.definedNames = extractDefinedNames(node.declaration);
       } else if (node.specifiers) {
-        // export { x as y }; doesn't define a new local variable, it references x.
-        // We capture references generically below.
+        node.specifiers.forEach((spec: any) => {
+          if (spec.exported && spec.exported.type === 'Identifier') {
+            meta.definedNames.push(spec.exported.name);
+          }
+        });
       }
     } else if (node.type === 'ExportDefaultDeclaration') {
       meta.isExported = true;
@@ -95,26 +126,24 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
       meta.definedNames = extractDefinedNames(node);
     }
 
-    // Generic reference extraction
-    j(node).find(j.Identifier).forEach(p => {
-      // Exclude property keys in object literals from being considered as references
-      const parent = p.parentPath.node;
-      if (parent.type === 'Property' && parent.key === p.node && !parent.computed) {
-         return; 
-      }
-      if (parent.type === 'MemberExpression' && parent.property === p.node && !parent.computed) {
-         return;
-      }
-      meta.referencedNames.add(p.node.name);
-    });
+    const findIdentifiers = (ast: any) => {
+       j(ast).find(j.Identifier).forEach(p => {
+          const parent = p.parentPath.node;
+          if (parent.type === 'Property' && parent.key === p.node && !parent.computed) return; 
+          if (parent.type === 'MemberExpression' && parent.property === p.node && !parent.computed) return;
+          if (meta.definedNames.includes(p.node.name)) return;
+          meta.referencedNames.add(p.node.name);
+       });
+       j(ast).find(j.JSXIdentifier).forEach(p => {
+          if (meta.definedNames.includes(p.node.name)) return;
+          meta.referencedNames.add(p.node.name);
+       });
+    };
     
-    // A node doesn't depend on itself
-    meta.definedNames.forEach(n => meta.referencedNames.delete(n));
-
+    findIdentifiers(node);
     nodesMeta.push(meta);
   });
 
-  // Build dependency graph
   nodesMeta.forEach(node => {
     node.referencedNames.forEach(refName => {
       const provider = nodesMeta.find(n => n !== node && n.definedNames.includes(refName));
@@ -128,11 +157,17 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     return nodesMeta.some(n => n !== targetNode && n.dependencies.has(targetNode));
   };
 
-  // Roots are exported nodes that nothing else in the file depends on.
-  const roots = nodesMeta.filter(n => n.isExported && !isReferencedByAnotherNode(n));
+  let roots = nodesMeta.filter(n => n.isExported && n.isBehavioral && !isReferencedByAnotherNode(n));
+
+  if (roots.length === 0) {
+     const exportedBehavioral = nodesMeta.filter(n => n.isExported && n.isBehavioral);
+     if (exportedBehavioral.length > 1) {
+        roots = exportedBehavioral;
+     }
+  }
 
   if (roots.length <= 1) {
-    return null; // Skip if 1 or 0 roots (no need to split actual use cases)
+    return null;
   }
 
   const getReachableNodes = (startNode: NodeMeta) => {
@@ -156,15 +191,12 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
   const auxiliaries = nodesMeta.filter(n => !roots.includes(n));
   const sharedAuxiliaries = new Set<NodeMeta>();
   const exclusiveAuxiliaries = new Map<NodeMeta, NodeMeta>();
-  
-  // Side effects (e.g. `console.log("init")`) define no names and are not exported.
-  // They should be copied to all roots so their behavior is preserved.
   const sideEffects = new Set<NodeMeta>();
 
   auxiliaries.forEach(aux => {
     if (aux.definedNames.length === 0 && !aux.isExported) {
        sideEffects.add(aux);
-       return; // Don't process reachability for pure side effects
+       return;
     }
 
     const reachingRoots = roots.filter(root => rootReachability.get(root)!.has(aux));
@@ -173,33 +205,27 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     } else if (reachingRoots.length === 1) {
       exclusiveAuxiliaries.set(aux, reachingRoots[0]);
     } else {
-      sharedAuxiliaries.add(aux); // Unreachable/dead code goes to helpers
+      sharedAuxiliaries.add(aux); 
     }
   });
 
   const getExportName = (node: NodeMeta, index: number = 0) => {
     const ast = node.astNode;
     if (ast.type === 'ExportDefaultDeclaration') {
-      if (ast.declaration.id && ast.declaration.id.name) {
-        return ast.declaration.id.name;
-      }
+      if (ast.declaration.id && ast.declaration.id.name) return ast.declaration.id.name;
       return 'index';
     }
-    if (node.definedNames.length > 0) {
-      return node.definedNames[0];
-    }
+    if (node.definedNames.length > 0) return node.definedNames[0];
     if (ast.type === 'ExportNamedDeclaration' && ast.specifiers && ast.specifiers.length > 0) {
       return ast.specifiers[0].exported.name;
     }
     return `useCase_${index}`;
   };
 
-  // Prepare directories
   const filePath = fileInfo.path;
   const dirName = path.dirname(filePath);
   const extName = path.extname(filePath);
   const baseName = path.basename(filePath, extName);
-  
   const newDirPath = path.join(dirName, baseName);
   const isDryRun = options.dry || options.d;
 
@@ -208,7 +234,6 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
   }
 
   const exportLocationMap = new Map<string, string>();
-
   nodesMeta.forEach((node, index) => {
     if (node.isExported) {
       let targetFileName = 'helpers';
@@ -216,13 +241,10 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
         targetFileName = getExportName(node, index);
       } else {
         const owner = exclusiveAuxiliaries.get(node);
-        if (owner) {
-          targetFileName = getExportName(owner, roots.indexOf(owner));
-        }
+        if (owner) targetFileName = getExportName(owner, roots.indexOf(owner));
       }
       
       node.definedNames.forEach(name => exportLocationMap.set(name, targetFileName));
-      
       if (node.astNode.type === 'ExportNamedDeclaration' && node.astNode.specifiers) {
          node.astNode.specifiers.forEach((spec: any) => {
             if (spec.exported && spec.exported.type === 'Identifier') {
@@ -230,225 +252,139 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
             }
          });
       }
-      if (node.astNode.type === 'ExportDefaultDeclaration') {
-         exportLocationMap.set('default', targetFileName);
-      }
+      if (node.astNode.type === 'ExportDefaultDeclaration') exportLocationMap.set('default', targetFileName);
     }
   });
 
-  const getRequiredImports = (activeRefs: Set<string>) => {
+  const getRequiredImports = (activeRefs: Set<string>, targetFileDepthIncrease: number) => {
     const reqImports: any[] = [];
     imports.forEach((imp: any) => {
-      if (!imp.specifiers || imp.specifiers.length === 0) {
-        reqImports.push(imp);
-        return;
-      }
-      const neededSpecifiers = imp.specifiers.filter((spec: any) => {
-        if (spec.local && spec.local.type === 'Identifier') {
+      const neededSpecifiers = (imp.specifiers || []).filter((spec: any) => {
+        if (spec.local && (spec.local.type === 'Identifier' || spec.local.type === 'JSXIdentifier')) {
           return activeRefs.has(spec.local.name);
         }
         return false;
       });
-      if (neededSpecifiers.length > 0) {
-        reqImports.push(j.importDeclaration(neededSpecifiers, imp.source));
+
+      if (neededSpecifiers.length > 0 || !imp.specifiers || imp.specifiers.length === 0) {
+        let source = imp.source.value;
+        if (source.startsWith('.')) {
+           for (let i = 0; i < targetFileDepthIncrease; i++) source = path.join('..', source);
+           source = source.replace(/\\/g, '/');
+           if (!source.startsWith('.')) source = './' + source;
+        }
+        reqImports.push(j.importDeclaration(neededSpecifiers.length > 0 ? neededSpecifiers : imp.specifiers, j.literal(source)));
       }
     });
     return reqImports;
   };
 
-  // Generate helpers.ts
+  const filesToWrite = new Map<string, string>();
+
   if (sharedAuxiliaries.size > 0) {
     const refs = new Set<string>();
     const sharedFileNodes: any[] = [];
-    
     sharedAuxiliaries.forEach(node => {
       node.referencedNames.forEach(r => refs.add(r));
-      
       let ast = node.astNode;
-      // If a shared auxiliary isn't exported, we must export it so the Root files can import it
       if (!node.isExported) {
-        if (
-          ast.type === 'FunctionDeclaration' || 
-          ast.type === 'ClassDeclaration' || 
-          ast.type === 'VariableDeclaration' || 
-          ast.type === 'TSTypeAliasDeclaration' || 
-          ast.type === 'TSInterfaceDeclaration' || 
-          ast.type === 'TSEnumDeclaration'
-        ) {
+        if (ast.type === 'FunctionDeclaration' || ast.type === 'ClassDeclaration' || ast.type === 'VariableDeclaration' || ast.type === 'TSTypeAliasDeclaration' || ast.type === 'TSInterfaceDeclaration' || ast.type === 'TSEnumDeclaration') {
           ast = j.exportNamedDeclaration(ast);
         }
       }
       sharedFileNodes.push(ast);
     });
-
-    const reqImports = getRequiredImports(refs);
-    
+    const reqImports = getRequiredImports(refs, 1);
     const sharedAst = j.program([...reqImports, ...sharedFileNodes]);
     const sharedSource = j(sharedAst).toSource({ quote: 'single', trailingComma: true });
     const sharedFilePath = path.join(newDirPath, `helpers${extName}`);
-    
-    if (!isDryRun) {
-      if (fs.existsSync(sharedFilePath)) {
-         console.error(`[Error] File ${sharedFilePath} already exists. Skipping file split to prevent data loss.`);
-         return null;
-      }
-      fs.writeFileSync(sharedFilePath, sharedSource, 'utf-8');
-    } else {
-      console.log(`\n[Dry Run] Would create: ${sharedFilePath}\n`);
-    }
+    if (!isDryRun && fs.existsSync(sharedFilePath)) return null;
+    filesToWrite.set(sharedFilePath, sharedSource);
   }
 
-  // To prevent partial writes on failure, collect files to write:
-  const filesToWrite = new Map<string, string>();
-
-  // Generate Root files
   for (let index = 0; index < roots.length; index++) {
     const rootNode = roots[index];
     const expName = getExportName(rootNode, index);
-    
     const myAuxiliaries: NodeMeta[] = [];
-    exclusiveAuxiliaries.forEach((owner, aux) => {
-      if (owner === rootNode) myAuxiliaries.push(aux);
-    });
-
+    exclusiveAuxiliaries.forEach((owner, aux) => { if (owner === rootNode) myAuxiliaries.push(aux); });
     const myNodes = [rootNode, ...myAuxiliaries, ...sideEffects];
     const myRefs = new Set<string>();
     myNodes.forEach(n => n.referencedNames.forEach(r => myRefs.add(r)));
-
-    const reqImports = getRequiredImports(myRefs);
-
+    const reqImports = getRequiredImports(myRefs, 1);
     const neededShared = new Set<string>();
-    sharedAuxiliaries.forEach(sharedNode => {
-      sharedNode.definedNames.forEach(name => {
-        if (myRefs.has(name)) {
-          neededShared.add(name);
-        }
-      });
-    });
-
+    sharedAuxiliaries.forEach(sharedNode => { sharedNode.definedNames.forEach(name => { if (myRefs.has(name)) neededShared.add(name); }); });
     if (neededShared.size > 0) {
       const specifiers = Array.from(neededShared).map(name => j.importSpecifier(j.identifier(name)));
       reqImports.push(j.importDeclaration(specifiers, j.literal('./helpers')));
     }
-
-    const newAstNodes = [
-      ...reqImports,
-      ...Array.from(sideEffects).map(n => n.astNode),
-      ...myAuxiliaries.map(n => n.astNode),
-      rootNode.astNode
-    ];
-
+    const newAstNodes = [...reqImports, ...Array.from(sideEffects).map(n => n.astNode), ...myAuxiliaries.map(n => n.astNode), rootNode.astNode];
     const newAst = j.program(newAstNodes);
     const newSource = j(newAst).toSource({ quote: 'single', trailingComma: true });
     const newFilePath = path.join(newDirPath, `${expName}${extName}`);
-    
-    if (!isDryRun && fs.existsSync(newFilePath)) {
-       console.error(`[Error] Target file already exists: ${newFilePath}. Skipping to prevent data loss.`);
-       return null;
-    }
-    
+    if (!isDryRun && fs.existsSync(newFilePath)) return null;
     filesToWrite.set(newFilePath, newSource);
   }
 
-  // Update imports across project FIRST before deleting original file
   const srcDir = path.resolve(process.cwd(), 'src');
   const allFiles = getAllTsFiles(srcDir);
-  
   const filesToUpdate = new Map<string, string>();
 
   try {
     allFiles.forEach(importerPath => {
       if (importerPath === filePath) return;
-
       let content = fs.readFileSync(importerPath, 'utf-8');
       if (!content.includes(baseName)) return;
-
       const rootAst = j(content);
       let changed = false;
 
-      rootAst.find(j.ImportDeclaration).forEach(pathPath => {
-        const source = pathPath.node.source.value;
+      const updateStatement = (pathNode: any) => {
+        const source = pathNode.node.source?.value;
         if (typeof source !== 'string') return;
-
-        let resolvedSource = '';
-        if (source.startsWith('#/')) {
-          resolvedSource = path.resolve(process.cwd(), 'src', source.slice(2));
-        } else {
-          const importerDir = path.dirname(importerPath);
-          resolvedSource = path.resolve(importerDir, source);
-        }
-        
+        let resolvedSource = source.startsWith('#/') ? path.resolve(process.cwd(), 'src', source.slice(2)) : path.resolve(path.dirname(importerPath), source);
         const fileWithoutExt = filePath.replace(/\.[^.]+$/, '');
-
         if (resolvedSource === fileWithoutExt || resolvedSource === filePath) {
-          const newImportsMap = new Map<string, any[]>();
-          
-          pathPath.node.specifiers?.forEach((spec: any) => {
-            let expOwnerName = '';
-            if (spec.type === 'ImportSpecifier') {
-              const importedName = spec.imported.name;
-              expOwnerName = exportLocationMap.get(importedName) || '';
-            } else if (spec.type === 'ImportDefaultSpecifier') {
-              expOwnerName = exportLocationMap.get('default') || '';
-            }
-
-            if (expOwnerName) {
-              const targetSource = `${source}/${expOwnerName}`;
-              if (!newImportsMap.has(targetSource)) {
-                newImportsMap.set(targetSource, []);
-              }
-              newImportsMap.get(targetSource)!.push(spec);
-            } else {
-               // Fallback: keep the original import if we couldn't resolve its new location
-               if (!newImportsMap.has(source)) {
-                 newImportsMap.set(source, []);
-               }
-               newImportsMap.get(source)!.push(spec);
-            }
+          if (pathNode.node.type === 'ExportAllDeclaration') {
+             const newExports = roots.map((rootNode, idx) => 
+                j.exportAllDeclaration(j.literal(`${source}/${getExportName(rootNode, idx)}`), null)
+             );
+             j(pathNode).replaceWith(newExports);
+             changed = true;
+             return;
+          }
+          const newMap = new Map<string, any[]>();
+          pathNode.node.specifiers?.forEach((spec: any) => {
+            let owner = (spec.type === 'ImportSpecifier' || spec.type === 'ExportSpecifier') ? exportLocationMap.get(spec.exported?.name || spec.imported?.name) : exportLocationMap.get('default');
+            const target = owner ? `${source}/${owner}` : source;
+            if (!newMap.has(target)) newMap.set(target, []);
+            newMap.get(target)!.push(spec);
           });
-
-          if (newImportsMap.size > 0) {
-            const newImportNodes = Array.from(newImportsMap.entries()).map(([src, specifiers]) => 
-              j.importDeclaration(specifiers, j.literal(src))
+          if (newMap.size > 0) {
+            const newNodes = Array.from(newMap.entries()).map(([src, specs]) => 
+               pathNode.node.type === 'ImportDeclaration' ? j.importDeclaration(specs, j.literal(src)) : j.exportNamedDeclaration(null, specs, j.literal(src))
             );
-            j(pathPath).replaceWith(newImportNodes);
+            j(pathNode).replaceWith(newNodes);
             changed = true;
           }
         }
-      });
+      };
 
-      if (changed) {
-        filesToUpdate.set(importerPath, rootAst.toSource({ quote: 'single', trailingComma: true }));
-      }
+      rootAst.find(j.ImportDeclaration).forEach(updateStatement);
+      rootAst.find(j.ExportNamedDeclaration, { source: (s: any) => !!s }).forEach(updateStatement);
+      rootAst.find(j.ExportAllDeclaration).forEach(updateStatement);
+
+      if (changed) filesToUpdate.set(importerPath, rootAst.toSource({ quote: 'single', trailingComma: true }));
     });
+  } catch (e) { return null; }
 
-  } catch (error) {
-     console.error(`[Error] Failed to scan and update cross-project imports. File split aborted for safety.`, error);
-     return null;
-  }
-
-  // All safe. Execute file writes.
   if (!isDryRun) {
-    filesToWrite.forEach((source, targetPath) => {
-       fs.writeFileSync(targetPath, source, 'utf-8');
-    });
-    
-    filesToUpdate.forEach((source, targetPath) => {
-       fs.writeFileSync(targetPath, source, 'utf-8');
-    });
-
-    // Delete original file LAST
+    filesToWrite.forEach((source, targetPath) => fs.writeFileSync(targetPath, source, 'utf-8'));
+    filesToUpdate.forEach((source, targetPath) => fs.writeFileSync(targetPath, source, 'utf-8'));
     fs.unlinkSync(filePath);
   } else {
-    filesToWrite.forEach((source, targetPath) => {
-       console.log(`\n[Dry Run] Would create: ${targetPath}\n`);
-    });
-    filesToUpdate.forEach((source, targetPath) => {
-       console.log(`\n[Dry Run] Would update imports in: ${targetPath}\n`);
-    });
-    console.log(`\n[Dry Run] Would delete original file: ${filePath}\n`);
+    filesToWrite.forEach((_, p) => console.log(`[Dry Run] Would create: ${p}`));
+    filesToUpdate.forEach((_, p) => console.log(`[Dry Run] Would update imports in: ${p}`));
+    console.log(`[Dry Run] Would delete original file: ${filePath}`);
   }
-
   return null;
 }
 

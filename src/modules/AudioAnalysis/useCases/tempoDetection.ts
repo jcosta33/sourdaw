@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 export function detectTempo(audioBufferId: string): number | null {
     const buffer = audioBufferCache.get(audioBufferId);

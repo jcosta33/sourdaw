@@ -2,7 +2,8 @@
  * useTransportState — local re-implementation using transportStore (contract).
  */
 import { useStore } from '#/infra/store/useStore';
-import { transportStore, defaultTransportState } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
 
 type TransportViewState = {
     isPlaying: boolean;

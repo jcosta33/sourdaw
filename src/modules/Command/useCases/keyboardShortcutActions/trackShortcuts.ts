@@ -9,7 +9,7 @@ import {
     duplicateClipToNextBar as duplicateClipToNextBarImpl,
     duplicateTrack as duplicateTrackImpl,
     zoomTracksVertical as zoomTracksVerticalImpl,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 
 export const trackShortcutsDependencies = {
     clearSolos: clearSolosImpl,

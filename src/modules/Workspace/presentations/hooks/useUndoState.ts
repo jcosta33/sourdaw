@@ -2,7 +2,7 @@
  * useUndoState — local re-implementation using undoStore (contract).
  */
 import { useStore } from '#/infra/store/useStore';
-import { undoStore } from '#/modules/Command';
+import { undoStore } from '#/modules/Command/stores';
 
 type UndoHistoryEntry = {
     label: string;

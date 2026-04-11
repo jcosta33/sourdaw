@@ -10,14 +10,9 @@ import {
     toggleLaneCollapsed,
     removeAutomationLane,
 } from '#/modules/Automation';
-import {
-    trackStore,
-    timelineViewStore,
-    scrollTimeline,
-    setAutomationMode,
-    BeatRulerBar,
-    TimelineChromeSurface,
-} from '#/modules/Arrangement';
+import { trackStore, timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores';
+import { setAutomationMode } from '#/modules/Arrangement/useCases';
+import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/presentations/views';
 import { workspaceStore } from '../../stores/workspaceStore';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';

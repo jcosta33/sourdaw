@@ -3,7 +3,8 @@ import { useStore } from '#/infra/store/useStore';
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
-import { setMasterGain, transportStore, defaultTransportState } from '#/modules/Transport';
+import { transportStore } from '#/modules/Transport/stores';
+import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
 
 import { MixerLevelReadout } from './MixerLevelReadout';
 

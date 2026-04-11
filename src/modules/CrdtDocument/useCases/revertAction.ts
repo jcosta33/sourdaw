@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { executeAppAction } from '#/modules/Command';
+import { executeAppAction } from '#/modules/Command/useCases';
 
 import { type ActionHistoryEntry, actionHistoryStore, markEntryReverted } from '../stores/actionHistoryStore';
 

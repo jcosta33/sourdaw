@@ -1,10 +1,10 @@
 import { inject } from '#/infra/di/inject';
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement';
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation';
 import { midiStore } from '#/modules/MIDI';
 import { arrangementStore, projectStore } from '#/modules/Project';
 import { hydrateSidechainRoutes } from '#/modules/Routing';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport';
+import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 

@@ -38,15 +38,15 @@ import {
     getFactoryPresets,
     createTrackFromPreset,
     loadPresetToTrack,
-} from '#/modules/Arrangement';
+} from '#/modules/Arrangement/useCases';
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
-import { PluginBrowser } from '#/modules/AudioEngine';
+import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
 import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
-import { type SidebarRoute } from '../Sidebar';
+import { type SidebarRoute } from './SidebarTypes';
 import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2, SoonBadge } from './effectsTabHelpers';
 import { MODULATOR_PRESETS, MIDI_EFFECT_FACTORIES } from '#/modules/Plugin';
 

@@ -1,4 +1,4 @@
-import { type CommandEntry } from '../CommandRegistry';
+import { type CommandEntry } from '../CommandEntry';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { automationStore } from '#/modules/Automation';
 

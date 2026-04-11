@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { detectAndApplySongStructure } from '#/modules/Arrangement';
+import { detectAndApplySongStructure } from '#/modules/Arrangement/useCases';
 
 export const handleDetectSongStructure = createHandler<'detectSongStructure'>({
     execute: async (a) => {

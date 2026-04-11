@@ -3,7 +3,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { useStore } from '#/infra/store/useStore';
-import { audioGraphStore, defaultAudioGraphState } from '#/modules/AudioEngine';
+import { audioGraphStore, defaultAudioGraphState } from '#/modules/AudioEngine/stores';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 

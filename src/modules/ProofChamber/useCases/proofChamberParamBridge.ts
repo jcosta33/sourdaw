@@ -3,8 +3,8 @@
  * to the WASM audio engine for the specific device instance.
  */
 import { inject } from '#/infra/di/inject';
-import { getAllTracks } from '#/modules/Arrangement';
-import { updateDeviceParam } from '#/modules/AudioEngine';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 
 type DeviceRef = { trackId: string; deviceId: string };
 

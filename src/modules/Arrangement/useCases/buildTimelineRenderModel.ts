@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore, playheadPositionRef } from '#/modules/Transport';
+import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { midiStore } from '#/modules/MIDI';
 import { workspaceStore, preferencesStore, TRACK_HEIGHT_VALUES } from '#/modules/Workspace';

@@ -6,7 +6,7 @@ import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
-import { setDeviceParameter } from '#/modules/Arrangement';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({

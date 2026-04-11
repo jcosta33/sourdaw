@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { getTransportState } from '#/modules/Transport';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { duplicateClipAutomation } from '#/modules/Automation';
 import { addClip } from './addClip';
 

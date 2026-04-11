@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { addClip } from '#/modules/Arrangement';
+import { addClip } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI';
 import { type GenerateChordProgressionOptions } from './algorithm';
 import { generateChordProgression } from './algorithm';

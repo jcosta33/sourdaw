@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine';
+import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 
 /**

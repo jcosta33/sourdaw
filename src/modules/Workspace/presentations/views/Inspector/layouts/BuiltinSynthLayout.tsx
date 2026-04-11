@@ -12,7 +12,7 @@ import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
-import { setDeviceParameter } from '#/modules/Arrangement';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 
 const WAVE_NAMES = ['sine', 'triangle', 'sawtooth', 'square'] as const;

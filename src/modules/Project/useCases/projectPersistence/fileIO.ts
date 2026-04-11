@@ -6,16 +6,14 @@ import {
     takeLaneStore,
     trackStore,
     type TrackStoreState,
-} from '#/modules/Arrangement';
-import { audioBufferCache, getAudioContext, resetAudioGraph } from '#/modules/AudioEngine';
-import { stopPlayback } from '#/modules/Command';
+} from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI';
 import { getAllSidechainRoutes } from '#/modules/Routing';
-import {
-    tempoMapStore,
-    timeSignatureMapStore,
-    transportStore,
-} from '#/modules/Transport';
+import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
 
@@ -26,7 +24,7 @@ import { downloadProjectFile } from '../../repositories/project/downloadProjectF
 import { loadProjectFromFile } from '../../repositories/nativeProjectFiles';
 import { pickFiles } from '../../repositories/nativeFileDialog';
 import { syncCurrentArrangementToStore } from '../arrangement';
-import { clearUndoHistory, hydrateModuleStoresFromProjectData, verifyAudioBufferReferences } from './helpers';
+import { hydrateModuleStoresFromProjectData, verifyAudioBufferReferences } from './helpers';
 
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
  * referenced by a TrackStoreState so the export can embed the raw PCM. */

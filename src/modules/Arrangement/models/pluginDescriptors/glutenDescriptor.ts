@@ -6,7 +6,7 @@
  * module. Models must not cross module boundaries; duplication is intentional.
  */
 
-import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameter';
+import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
 const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     // Core

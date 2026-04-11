@@ -3,7 +3,7 @@
  * Registers Grand Boule as an instrument that can be added to MIDI tracks.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 export const GRAND_BOULE_DESCRIPTOR: PluginDescriptor = {
     id: 'grand-boule',

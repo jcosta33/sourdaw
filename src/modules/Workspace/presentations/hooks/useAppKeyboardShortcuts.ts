@@ -6,9 +6,9 @@ import {
     pasteClip,
     removeClip,
     addClip,
-    trackStore,
-} from '#/modules/Arrangement';
-import { pushUndoEntry } from '#/modules/Command';
+} from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { saveProject } from '#/modules/Project';
 import { workspaceStore } from '../../stores/workspaceStore';
 

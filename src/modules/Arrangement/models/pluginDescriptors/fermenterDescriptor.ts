@@ -3,7 +3,7 @@
  * Registers Fermenter as a proper instrument that can be added to MIDI tracks.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 import { FERMENTER_PARAMS } from '#/modules/Fermenter';
 
 export const FERMENTER_DESCRIPTOR: PluginDescriptor = {
