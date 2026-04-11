@@ -1,5 +1,3 @@
-/* @ts-self-types="./daw_dsp.d.ts" */
-
 /**
  * WASM-exported Bacteria instance for AudioWorklet.
  */
