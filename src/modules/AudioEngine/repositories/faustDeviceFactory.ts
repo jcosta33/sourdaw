@@ -8,7 +8,6 @@
  * the wrapper simply uses the same node for inputNode and outputNode.
  */
 
-import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type OfflineDeviceNode } from './deviceNodeFactory';
 import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin/useCases';
@@ -22,28 +21,26 @@ export { isFaustModule };
  * Returns null if compilation or node creation fails — the chain builder
  * should skip this device gracefully.
  */
-export const createFaustDevice = inject({ logger })(({ logger }) =>
-    async function createFaustDevice(
-        ctx: BaseAudioContext,
-        faustModuleId: string
-    ): Promise<OfflineDeviceNode | null> {
-        const compiled = await compileFaustDSP(faustModuleId);
-        if (!compiled) {
-            logger.warn(`[FaustDevice] Failed to compile ${faustModuleId}`);
-            return null;
-        }
-
-        const node = await createFaustNode(faustModuleId, ctx);
-        if (!node) {
-            logger.warn(`[FaustDevice] Failed to create node for ${faustModuleId}`);
-            return null;
-        }
-
-        const audioNode = node as unknown as AudioNode;
-        return {
-            inputNode: audioNode,
-            outputNode: audioNode,
-            nodes: [audioNode],
-        };
+export async function createFaustDevice(
+    ctx: BaseAudioContext,
+    faustModuleId: string
+): Promise<OfflineDeviceNode | null> {
+    const compiled = await compileFaustDSP(faustModuleId);
+    if (!compiled) {
+        logger.warn(`[FaustDevice] Failed to compile ${faustModuleId}`);
+        return null;
     }
-);
+
+    const node = await createFaustNode(faustModuleId, ctx);
+    if (!node) {
+        logger.warn(`[FaustDevice] Failed to create node for ${faustModuleId}`);
+        return null;
+    }
+
+    const audioNode = node as unknown as AudioNode;
+    return {
+        inputNode: audioNode,
+        outputNode: audioNode,
+        nodes: [audioNode],
+    };
+}

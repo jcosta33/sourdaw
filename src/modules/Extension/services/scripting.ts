@@ -8,7 +8,7 @@
  *   1. Move to Worker-based execution with postMessage proxy
  *   2. Validate each action against the extension's declared permissions
  *   3. Rate-limit API calls from scripts
- * See .agents/audits/dead-code-audit.md Section 10 for full analysis.
+ * See `.agents/audits/webdaw-codebase-audit.md` → **Findings → Extension scripting (frozen)**.
  */
 
 import { extensionStore } from '#/modules/Extension/stores/extension';

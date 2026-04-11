@@ -1,0 +1,32 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setClipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
+import { pasteClip } from '../pasteClip';
+import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { getTransportState } from '#/modules/Transport/useCases';
+
+vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
+    getTrackState: vi.fn(),
+}));
+vi.mock('#/modules/Transport/useCases', () => ({
+    getTransportState: vi.fn(),
+}));
+vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
+    addClip: vi.fn(),
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    createMidiNote: vi.fn(),
+}));
+
+describe('pasteClip', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        setClipClipboard([]);
+    });
+
+    it('returns early when the clip clipboard is empty without reading transport', () => {
+        pasteClip();
+
+        expect(getTransportState).not.toHaveBeenCalled();
+        expect(getTrackState).not.toHaveBeenCalled();
+    });
+});

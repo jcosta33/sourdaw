@@ -1,0 +1,39 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setPunchIn } from '../setPunchIn';
+import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
+
+vi.mock('#/modules/Transport/repositories/transport/getTransportState', () => ({
+    getTransportState: vi.fn(),
+}));
+vi.mock('#/modules/Transport/repositories/transport/updateTransportState', () => ({
+    updateTransportState: vi.fn(),
+}));
+
+describe('setPunchIn', () => {
+    beforeEach(() => {
+        vi.mocked(getTransportState).mockClear();
+        vi.mocked(updateTransportState).mockClear();
+    });
+
+    it('should clamp punch in beat and update transport', () => {
+        const update = vi.fn();
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        setPunchIn(12);
+
+        expect(update).toHaveBeenCalledWith({ punchInBeat: 12 });
+    });
+
+    it('should not update when transport state is missing', () => {
+        const update = vi.fn();
+        vi.mocked(getTransportState).mockReturnValue(null as any);
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        setPunchIn(4);
+
+        expect(update).not.toHaveBeenCalled();
+    });
+});

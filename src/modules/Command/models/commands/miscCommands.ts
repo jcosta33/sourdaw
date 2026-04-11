@@ -142,7 +142,7 @@ export const miscCommands: CommandEntry[] = [
     // ── Extension / Scripting ─────────────────────────────────
     // Extension commands removed — runtime is unsandboxed (new Function).
     // TODO: Rebuild extension system with Worker-based sandbox before re-exposing.
-    // See dead-code-audit.md Section 10 for full security analysis.
+    // See `.agents/audits/webdaw-codebase-audit.md` → Findings → Extension scripting (frozen).
 
     // ── Recording ─────────────────────────────────────────────
     {

@@ -111,12 +111,12 @@ class TelemetryAllocator {
     }
 
     allocateSlot(): TelemetrySlot | null {
+        const sab = this.ensureInit();
         const slotIndex = this.freeSlots.pop();
         if (slotIndex === undefined) {
             console.warn('[TelemetryAllocator] No free telemetry slots (max 64 active plugins)');
             return null;
         }
-        const sab = this.ensureInit();
         const byteOffset = slotIndex * BYTES_PER_SLOT;
         const view = new Float32Array(sab, byteOffset, FLOATS_PER_SLOT);
         view.fill(0);

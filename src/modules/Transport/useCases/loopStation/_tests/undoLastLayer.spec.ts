@@ -1,0 +1,60 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { type LoopStationState } from '#/modules/Transport/stores/loopStationStore';
+import { undoLastLayer } from '../undoLastLayer';
+import { loopStationStore } from '#/modules/Transport/stores/loopStationStore';
+
+vi.mock('#/modules/Transport/stores/loopStationStore', () => ({
+    loopStationStore: { value: null, set: vi.fn() },
+}));
+
+function emptyLoopState(): LoopStationState {
+    return {
+        slots: [],
+        sceneCount: 8,
+        activeScene: 0,
+        armed: false,
+        syncToTransport: true,
+        fixedLoopLength: 0,
+    };
+}
+
+describe('undoLastLayer', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('drops last layer and clears slot when no layers remain', () => {
+        loopStationStore.value = {
+            ...emptyLoopState(),
+            slots: [
+                {
+                    id: 's1',
+                    trackId: 't',
+                    row: 0,
+                    column: 0,
+                    state: 'playing',
+                    lengthBeats: 4,
+                    layers: [
+                        {
+                            id: 'L1',
+                            layerIndex: 0,
+                            recordedAt: '',
+                            muted: false,
+                            volume: 1,
+                        },
+                    ],
+                    loopCount: 0,
+                    volume: 1,
+                    quantize: true,
+                    fadeBeats: 0.125,
+                },
+            ],
+        } as any;
+        
+        undoLastLayer('s1');
+        
+        const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots[0]!.layers).toHaveLength(0);
+        expect(next.slots[0]!.state).toBe('empty');
+    });
+});
