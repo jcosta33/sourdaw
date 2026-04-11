@@ -2,7 +2,6 @@
  * Gluten parameter bridge — keeps the patch truthful while throttling
  * audio-engine updates to animation frames.
  */
-import { inject } from '#/infra/di/inject';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
 import { type GlutenPatch } from '../models/GlutenPatch';
@@ -49,6 +48,10 @@ function createFlushHandlers(deps: BridgeDeps) {
 
     return { flushParam, pushParamImmediately };
 }
+
+const bridgeDeps: BridgeDeps = { updateDeviceParam, persistDeviceParam };
+const { flushParam, pushParamImmediately } = createFlushHandlers(bridgeDeps);
+const findDeviceRefGluten = createFindDeviceRef(getAllTracks);
 
 const TOPOLOGY_INDEX = {
     vca: 0,
@@ -108,105 +111,88 @@ function encodeGlutenValue(key: string, value: unknown): number | null {
     return null;
 }
 
-export const setGlutenParamWithAudio = inject({ updateDeviceParam, persistDeviceParam, getAllTracks })(
-    (deps) => {
-        const { flushParam } = createFlushHandlers(deps);
-        const findDeviceRef = createFindDeviceRef(deps.getAllTracks);
+export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
+    deviceId: string,
+    key: K,
+    value: GlutenPatch[K]
+): void {
+    setGlutenParam(deviceId, key, value);
 
-        return function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
-            deviceId: string,
-            key: K,
-            value: GlutenPatch[K]
-        ): void {
-            setGlutenParam(deviceId, key, value);
-
-            const encodedValue = encodeGlutenValue(key, value);
-            if (encodedValue === null) {
-                return;
-            }
-
-            const ref = findDeviceRef(deviceId);
-            if (!ref) {
-                return;
-            }
-
-            const compositeKey = `${deviceId}:${key}`;
-            latestValues.set(compositeKey, encodedValue);
-            if (!pendingUpdates.has(compositeKey)) {
-                pendingUpdates.set(
-                    compositeKey,
-                    requestAnimationFrame(() => flushParam(deviceId, ref, key))
-                );
-            }
-        };
+    const encodedValue = encodeGlutenValue(key, value);
+    if (encodedValue === null) {
+        return;
     }
-);
 
-export const loadGlutenPatchWithAudio = inject({ updateDeviceParam, persistDeviceParam, getAllTracks })(
-    (deps) => {
-        const { pushParamImmediately } = createFlushHandlers(deps);
-        const findDeviceRef = createFindDeviceRef(deps.getAllTracks);
-
-        return function loadGlutenPatchWithAudio(deviceId: string, patch: GlutenPatch): void {
-            loadGlutenPatch(deviceId, patch);
-
-            const ref = findDeviceRef(deviceId);
-            if (!ref) {
-                return;
-            }
-
-            const params: Array<[string, unknown]> = [
-                ['topology', patch.topology],
-                ['style', patch.style],
-                ['amount', patch.amount],
-                ['threshold', patch.threshold],
-                ['ratio', patch.ratio],
-                ['attack', patch.attack],
-                ['release', patch.release],
-                ['knee', patch.knee],
-                ['makeup', patch.makeup],
-                ['mix', patch.mix],
-                ['autoMakeup', patch.autoMakeup],
-                ['autoRelease', patch.autoRelease],
-                ['range', patch.range],
-                ['scHpfFreq', patch.scHpfFreq],
-                ['scHpfEnabled', patch.scHpfEnabled],
-                ['thrust', patch.thrust],
-                ['detection', patch.detection],
-                ['stereoMode', patch.stereoMode],
-                ['stereoLink', patch.stereoLink],
-                ['oversampling', patch.oversampling],
-                ['lookahead', patch.lookahead],
-                ['scLpfFreq', patch.scLpfFreq],
-                ['scLpfEnabled', patch.scLpfEnabled],
-                ['scEqFreq', patch.scEqFreq],
-                ['scEqGain', patch.scEqGain],
-                ['scEqQ', patch.scEqQ],
-                ['scEqEnabled', patch.scEqEnabled],
-                ['deltaListen', patch.deltaListen],
-                ['gainMatchBypass', patch.gainMatchBypass],
-                ['extSidechain', patch.extSidechain],
-                ['inputGain', patch.inputGain],
-                ['outputGain', patch.outputGain],
-                ['xfmrDrive', patch.xfmrDrive],
-                ['allButtons', patch.allButtons],
-                ['limitMode', patch.limitMode],
-                ['recovery', patch.recovery],
-                ['vcaType', patch.vcaType],
-                ['vcaCharacter', patch.vcaCharacter],
-                ['feedForward', patch.feedForward],
-                ['jfetK3', patch.jfetK3],
-                ['xfmrK2', patch.xfmrK2],
-                ['blendTopology', patch.blendTopology],
-                ['blendAmount', patch.blendAmount],
-            ];
-
-            for (const [key, rawValue] of params) {
-                const encodedValue = encodeGlutenValue(key, rawValue);
-                if (encodedValue !== null) {
-                    pushParamImmediately(ref, key, encodedValue);
-                }
-            }
-        };
+    const ref = findDeviceRefGluten(deviceId);
+    if (!ref) {
+        return;
     }
-);
+
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, encodedValue);
+    if (!pendingUpdates.has(compositeKey)) {
+        pendingUpdates.set(compositeKey, requestAnimationFrame(() => flushParam(deviceId, ref, key)));
+    }
+}
+
+export function loadGlutenPatchWithAudio(deviceId: string, patch: GlutenPatch): void {
+    loadGlutenPatch(deviceId, patch);
+
+    const ref = findDeviceRefGluten(deviceId);
+    if (!ref) {
+        return;
+    }
+
+    const params: Array<[string, unknown]> = [
+        ['topology', patch.topology],
+        ['style', patch.style],
+        ['amount', patch.amount],
+        ['threshold', patch.threshold],
+        ['ratio', patch.ratio],
+        ['attack', patch.attack],
+        ['release', patch.release],
+        ['knee', patch.knee],
+        ['makeup', patch.makeup],
+        ['mix', patch.mix],
+        ['autoMakeup', patch.autoMakeup],
+        ['autoRelease', patch.autoRelease],
+        ['range', patch.range],
+        ['scHpfFreq', patch.scHpfFreq],
+        ['scHpfEnabled', patch.scHpfEnabled],
+        ['thrust', patch.thrust],
+        ['detection', patch.detection],
+        ['stereoMode', patch.stereoMode],
+        ['stereoLink', patch.stereoLink],
+        ['oversampling', patch.oversampling],
+        ['lookahead', patch.lookahead],
+        ['scLpfFreq', patch.scLpfFreq],
+        ['scLpfEnabled', patch.scLpfEnabled],
+        ['scEqFreq', patch.scEqFreq],
+        ['scEqGain', patch.scEqGain],
+        ['scEqQ', patch.scEqQ],
+        ['scEqEnabled', patch.scEqEnabled],
+        ['deltaListen', patch.deltaListen],
+        ['gainMatchBypass', patch.gainMatchBypass],
+        ['extSidechain', patch.extSidechain],
+        ['inputGain', patch.inputGain],
+        ['outputGain', patch.outputGain],
+        ['xfmrDrive', patch.xfmrDrive],
+        ['allButtons', patch.allButtons],
+        ['limitMode', patch.limitMode],
+        ['recovery', patch.recovery],
+        ['vcaType', patch.vcaType],
+        ['vcaCharacter', patch.vcaCharacter],
+        ['feedForward', patch.feedForward],
+        ['jfetK3', patch.jfetK3],
+        ['xfmrK2', patch.xfmrK2],
+        ['blendTopology', patch.blendTopology],
+        ['blendAmount', patch.blendAmount],
+    ];
+
+    for (const [key, rawValue] of params) {
+        const encodedValue = encodeGlutenValue(key, rawValue);
+        if (encodedValue !== null) {
+            pushParamImmediately(ref, key, encodedValue);
+        }
+    }
+}

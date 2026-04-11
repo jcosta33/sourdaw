@@ -2,7 +2,6 @@
  * Crust parameter bridge — throttles UI updates to the audio engine.
  * Same rAF-throttled pattern as glutenParamBridge.
  */
-import { inject } from '#/infra/di/inject';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
 import { type CrustPatch } from '../models/CrustPatch';
@@ -49,6 +48,11 @@ function createFlushHandlers(deps: BridgeDeps) {
 
     return { flushParam, pushParamImmediately };
 }
+
+const crustBridgeDeps: BridgeDeps = { updateDeviceParam, persistDeviceParam };
+const { flushParam: flushCrustParam, pushParamImmediately: pushCrustParamImmediately } =
+    createFlushHandlers(crustBridgeDeps);
+const findDeviceRefCrust = createFindDeviceRef(getAllTracks);
 
 const STYLE_INDEX = {
     transparent: 0,
@@ -154,91 +158,74 @@ function encodeCrustValue(key: string, value: unknown): number | null {
     return null;
 }
 
-export const setCrustParamWithAudio = inject({ updateDeviceParam, persistDeviceParam, getAllTracks })(
-    (deps) => {
-        const { flushParam } = createFlushHandlers(deps);
-        const findDeviceRef = createFindDeviceRef(deps.getAllTracks);
+export function setCrustParamWithAudio<K extends keyof CrustPatch>(
+    deviceId: string,
+    key: K,
+    value: CrustPatch[K]
+): void {
+    setCrustParam(key, value);
 
-        return function setCrustParamWithAudio<K extends keyof CrustPatch>(
-            deviceId: string,
-            key: K,
-            value: CrustPatch[K]
-        ): void {
-            setCrustParam(key, value);
-
-            const encodedValue = encodeCrustValue(key, value);
-            if (encodedValue === null) {
-                return;
-            }
-
-            const ref = findDeviceRef(deviceId);
-            if (!ref) {
-                return;
-            }
-
-            const compositeKey = `${deviceId}:${key}`;
-            latestValues.set(compositeKey, encodedValue);
-            if (!pendingUpdates.has(compositeKey)) {
-                pendingUpdates.set(
-                    compositeKey,
-                    requestAnimationFrame(() => flushParam(deviceId, ref, key))
-                );
-            }
-        };
+    const encodedValue = encodeCrustValue(key, value);
+    if (encodedValue === null) {
+        return;
     }
-);
 
-export const loadCrustPatchWithAudio = inject({ updateDeviceParam, persistDeviceParam, getAllTracks })(
-    (deps) => {
-        const { pushParamImmediately } = createFlushHandlers(deps);
-        const findDeviceRef = createFindDeviceRef(deps.getAllTracks);
-
-        return function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): void {
-            loadCrustPatch(patch);
-
-            const ref = findDeviceRef(deviceId);
-            if (!ref) {
-                return;
-            }
-
-            const params: Array<[string, unknown]> = [
-                ['gain', patch.gain],
-                ['ceiling', patch.ceiling],
-                ['style', patch.style],
-                ['algorithm', patch.algorithm],
-                ['lookahead', patch.lookahead],
-                ['attack', patch.attack],
-                ['release', patch.release],
-                ['attackAuto', patch.attackAuto],
-                ['releaseAuto', patch.releaseAuto],
-                ['channelLinkTransient', patch.channelLinkTransient],
-                ['channelLinkRelease', patch.channelLinkRelease],
-                ['truePeak', patch.truePeak],
-                ['oversampling', patch.oversampling],
-                ['satEnabled', patch.satEnabled],
-                ['satAlgorithm', patch.satAlgorithm],
-                ['satDrive', patch.satDrive],
-                ['satMix', patch.satMix],
-                ['deltaListen', patch.deltaListen],
-                ['unityGain', patch.unityGain],
-                ['multiBand', patch.multiBand],
-                ['crossover1', patch.crossover1],
-                ['crossover2', patch.crossover2],
-                ['scHpfEnabled', patch.scHpfEnabled],
-                ['scHpfFreq', patch.scHpfFreq],
-                ['stereoMode', patch.stereoMode],
-                ['dither', patch.dither],
-                ['outputBitDepth', patch.outputBitDepth],
-                ['abSlot', patch.abSlot],
-                ['scrollSpeed', patch.scrollSpeed],
-            ];
-
-            for (const [key, rawValue] of params) {
-                const encodedValue = encodeCrustValue(key, rawValue);
-                if (encodedValue !== null) {
-                    pushParamImmediately(ref, key, encodedValue);
-                }
-            }
-        };
+    const ref = findDeviceRefCrust(deviceId);
+    if (!ref) {
+        return;
     }
-);
+
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, encodedValue);
+    if (!pendingUpdates.has(compositeKey)) {
+        pendingUpdates.set(compositeKey, requestAnimationFrame(() => flushCrustParam(deviceId, ref, key)));
+    }
+}
+
+export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): void {
+    loadCrustPatch(patch);
+
+    const ref = findDeviceRefCrust(deviceId);
+    if (!ref) {
+        return;
+    }
+
+    const params: Array<[string, unknown]> = [
+        ['gain', patch.gain],
+        ['ceiling', patch.ceiling],
+        ['style', patch.style],
+        ['algorithm', patch.algorithm],
+        ['lookahead', patch.lookahead],
+        ['attack', patch.attack],
+        ['release', patch.release],
+        ['attackAuto', patch.attackAuto],
+        ['releaseAuto', patch.releaseAuto],
+        ['channelLinkTransient', patch.channelLinkTransient],
+        ['channelLinkRelease', patch.channelLinkRelease],
+        ['truePeak', patch.truePeak],
+        ['oversampling', patch.oversampling],
+        ['satEnabled', patch.satEnabled],
+        ['satAlgorithm', patch.satAlgorithm],
+        ['satDrive', patch.satDrive],
+        ['satMix', patch.satMix],
+        ['deltaListen', patch.deltaListen],
+        ['unityGain', patch.unityGain],
+        ['multiBand', patch.multiBand],
+        ['crossover1', patch.crossover1],
+        ['crossover2', patch.crossover2],
+        ['scHpfEnabled', patch.scHpfEnabled],
+        ['scHpfFreq', patch.scHpfFreq],
+        ['stereoMode', patch.stereoMode],
+        ['dither', patch.dither],
+        ['outputBitDepth', patch.outputBitDepth],
+        ['abSlot', patch.abSlot],
+        ['scrollSpeed', patch.scrollSpeed],
+    ];
+
+    for (const [key, rawValue] of params) {
+        const encodedValue = encodeCrustValue(key, rawValue);
+        if (encodedValue !== null) {
+            pushCrustParamImmediately(ref, key, encodedValue);
+        }
+    }
+}

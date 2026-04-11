@@ -4,7 +4,6 @@
  * Uses AudioContext clock correction (chained setTimeout) to prevent drift.
  */
 
-import { inject } from '#/infra/di/inject';
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { triggerToasterPad } from './triggerPad';
 
@@ -45,45 +44,33 @@ export function stopNoteRepeat(): void {
     }
 }
 
-export const startNoteRepeatDependencies = {
-    getAudioTime,
-    triggerToasterPad,
-} as const;
-
-export const startNoteRepeat = inject(startNoteRepeatDependencies)(({ getAudioTime, triggerToasterPad }) => {
-    function scheduleNextTrigger(): void {
-        if (!activeRepeat) {
-            return;
-        }
-
-        triggerToasterPad(activeRepeat.padIndex, activeRepeat.velocity);
-
-        activeRepeat.nextTriggerTime += activeRepeat.intervalSec;
-        const now = getAudioTime();
-        const delayMs = Math.max(1, (activeRepeat.nextTriggerTime - now) * 1000);
-
-        activeRepeat.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+function scheduleNextTrigger(): void {
+    if (!activeRepeat) {
+        return;
     }
 
-    return function startNoteRepeat(
-        padIndex: number,
-        velocity: number,
-        bpm: number,
-        rate: NoteRepeatRate
-    ): void {
-        stopNoteRepeat();
-        const durationMs = rateToDurationMs(rate, bpm);
-        const intervalSec = durationMs / 1000;
+    triggerToasterPad(activeRepeat.padIndex, activeRepeat.velocity);
 
-        triggerToasterPad(padIndex, velocity);
+    activeRepeat.nextTriggerTime += activeRepeat.intervalSec;
+    const now = getAudioTime();
+    const delayMs = Math.max(1, (activeRepeat.nextTriggerTime - now) * 1000);
 
-        const nextTriggerTime = getAudioTime() + intervalSec;
-        const delayMs = Math.max(1, intervalSec * 1000);
-        const timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+    activeRepeat.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+}
 
-        activeRepeat = { padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
-    };
-});
+export function startNoteRepeat(padIndex: number, velocity: number, bpm: number, rate: NoteRepeatRate): void {
+    stopNoteRepeat();
+    const durationMs = rateToDurationMs(rate, bpm);
+    const intervalSec = durationMs / 1000;
+
+    triggerToasterPad(padIndex, velocity);
+
+    const nextTriggerTime = getAudioTime() + intervalSec;
+    const delayMs = Math.max(1, intervalSec * 1000);
+    const timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+
+    activeRepeat = { padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
+}
 
 export function isNoteRepeating(): boolean {
     return activeRepeat !== null;

@@ -7,22 +7,21 @@ import { eventBus } from '#/app/registerDependencies';
 
 type AddTrackInput = { id?: string; name: string; kind: TrackKind };
 
-export const addTrack = inject({ eventBus, getTrackState, setTrackState })(
-    ({ eventBus, getTrackState, setTrackState }) =>
-        function addTrack(input: AddTrackInput): Track | null {
-            const state = getTrackState();
-            if (!state) {
-                return null;
-            }
-
-            const track = createTrackModel(input) as Track;
-            setTrackState({
-                ...state,
-                tracks: [...state.tracks, track],
-                selectedTrackId: track.id,
-            });
-
-            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
-            return track;
+export const addTrack = inject({ eventBus })(({ eventBus }) =>
+    function addTrack(input: AddTrackInput): Track | null {
+        const state = getTrackState();
+        if (!state) {
+            return null;
         }
+
+        const track = createTrackModel(input) as Track;
+        setTrackState({
+            ...state,
+            tracks: [...state.tracks, track],
+            selectedTrackId: track.id,
+        });
+
+        eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+        return track;
+    }
 );

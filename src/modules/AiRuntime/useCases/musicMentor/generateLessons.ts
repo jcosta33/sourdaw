@@ -5,16 +5,26 @@
  * explaining WHY certain mixing techniques work.
  */
 
-import { inject } from '#/infra/di/inject';
 import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { type MentorCategory, type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
 
 let lessonCounter = 0;
 
-export const generateMentorLessonsDependencies = {
-    analyzeMix: analyzeMixFromTrackLayout,
-} as const;
+const analyzeMix = analyzeMixFromTrackLayout;
+
+let cachedAnalysis: ReturnType<typeof analyzeMix> | null = null;
+let cachedTrackStateRef: unknown = null;
+
+function getCachedAnalysis(): ReturnType<typeof analyzeMix> {
+    const currentRef = trackStore.value;
+    if (cachedAnalysis && cachedTrackStateRef === currentRef) {
+        return cachedAnalysis;
+    }
+    cachedAnalysis = analyzeMix();
+    cachedTrackStateRef = currentRef;
+    return cachedAnalysis;
+}
 
 function createLesson(
     category: MentorCategory,
@@ -42,22 +52,7 @@ function createLesson(
 /**
  * Analyze the current project and generate contextual lessons.
  */
-export const generateMentorLessons = inject(generateMentorLessonsDependencies)(
-    ({ analyzeMix }) => {
-        let cachedAnalysis: ReturnType<typeof analyzeMix> | null = null;
-        let cachedTrackStateRef: unknown = null;
-
-        function getCachedAnalysis(): ReturnType<typeof analyzeMix> {
-            const currentRef = trackStore.value;
-            if (cachedAnalysis && cachedTrackStateRef === currentRef) {
-                return cachedAnalysis;
-            }
-            cachedAnalysis = analyzeMix();
-            cachedTrackStateRef = currentRef;
-            return cachedAnalysis;
-        }
-
-        return function generateMentorLessons(): MentorLesson[] {
+export function generateMentorLessons(): MentorLesson[] {
     const state = trackStore.value;
     if (!state) {
         return [];
@@ -219,7 +214,5 @@ export const generateMentorLessons = inject(generateMentorLessonsDependencies)(
         );
     }
 
-            return lessons.sort((a, b) => b.relevance - a.relevance);
-        };
-    }
-);
+    return lessons.sort((a, b) => b.relevance - a.relevance);
+}

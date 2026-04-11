@@ -1,40 +1,26 @@
-import { inject } from '#/infra/di/inject';
+
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { resumeEngine } from '#/modules/AudioEngine/useCases';
 import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 
-export const startPlayback = inject(
-    {
-        getTransportState,
-        updateTransportState,
-        get resumeEngine() {
-            return resumeEngine;
-        },
-        ensureTrackStrips,
-        startPlayheadScheduler,
-    },
-    { lazy: true }
-)(
-    ({ getTransportState, updateTransportState, resumeEngine, ensureTrackStrips, startPlayheadScheduler }) =>
-        function startPlayback(): void {
-            const state = getTransportState();
-            if (!state) {
-                return;
-            }
+export function startPlayback(): void {
+    const state = getTransportState();
+    if (!state) {
+        return;
+    }
 
-            resumeEngine();
-            ensureTrackStrips();
+    resumeEngine();
+    ensureTrackStrips();
 
-            let startPosition = state.playheadPosition;
-            if (state.preRollEnabled && state.preRollBars > 0) {
-                const preRollBeats = state.preRollBars * state.timeSignatureNumerator;
-                startPosition = Math.max(0, startPosition - preRollBeats);
-            }
+    let startPosition = state.playheadPosition;
+    if (state.preRollEnabled && state.preRollBars > 0) {
+        const preRollBeats = state.preRollBars * state.timeSignatureNumerator;
+        startPosition = Math.max(0, startPosition - preRollBeats);
+    }
 
-            updateTransportState({ isPlaying: true, playheadPosition: startPosition });
-            playheadPositionRef.current = startPosition;
-            startPlayheadScheduler();
-        }
-);
+    updateTransportState({ isPlaying: true, playheadPosition: startPosition });
+    playheadPositionRef.current = startPosition;
+    startPlayheadScheduler();
+}

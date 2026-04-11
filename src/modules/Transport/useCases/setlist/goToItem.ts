@@ -5,27 +5,26 @@ import { eventBus } from '#/app/registerDependencies';
 /**
  * Navigate to a specific setlist item by index.
  */
-export const goToItem = inject({ eventBus, setlistStore })(
-    ({ eventBus: bus, setlistStore: store }) =>
-        function goToItem(index: number): void {
-            const state = store.value;
-            if (!state || index < 0 || index >= state.items.length) {
-                return;
-            }
-
-            store.set({ ...state, currentIndex: index });
-
-            const item = state.items[index];
-            if (!item) {
-                return;
-            }
-
-            if (item.programChange) {
-                bus.emit('midi.out', {
-                    type: 'programChange',
-                    channel: item.programChange.channel,
-                    program: item.programChange.program,
-                });
-            }
+export const goToItem = inject({ eventBus })(({ eventBus: bus }) =>
+    function goToItem(index: number): void {
+        const state = setlistStore.value;
+        if (!state || index < 0 || index >= state.items.length) {
+            return;
         }
+
+        setlistStore.set({ ...state, currentIndex: index });
+
+        const item = state.items[index];
+        if (!item) {
+            return;
+        }
+
+        if (item.programChange) {
+            bus.emit('midi.out', {
+                type: 'programChange',
+                channel: item.programChange.channel,
+                program: item.programChange.program,
+            });
+        }
+    }
 );

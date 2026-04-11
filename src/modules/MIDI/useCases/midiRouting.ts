@@ -5,21 +5,12 @@
  * All store access goes through the Track repository.
  */
 
-import { inject } from '#/infra/di/inject';
-import { updateTrack as updateTrackDependency } from '#/modules/Arrangement/useCases';
+import { updateTrack } from '#/modules/Arrangement/useCases';
 
-export const setMidiOutput = inject({ updateTrackDependency: () => updateTrackDependency })(
-    ({ updateTrackDependency }) =>
-        function setMidiOutput(trackId: string, destinationTrackId: string): void {
-            const updateTrack = updateTrackDependency();
-            updateTrack(trackId, (t) => ({ ...t, midiOutputTrackId: destinationTrackId }));
-        }
-);
+export function setMidiOutput(trackId: string, destinationTrackId: string): void {
+    updateTrack(trackId, (t) => ({ ...t, midiOutputTrackId: destinationTrackId }));
+}
 
-export const clearMidiOutput = inject({ updateTrackDependency: () => updateTrackDependency })(
-    ({ updateTrackDependency }) =>
-        function clearMidiOutput(trackId: string): void {
-            const updateTrack = updateTrackDependency();
-            updateTrack(trackId, (t) => ({ ...t, midiOutputTrackId: null }));
-        }
-);
+export function clearMidiOutput(trackId: string): void {
+    updateTrack(trackId, (t) => ({ ...t, midiOutputTrackId: null }));
+}

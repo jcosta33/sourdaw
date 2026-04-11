@@ -42,9 +42,8 @@ export type DsoEditResult = {
 /**
  * Execute a DSO edit request — the single orchestration entrypoint.
  */
-export const executeDsoEdit = inject({ logger, executeDsos })(
-    ({ logger, executeDsos }) =>
-        async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
+export const executeDsoEdit = inject({ logger })(({ logger }) =>
+    async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
     const backend = resolveBackend();
 
     if (!isDsoBackendAvailable()) {
@@ -175,9 +174,9 @@ export const executeDsoEdit = inject({ logger, executeDsos })(
 
         setChatGenerating(false);
         llmStatusStore.set({ state: 'error', message: err.message });
-            return { success: false, plan: null, summaries: [], error: err.message };
-        }
-        }
+        return { success: false, plan: null, summaries: [], error: err.message };
+    }
+}
 );
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

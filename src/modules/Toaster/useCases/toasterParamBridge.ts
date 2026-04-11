@@ -4,7 +4,6 @@
  * Uses rAF throttling to avoid flooding MessagePort during knob dragging.
  */
 
-import { inject } from '#/infra/di/inject';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { updateKit, updatePad } from '../stores/toasterStore';
@@ -23,9 +22,7 @@ function createFindDeviceRef(getAllTracksFn: typeof getAllTracks) {
     };
 }
 
-export const getFirstToasterDeviceIdDependencies = {
-    getAllTracks,
-} as const;
+const findDeviceRef = createFindDeviceRef(getAllTracks);
 
 export function getFirstToasterDeviceId(): string | null {
     for (const track of getAllTracks()) {
@@ -37,14 +34,9 @@ export function getFirstToasterDeviceId(): string | null {
     return null;
 }
 
-// Throttling for pad-level params
 const padPending = new Map<string, number>();
 const padLatest = new Map<string, { pad: number; name: string; value: number }>();
 
-/**
- * Update a pad parameter and forward to the audio engine via setPadParam.
- */
-// Fields that are strings in the store — don't overwrite with numbers
 const STRING_FIELDS = new Set(['engineType', 'name', 'color']);
 
 const KIT_PARAM_MAP = {
@@ -60,118 +52,83 @@ const KIT_PARAM_MAP = {
     lofiMix: 'lofi_mix',
 } as const;
 
-export const setToasterPadParamDependencies = {
-    getAllTracks,
-    getTrackStrip,
-    updatePad,
-} as const;
+function flushPadParam(cacheKey: string, trackId: string): void {
+    padPending.delete(cacheKey);
+    const entry = padLatest.get(cacheKey);
+    if (!entry) {
+        return;
+    }
+    padLatest.delete(cacheKey);
 
-export const setToasterPadParam = inject(setToasterPadParamDependencies)(({ getAllTracks: getAllTracksFn, getTrackStrip: getTrackStripFn, updatePad: updatePadFn }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
+    const strip = getTrackStrip(trackId);
+    if (!strip) {
+        return;
+    }
+    const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+    if (dn?.toasterControls) {
+        dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
+    }
+}
 
-    function flushPadParam(cacheKey: string, trackId: string): void {
-        padPending.delete(cacheKey);
-        const entry = padLatest.get(cacheKey);
-        if (!entry) {
-            return;
-        }
-        padLatest.delete(cacheKey);
-
-        const strip = getTrackStripFn(trackId);
-        if (!strip) {
-            return;
-        }
-        const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
-        if (dn?.toasterControls) {
-            dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
-        }
+export function setToasterPadParam(deviceId: string, padIndex: number, key: keyof PadState, value: number): void {
+    if (!STRING_FIELDS.has(key)) {
+        updatePad(padIndex, { [key]: value } as Partial<PadState>);
     }
 
-    return function setToasterPadParam(deviceId: string, padIndex: number, key: keyof PadState, value: number): void {
-        // Only update the store for numeric fields
-        if (!STRING_FIELDS.has(key)) {
-            updatePadFn(padIndex, { [key]: value } as Partial<PadState>);
-        }
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
+    }
 
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
-            return;
-        }
+    const cacheKey = `${deviceId}_${padIndex}_${key}`;
+    padLatest.set(cacheKey, { pad: padIndex, name: key, value });
+    if (!padPending.has(cacheKey)) {
+        padPending.set(cacheKey, requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId)));
+    }
+}
 
-        const cacheKey = `${deviceId}_${padIndex}_${key}`;
-        padLatest.set(cacheKey, { pad: padIndex, name: key, value });
-        if (!padPending.has(cacheKey)) {
-            padPending.set(
-                cacheKey,
-                requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId))
-            );
-        }
-    };
-});
+export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(
+    deviceId: string,
+    key: K,
+    value: ToasterKit[K]
+): void {
+    updateKit({ [key]: value } as Partial<ToasterKit>);
 
-export const setToasterKitParamDependencies = {
-    getAllTracks,
-    getTrackStrip,
-    updateKit,
-} as const;
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
+    }
 
-export const setToasterKitParam = inject(setToasterKitParamDependencies)(({ getAllTracks: getAllTracksFn, getTrackStrip: getTrackStripFn, updateKit: updateKitFn }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-
-    return function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(
-        deviceId: string,
-        key: K,
-        value: ToasterKit[K]
-    ): void {
-        updateKitFn({ [key]: value } as Partial<ToasterKit>);
-
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
-            return;
-        }
-
-        const paramName = KIT_PARAM_MAP[key];
-        const strip = getTrackStripFn(ref.trackId);
-        if (!strip) {
-            return;
-        }
-        const deviceNode = strip.deviceNodes.find(
-            (device) => device.toasterControls && device.toasterControls.ready !== undefined
-        );
-        if (deviceNode?.toasterControls) {
-            deviceNode.toasterControls.setParam(paramName, value as number);
-        }
-    };
-});
-
-export const setPadEngineImmediateDependencies = {
-    getAllTracks,
-    getTrackStrip,
-} as const;
+    const paramName = KIT_PARAM_MAP[key];
+    const strip = getTrackStrip(ref.trackId);
+    if (!strip) {
+        return;
+    }
+    const deviceNode = strip.deviceNodes.find(
+        (device) => device.toasterControls && device.toasterControls.ready !== undefined
+    );
+    if (deviceNode?.toasterControls) {
+        deviceNode.toasterControls.setParam(paramName, value as number);
+    }
+}
 
 /**
  * Send engine_type directly to the worklet (bypasses rAF throttle).
  * Used by sound locks which need immediate engine swap before triggering.
  * Does NOT update the store — the pad's stored engineType remains the default.
  */
-export const setPadEngineImmediate = inject(setPadEngineImmediateDependencies)(
-    ({ getAllTracks: getAllTracksFn, getTrackStrip: getTrackStripFn }) => {
-        const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-
-        return function setPadEngineImmediate(deviceId: string, padIndex: number, engineIdx: number): void {
-            const ref = findDeviceRef(deviceId);
-            if (!ref) {
-                return;
-            }
-
-            const strip = getTrackStripFn(ref.trackId);
-            if (!strip) {
-                return;
-            }
-            const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
-            if (dn?.toasterControls) {
-                dn.toasterControls.setPadParam(padIndex, 'engine_type', engineIdx);
-            }
-        };
+export function setPadEngineImmediate(deviceId: string, padIndex: number, engineIdx: number): void {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
     }
-);
+
+    const strip = getTrackStrip(ref.trackId);
+    if (!strip) {
+        return;
+    }
+    const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+    if (dn?.toasterControls) {
+        dn.toasterControls.setPadParam(padIndex, 'engine_type', engineIdx);
+    }
+}

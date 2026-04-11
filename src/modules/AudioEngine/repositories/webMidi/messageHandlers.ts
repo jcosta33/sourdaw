@@ -2,9 +2,8 @@
  * MIDI message handlers: noteOn, noteOff, CC, channel pressure, pitch bend.
  * Handles both live monitoring (oscillator playback) and recording (note creation).
  *
- * Cross-module collaborators are supplied via `inject()` (see `docs/01-dependency-injection.md`,
- * `docs/architecture/03-typescript-module.md` §4.10). First invocation resolves deps once; subsequent
- * handler calls use the memoized implementation.
+ * Handlers share module-local MIDI routing state. Some exports use `inject({ logger })` or
+ * `inject(midiMessageHandlerDependencies)` for test overrides and lazy resolution.
  */
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
@@ -504,23 +503,21 @@ export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
     })
 );
 
-export const handleChannelPressure = inject({})(() =>
-    (function handleChannelPressure(channel: number, pressure: number): void {
-        if (!mpeEnabled || channel < 1) {
-            return;
-        }
+export function handleChannelPressure(channel: number, pressure: number): void {
+    if (!mpeEnabled || channel < 1) {
+        return;
+    }
 
-        const noteForChannel = channelToNote.get(channel);
-        if (noteForChannel === undefined) {
-            return;
-        }
+    const noteForChannel = channelToNote.get(channel);
+    if (noteForChannel === undefined) {
+        return;
+    }
 
-        const noteData = activeNotes.get(noteForChannel);
-        if (noteData) {
-            noteData.pressure = pressure;
-        }
-    })
-);
+    const noteData = activeNotes.get(noteForChannel);
+    if (noteData) {
+        noteData.pressure = pressure;
+    }
+}
 
 const STANDARD_BEND_RANGE_CENTS = 200;
 const MPE_BEND_RANGE_CENTS = 48 * 100;

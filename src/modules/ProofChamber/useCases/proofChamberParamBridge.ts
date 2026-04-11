@@ -2,7 +2,6 @@
  * ProofChamber (Dutch Oven) parameter bridge — forwards UI param changes
  * to the WASM audio engine for the specific device instance.
  */
-import { inject } from '#/infra/di/inject';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 
@@ -19,24 +18,16 @@ function createFindDeviceRef(getAllTracksFn: typeof getAllTracks) {
     };
 }
 
-export const proofChamberParamBridgeDependencies = {
-    getAllTracks,
-    updateDeviceParam,
-} as const;
+const findDeviceRef = createFindDeviceRef(getAllTracks);
 
 /**
  * Send a single parameter change to a specific ProofChamber instance.
  * `rustParamName` is the engine-side name (from PARAM_MAP), not the UI key.
  */
-export const updateProofChamberParam = inject(proofChamberParamBridgeDependencies)(
-    ({ getAllTracks: getAllTracksFn, updateDeviceParam: updateDeviceParamFn }) => {
-        const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-        return function updateProofChamberParam(deviceId: string, rustParamName: string, value: number): void {
-            const ref = findDeviceRef(deviceId);
-            if (!ref) {
-                return;
-            }
-            updateDeviceParamFn(ref.trackId, ref.deviceId, rustParamName, value);
-        };
+export function updateProofChamberParam(deviceId: string, rustParamName: string, value: number): void {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
     }
-);
+    updateDeviceParam(ref.trackId, ref.deviceId, rustParamName, value);
+}
