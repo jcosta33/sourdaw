@@ -41,6 +41,7 @@ export type LevainNodeResult = {
     noteOff: (note: number, sampleFrame?: number) => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
+    setInstrument: (instrumentId: string) => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -139,6 +140,10 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         node.port.postMessage({ type: 'cc', cc, value });
     };
 
+    const setInstrument = (instrumentId: string): void => {
+        node.port.postMessage({ type: 'setInstrument', instrumentId });
+    };
+
     const setBypass = (b: boolean): void => {
         bypassed = b;
         node.port.postMessage({ type: 'bypass', bypassed: b });
@@ -167,6 +172,7 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         noteOff,
         setParam,
         handleCc,
+        setInstrument,
         setBypass,
         connect,
         disconnect,

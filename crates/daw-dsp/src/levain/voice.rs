@@ -195,8 +195,13 @@ pub struct SamplePlayback {
     pub loop_crossfade: u32,
     /// Current fractional position in the sample.
     pub position: f64,
-    /// Playback speed ratio (for pitch correction).
+    /// Effective playback speed ratio used by `read_sample` — equal to
+    /// `base_speed` multiplied by any active pitch modulation (vibrato).
     pub speed: f64,
+    /// Un-modulated playback speed for the note's pitch correction. Held
+    /// separately so vibrato can modulate `speed` per block without losing
+    /// the original note-vs-root-key transposition.
+    pub base_speed: f64,
     pub active: bool,
     pub gain: f32,
 }
@@ -215,8 +220,22 @@ impl SamplePlayback {
             loop_crossfade: 0,
             position: 0.0,
             speed: 1.0,
+            base_speed: 1.0,
             active: false,
             gain: 1.0,
+        }
+    }
+
+    /// Apply a pitch modulation in semitones (typically vibrato). The
+    /// effective `speed` is recomputed once per block by the engine; the
+    /// hot-path `read_sample` is unchanged. `0` semitones is the no-op
+    /// case and skips the `exp2`.
+    #[inline]
+    pub fn apply_pitch_mod(&mut self, semitones: f32) {
+        if semitones.abs() < 1e-5 {
+            self.speed = self.base_speed;
+        } else {
+            self.speed = self.base_speed * (semitones as f64 / 12.0).exp2();
         }
     }
 
@@ -252,7 +271,8 @@ impl SamplePlayback {
         // Compute playback speed for pitch correction.
         let semitone_diff =
             midi_note as f64 - sample.root_key as f64 + sample.tune_cents as f64 / 100.0;
-        self.speed = (semitone_diff / 12.0).exp2();
+        self.base_speed = (semitone_diff / 12.0).exp2();
+        self.speed = self.base_speed;
     }
 
     /// Configure playback from a zone's sample ref for a given MIDI note (no pool lookup).
@@ -272,7 +292,8 @@ impl SamplePlayback {
 
         let semitone_diff =
             midi_note as f64 - sample.root_key as f64 + sample.tune_cents as f64 / 100.0;
-        self.speed = (semitone_diff / 12.0).exp2();
+        self.base_speed = (semitone_diff / 12.0).exp2();
+        self.speed = self.base_speed;
     }
 
     /// Read one sample with cubic Hermite interpolation.
@@ -397,6 +418,16 @@ pub struct LevainVoice {
 
     /// Time since note-on (in samples) for legato detection.
     pub samples_since_on: u32,
+
+    /// Per-voice vibrato phase in [0, 1). Initialised from the per-note
+    /// humanization at trigger time so each voice in a section has an
+    /// independent vibrato cycle (spec §4.2 ensemble decorrelation).
+    pub vibrato_phase: f32,
+    /// Per-voice vibrato rate scale (around 1.0). Lets each voice's
+    /// vibrato run at a slightly different rate, which prevents the
+    /// "machine vibrato" lock-step a section of voices would otherwise
+    /// produce.
+    pub vibrato_rate_scale: f32,
 }
 
 impl LevainVoice {
@@ -420,6 +451,8 @@ impl LevainVoice {
             zone_id: 0,
             mic: 0,
             samples_since_on: 0,
+            vibrato_phase: 0.0,
+            vibrato_rate_scale: 1.0,
         }
     }
 
@@ -477,6 +510,62 @@ impl LevainVoice {
         self.crossfade_rate = 1.0 / samples;
         self.crossfading = true;
         self.zone_id = new_zone.id;
+    }
+
+    /// Advance this voice's vibrato LFO by one block and write the
+    /// resulting pitch modulation into the playback. Called once per
+    /// block by the engine — keeping it block-rate (≈ every 2.7 ms at
+    /// 48 kHz / 128) is plenty fast for a 5 Hz LFO and avoids paying for
+    /// `sin`/`exp2` per audio sample.
+    ///
+    /// `depth_cents` and `base_rate_hz` come from the engine's shared
+    /// vibrato config (typically driven by CC2). Each voice multiplies
+    /// the rate by its own `vibrato_rate_scale` and uses its own phase
+    /// so the section sounds like independent players, not one player
+    /// chorused.
+    pub fn update_vibrato_block(
+        &mut self,
+        depth_cents: f32,
+        base_rate_hz: f32,
+        onset_delay_secs: f32,
+        sample_rate: f32,
+        block_size: usize,
+    ) {
+        if !self.active {
+            return;
+        }
+        if depth_cents < 0.1 || base_rate_hz <= 0.0 {
+            self.playback.apply_pitch_mod(0.0);
+            self.crossfade_playback.apply_pitch_mod(0.0);
+            return;
+        }
+
+        let effective_rate = (base_rate_hz * self.vibrato_rate_scale).max(0.1);
+        let time_since_on = self.samples_since_on as f32 / sample_rate;
+        let onset_gain = if onset_delay_secs > 0.0 {
+            (time_since_on / onset_delay_secs).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        // Advance phase by exactly one block — block_size samples at
+        // sample_rate Hz of LFO time.
+        self.vibrato_phase += effective_rate * (block_size as f32) / sample_rate;
+        // Cheap wrap (block_size << sample_rate so phase grows slowly).
+        if self.vibrato_phase >= 1.0 {
+            self.vibrato_phase -= self.vibrato_phase.floor();
+        }
+
+        let lfo = (self.vibrato_phase * std::f32::consts::TAU).sin();
+        let semitones = (depth_cents / 100.0) * onset_gain * lfo;
+
+        self.playback.apply_pitch_mod(semitones);
+        // The crossfade-in playback (active during legato transitions)
+        // must follow the same vibrato so it lines up phase-coherently
+        // with the primary stream.
+        if self.crossfading {
+            self.crossfade_playback.apply_pitch_mod(semitones);
+        }
     }
 
     /// Process one sample, returns mono output.

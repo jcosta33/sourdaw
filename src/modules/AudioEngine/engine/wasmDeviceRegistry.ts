@@ -183,7 +183,14 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                registerLevainDevice({ setParam: result.setParam, handleCc: result.handleCc }, result.workletNode.port);
+                registerLevainDevice(
+                    {
+                        setParam: result.setParam,
+                        handleCc: result.handleCc,
+                        setInstrument: result.setInstrument,
+                    },
+                    result.workletNode.port,
+                );
                 setEngineReady(true);
             })
             .catch((err) => logger.warn(`[WebAudioEngine] Levain failed: ${err}`));

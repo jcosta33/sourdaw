@@ -766,6 +766,17 @@ export class LevainInstance {
         return ret >>> 0;
     }
     /**
+     * Tell the engine which instrument id is now loaded (e.g. `violin-1`,
+     * `cello`, `trumpet`). The realism layer uses this to pick its body
+     * resonance modes, sympathetic strings, and breath/bow noise colour.
+     * @param {string} instrument_id
+     */
+    set_instrument(instrument_id) {
+        const ptr0 = passStringToWasm0(instrument_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.levaininstance_set_instrument(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * Set a named parameter value.
      * @param {string} name
      * @param {number} value

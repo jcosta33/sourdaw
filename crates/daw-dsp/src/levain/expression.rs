@@ -186,32 +186,32 @@ impl ExpressionState {
 }
 
 // ---------------------------------------------------------------------------
-// Vibrato LFO
+// Vibrato config
 // ---------------------------------------------------------------------------
 
-/// Vibrato LFO with onset delay and per-note variation.
+/// Shared vibrato parameters. Holds the per-instrument depth/rate/onset
+/// derived from CC2; the actual LFO is computed *per voice* in
+/// `LevainVoice::update_vibrato_block` so that voices in a section have
+/// independent phases and slightly varying rates (spec §4.2).
 pub struct VibratoLfo {
-    phase: f32,
-    rate: f32,            // Hz
-    depth: f32,           // cents
+    rate: f32,            // Hz, derived from CC2
+    depth: f32,           // cents, derived from CC2
     pub onset_delay: f32, // seconds
-    sample_rate: f32,
     pub config: ExpressionConfig,
 }
 
 impl VibratoLfo {
-    pub fn new(sample_rate: f32, config: &ExpressionConfig) -> Self {
+    pub fn new(_sample_rate: f32, config: &ExpressionConfig) -> Self {
         Self {
-            phase: 0.0,
             rate: config.vibrato_rate_min,
             depth: 0.0,
             onset_delay: config.vibrato_onset_delay,
-            sample_rate,
             config: *config,
         }
     }
 
-    /// Set vibrato depth from CC2 (0-127).
+    /// Set vibrato depth from CC2 (0-127). Maps CC2 to a depth/rate point
+    /// inside the configured range.
     pub fn set_depth_cc(&mut self, cc2: u8) {
         let normalized = cc2 as f32 / 127.0;
         self.depth = self.config.vibrato_depth_min
@@ -220,37 +220,13 @@ impl VibratoLfo {
             + normalized * (self.config.vibrato_rate_max - self.config.vibrato_rate_min);
     }
 
-    /// Get vibrato pitch offset in semitones for a voice.
-    /// `time_since_on` is in seconds.
-    #[inline]
-    pub fn get_pitch_offset(&mut self, time_since_on: f32) -> f32 {
-        if self.depth < 0.1 {
-            return 0.0;
-        }
-
-        // Onset delay: ramp up over the delay period.
-        let onset_gain = if self.onset_delay > 0.0 {
-            (time_since_on / self.onset_delay).min(1.0)
-        } else {
-            1.0
-        };
-
-        // Advance phase.
-        self.phase += self.rate / self.sample_rate;
-        if self.phase >= 1.0 {
-            self.phase -= 1.0;
-        }
-
-        // Sine LFO.
-        let lfo = (self.phase * std::f32::consts::TAU).sin();
-
-        // Convert depth from cents to semitones.
-        let depth_semitones = self.depth / 100.0;
-
-        lfo * depth_semitones * onset_gain
+    /// Current depth in cents.
+    pub fn depth_cents(&self) -> f32 {
+        self.depth
     }
 
-    pub fn reset(&mut self) {
-        self.phase = 0.0;
+    /// Current rate in Hz.
+    pub fn rate_hz(&self) -> f32 {
+        self.rate
     }
 }

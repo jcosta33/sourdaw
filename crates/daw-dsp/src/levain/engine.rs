@@ -11,6 +11,7 @@ use super::humanize::Humanizer;
 use super::legato::{LegatoEngine, LegatoResult};
 use super::mic::MicMixer;
 use super::performance::{AutoArticulation, AutoDivisi, EnsembleTiming};
+use super::realism::RealismEngine;
 use super::release::{PedalDeferredRelease, ReleaseTracker};
 use super::types::*;
 use super::voice::VoicePool;
@@ -49,6 +50,8 @@ pub struct LevainEngine {
     ensemble_timing: EnsembleTiming,
     /// Fallback tone generator (used when no samples are loaded).
     fallback: FallbackToneEngine,
+    /// Orchestral realism augmentation layer.
+    realism: RealismEngine,
 
     /// Audio settings.
     sample_rate: f32,
@@ -84,6 +87,7 @@ impl LevainEngine {
             auto_articulation: AutoArticulation::new(),
             ensemble_timing: EnsembleTiming::new(42),
             fallback: FallbackToneEngine::new(sample_rate),
+            realism: RealismEngine::new(sample_rate),
             sample_rate,
             master_gain: 0.8,
             num_articulations: 1,
@@ -100,6 +104,7 @@ impl LevainEngine {
         }
         self.auto_divisi.clear();
         self.fallback.enabled = true;
+        self.realism.reset();
     }
 
     // -----------------------------------------------------------------------
@@ -121,6 +126,13 @@ impl LevainEngine {
     /// Add a zone to the zone map. Call `build_zone_map()` after all zones are added.
     pub fn add_zone(&mut self, zone: Zone) {
         self.zone_map.add_zone(zone);
+    }
+
+    /// Tell the engine which instrument id (e.g. `violin-1`, `cello`,
+    /// `trumpet`) is now loaded. The realism layer uses this to pick its
+    /// body modes, sympathetic strings, and breath/bow noise colour.
+    pub fn set_instrument(&mut self, instrument_id: &str) {
+        self.realism.configure_for(instrument_id);
     }
 
     /// Build the zone lookup table. Must be called after all zones and samples are loaded.
@@ -148,6 +160,9 @@ impl LevainEngine {
         }
 
         let art = self.articulation.current;
+
+        // Realism layer transient (bow scrape onset, etc).
+        self.realism.note_on(note);
 
         // Track for release triggers.
         self.release_tracker.note_on(note);
@@ -195,16 +210,18 @@ impl LevainEngine {
             .legato
             .note_on(note, velocity, voice_idx, current_dynamic);
 
+        // Per-voice vibrato init — independent phase + rate scale for
+        // ensemble decorrelation (spec §4.2). Captured once so each arm
+        // below can apply them after triggering.
+        let vibrato_phase = humanize.vibrato_phase;
+        let vibrato_rate_scale = humanize.vibrato_rate_scale;
+
         match legato_result {
             LegatoResult::Normal => {
-                self.voice_pool.voices[voice_idx].trigger(
-                    note,
-                    velocity,
-                    &zone,
-                    art,
-                    gain,
-                    &self.sample_pool,
-                );
+                let voice = &mut self.voice_pool.voices[voice_idx];
+                voice.trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                voice.vibrato_phase = vibrato_phase;
+                voice.vibrato_rate_scale = vibrato_rate_scale;
             }
             LegatoResult::TrueTransition {
                 from_voice,
@@ -218,15 +235,11 @@ impl LevainEngine {
                 // Trigger new voice with the sustain zone, then crossfade.
                 // TODO: when transition sample zones are populated, look up the
                 // transition zone by sample_id and play that instead of the sustain zone.
-                self.voice_pool.voices[voice_idx].trigger(
-                    note,
-                    velocity,
-                    &zone,
-                    art,
-                    gain,
-                    &self.sample_pool,
-                );
-                self.voice_pool.voices[voice_idx].start_crossfade(
+                let voice = &mut self.voice_pool.voices[voice_idx];
+                voice.trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                voice.vibrato_phase = vibrato_phase;
+                voice.vibrato_rate_scale = vibrato_rate_scale;
+                voice.start_crossfade(
                     &zone,
                     note,
                     crossfade_in,
@@ -240,6 +253,8 @@ impl LevainEngine {
                 ..
             } => {
                 // Reuse the existing voice and crossfade to the new zone.
+                // The reused voice keeps its existing vibrato state (it's
+                // a continuous slur, not a fresh attack).
                 if from_voice < self.voice_pool.voices.len()
                     && self.voice_pool.voices[from_voice].active
                 {
@@ -252,14 +267,10 @@ impl LevainEngine {
                     );
                     self.voice_pool.voices[from_voice].note = note;
                 } else {
-                    self.voice_pool.voices[voice_idx].trigger(
-                        note,
-                        velocity,
-                        &zone,
-                        art,
-                        gain,
-                        &self.sample_pool,
-                    );
+                    let voice = &mut self.voice_pool.voices[voice_idx];
+                    voice.trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                    voice.vibrato_phase = vibrato_phase;
+                    voice.vibrato_rate_scale = vibrato_rate_scale;
                 }
             }
         }
@@ -270,6 +281,9 @@ impl LevainEngine {
         if self.articulation.handle_note_off(note) {
             return;
         }
+
+        // Realism release transient (bow lift noise burst).
+        self.realism.note_off(note);
 
         // Update legato tracking.
         self.legato.note_off(note);
@@ -441,6 +455,29 @@ impl LevainEngine {
         // Get expression gain for this block.
         let expr_gain = self.expression.expression_gain();
 
+        // Push current expression state into the realism layer once per block
+        // — bow noise scales with CC1, breath noise with CC11.
+        let cc1 = self.expression.crossfader.current_cc1();
+        let cc11 = self.expression.cc11 as f32 / 127.0;
+        self.realism.update_expression(cc1, cc11);
+
+        // Advance per-voice vibrato by one block. Each voice keeps its own
+        // phase and rate-scale (set at trigger time from humanization), so
+        // a section sounds like decorrelated players rather than one
+        // chorused player (spec §4.2).
+        let vibrato_depth = self.expression.vibrato.depth_cents();
+        let vibrato_rate = self.expression.vibrato.rate_hz();
+        let vibrato_onset = self.expression.vibrato.onset_delay;
+        for voice in self.voice_pool.voices.iter_mut() {
+            voice.update_vibrato_block(
+                vibrato_depth,
+                vibrato_rate,
+                vibrato_onset,
+                self.sample_rate,
+                len,
+            );
+        }
+
         // Get dynamic layer gains.
         self.expression
             .crossfader
@@ -462,6 +499,10 @@ impl LevainEngine {
 
             // Apply expression and master gain.
             mono_sum *= expr_gain * self.master_gain;
+
+            // Orchestral realism augmentation (body resonance, sympathetic
+            // strings, bow/breath noise, frequency-dependent damping).
+            mono_sum = self.realism.tick(mono_sum);
 
             // Mix through mic positions (single mic for now).
             let (l, r) = self.mic_mixer.mix_mono(mono_sum);
