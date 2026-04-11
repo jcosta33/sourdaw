@@ -21,7 +21,7 @@ import {
     scheduleKitNote,
     scheduleNote,
 } from '#/modules/Synth/useCases';
-import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores/yeastStore';
+import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
 import type { SynthParams } from '#/modules/AudioEngine/useCases';
 
 // Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible

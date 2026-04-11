@@ -20,13 +20,13 @@ Two interdependent structural cleanups:
    `presentations/views/`), delete the root barrel, and hardline the depcruiser
    rules to enforce it.
 
-2. **Inject ceremony removal** — the `inject()` pattern was applied to ALL use
-   cases. Most are pure delegation with no logic, no test coverage, and TDZ risk.
-   Remove it everywhere it adds no value; document precisely when it must stay.
+2. **Inject ceremony removal** — remove `inject()` where it only wrapped plain
+   imports (no real test seam). **Keep** `inject({ logger })`, `inject({ eventBus })`,
+   and similar **container** deps where intentional.
 
 These are the same root cause viewed from two angles: over-aggregated barrels
-amplify circular-dependency blast radius; ceremonious `inject()` evaluates
-cross-module deps at module load time, which turns barrel cycles into TDZ
+amplify circular-dependency blast radius; ceremonious `inject()` evaluated
+cross-module deps at module load time, which turned barrel cycles into TDZ
 crashes. Fixing both together cleans the cycle graph and makes the remaining
 `inject()` sites intentional.
 
@@ -51,59 +51,42 @@ is complete. `no-circular` flips from `warn` → `error`.
 
 ### Current state
 
-Modules fully migrated (root barrel deleted):
+**Tier done (module-root `index.ts` removed in this pass):** VirtualKeyboard,
+SoundLibrary, Knead (added `stores/index.ts`, `useCases/index.ts`), ProofChamber,
+Sampler, Crust, Bacteria, Gluten, Grinder, GrandBoule, Scoring — consumers now
+import from `#/modules/<M>/(stores|useCases|presentations/views)` as appropriate.
 
-| Module | Status |
+**Already migrated earlier (no root barrel):** Arrangement, AudioEngine, Transport,
+Command, and the majority of hub modules per `git` history / contract folders.
+
+**Root barrels still present** — only these two remain:
+
+| Module | Next step |
 | --- | --- |
-| Arrangement | ✅ done |
-| AudioEngine | ✅ done |
-| Transport | ✅ done |
-| Command | ✅ done |
+| **Automation** | Replace `#/modules/Automation` imports with `#/modules/Automation/stores` (e.g. `automationStore`) and `#/modules/Automation/useCases` (everything else). Then delete `Automation/index.ts`. |
+| **Project** | Split `#/modules/Project` imports into `…/stores`, `…/useCases`, `…/presentations/views` (see existing contract-folder barrels). Update dynamic `import('#/modules/Project')` in `projectCommands.ts` to target `…/useCases`. Then delete `Project/index.ts`. |
 
-Modules with remaining bare root imports (sorted by count):
+Verify stragglers:
 
-| Module | Bare imports remaining |
-| --- | --- |
-| MIDI | 74 |
-| Automation | 39 |
-| Workspace | 32 |
-| AiRuntime | 24 |
-| Project | 17 |
-| Plugin | 17 |
-| AudioAnalysis | 14 |
-| CrdtDocument | 11 |
-| AiGeneration | 10 |
-| Routing | 8 |
-| Synth | 7 |
-| Collaboration | 7 |
-| Levain | 5 |
-| Toaster | 4 |
-| Fermenter | 4 |
-| Yeast | 3 |
-| SampleLibrary | 3 |
-| Proof | 3 |
-| Scoring | 2 |
-| Grinder | 2 |
-| GrandBoule | 2 |
-| Gluten | 2 |
-| Bacteria | 2 |
-| VirtualKeyboard | 1 |
-| SoundLibrary | 1 |
+```bash
+find src/modules -maxdepth 2 -name "index.ts" | grep -v "/useCases\|/stores\|/events\|/presentations"
+# Expect: Automation/index.ts, Project/index.ts until those two are migrated.
+```
 
 ### Migration order (suggested tiers)
 
-**Tier 2** (high impact, many consumers): MIDI (74), Automation (39), Workspace (32)
-**Tier 3** (medium): AiRuntime (24), Project (17), Plugin (17), AudioAnalysis (14)
-**Tier 4** (small): CrdtDocument, AiGeneration, Routing, Synth, Collaboration, Levain, Toaster, Fermenter
-**Tier 5** (tail): Yeast, SampleLibrary, Proof, Scoring, Grinder, GrandBoule, Gluten, Bacteria, VirtualKeyboard, SoundLibrary
+**Done / in progress:** Tier-1 hubs and most feature modules (see table above).
+
+**Remaining:** Eliminate each root `index.ts` in the `find` output by moving
+exports into contract-folder `index.ts` files and updating cross-module imports.
 
 ### Per-module checklist
 
 For each module:
-1. Create `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts`
-2. Classify each export from the root barrel into the right contract folder
-3. Update all cross-module consumers (use agents for bulk)
-4. Delete root `index.ts`
+1. Ensure `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts` exist (whichever apply).
+2. Classify each export from the root barrel into the right contract folder.
+3. Update all cross-module consumers.
+4. Delete root `index.ts`.
 5. Run `pnpm typecheck && pnpm deps:validate`
 
 ### Symbol classification rules
@@ -128,100 +111,38 @@ For each module:
 
 ## Part 2 — Inject ceremony removal
 
-### Problem
+### Status (2026-04-11)
 
-`inject()` was applied to ALL use cases regardless of whether they have:
-- Real orchestration logic worth testing in isolation
-- An actual spec using `injectDependencies()`
+**Done (representative):** Plain `inject({})` / fake thunk deps removed; large
+`*Dependencies` objects inlined for scheduling, collaboration session, MIDI
+routing, pattern instances, scale velocities, Toaster bridges, Gluten/Crust/
+Sampler/ProofChamber bridges, `executeDsos`, `polyphonicAudioToMidi`,
+`generateMentorLessons`, etc. `addTrack` / `removeTrack` / zoom / setlist now
+inject only **`eventBus`** where needed; Faust injects only **`logger`**.
 
-Result: ~287 single-dep delegation wrappers, 90 files with inject but no spec, and
-TDZ crashes when barrel evaluation order is unfavourable.
+**Rule of thumb:** Prefer **direct imports** for normal collaborators. **Keep**
+`inject({ logger })`, `inject({ eventBus })`, and similar **container** deps.
 
-### Rule (replaces §4.10 table in 03-typescript-module.md)
+**Still using non-trivial `inject` (manual follow-up when touching those files):**
 
-**Keep `inject()` when ALL are true:**
-1. The function has **real logic** — conditional branches, transformations, or
-   coordination across **two or more** collaborators that is worth unit-testing
-   in isolation.
-2. A spec **exists or is planned** that tests that logic with `injectDependencies()`.
-
-**Remove `inject()` when ANY is true:**
-- The function body is a **pure delegation** — it just calls one dep with the
-  same or trivially mapped arguments.
-- The function is a **pass-through adapter** whose only purpose is to make an
-  import available under a different name.
-- There is **no spec** that overrides the deps via `injectDependencies()`.
-- The function has a **single dep** and no branching logic.
-
-### Codemod scope
-
-`codemods/remove-inject-ceremony.ts` targets the mechanically safe case:
-
-```ts
-// BEFORE — single dep, body only calls dep
-export const foo = inject({ fooImpl })(({ fooImpl }) =>
-    function foo(a: A, b: B): R {
-        return fooImpl(a, b);
-    }
-);
-```
-
-```ts
-// AFTER
-export function foo(a: A, b: B): R {
-    return fooImpl(a, b);
-}
-```
-
-The codemod detects this pattern when:
-- Exactly one dep in the inject map
-- The inner function body is a single `return` statement
-- The callee is the injected dep (or `dep.method`)
-- Arguments are passed through directly (no construction, no conditional)
-
-Run as dry-run first, review output, then apply.
-
-```bash
-# Dry run
-pnpm jscodeshift -t codemods/remove-inject-ceremony.ts src/ -d -p --extensions=ts,tsx
-
-# Apply
-pnpm jscodeshift -t codemods/remove-inject-ceremony.ts src/ --extensions=ts,tsx
-```
-
-### Cases requiring manual review (multi-dep, complex body)
-
-Files where inject wraps complex orchestration — keep inject:
-
-- `scheduleMidiNotes.ts` — 8+ collaborators, heavy branching
-- `messageHandlers.ts` — 6 collaborators, MIDI dispatch logic
-- `addTrack.ts` — eventBus + state + repos
-- `recording.ts` — multiple cross-module deps
-- All `*Handlers.ts` registries — multi-dep event dispatch
-
-Files where inject wraps trivial delegation — remove manually after codemod:
-
-- `pluginBrowserActions.ts` — 2 wrappers, each just calls one impl
-- `panelToggles.ts` — 33 wrappers (largest ceremony file after `timelineViewActions.ts`)
-- `timelineViewActions.ts` — 36 wrappers, each forwarding to a single impl
-
-### Impact on tests
-
-After removing inject from a function:
-- Delete the `injectDependencies(fn, { impl: vi.fn() })` test that only checks
-  forwarding. These tests assert that inject works, not that the function has correct logic.
-- If the function's logic needs testing, convert to `vi.mock` on the dep module OR
-  pass deps as function parameters with defaults.
-
-### Current metrics
-
-| Metric | Count |
+| Area | Notes |
 | --- | --- |
-| Total inject sites | 551 |
-| Single-dep inject (codemod candidates) | ~287 |
-| Files with inject, no spec | 90 |
-| `injectDependencies` test uses | 633 |
-| Tests that only verify forwarding | est. ~200 |
+| `offlineRender.ts` | `renderOffline` / `exportStems` — large dep map (lazy/cycle-related) |
+| `messageHandlers.ts` | MIDI handlers — `midiMessageHandlerDependencies` |
+| Fermenter / Grinder / Bacteria / Levain | `*ParamBridge` inject bundles |
+| `devicePanels.ts` | Many `inject({ eventBus })` panel toggles (acceptable) |
+
+**Codemod:** `codemods/remove-inject-non-container.ts` (and related scripts) for
+bulk removal of plain-deps `inject`; re-run when adding new use cases.
+
+**Tests:** After removing inject from a function, drop tests that only assert
+`injectDependencies` forwarding; use `vi.mock` on modules or test real behavior.
+
+### Legacy metrics (pre-cleanup — do not use for planning)
+
+Earlier snapshots cited ~551 inject sites and ~287 single-dep candidates; counts
+are obsolete after the cleanup passes. Re-count with `rg 'inject\\(' src` if
+needed.
 
 ---
 

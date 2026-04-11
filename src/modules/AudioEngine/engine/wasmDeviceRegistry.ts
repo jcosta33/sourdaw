@@ -22,14 +22,14 @@ import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNod
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
 
-import { updateBacteriaMeters } from '#/modules/Bacteria';
-import { updateGlutenMeters } from '#/modules/Gluten';
-import { updateGrinderMeters } from '#/modules/Grinder';
+import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
+import { updateGlutenMeters } from '#/modules/Gluten/stores';
+import { updateGrinderMeters } from '#/modules/Grinder/stores';
 import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
 import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
-import { updateTunerTelemetry } from '#/modules/Scoring';
+import { updateTunerTelemetry } from '#/modules/Scoring/stores';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

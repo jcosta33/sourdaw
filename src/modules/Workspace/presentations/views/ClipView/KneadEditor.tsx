@@ -1,5 +1,6 @@
 import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
-import { kneadStore, ingestDspAnalysis, updateTrackKneadState } from '#/modules/Knead';
+import { kneadStore, updateTrackKneadState } from '#/modules/Knead/stores';
+import { ingestDspAnalysis } from '#/modules/Knead/useCases';
 import { useStore } from '#/infra/store/useStore';
 import { useTracks } from '../../hooks/useTracks';
 import { addDevice } from '#/modules/Arrangement/useCases';
