@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { duplicateTimeRange } from '../../useCases/timeOperations';
+import { duplicateTimeRange } from '../../useCases/timeOperations/duplicateTimeRange';
 
 export const handleDuplicateTimeRange = createHandler<'duplicateTimeRange'>({
     execute: (a) => {

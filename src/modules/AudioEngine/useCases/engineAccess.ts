@@ -83,6 +83,6 @@ export function unwireSidechainRoute(sourceTrackId: string, targetDeviceId: stri
     audioEngine.unwireSidechainRoute(sourceTrackId, targetDeviceId);
 }
 
-// ─── Link (Ableton Link) operations ────────────────────────────────────────────
-
-export { enableLink, disableLink, getLinkStatus } from '../repositories/linkBridge';
+export { enableLink } from '../repositories/linkBridge/enableLink';
+export { disableLink } from '../repositories/linkBridge/disableLink';
+export { getLinkStatus } from '../repositories/linkBridge/getLinkStatus';

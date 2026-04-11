@@ -9,7 +9,9 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { addDevice } from '../device/addDevice';
 import { setDeviceParameter } from '../device/setDeviceParameter';
-import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls';
+import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls/updateDeviceParam';
+import { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls/removeDeviceFromStrip';
 
 vi.mock('../../repositories/track/getTrackById', () => ({
     getTrackById: vi.fn(),

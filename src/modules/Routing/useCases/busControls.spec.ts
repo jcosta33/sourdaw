@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { ensureBusStrip, setBusGain, setSend } from './busControls';
+import { ensureBusStrip } from './busControls/ensureBusStrip';
+import { setBusGain } from './busControls/setBusGain';
+import { setSend } from './busControls/setSend';
 
 describe('busControls', () => {
     beforeEach(() => {

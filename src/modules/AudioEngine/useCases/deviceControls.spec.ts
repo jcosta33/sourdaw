@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { addDeviceToStrip } from './deviceControls';
+import { addDeviceToStrip } from './deviceControls/addDeviceToStrip';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
 describe('addDeviceToStrip', () => {

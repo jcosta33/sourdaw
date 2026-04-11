@@ -60,9 +60,8 @@ export { lockClip } from './clipEditing/lockClip';
 export { muteClip } from './clipEditing/muteClip';
 export { nudgeClip } from './clipEditing/nudgeClip';
 
-// ── Clip Loop ─────────────────────────────────────────────────────────────────
-
-export { setClipLoop, setClipLoopLength } from './clipLoop';
+export { setClipLoop } from './clipLoop/setClipLoop';
+export { setClipLoopLength } from './clipLoop/setClipLoopLength';
 
 // ── Clip Gain Envelope ────────────────────────────────────────────────────────
 
@@ -112,9 +111,8 @@ export { setDeviceParameter, persistDeviceParam } from './device/setDeviceParame
 export { freezeTrack, unfreezeTrack } from './freezeBounce/freezeTrack';
 export { bounceSelection } from './freezeBounce/bounceOperations';
 
-// ── Time Operations ───────────────────────────────────────────────────────────
-
-export { deleteTime, insertTime, duplicateTimeRange } from './timeOperations';
+export { deleteTime } from './timeOperations/deleteTime';
+export { insertTime, duplicateTimeRange } from './timeOperations/duplicateTimeRange';
 
 // ── Marker ────────────────────────────────────────────────────────────────────
 

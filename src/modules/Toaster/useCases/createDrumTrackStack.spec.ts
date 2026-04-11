@@ -4,7 +4,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createDrumTrackStack } from './createDrumTrackStack';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
+import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
 
 vi.mock('#/modules/Arrangement/useCases/getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),

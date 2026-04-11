@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { setClipLoop } from '../../useCases/clipLoop';
+import { setClipLoop } from '../../useCases/clipLoop/setClipLoop';
 
 export const handleSetClipLoop = createHandler<'setClipLoop'>({
     execute: (a) => {

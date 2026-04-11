@@ -37,13 +37,11 @@ export { toggleMono } from './controlRoom/toggleMono';
 
 export { decodeAudioFile } from './decodeAudioFile';
 
-export {
-    addDeviceToStrip,
-    removeDeviceFromStrip,
-    updateDeviceParam,
-    scheduleDeviceParam,
-    updateDeviceBypass,
-} from './deviceControls';
+export { addDeviceToStrip } from './deviceControls/addDeviceToStrip';
+export { removeDeviceFromStrip } from './deviceControls/removeDeviceFromStrip';
+export { updateDeviceParam } from './deviceControls/updateDeviceParam';
+export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
+export { updateDeviceBypass } from './deviceControls/updateDeviceBypass';
 
 export {
     getAudioContext,

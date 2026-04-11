@@ -5,7 +5,7 @@ import { createGrandBouleTrack } from './createGrandBouleTrack';
 import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
+import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
 import { type Track } from '#/modules/Arrangement/models/Track';
 
 vi.mock('#/modules/Arrangement/useCases/createTrack', () => ({

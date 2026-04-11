@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { setClipLoopLength } from '../../useCases/clipLoop';
+import { setClipLoopLength } from '../../useCases/clipLoop/setClipLoopLength';
 
 export const handleSetClipLoopLength = createHandler<'setClipLoopLength'>({
     execute: (a) => {

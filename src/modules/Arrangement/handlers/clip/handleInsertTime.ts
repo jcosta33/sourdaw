@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { insertTime } from '../../useCases/timeOperations';
+import { insertTime } from '../../useCases/timeOperations/duplicateTimeRange';
 
 export const handleInsertTime = createHandler<'insertTime'>({
     execute: (a) => {
