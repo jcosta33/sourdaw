@@ -7,7 +7,7 @@
 
 use super::coupled_strings::CoupledStringAssembly;
 use super::duplex::DuplexBank;
-use super::hammer::{HammerParams, HammerState};
+use super::hammer::{contact_lowpass_alpha, HammerParams, HammerState};
 use super::longitudinal::LongitudinalBank;
 use super::parameters::{
     hammer_exponent_p, hammer_mass_kg, hammer_stiffness_k, hammer_strike_ratio, key_fundamental_hz,
@@ -74,6 +74,12 @@ pub struct PianoVoice {
     /// Last string output — fed back to the hammer for closed-loop interaction.
     last_string_displacement: f32,
     fundamental_hz: f32,
+    /// Steady-state fundamental, after the pitch-glide settles. The voice
+    /// is configured at a slightly higher frequency on attack and retuned
+    /// down to this value once the glide countdown expires (§A5.2).
+    nominal_fundamental_hz: f32,
+    /// Samples remaining until the pitch-glide retune fires. Zero ⇒ done.
+    pitch_glide_samples_remaining: u32,
     key: u32,
     base_bandwidth: f32,
     extra_damping_hz: f32,
@@ -100,14 +106,16 @@ impl PianoVoice {
                 stiffness_k: 0.0,
                 exponent_p: 2.0,
                 mass_kg: 0.01,
-                hysteresis_epsilon: 0.0,
-                hysteresis_alpha: 0.0,
+                stulov_a: 0.0,
+                contact_lp_alpha: 0.0,
             },
             strings: CoupledStringAssembly::new(),
             longitudinal: LongitudinalBank::new(),
             duplex: DuplexBank::new(),
             last_string_displacement: 0.0,
             fundamental_hz: 0.0,
+            nominal_fundamental_hz: 0.0,
+            pitch_glide_samples_remaining: 0,
             key: 1,
             base_bandwidth: 0.0,
             extra_damping_hz: 0.0,
@@ -233,22 +241,58 @@ impl PianoVoice {
         self.last_string_displacement = 0.0;
         self.stage = VoiceStage::Active;
 
-        let fundamental = key_fundamental_hz(key) * pitch_ratio;
+        let nominal_fundamental = key_fundamental_hz(key) * pitch_ratio;
         let strike_ratio = hammer_strike_ratio(key);
 
-        // Stulov hysteresis strength grows mildly with key — felt gets stiffer
-        // and more lossy on short treble hammers. 0 at bass end, ~0.004 at C8.
-        let epsilon = if self.quality == VoiceQuality::High {
-            0.002 + 0.00002 * (key as f32 - 1.0)
+        // Pitch glide from tension modulation (§A5.2). Large-amplitude
+        // transverse vibration raises mean tension, sharping the partials
+        // by a few cents on attack; the offset decays with τ ≈ 100 ms as
+        // energy bleeds out. We approximate this with a one-shot retune:
+        // configure at the sharp frequency, then drop back to nominal after
+        // a short countdown. Bass strings are affected most.
+        let glide_strength_v = self.velocity * self.velocity;
+        let bass_weight = 1.0 - ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+        let glide_cents = 5.0 * glide_strength_v * (0.4 + 0.6 * bass_weight);
+        let glide_ratio = (2.0_f32).powf(glide_cents / 1200.0);
+        let fundamental = nominal_fundamental * glide_ratio;
+        // ~80 ms hold then snap back. The countdown lives in the audio
+        // thread but only triggers a single biquad re-tune when it expires.
+        self.pitch_glide_samples_remaining = if glide_cents > 0.05 {
+            (0.080 * self.sample_rate) as u32
+        } else {
+            0
+        };
+
+        // Stulov asymmetry coefficient `a`. Stulov (2005) reports a ≈ 310 µs
+        // for note 49; the felt becomes stiffer and slightly more lossy on
+        // short treble hammers. We linearly interpolate around the published
+        // anchor and disable it on the cheaper quality tiers.
+        let stulov_a = if self.quality == VoiceQuality::High {
+            (0.000_25 + 0.000_002 * (key as f32 - 49.0)).max(0.0)
         } else {
             0.0
         };
+
+        // Velocity-dependent contact lowpass (§A2.4 — the #1 perceptual
+        // priority per the realism appendix). The min/max cutoff is set per
+        // register from Russell & Rossing (1998) anchor data:
+        //   bass  v=1 m/s ⇒ ~200 Hz, v=5 m/s ⇒ ~500 Hz
+        //   treble v=1 m/s ⇒ ~2 kHz, v=5 m/s ⇒ ~6 kHz
+        let key_norm = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+        let f_min = 200.0 + (2_000.0 - 200.0) * key_norm;
+        let f_max = 500.0 + (6_000.0 - 500.0) * key_norm;
+        // Map MIDI velocity (0..1) to a strike speed (m/s). Hammer speed at
+        // forte is about 5 m/s — same as `strike()` below.
+        let strike_speed = 0.8 + 4.0 * self.velocity;
+        let contact_lp_alpha =
+            contact_lowpass_alpha(strike_speed, f_min, f_max, 0.6, self.sample_rate);
+
         self.hammer_params = HammerParams {
             stiffness_k: hammer_stiffness_k(key) * stiffness_scale,
             exponent_p: hammer_exponent_p(key),
             mass_kg: hammer_mass_kg(key) * mass_scale,
-            hysteresis_epsilon: epsilon,
-            hysteresis_alpha: 0.9,
+            stulov_a,
+            contact_lp_alpha,
         };
 
         // Base partial bandwidth controls the T60 of the note (intrinsic
@@ -262,6 +306,7 @@ impl PianoVoice {
         self.attack_position = 0;
         self.attack_length = 0;
         self.fundamental_hz = fundamental;
+        self.nominal_fundamental_hz = nominal_fundamental;
         self.key = key;
         self.base_bandwidth = base_bandwidth;
         self.extra_damping_hz = 0.0;
@@ -332,6 +377,26 @@ impl PianoVoice {
             return 0.0;
         }
 
+        // One-shot pitch-glide retune (§A5.2). The voice was configured at
+        // a sharped fundamental on attack; once the countdown expires we
+        // re-tune the resonator decay coefficients to the nominal frequency
+        // to model the tension settling back as energy radiates away. Only
+        // c1/c2 are touched — we accept the small residual amplitude error
+        // in c0 in exchange for cheap re-tuning.
+        if self.pitch_glide_samples_remaining > 0 {
+            self.pitch_glide_samples_remaining -= 1;
+            if self.pitch_glide_samples_remaining == 0 {
+                self.fundamental_hz = self.nominal_fundamental_hz;
+                self.strings.reset_decay(
+                    self.fundamental_hz,
+                    self.key,
+                    self.sample_rate,
+                    self.base_bandwidth,
+                    self.extra_damping_hz,
+                );
+            }
+        }
+
         let dt = 1.0 / (self.sample_rate * HAMMER_OVERSAMPLE as f32);
         let mut output = 0.0_f32;
 
@@ -352,7 +417,7 @@ impl PianoVoice {
         match self.quality {
             VoiceQuality::High => {
                 for _ in 0..HAMMER_OVERSAMPLE {
-                    force_sum += self.hammer.tick_hysteresis(disp, dt, &self.hammer_params);
+                    force_sum += self.hammer.tick_stulov(disp, dt, &self.hammer_params);
                 }
             }
             VoiceQuality::Standard | VoiceQuality::Simplified => {

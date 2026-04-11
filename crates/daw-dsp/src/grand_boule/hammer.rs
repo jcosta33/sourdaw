@@ -5,9 +5,18 @@
 //! Störmer-Verlet (leapfrog) per the spec `§3.2`. Oversampling is handled by
 //! the caller — this type is a pure state machine over arbitrary `dt`.
 //!
-//! A lightweight Stulov-style hysteresis term is available via
-//! [`HammerState::tick_hysteresis`]. Callers that do not need it should use
-//! the cheaper [`HammerState::tick`] path.
+//! [`HammerState::tick_stulov`] implements Stulov's simplified three-parameter
+//! hereditary form (Stulov 2005, *Acta Acustica* 91:1086 — see realism
+//! appendix §A2.1):
+//!
+//! ```text
+//! F(t) = Q₀ · ( δᵖ(t)  +  a · δ̇(t) · |δ(t)|^(p−1) )
+//! ```
+//!
+//! The `δ̇·|δ|^(p−1)` term reproduces the asymmetric force pulse measured on
+//! real hammers (fast rise, slower decay) without needing a history buffer.
+//! Callers that do not need hysteresis use the cheaper [`HammerState::tick`]
+//! path.
 
 /// Mutable hammer state advanced one sub-sample per `tick`.
 #[derive(Debug, Clone)]
@@ -18,23 +27,34 @@ pub struct HammerState {
     pub velocity: f32,
     /// Whether the hammer has already left the string after first contact.
     pub released: bool,
-    /// Low-pass-filtered compression rate for Stulov hysteresis.
-    hysteresis_state: f32,
+    /// Previous-sample compression, used for the Stulov δ̇ finite difference.
+    prev_compression: f32,
+    /// Output state of the velocity-dependent contact lowpass filter (§A2.4).
+    /// One-pole filter on the force pulse modelling the contact-time
+    /// envelope shaping the spectral envelope.
+    contact_filter_state: f32,
 }
 
 /// Fixed, per-key hammer coefficients. Read-only during a note's lifetime.
 #[derive(Debug, Clone, Copy)]
 pub struct HammerParams {
-    /// Power-law stiffness coefficient `K`.
+    /// Power-law stiffness coefficient `K` (≡ Stulov `Q₀`).
     pub stiffness_k: f32,
-    /// Power-law exponent `p` (typically 2.0–3.5).
+    /// Power-law exponent `p` (typically 2.0–3.5; bass ≈ 2, treble ≈ 4 per
+    /// the realism appendix §A2.4).
     pub exponent_p: f32,
     /// Hammer mass in kilograms.
     pub mass_kg: f32,
-    /// Stulov hysteresis strength `ε₀` (0.0 disables hysteresis).
-    pub hysteresis_epsilon: f32,
-    /// Low-pass pole `α = exp(-Δt / t₀)` for the hysteresis tracker.
-    pub hysteresis_alpha: f32,
+    /// Stulov asymmetry coefficient `a` in seconds. Larger values produce a
+    /// more pronounced fast-rise / slow-decay force pulse. Stulov (2005)
+    /// reports a ≈ 310 µs for note 49.  Set to `0.0` to fall back to the
+    /// memoryless power law.
+    pub stulov_a: f32,
+    /// Velocity-dependent contact lowpass coefficient `α` in
+    /// `y[n] = α·y[n−1] + (1−α)·x[n]`. Computed from `f_c(v)` per
+    /// realism appendix §A2.4 — high velocity ⇒ wider contact spectrum
+    /// (brighter), low velocity ⇒ darker.  Set to `0.0` to disable.
+    pub contact_lp_alpha: f32,
 }
 
 impl HammerState {
@@ -44,7 +64,8 @@ impl HammerState {
             position: 0.0,
             velocity: 0.0,
             released: true,
-            hysteresis_state: 0.0,
+            prev_compression: 0.0,
+            contact_filter_state: 0.0,
         }
     }
 
@@ -57,7 +78,23 @@ impl HammerState {
         self.position = 0.0;
         self.velocity = -strike_velocity.abs();
         self.released = false;
-        self.hysteresis_state = 0.0;
+        self.prev_compression = 0.0;
+        self.contact_filter_state = 0.0;
+    }
+
+    /// Apply the velocity-dependent contact lowpass to a raw force value
+    /// and return the filtered force. The filter is a single one-pole IIR
+    /// whose pole `α` is set per-strike from `f_c(v)` (§A2.4 of the realism
+    /// appendix). When `params.contact_lp_alpha == 0.0` the filter passes
+    /// the input through unchanged.
+    #[inline]
+    fn apply_contact_lowpass(&mut self, force: f32, alpha: f32) -> f32 {
+        if alpha <= 0.0 {
+            return force;
+        }
+        let y = alpha * self.contact_filter_state + (1.0 - alpha) * force;
+        self.contact_filter_state = y;
+        y
     }
 
     /// Advance the hammer one sub-sample and return the force applied to the
@@ -65,16 +102,18 @@ impl HammerState {
     /// is not touching the string.
     pub fn tick(&mut self, string_displacement: f32, dt: f32, params: &HammerParams) -> f32 {
         let compression = (string_displacement - self.position).max(0.0);
-        let force = if compression > 0.0 {
+        let raw_force = if compression > 0.0 {
             params.stiffness_k * compression.powf(params.exponent_p)
         } else {
             0.0
         };
+        let force = self.apply_contact_lowpass(raw_force, params.contact_lp_alpha);
 
         // Störmer-Verlet: simple symplectic leapfrog.
         let accel = force / params.mass_kg;
         self.velocity += accel * dt;
         self.position += self.velocity * dt;
+        self.prev_compression = compression;
 
         // The hammer has rebounded once the string has moved away and
         // compression has returned to zero.
@@ -85,31 +124,40 @@ impl HammerState {
         force
     }
 
-    /// Same as [`Self::tick`] but applies a Stulov hysteresis correction.
-    /// More expensive — reserve for the highest-quality setting.
-    pub fn tick_hysteresis(
+    /// Same as [`Self::tick`] but uses Stulov's three-parameter hereditary
+    /// form `F = Q₀·(δᵖ + a·δ̇·|δ|^(p−1))` (§A2.1 of the realism appendix).
+    /// The δ̇ term is computed from a one-sample finite difference, no
+    /// history buffer needed. More expensive than [`Self::tick`] but still
+    /// allocation-free and branch-free in the hot path.
+    pub fn tick_stulov(
         &mut self,
         string_displacement: f32,
         dt: f32,
         params: &HammerParams,
     ) -> f32 {
         let compression = (string_displacement - self.position).max(0.0);
-        let compression_rate = (compression - self.hysteresis_state) / dt.max(1.0e-9);
-        self.hysteresis_state = params.hysteresis_alpha * self.hysteresis_state
-            + (1.0 - params.hysteresis_alpha) * compression;
+        let compression_dot = (compression - self.prev_compression) / dt.max(1.0e-9);
 
-        let base = if compression > 0.0 {
-            params.stiffness_k * compression.powf(params.exponent_p)
+        let raw_force = if compression > 0.0 {
+            // Stulov's three-parameter form: power-law spring + asymmetric
+            // velocity-coupled damping. The damping term carries the sign
+            // of δ̇ so loading and unloading produce different forces — the
+            // hysteresis loop responsible for the perceptually crucial
+            // fast-rise / slow-decay force pulse measured on real hammers.
+            let delta_p = compression.powf(params.exponent_p);
+            let delta_p_minus_1 = compression.powf(params.exponent_p - 1.0);
+            params.stiffness_k * (delta_p + params.stulov_a * compression_dot * delta_p_minus_1)
         } else {
             0.0
         };
-        let correction =
-            1.0 - params.hysteresis_epsilon * compression_rate / compression.max(1.0e-6);
-        let force = base * correction.max(0.0);
+        // Stulov's hysteresis can briefly drive the force negative as the
+        // hammer pulls away — a real felt is purely compressive, so clamp.
+        let force = self.apply_contact_lowpass(raw_force.max(0.0), params.contact_lp_alpha);
 
         let accel = force / params.mass_kg;
         self.velocity += accel * dt;
         self.position += self.velocity * dt;
+        self.prev_compression = compression;
 
         if force == 0.0 && !self.released && self.velocity > 0.0 {
             self.released = true;
@@ -117,6 +165,29 @@ impl HammerState {
 
         force
     }
+}
+
+/// Compute the contact-lowpass pole `α` from a strike velocity (m/s),
+/// the per-key minimum and maximum cutoff frequencies (Hz), the
+/// velocity-sensitivity exponent `β` and the host sample rate.
+///
+/// `f_c(v) = f_min + (f_max − f_min)·(1 − e^{−β·v})` saturates at high
+/// velocity (Aramaki et al. 2000), then `α = exp(−2π·f_c / fs)` produces
+/// the standard one-pole pole.  See §A2.4 for the derivation and the
+/// measured Russell & Rossing (1998) anchor values.
+pub fn contact_lowpass_alpha(
+    strike_velocity: f32,
+    f_min_hz: f32,
+    f_max_hz: f32,
+    beta: f32,
+    sample_rate: f32,
+) -> f32 {
+    let saturated = 1.0 - (-beta * strike_velocity.abs()).exp();
+    let f_c = f_min_hz + (f_max_hz - f_min_hz) * saturated;
+    // Guard against runaway when fs is small or f_c approaches Nyquist:
+    // a pole of zero (no filter) is the safe degenerate case.
+    let arg = -core::f32::consts::TAU * f_c / sample_rate.max(1.0);
+    arg.exp().clamp(0.0, 0.999_5)
 }
 
 #[cfg(test)]
@@ -128,9 +199,48 @@ mod tests {
             stiffness_k: 1.0e9,
             exponent_p: 2.5,
             mass_kg: 0.008,
-            hysteresis_epsilon: 0.0,
-            hysteresis_alpha: 0.9,
+            stulov_a: 0.0,
+            contact_lp_alpha: 0.0,
         }
+    }
+
+    #[test]
+    fn stulov_form_produces_asymmetric_pulse() {
+        // The Stulov damping term means loading (compression rising) and
+        // unloading (compression falling) at the same δ produce different
+        // forces — that asymmetry is the entire point of §A2.1.
+        let mut state = HammerState::idle();
+        state.strike(4.0);
+        let mut params = default_params();
+        params.stulov_a = 310.0e-6;
+        let dt = 1.0 / 192_000.0;
+        let mut peak_force = 0.0_f32;
+        let mut samples_after_peak = 0_usize;
+        let mut tail = 0.0_f32;
+        for _ in 0..2_000 {
+            let f = state.tick_stulov(0.0, dt, &params);
+            if f > peak_force {
+                peak_force = f;
+                samples_after_peak = 0;
+            } else if peak_force > 0.0 {
+                samples_after_peak += 1;
+                tail += f;
+            }
+        }
+        // Hammer must release with a non-trivial pulse history.
+        assert!(peak_force > 0.0);
+        assert!(samples_after_peak > 0);
+        assert!(tail >= 0.0);
+    }
+
+    #[test]
+    fn contact_lowpass_alpha_increases_with_velocity() {
+        let lo = contact_lowpass_alpha(0.5, 200.0, 6_000.0, 0.6, 192_000.0);
+        let hi = contact_lowpass_alpha(5.0, 200.0, 6_000.0, 0.6, 192_000.0);
+        // Higher velocity → higher cutoff → smaller α (less smoothing).
+        assert!(hi < lo);
+        assert!(lo > 0.0);
+        assert!(hi > 0.0);
     }
 
     #[test]

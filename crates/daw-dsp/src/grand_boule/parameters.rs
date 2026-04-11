@@ -136,11 +136,24 @@ pub fn inharmonicity_b(key: u32) -> f32 {
     }
 }
 
-/// Railsback stretched-tuning offset in cents, relative to equal temperament.
-/// Linearly interpolates between the spec anchors.
-pub fn railsback_cents(key: u32) -> f32 {
-    // Anchors: (key, cents)
-    const ANCHORS: [(f32, f32); 4] = [(1.0, -30.0), (40.0, -1.0), (49.0, 0.0), (88.0, 35.0)];
+/// Smooth Railsback stretch curve, in cents, relative to equal temperament.
+///
+/// Anchors are taken from Jaatinen & Pätynen (2022, JASA 152(2):1146,
+/// DOI: 10.1121/10.0013572) measurements of a Steinway D 274 cm: bass extreme
+/// −19 cents, treble extreme +45 cents (≈ 64 cent total stretch). The curve
+/// passes through 0 at A4 (key 49) and is interpolated piecewise-linearly
+/// between intermediate anchors so it stays smooth across the wound/plain
+/// transition. Per-note ±1–3 cent fluctuations are added on top via
+/// [`railsback_jitter_cents`] (Hinrichsen 2012, arXiv:1203.5101).
+pub fn railsback_smooth_cents(key: u32) -> f32 {
+    // Anchors fitted to the Jaatinen/Pätynen Steinway D curve.
+    const ANCHORS: [(f32, f32); 5] = [
+        (1.0, -19.0),
+        (16.0, -8.0),
+        (40.0, -0.5),
+        (49.0, 0.0),
+        (88.0, 45.0),
+    ];
     let k = key as f32;
     let mut lo = ANCHORS[0];
     let mut hi = ANCHORS[ANCHORS.len() - 1];
@@ -153,6 +166,58 @@ pub fn railsback_cents(key: u32) -> f32 {
     }
     let t = ((k - lo.0) / (hi.0 - lo.0)).clamp(0.0, 1.0);
     lo.1 + t * (hi.1 - lo.1)
+}
+
+/// Note-to-note tuning fluctuations (±1–3 cents) on top of the smooth
+/// Railsback curve. Hinrichsen (2012) shows these are not measurement
+/// noise — they reflect individual string irregularities and partial-
+/// intensity variations and are essential for the "alive" character of
+/// a real instrument (§A8 of the realism appendix).
+///
+/// The values are produced by a deterministic LCG seeded per key and
+/// then low-pass filtered across keys to give a correlation length of
+/// roughly 3–5 semitones, matching the spatial smoothness Hinrichsen
+/// observed. Returned in cents.
+pub fn railsback_jitter_cents(key: u32) -> f32 {
+    // Deterministic smoothed jitter computed on-the-fly. Called only from
+    // `note_on` (never on the audio thread); ~88 LCG samples + a 5-tap
+    // smoother per call is negligible. No allocations, no statics.
+    fn smoothed_at(index: usize, raw: &[f32; NUM_KEYS]) -> f32 {
+        let lo2 = raw[index.saturating_sub(2)];
+        let lo1 = raw[index.saturating_sub(1)];
+        let mid = raw[index];
+        let hi1 = raw[(index + 1).min(NUM_KEYS - 1)];
+        let hi2 = raw[(index + 2).min(NUM_KEYS - 1)];
+        // Symmetric 5-tap [1 4 6 4 1]/16 — correlation length ≈ 5 semitones,
+        // matching Hinrichsen's (2012) measured spatial smoothness.
+        (lo2 + 4.0 * lo1 + 6.0 * mid + 4.0 * hi1 + hi2) / 16.0
+    }
+
+    let mut state: u32 = 0xC0FF_EE00;
+    let mut raw = [0.0_f32; NUM_KEYS];
+    for slot in raw.iter_mut() {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let r = (state >> 8) as f32 / (1u32 << 24) as f32;
+        *slot = 2.0 * r - 1.0;
+    }
+
+    // A4 (key 49, index 48) is the tuning anchor and must remain exact.
+    // Subtract its smoothed jitter from every read so the offset there is
+    // identically zero.
+    let anchor = smoothed_at(48, &raw);
+    let index = (key as usize).saturating_sub(1).min(NUM_KEYS - 1);
+    let smoothed = smoothed_at(index, &raw) - anchor;
+
+    // Bass slightly larger than treble — wound/plain transition concentrates
+    // irregularities low. Final scale: ≈ ±2 cents typical.
+    let bass_emphasis = 1.0 + 0.5 * (1.0 - index as f32 / NUM_KEYS as f32);
+    smoothed * 2.0 * bass_emphasis
+}
+
+/// Total Railsback offset (smooth curve + per-note jitter). Use this when
+/// you want the final tuning offset for a key.
+pub fn railsback_cents(key: u32) -> f32 {
+    railsback_smooth_cents(key) + railsback_jitter_cents(key)
 }
 
 /// Hammer strike position as a fraction of string length, per spec §3.5.
