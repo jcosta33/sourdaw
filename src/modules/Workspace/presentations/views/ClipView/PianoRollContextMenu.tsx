@@ -21,7 +21,7 @@ import {
     extractGrooveFromClip,
     applyGrooveToClip,
     restoreGrooveOriginals,
-} from '#/modules/MIDI';
+} from '#/modules/MIDI/useCases';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';

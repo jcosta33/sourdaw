@@ -17,7 +17,7 @@ import { EffectsTab } from './Sidebar/EffectsTab';
 export type { SidebarRoute };
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 import { MacrosPanel } from './Sidebar/MacrosPanel';
-import { LibraryBrowser } from '#/modules/SampleLibrary';
+import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
 import { RailTabBar } from '../components/Sidebar/RailTabBar';
 

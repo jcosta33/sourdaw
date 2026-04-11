@@ -5,7 +5,7 @@
  * boundary, which is not permitted in the models layer.
  */
 import { inject } from '#/infra/di/inject';
-import { updateWorkspaceState } from '#/modules/Workspace';
+import { updateWorkspaceState } from '#/modules/Workspace/useCases';
 
 export const deselectAllClips = inject({ updateWorkspaceState })(
     ({ updateWorkspaceState }) =>

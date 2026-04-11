@@ -1,4 +1,4 @@
-import { type DocumentBundle } from '#/modules/CrdtDocument';
+import { type DocumentBundle } from '#/modules/CrdtDocument/useCases';
 
 export type AppAction =
     | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }

@@ -1,7 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { pushUndo } from '#/modules/Command/stores';
 import { createCallbackUndoEntry } from '#/modules/Command/useCases';
-import { midiStore, readMidiFile } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
+import { readMidiFile } from '#/modules/MIDI/useCases';
 import { type Clip, trackStore } from '../stores/trackStore';
 import { createTrack } from './createTrack';
 import { getNextClipId } from './getNextClipId';

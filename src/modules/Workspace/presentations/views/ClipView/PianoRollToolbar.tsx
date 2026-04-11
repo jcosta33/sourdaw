@@ -9,7 +9,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
-import { CHORD_TYPE_KEYS } from '#/modules/MIDI';
+import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
 
 type PianoRollChordType =
     | 'major'

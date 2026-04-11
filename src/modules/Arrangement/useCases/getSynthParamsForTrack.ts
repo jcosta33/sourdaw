@@ -14,7 +14,7 @@
 import { inject } from '#/infra/di/inject';
 import { getTrackById } from './getTrackById';
 import { defaultSynthParams, type SynthParams } from '#/modules/AudioEngine/useCases';
-import { getSynthParamsFromDevices } from '#/modules/Synth';
+import { getSynthParamsFromDevices } from '#/modules/Synth/useCases';
 
 export const getSynthParamsForTrack = inject({ getTrackById })(({ getTrackById }) => {
     return function getSynthParamsForTrack(trackId: string): SynthParams {

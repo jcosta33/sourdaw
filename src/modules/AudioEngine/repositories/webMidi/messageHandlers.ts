@@ -17,16 +17,16 @@ import {
     getMidiStoreState,
     handleMidiMessage as applyMidiMappings,
     setMidiStoreState,
-} from '#/modules/MIDI';
+} from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
     scheduleKitNote,
     scheduleNote,
-} from '#/modules/Synth';
+} from '#/modules/Synth/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { getTransportStoreValue } from '#/modules/Transport/useCases';
-import { processRealtimeMidiInput } from '#/modules/Yeast';
+import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
 import {
     MIDI_NOTE_ON,

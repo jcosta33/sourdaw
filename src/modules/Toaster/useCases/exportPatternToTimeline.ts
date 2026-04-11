@@ -5,7 +5,7 @@
 import { inject } from '#/infra/di/inject';
 import { toasterStore } from '../stores/toasterStore';
 import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI';
+import { addMidiNote } from '#/modules/MIDI/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 export const exportPatternToTimelineDependencies = {

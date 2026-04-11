@@ -16,7 +16,7 @@ import {
     setTrackPan,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
-import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing';
+import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing/useCases';
 
 export const ensureTrackStrips = inject(
     {

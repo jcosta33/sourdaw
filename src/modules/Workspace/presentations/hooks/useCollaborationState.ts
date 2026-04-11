@@ -1,5 +1,5 @@
 import { useStore } from '#/infra/store/useStore';
-import { collaborationStore } from '#/modules/Collaboration';
+import { collaborationStore } from '#/modules/Collaboration/stores';
 
 type CollaborationViewState = {
     isEnabled: boolean;

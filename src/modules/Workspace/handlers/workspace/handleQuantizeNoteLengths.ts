@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { quantizeNoteLengths } from '#/modules/MIDI';
+import { quantizeNoteLengths } from '#/modules/MIDI/useCases';
 
 export const handleQuantizeNoteLengths = createHandler<'quantizeNoteLengths'>({
     execute: (a) => {

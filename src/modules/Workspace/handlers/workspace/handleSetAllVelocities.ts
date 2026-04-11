@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { setAllVelocities } from '#/modules/MIDI';
+import { setAllVelocities } from '#/modules/MIDI/useCases';
 
 export const handleSetAllVelocities = createHandler<'setAllVelocities'>({
     execute: (a) => {

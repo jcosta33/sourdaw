@@ -3,7 +3,8 @@
  * so tests can substitute them without **`vi.mock`** on whole modules.
  */
 import { inject } from '#/infra/di/inject';
-import { getAssetTransfer, collaborationStore } from '#/modules/Collaboration';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { collaborationStore } from '#/modules/Collaboration/stores';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
@@ -26,259 +27,209 @@ const MICRO_FADE_SECONDS = 0.003;
  *  Prevents spamming requestAsset() every scheduler tick while waiting. */
 const requestedAssets = new Set<string>();
 
-export const scheduleAudioClipsDependencies = {
-    trackStore,
-    tempoMapStore,
-    audioBufferCache,
-    ensureTrackStrip,
-    getCurrentTime,
-    createBufferSource,
-    getAudioContext,
-    getCompensationDelay,
-    resolveClipsWithComping,
-    getGainAtBeat,
-    notifyUser,
-    scheduleFrozenTrack,
-    collaborationStore,
-    getAssetTransfer,
-    getTempoAtBeat,
-} as const;
+export function scheduleAudioClips(
+    fromBeat: number,
+    toBeat: number,
+    accumulatedPosition: number,
+    scheduledAudioClipsSet: Set<string>,
+    scheduledFrozenTracks: Set<string>,
+    activeAudioSources: AudioBufferSourceNode[],
+    transport: TransportState,
+    currentTempo: number
+): void {
+    const tracks = trackStoreDep.value?.tracks;
+    if (!tracks) {
+        return;
+    }
 
-export const scheduleAudioClips = inject(scheduleAudioClipsDependencies)(
-    ({
-        trackStore: trackStoreDep,
-        tempoMapStore: tempoMapStoreDep,
-        audioBufferCache: audioBufferCacheDep,
-        ensureTrackStrip: ensureTrackStripDep,
-        getCurrentTime: getCurrentTimeDep,
-        createBufferSource: createBufferSourceDep,
-        getAudioContext: getAudioContextDep,
-        getCompensationDelay: getCompensationDelayDep,
-        resolveClipsWithComping: resolveClipsWithCompingDep,
-        getGainAtBeat: getGainAtBeatDep,
-        notifyUser: notifyUserDep,
-        scheduleFrozenTrack: scheduleFrozenTrackDep,
-        collaborationStore: collaborationStoreDep,
-        getAssetTransfer: getAssetTransferDep,
-        getTempoAtBeat: getTempoAtBeatDep,
-    }) =>
-        function scheduleAudioClips(
-            fromBeat: number,
-            toBeat: number,
-            accumulatedPosition: number,
-            scheduledAudioClipsSet: Set<string>,
-            scheduledFrozenTracks: Set<string>,
-            activeAudioSources: AudioBufferSourceNode[],
-            transport: TransportState,
-            currentTempo: number
-        ): void {
-            const tracks = trackStoreDep.value?.tracks;
-            if (!tracks) {
-                return;
-            }
+    const changes = tempoMapStoreDep.value?.changes ?? [];
 
-            const changes = tempoMapStoreDep.value?.changes ?? [];
-
-            for (const track of tracks) {
-                if (track.kind !== 'audio' || track.muted) {
-                    continue;
-                }
-
-                if (track.frozen && track.frozenBufferId) {
-                    if (!scheduledFrozenTracks.has(track.id)) {
-                        const scheduled = scheduleFrozenTrackDep(
-                            track,
-                            accumulatedPosition,
-                            activeAudioSources,
-                            currentTempo
-                        );
-                        if (scheduled) {
-                            scheduledFrozenTracks.add(track.id);
-                        }
-                    }
-                    continue;
-                }
-
-                const compensation = getCompensationDelayDep(track.id);
-                const resolvedAudioClips = resolveClipsWithCompingDep(track.id, track.clips);
-
-                for (const clip of resolvedAudioClips) {
-                    if (clip.muted) {
-                        continue;
-                    }
-                    if (clip.type !== 'audio' || !clip.audioBufferId) {
-                        continue;
-                    }
-                    const clipKey = `${clip.id}:${clip.regionStartBeat}:${clip.regionEndBeat}`;
-                    if (scheduledAudioClipsSet.has(clipKey)) {
-                        continue;
-                    }
-                    if (clip.startBeat > toBeat || clip.endBeat < fromBeat) {
-                        continue;
-                    }
-
-                    const buffer = audioBufferCacheDep.get(clip.audioBufferId);
-                    if (!buffer) {
-                        const isRecordingClip = clip.audioBufferId.startsWith('rec-');
-                        if (!isRecordingClip) {
-                            const inSession = collaborationStoreDep.value?.isEnabled ?? false;
-                            if (inSession && clip.assetHash) {
-                                if (!requestedAssets.has(clip.assetHash)) {
-                                    requestedAssets.add(clip.assetHash);
-                                    getAssetTransferDep()?.requestAsset(clip.assetHash);
-                                }
-                            } else {
-                                notifyUserDep(
-                                    `Missing audio for clip "${clip.name}" — re-import the audio file`,
-                                    'warning'
-                                );
-                                scheduledAudioClipsSet.add(clipKey);
-                            }
-                        }
-                        continue;
-                    }
-
-                    scheduledAudioClipsSet.add(clipKey);
-
-                    const strip = ensureTrackStripDep(track.id);
-                    const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
-                    const clipTempo = getTempoAtBeatDep(changes, clip.startBeat, transport.tempo);
-                    const clipBeatsPerSecond = clipTempo / 60;
-                    const clipVisualLength = clip.endBeat - clip.startBeat;
-                    const clipDurationSeconds = clipVisualLength / clipBeatsPerSecond;
-                    const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
-                    const loopLenSeconds = loopLen / clipBeatsPerSecond;
-                    const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
-
-                    for (let iter = 0; iter < maxIterations; iter++) {
-                        const iterOffsetBeats = iter * loopLen;
-                        const iterStartBeat = clip.startBeat + iterOffsetBeats;
-                        if (iterStartBeat >= clip.endBeat) {
-                            break;
-                        }
-
-                        const remainingBeats = clip.endBeat - iterStartBeat;
-                        const iterDurationBeats = Math.min(loopLen, remainingBeats);
-                        const iterDurationSeconds = iterDurationBeats / clipBeatsPerSecond;
-
-                        const source = createBufferSourceDep();
-                        source.buffer = buffer;
-                        if (stretchRatio !== 1) {
-                            source.playbackRate.value = stretchRatio;
-                        }
-
-                        const isFirstIter = iter === 0;
-                        const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
-                        const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
-                        const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
-                        const fadeGain = getAudioContextDep().createGain();
-                        (source as any).fadeGainNode = fadeGain;
-
-                        const envGainDb = getGainAtBeatDep(clip.id, iterOffsetBeats);
-                        const hasEnvGain = envGainDb !== 0;
-                        const envGainNode = hasEnvGain ? getAudioContextDep().createGain() : null;
-                        if (envGainNode) {
-                            envGainNode.gain.value = Math.pow(10, envGainDb / 20);
-                        }
-
-                        let outputNode: AudioNode = strip.gainNode;
-                        if (fadeGain) {
-                            fadeGain.connect(outputNode);
-                            outputNode = fadeGain;
-                        }
-                        if (envGainNode) {
-                            envGainNode.connect(outputNode);
-                            outputNode = envGainNode;
-                        }
-                        source.connect(outputNode);
-
-                        const beatOffset = iterStartBeat - accumulatedPosition;
-                        const iterStartTime =
-                            getCurrentTimeDep() + beatOffset / (currentTempo / 60) + compensation;
-                        const now = getCurrentTimeDep();
-                        const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-                        const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
-                        const playDuration = Math.min(
-                            iterDurationSeconds,
-                            (buffer.duration - clipAudioOffsetSeconds) / stretchRatio
-                        );
-
-                        if (iterStartTime >= now) {
-                            source.start(iterStartTime, clipAudioOffsetSeconds, playDuration * stretchRatio);
-                        } else {
-                            const elapsed = now - iterStartTime;
-                            const bufferOffset = elapsed * stretchRatio + clipAudioOffsetSeconds;
-                            if (
-                                bufferOffset < buffer.duration &&
-                                bufferOffset < playDuration * stretchRatio + clipAudioOffsetSeconds
-                            ) {
-                                source.start(
-                                    now,
-                                    bufferOffset,
-                                    playDuration * stretchRatio + clipAudioOffsetSeconds - bufferOffset
-                                );
-                            } else {
-                                continue;
-                            }
-                        }
-
-                        if (fadeGain) {
-                            const effectiveStart = Math.max(iterStartTime, now);
-
-                            if (isFirstIter && clip.fadeInBeats > 0) {
-                                const fadeInEnd = iterStartTime + clip.fadeInBeats / clipBeatsPerSecond;
-                                if (effectiveStart < fadeInEnd) {
-                                    const progressRatio =
-                                        Math.max(0, effectiveStart - iterStartTime) /
-                                        (clip.fadeInBeats / clipBeatsPerSecond);
-                                    fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
-                                    fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
-                                } else {
-                                    fadeGain.gain.setValueAtTime(1, effectiveStart);
-                                }
-                            } else if (needsMicroFadeIn) {
-                                fadeGain.gain.setValueAtTime(0, effectiveStart);
-                                fadeGain.gain.linearRampToValueAtTime(1, effectiveStart + MICRO_FADE_SECONDS);
-                            } else {
-                                fadeGain.gain.setValueAtTime(1, effectiveStart);
-                            }
-
-                            if (isLastIter && clip.fadeOutBeats > 0) {
-                                const clipEndTime =
-                                    getCurrentTimeDep() +
-                                    (clip.endBeat - accumulatedPosition) / (currentTempo / 60) +
-                                    compensation;
-                                const fadeOutStart = clipEndTime - clip.fadeOutBeats / clipBeatsPerSecond;
-                                fadeGain.gain.setValueAtTime(1, Math.max(fadeOutStart, effectiveStart));
-                                fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
-                            } else if (needsMicroFadeOut) {
-                                const iterEndTime = effectiveStart + playDuration;
-                                fadeGain.gain.setValueAtTime(
-                                    1,
-                                    Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS)
-                                );
-                                fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
-                            }
-                        }
-
-                        activeAudioSources.push(source);
-                        source.onended = () => {
-                            const idx = activeAudioSources.indexOf(source);
-                            if (idx >= 0) {
-                                activeAudioSources.splice(idx, 1);
-                            }
-                            if (fadeGain) {
-                                fadeGain.disconnect();
-                            }
-                            if (envGainNode) {
-                                envGainNode.disconnect();
-                            }
-                        };
-                    }
-
-                    clipDurationSeconds;
-                    loopLenSeconds;
-                }
-            }
+    for (const track of tracks) {
+        if (track.kind !== 'audio' || track.muted) {
+            continue;
         }
-);
+
+        if (track.frozen && track.frozenBufferId) {
+            if (!scheduledFrozenTracks.has(track.id)) {
+                const scheduled = scheduleFrozenTrackDep(track, accumulatedPosition, activeAudioSources, currentTempo);
+                if (scheduled) {
+                    scheduledFrozenTracks.add(track.id);
+                }
+            }
+            continue;
+        }
+
+        const compensation = getCompensationDelayDep(track.id);
+        const resolvedAudioClips = resolveClipsWithCompingDep(track.id, track.clips);
+
+        for (const clip of resolvedAudioClips) {
+            if (clip.muted) {
+                continue;
+            }
+            if (clip.type !== 'audio' || !clip.audioBufferId) {
+                continue;
+            }
+            const clipKey = `${clip.id}:${clip.regionStartBeat}:${clip.regionEndBeat}`;
+            if (scheduledAudioClipsSet.has(clipKey)) {
+                continue;
+            }
+            if (clip.startBeat > toBeat || clip.endBeat < fromBeat) {
+                continue;
+            }
+
+            const buffer = audioBufferCacheDep.get(clip.audioBufferId);
+            if (!buffer) {
+                const isRecordingClip = clip.audioBufferId.startsWith('rec-');
+                if (!isRecordingClip) {
+                    const inSession = collaborationStoreDep.value?.isEnabled ?? false;
+                    if (inSession && clip.assetHash) {
+                        if (!requestedAssets.has(clip.assetHash)) {
+                            requestedAssets.add(clip.assetHash);
+                            getAssetTransferDep()?.requestAsset(clip.assetHash);
+                        }
+                    } else {
+                        notifyUserDep(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
+                        scheduledAudioClipsSet.add(clipKey);
+                    }
+                }
+                continue;
+            }
+
+            scheduledAudioClipsSet.add(clipKey);
+
+            const strip = ensureTrackStripDep(track.id);
+            const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
+            const clipTempo = getTempoAtBeatDep(changes, clip.startBeat, transport.tempo);
+            const clipBeatsPerSecond = clipTempo / 60;
+            const clipVisualLength = clip.endBeat - clip.startBeat;
+            const clipDurationSeconds = clipVisualLength / clipBeatsPerSecond;
+            const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
+            const loopLenSeconds = loopLen / clipBeatsPerSecond;
+            const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+
+            for (let iter = 0; iter < maxIterations; iter++) {
+                const iterOffsetBeats = iter * loopLen;
+                const iterStartBeat = clip.startBeat + iterOffsetBeats;
+                if (iterStartBeat >= clip.endBeat) {
+                    break;
+                }
+
+                const remainingBeats = clip.endBeat - iterStartBeat;
+                const iterDurationBeats = Math.min(loopLen, remainingBeats);
+                const iterDurationSeconds = iterDurationBeats / clipBeatsPerSecond;
+
+                const source = createBufferSourceDep();
+                source.buffer = buffer;
+                if (stretchRatio !== 1) {
+                    source.playbackRate.value = stretchRatio;
+                }
+
+                const isFirstIter = iter === 0;
+                const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
+                const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
+                const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
+                const fadeGain = getAudioContextDep().createGain();
+                (source as any).fadeGainNode = fadeGain;
+
+                const envGainDb = getGainAtBeatDep(clip.id, iterOffsetBeats);
+                const hasEnvGain = envGainDb !== 0;
+                const envGainNode = hasEnvGain ? getAudioContextDep().createGain() : null;
+                if (envGainNode) {
+                    envGainNode.gain.value = Math.pow(10, envGainDb / 20);
+                }
+
+                let outputNode: AudioNode = strip.gainNode;
+                if (fadeGain) {
+                    fadeGain.connect(outputNode);
+                    outputNode = fadeGain;
+                }
+                if (envGainNode) {
+                    envGainNode.connect(outputNode);
+                    outputNode = envGainNode;
+                }
+                source.connect(outputNode);
+
+                const beatOffset = iterStartBeat - accumulatedPosition;
+                const iterStartTime = getCurrentTimeDep() + beatOffset / (currentTempo / 60) + compensation;
+                const now = getCurrentTimeDep();
+                const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
+                const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
+                const playDuration = Math.min(
+                    iterDurationSeconds,
+                    (buffer.duration - clipAudioOffsetSeconds) / stretchRatio
+                );
+
+                if (iterStartTime >= now) {
+                    source.start(iterStartTime, clipAudioOffsetSeconds, playDuration * stretchRatio);
+                } else {
+                    const elapsed = now - iterStartTime;
+                    const bufferOffset = elapsed * stretchRatio + clipAudioOffsetSeconds;
+                    if (
+                        bufferOffset < buffer.duration &&
+                        bufferOffset < playDuration * stretchRatio + clipAudioOffsetSeconds
+                    ) {
+                        source.start(
+                            now,
+                            bufferOffset,
+                            playDuration * stretchRatio + clipAudioOffsetSeconds - bufferOffset
+                        );
+                    } else {
+                        continue;
+                    }
+                }
+
+                if (fadeGain) {
+                    const effectiveStart = Math.max(iterStartTime, now);
+
+                    if (isFirstIter && clip.fadeInBeats > 0) {
+                        const fadeInEnd = iterStartTime + clip.fadeInBeats / clipBeatsPerSecond;
+                        if (effectiveStart < fadeInEnd) {
+                            const progressRatio =
+                                Math.max(0, effectiveStart - iterStartTime) / (clip.fadeInBeats / clipBeatsPerSecond);
+                            fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
+                            fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
+                        } else {
+                            fadeGain.gain.setValueAtTime(1, effectiveStart);
+                        }
+                    } else if (needsMicroFadeIn) {
+                        fadeGain.gain.setValueAtTime(0, effectiveStart);
+                        fadeGain.gain.linearRampToValueAtTime(1, effectiveStart + MICRO_FADE_SECONDS);
+                    } else {
+                        fadeGain.gain.setValueAtTime(1, effectiveStart);
+                    }
+
+                    if (isLastIter && clip.fadeOutBeats > 0) {
+                        const clipEndTime =
+                            getCurrentTimeDep() +
+                            (clip.endBeat - accumulatedPosition) / (currentTempo / 60) +
+                            compensation;
+                        const fadeOutStart = clipEndTime - clip.fadeOutBeats / clipBeatsPerSecond;
+                        fadeGain.gain.setValueAtTime(1, Math.max(fadeOutStart, effectiveStart));
+                        fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
+                    } else if (needsMicroFadeOut) {
+                        const iterEndTime = effectiveStart + playDuration;
+                        fadeGain.gain.setValueAtTime(1, Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS));
+                        fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
+                    }
+                }
+
+                activeAudioSources.push(source);
+                source.onended = () => {
+                    const idx = activeAudioSources.indexOf(source);
+                    if (idx >= 0) {
+                        activeAudioSources.splice(idx, 1);
+                    }
+                    if (fadeGain) {
+                        fadeGain.disconnect();
+                    }
+                    if (envGainNode) {
+                        envGainNode.disconnect();
+                    }
+                };
+            }
+
+            clipDurationSeconds;
+            loopLenSeconds;
+        }
+    }
+}

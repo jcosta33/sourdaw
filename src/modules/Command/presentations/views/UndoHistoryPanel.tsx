@@ -2,11 +2,8 @@ import { type ReactElement } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
-import {
-    closeUndoHistory,
-    workspaceStore,
-    type WorkspaceState,
-} from '#/modules/Workspace';
+import { workspaceStore } from '#/modules/Workspace/stores';
+import { closeUndoHistory, type WorkspaceState } from '#/modules/Workspace/useCases';
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 import { undoToIndex } from '../../useCases/undoRedo';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';

@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI';
+import { addMidiNote } from '#/modules/MIDI/useCases';
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
 

@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '../repositories/createWebAudioEngine';
-import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin';
+import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin/useCases';
 import { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export const initializeAudioEngineDependencies = {

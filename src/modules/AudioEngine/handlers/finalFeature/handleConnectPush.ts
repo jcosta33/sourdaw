@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { connectPush } from '#/modules/Plugin';
+import { connectPush } from '#/modules/Plugin/useCases';
 
 export const handleConnectPush = createHandler<'connectPush'>({
     execute: (a) => {

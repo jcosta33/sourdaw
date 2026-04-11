@@ -4,7 +4,7 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { getPlatformPlugins } from '../getPlatformPlugins';
 import { type Device } from '../../stores/trackStore';
 import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { compileFaustDSP } from '#/modules/Plugin';
+import { compileFaustDSP } from '#/modules/Plugin/useCases';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;

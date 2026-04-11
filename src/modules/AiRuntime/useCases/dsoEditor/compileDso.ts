@@ -18,9 +18,10 @@ import {
     applyChordProgressionToTrack,
     applyDrumPatternToTrack,
     applyMelodyToTrack,
-} from '#/modules/AiGeneration';
+} from '#/modules/AiGeneration/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { humanizeNotes, midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
+import { humanizeNotes } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
 // Local type aliases — duplicated from AiGeneration algorithm files to avoid

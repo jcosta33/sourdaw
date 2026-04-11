@@ -1,10 +1,4 @@
-import { inject } from '#/infra/di/inject';
-import {
-    detectIssues,
-    generateSuggestions,
-    readFrequencyBalance,
-    readLevels,
-} from '#/modules/AiRuntime';
+import { detectIssues, generateSuggestions, readFrequencyBalance, readLevels } from '#/modules/AiRuntime/useCases';
 import { getMasterAnalyser, getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
@@ -41,72 +35,53 @@ export type AnalyzeMixOutput = {
     suggestions: string[];
 };
 
-export const analyzeMix = inject({
-    getMasterAnalyser,
-    readLevels,
-    readFrequencyBalance,
-    detectIssues,
-    generateSuggestions,
-    getTrackStrip,
-    getTrackStoreState,
-})(
-    ({
-        getMasterAnalyser,
-        readLevels,
-        readFrequencyBalance,
-        detectIssues,
-        generateSuggestions,
-        getTrackStrip,
-        getTrackStoreState,
-    }) =>
-        async function analyzeMix(): Promise<AnalyzeMixOutput> {
-            const masterAnalyser = getMasterAnalyser();
-            const masterLevels = readLevels(masterAnalyser);
-            const frequencyBalance = readFrequencyBalance(masterAnalyser);
+export async function analyzeMix(): Promise<AnalyzeMixOutput> {
+    const masterAnalyser = getMasterAnalyser();
+    const masterLevels = readLevels(masterAnalyser);
+    const frequencyBalance = readFrequencyBalance(masterAnalyser);
 
-            const state = getTrackStoreState();
-            const tracks = state?.tracks ?? [];
+    const state = getTrackStoreState();
+    const tracks = state?.tracks ?? [];
 
-            const trackLevels: AnalyzeMixOutput['trackLevels'] = [];
+    const trackLevels: AnalyzeMixOutput['trackLevels'] = [];
 
-            for (const track of tracks) {
-                if (track.kind === 'folder' || track.kind === 'master') {
-                    continue;
-                }
-
-                const strip = getTrackStrip(track.id);
-                if (!strip) {
-                    continue;
-                }
-
-                const levels = readLevels(strip.analyserNode);
-
-                trackLevels.push({
-                    trackId: track.id,
-                    trackName: track.name,
-                    peakDb: levels.peakDb,
-                    rmsDb: levels.rmsDb,
-                    isMuted: strip.muted,
-                    isSoloed: strip.soloed,
-                    isClipping: levels.peakDb > -0.5,
-                });
-            }
-
-            const issues = detectIssues({ masterLevels, bands: frequencyBalance, trackLevels });
-            const suggestions = generateSuggestions({
-                masterLevels,
-                bands: frequencyBalance,
-                trackLevels,
-                issues,
-            });
-
-            return {
-                timestamp: Date.now(),
-                overallLevel: masterLevels,
-                frequencyBalance,
-                trackLevels,
-                issues,
-                suggestions,
-            };
+    for (const track of tracks) {
+        if (track.kind === 'folder' || track.kind === 'master') {
+            continue;
         }
-);
+
+        const strip = getTrackStrip(track.id);
+        if (!strip) {
+            continue;
+        }
+
+        const levels = readLevels(strip.analyserNode);
+
+        trackLevels.push({
+            trackId: track.id,
+            trackName: track.name,
+            peakDb: levels.peakDb,
+            rmsDb: levels.rmsDb,
+            isMuted: strip.muted,
+            isSoloed: strip.soloed,
+            isClipping: levels.peakDb > -0.5,
+        });
+    }
+
+    const issues = detectIssues({ masterLevels, bands: frequencyBalance, trackLevels });
+    const suggestions = generateSuggestions({
+        masterLevels,
+        bands: frequencyBalance,
+        trackLevels,
+        issues,
+    });
+
+    return {
+        timestamp: Date.now(),
+        overallLevel: masterLevels,
+        frequencyBalance,
+        trackLevels,
+        issues,
+        suggestions,
+    };
+}

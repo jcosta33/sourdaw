@@ -13,14 +13,14 @@ import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { ClipContextMenu } from './ClipContextMenu';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
+import { workspaceStore } from '#/modules/Workspace/stores';
 import {
-    workspaceStore,
     TRACK_HEIGHT_VALUES,
     onZoomToFit,
     onZoomToSelection,
     onScrollToPlayhead,
-} from '#/modules/Workspace';
-import { PresenceOverlay } from '#/modules/Collaboration';
+} from '#/modules/Workspace/useCases';
+import { PresenceOverlay } from '#/modules/Collaboration/presentations/views';
 
 import { automationStore } from '#/modules/Automation';
 import { markerStore } from '../../stores/markerStore';

@@ -41,7 +41,7 @@ import {
     removeCloudApi,
     isCloudAvailable,
     resolveBackend,
-} from '#/modules/AiRuntime';
+} from '#/modules/AiRuntime/useCases';
 import { cn } from '#/helpers/Styles/cn';
 import { SectionTitle, FieldGroup, ToggleRow, VoiceKeyEditor, GridSubdivisionSection } from './preferencesShared';
 import { ShortcutsSection } from './ShortcutsSection';

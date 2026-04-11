@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { transposeNotes } from '#/modules/MIDI';
+import { transposeNotes } from '#/modules/MIDI/useCases';
 
 export const handleTransposeNotes = createHandler<'transposeNotes'>({
     execute: (a) => {

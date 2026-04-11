@@ -4,7 +4,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument';
+import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
@@ -14,76 +14,55 @@ import { resetModuleStoresToDefault } from './helpers';
 
 let stopAutoSave: (() => void) | null = null;
 
-export const newProject = inject({
-    stopPlayback,
-    resetAudioGraph,
-    createCrdtProject,
-    resetModuleStoresToDefault,
-    addTrack,
-    clearUndoHistory,
-    startCrdtAutoSave,
-    removeProjectJson,
-})(
-    ({
-        stopPlayback,
-        resetAudioGraph,
-        createCrdtProject,
-        resetModuleStoresToDefault,
-        addTrack,
-        clearUndoHistory,
-        startCrdtAutoSave,
-        removeProjectJson,
-    }) =>
-        function newProject(name = 'Untitled Project'): void {
-            // Stop any in-flight playback and tear down the previous project's audio
-            // graph before we start mutating stores for the new project.
-            stopPlayback();
-            resetAudioGraph();
+export function newProject(name = 'Untitled Project'): void {
+    // Stop any in-flight playback and tear down the previous project's audio
+    // graph before we start mutating stores for the new project.
+    stopPlayback();
+    resetAudioGraph();
 
-            // 1. Initialize CRDT Document structure so subsequent .set() calls persist
-            createCrdtProject(name).catch((error) => {
-                console.error('[newProject] Failed to initialize CRDT structure:', error);
-            });
+    // 1. Initialize CRDT Document structure so subsequent .set() calls persist
+    createCrdtProject(name).catch((error) => {
+        console.error('[newProject] Failed to initialize CRDT structure:', error);
+    });
 
-            resetModuleStoresToDefault();
+    resetModuleStoresToDefault();
 
-            arrangementStore.set({
-                arrangements: [
-                    {
-                        id: defaultArrangementId,
-                        name: 'Arrangement 1',
-                        tracks: { tracks: [], selectedTrackId: null },
-                        automation: { lanes: [] },
-                        midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-                    },
-                ],
-                activeArrangementId: defaultArrangementId,
-            });
+    arrangementStore.set({
+        arrangements: [
+            {
+                id: defaultArrangementId,
+                name: 'Arrangement 1',
+                tracks: { tracks: [], selectedTrackId: null },
+                automation: { lanes: [] },
+                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            },
+        ],
+        activeArrangementId: defaultArrangementId,
+    });
 
-            addTrack({ name: 'Master', kind: 'master' });
+    addTrack({ name: 'Master', kind: 'master' });
 
-            // Don't auto-select the master track — nothing should be selected on a fresh project
-            const currentTrackState = trackStore.value;
-            if (currentTrackState) {
-                trackStore.set({ ...currentTrackState, selectedTrackId: null });
-            }
+    // Don't auto-select the master track — nothing should be selected on a fresh project
+    const currentTrackState = trackStore.value;
+    if (currentTrackState) {
+        trackStore.set({ ...currentTrackState, selectedTrackId: null });
+    }
 
-            projectStore.set({
-                name,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-                dirty: false,
-                loading: false,
-                initialized: true,
-            });
-            removeProjectJson();
-            audioBufferCache.clear();
-            clearUndoHistory();
+    projectStore.set({
+        name,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        dirty: false,
+        loading: false,
+        initialized: true,
+    });
+    removeProjectJson();
+    audioBufferCache.clear();
+    clearUndoHistory();
 
-            // Start debounced incremental auto-save for the new project.
-            if (stopAutoSave) {
-                stopAutoSave();
-            }
-            stopAutoSave = startCrdtAutoSave();
-        }
-);
+    // Start debounced incremental auto-save for the new project.
+    if (stopAutoSave) {
+        stopAutoSave();
+    }
+    stopAutoSave = startCrdtAutoSave();
+}

@@ -9,14 +9,13 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
 import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
+import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
 import {
-    pluginScanStore,
-    defaultPluginScanState,
     startPluginScan,
     createTrackForPlugin,
     loadExternalPlugin,
     type ScannedPlugin,
-} from '#/modules/Plugin';
+} from '#/modules/Plugin/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 

@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { updateTrack } from '../../useCases/updateTrack';
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 

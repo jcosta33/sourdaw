@@ -1,19 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Container } from '#/infra/di/Container';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { describe, it, expect, vi } from 'vitest';
 import { selectTrack } from './timelineViewActions';
+import * as selectTrackModule from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
 
-describe('timelineViewActions injectables', () => {
-    beforeEach(() => {
-        Container.clear();
-    });
-
-    it('selectTrack forwards to selectTrackImpl', () => {
-        const selectTrackImpl = vi.fn();
-        injectDependencies(selectTrack, { selectTrackImpl });
-
-        selectTrack('t1');
-
-        expect(selectTrackImpl).toHaveBeenCalledWith('t1');
+describe('timelineViewActions', () => {
+    it('re-exports selectTrack from toggleTrackState', () => {
+        expect(selectTrack).toBe(selectTrackModule.selectTrack);
     });
 });

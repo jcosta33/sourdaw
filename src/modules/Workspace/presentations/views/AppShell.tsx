@@ -34,17 +34,17 @@ import {
     AiChangeToast,
     AiActionHistoryPanel,
     MixAnalysisPanel,
-} from '#/modules/AiRuntime';
+} from '#/modules/AiRuntime/presentations/views';
 import { MixerPanel } from './MixerPanel';
 import { SessionView } from './SessionView';
 import { RoutingMatrix } from './RoutingMatrix';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
-import { FermenterPanel } from '#/modules/Fermenter';
-import { ToasterPanel } from '#/modules/Toaster';
+import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
+import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
-import { LevainPanel } from '#/modules/Levain';
+import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { ProofChamberPanel } from '#/modules/ProofChamber';
 import { GlutenPanel } from '#/modules/Gluten';
 import { BacteriaPanel } from '#/modules/Bacteria';
@@ -52,9 +52,9 @@ import { GrinderPanel } from '#/modules/Grinder';
 import { SamplerPanel } from '#/modules/Sampler';
 import { GrandBoulePanel } from '#/modules/GrandBoule';
 
-import { ProofPanel } from '#/modules/Proof';
+import { ProofPanel } from '#/modules/Proof/presentations/views';
 import { ScoringPanel } from '#/modules/Scoring';
-import { YeastPanel } from '#/modules/Yeast';
+import { YeastPanel } from '#/modules/Yeast/presentations/views';
 import { CrustPanel } from '#/modules/Crust';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard';
 import { toggleVirtualKeyboard, closeBranchManager } from '../../useCases/togglePanel/panelToggles';
@@ -62,7 +62,7 @@ import { toggleVirtualKeyboard, closeBranchManager } from '../../useCases/toggle
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { NotificationToast } from '../components/NotificationToast';
 import { useStore } from '#/infra/store/useStore';
-import { aiStore } from '#/modules/AiGeneration';
+import { aiStore } from '#/modules/AiGeneration/stores';
 import { ExportDialog } from '#/modules/Project';
 import { PreferencesDialog } from './PreferencesDialog';
 import { startShortcutEngine } from '../../useCases/shortcutEngine';
@@ -80,13 +80,13 @@ import { defaultPreferences } from '../../models/Preferences';
 import { MobileGate } from '../components/MobileGate';
 
 const CollaborationPanelLazy = lazy(() =>
-    import('#/modules/Collaboration').then((m) => ({
+    import('#/modules/Collaboration/presentations/views').then((m) => ({
         default: m.CollaborationPanel,
     }))
 );
 
 const BranchManagerDialogLazy = lazy(() =>
-    import('#/modules/CrdtDocument').then((m) => ({
+    import('#/modules/CrdtDocument/presentations/views').then((m) => ({
         default: m.BranchManagerDialog,
     }))
 );

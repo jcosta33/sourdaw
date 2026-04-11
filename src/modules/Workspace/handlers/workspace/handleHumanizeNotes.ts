@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { humanizeNotes } from '#/modules/MIDI';
+import { humanizeNotes } from '#/modules/MIDI/useCases';
 
 export const handleHumanizeNotes = createHandler<'humanizeNotes'>({
     execute: (a) => {

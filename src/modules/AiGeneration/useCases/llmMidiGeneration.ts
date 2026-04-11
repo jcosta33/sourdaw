@@ -14,7 +14,7 @@ import {
     isNativeEngineReady,
     PATTERN_TEMPLATES,
     resolveBackend,
-} from '#/modules/AiRuntime';
+} from '#/modules/AiRuntime/useCases';
 import { type MidiGenerationNote } from '#/modules/AudioEngine/useCases';
 
 // ── System prompt for music generation ──

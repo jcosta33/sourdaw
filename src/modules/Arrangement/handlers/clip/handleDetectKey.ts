@@ -1,6 +1,6 @@
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { createHandler } from '#/helpers/createHandler';
-import { detectKey } from '#/modules/AudioAnalysis';
+import { detectKey } from '#/modules/AudioAnalysis/useCases';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleDetectKey = createHandler<'detectKey'>({

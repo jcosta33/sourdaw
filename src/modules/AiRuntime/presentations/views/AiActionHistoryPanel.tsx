@@ -10,7 +10,8 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
-import { actionHistoryStore, canRevertAction, clearActionHistory, revertAction } from '#/modules/CrdtDocument';
+import { actionHistoryStore, clearActionHistory } from '#/modules/CrdtDocument/stores';
+import { canRevertAction, revertAction } from '#/modules/CrdtDocument/useCases';
 
 type AiActionEntryView =
     | { kind: 'appAction'; actionType: string; label: string }

@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { getWorkspaceState } from '#/modules/Workspace';
+import { getWorkspaceState } from '#/modules/Workspace/useCases';
 import { type Clip } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 

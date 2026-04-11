@@ -8,7 +8,7 @@
 import { inject } from '#/infra/di/inject';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { buildDeviceChain, getAudioContext } from '#/modules/AudioEngine/useCases';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { type Track } from '../../models/Track';
 

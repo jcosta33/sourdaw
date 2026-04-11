@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { downloadMidiFile, getMidiStoreState } from '#/modules/MIDI';
+import { downloadMidiFile, getMidiStoreState } from '#/modules/MIDI/useCases';
 import { getAllTracks } from './getAllTracks';
 
 export const exportMidiClip = inject({ getAllTracks, getMidiStoreState, downloadMidiFile })(

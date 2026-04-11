@@ -1,6 +1,6 @@
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '../../../stores/projectStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
@@ -1423,9 +1423,9 @@ export async function demo4_NativeShowcase(): Promise<void> {
 
     syncArrangement(tracks);
 
-    const { ensureTrackStrips } = await import('#/modules/Transport');
+    const { ensureTrackStrips } = await import('#/modules/Transport/useCases');
     ensureTrackStrips();
-    const { waitForDevices } = await import('#/modules/AudioEngine');
+    const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
     await waitForDevices();
 
     projectStore.set({

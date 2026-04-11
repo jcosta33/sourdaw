@@ -6,7 +6,8 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
-import { closeCollaborationPanel, workspaceStore } from '#/modules/Workspace';
+import { workspaceStore } from '#/modules/Workspace/stores';
+import { closeCollaborationPanel } from '#/modules/Workspace/useCases';
 import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
 
 import { useCollaborationState } from '../hooks/useCollaborationState';

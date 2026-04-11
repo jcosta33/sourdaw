@@ -5,7 +5,7 @@
 import { inject } from '#/infra/di/inject';
 import { getMarkerState, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getTransportStoreValue, seekPlayhead } from '#/modules/Transport/useCases';
-import { getWorkspaceState } from '#/modules/Workspace';
+import { getWorkspaceState } from '#/modules/Workspace/useCases';
 
 export const selectionHelpersDependencies = {
     getTrackStoreState,

@@ -3,7 +3,7 @@ import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrack
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 import { shiftClipAutomation } from '#/modules/Automation';
-import { shiftClipMidiNotes } from '#/modules/MIDI';
+import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 
 export const moveClip = inject({ getTrackState, setTrackState })(
     ({ getTrackState, setTrackState }) =>

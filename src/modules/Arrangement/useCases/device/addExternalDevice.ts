@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
-import { loadPlugin } from '#/modules/Plugin';
+import { loadPlugin } from '#/modules/Plugin/useCases';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { type Device } from '../../stores/trackStore';

@@ -16,7 +16,7 @@ import {
     getAllTracks,
 } from '#/modules/Arrangement/useCases';
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
-import { createDrumTrackStack } from '#/modules/Toaster';
+import { createDrumTrackStack } from '#/modules/Toaster/useCases';
 import { createGrandBouleTrack } from '#/modules/GrandBoule';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';

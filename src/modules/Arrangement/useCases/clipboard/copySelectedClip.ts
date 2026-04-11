@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { findClipById } from '#/modules/Arrangement/services/findClipById';
-import { midiStore } from '#/modules/MIDI';
-import { getWorkspaceState } from '#/modules/Workspace';
+import { midiStore } from '#/modules/MIDI/stores';
+import { getWorkspaceState } from '#/modules/Workspace/useCases';
 import { setClipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export const copySelectedClip = inject({ getWorkspaceState })(

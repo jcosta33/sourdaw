@@ -14,14 +14,14 @@
  */
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '../../../stores/projectStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { automationStore, createAutomationLane } from '#/modules/Automation';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
 import { note, applyPreset, createMidiClip, syncArrangement } from '../demoUtils';
-import { DEFAULT_PAD_NAMES } from '#/modules/Toaster';
+import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
 
 const TB = 380;
 const bpm = 76;
@@ -1987,9 +1987,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     syncArrangement(tracks);
 
-    const { addDeviceToStrip, updateDeviceParam } = await import('#/modules/AudioEngine');
+    const { addDeviceToStrip, updateDeviceParam } = await import('#/modules/AudioEngine/useCases');
     const { ensureTrackStrip, setTrackGain, setTrackPan, setTrackOutput, setTrackMute } =
-        await import('#/modules/AudioEngine');
+        await import('#/modules/AudioEngine/useCases');
 
     const toasterDev = toasterFolder.devices.find((d) => d.type === 'toaster');
     if (toasterDev) {
@@ -2006,10 +2006,10 @@ export async function demo5_NebulaDrift(): Promise<void> {
     setTrackPan(toasterFolder.id, toasterFolder.pan);
     setTrackMute(toasterFolder.id, toasterFolder.muted, toasterFolder.gain);
 
-    const { ensureTrackStrips } = await import('#/modules/Transport');
+    const { ensureTrackStrips } = await import('#/modules/Transport/useCases');
     ensureTrackStrips();
 
-    const { waitForDevices } = await import('#/modules/AudioEngine');
+    const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
     await waitForDevices();
 
     projectStore.set({

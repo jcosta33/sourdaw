@@ -12,11 +12,11 @@ import {
     projectStore,
     saveProject,
 } from '#/modules/Project';
-import { registerBuiltinPlugins, registerBuiltinFaustDSP, registerProModulationEffects } from '#/modules/Plugin';
-import { registerProSynthInstruments } from '#/modules/Synth';
-import { hasCrdtProject } from '#/modules/CrdtDocument';
+import { registerBuiltinPlugins, registerBuiltinFaustDSP, registerProModulationEffects } from '#/modules/Plugin/useCases';
+import { registerProSynthInstruments } from '#/modules/Synth/useCases';
+import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
-import { restoreLibrary } from '#/modules/SampleLibrary';
+import { restoreLibrary } from '#/modules/SampleLibrary/useCases';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 

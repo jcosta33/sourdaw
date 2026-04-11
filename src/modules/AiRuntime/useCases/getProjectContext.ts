@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { workspaceStore } from '#/modules/Workspace';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 export type ProjectContextClip = {
     id: string;

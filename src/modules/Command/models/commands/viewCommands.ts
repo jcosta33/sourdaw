@@ -9,7 +9,7 @@ import {
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
-} from '#/modules/Workspace';
+} from '#/modules/Workspace/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 

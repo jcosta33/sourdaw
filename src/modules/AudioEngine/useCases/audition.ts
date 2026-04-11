@@ -5,7 +5,7 @@ import {
     startFaustNote,
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
-} from '#/modules/Synth';
+} from '#/modules/Synth/useCases';
 import { getTrackById, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 

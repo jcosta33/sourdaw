@@ -3,7 +3,7 @@ import { getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { markerStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { automationStore } from '#/modules/Automation';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import type { MidiNote, StretchMode } from '../../models/DemoProjectTypes';
 

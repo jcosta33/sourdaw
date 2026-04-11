@@ -5,7 +5,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
     execute: async (a) => {
-        const { generateAudio: genAudio, isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis');
+        const { generateAudio: genAudio, isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis/useCases');
 
         if (!isAudioGenerationAvailable()) {
             logger.warn('[Audio AI] Audio generation requires the Sourdaw desktop app');

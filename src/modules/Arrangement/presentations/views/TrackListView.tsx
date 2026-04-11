@@ -27,15 +27,15 @@ import { createFolder } from '../../useCases/folder';
 import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { removeTrack } from '../../useCases/removeTrack';
+import { preferencesStore } from '#/modules/Workspace/stores';
 import {
-    preferencesStore,
     defaultPreferences,
     type Preferences,
     setTrackHeight,
     setWorkspaceMode,
-} from '#/modules/Workspace';
+} from '#/modules/Workspace/useCases';
 import { timelineViewStore, setScrollY, type TimelineViewState } from '../../stores/timelineViewStore';
-import { injectPromptCommand } from '#/modules/AiRuntime';
+import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';

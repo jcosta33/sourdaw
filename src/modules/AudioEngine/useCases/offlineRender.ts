@@ -1,14 +1,14 @@
 import { inject } from '#/infra/di/inject';
 import { resolveClipsWithComping, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getAutomationLanes } from '#/modules/Automation';
-import { getMidiStoreState } from '#/modules/MIDI';
+import { getMidiStoreState } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,
     scheduleDrumKitNote,
     scheduleKitNote,
     scheduleNoteOffline,
-} from '#/modules/Synth';
+} from '#/modules/Synth/useCases';
 import { getTempoMapState, getTransportStoreValue, type TempoChange } from '#/modules/Transport/useCases';
 import { createExportError } from '../errors/ExportError';
 import { audioBufferCache } from '../stores/audioBufferCache';

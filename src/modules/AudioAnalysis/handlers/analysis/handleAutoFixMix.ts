@@ -1,10 +1,10 @@
 import { createHandler } from '#/helpers/createHandler';
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime';
+import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
 import { analyzeMix } from '../../useCases/analyzeMix';
 
 export const handleAutoFixMix = createHandler<'autoFixMix'>({
     execute: async () => {
-        const { executeAppAction } = await import('#/modules/Command');
+        const { executeAppAction } = await import('#/modules/Command/useCases');
         const state = getMixAnalysisStoreValue();
         if (!state) {
             return;

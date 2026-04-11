@@ -26,7 +26,7 @@ import {
     setNoteVelocity,
     stampChord,
     removeNotesByIds,
-} from '#/modules/MIDI';
+} from '#/modules/MIDI/useCases';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
 

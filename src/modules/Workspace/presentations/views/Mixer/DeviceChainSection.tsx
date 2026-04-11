@@ -10,7 +10,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { openInspector } from '../../../useCases/togglePanel/panelToggles';
 import { type Track } from '../../../models/TrackViewTypes';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
 import { MixerSection } from '../../components/Mixer/MixerSection';
 

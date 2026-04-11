@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { createAiGenerationError } from '../errors/AiGenerationError';
 import { createAlternativeClips, getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
-import { streamCloudChatCompletion } from '#/modules/AiRuntime';
-import { getNotesForClip } from '#/modules/MIDI';
+import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases';
+import { getNotesForClip } from '#/modules/MIDI/useCases';
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
 type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
 

@@ -1,11 +1,11 @@
 import { type DragEvent, useState } from 'react';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
 import { trackStore } from '../../stores/trackStore';
-import { libraryStore } from '#/modules/SampleLibrary';
+import { libraryStore } from '#/modules/SampleLibrary/stores';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
-import { getAssetTransfer } from '#/modules/Collaboration';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { addClip } from '../../useCases/clip/addClip';
 import { addDevice } from '../../useCases/device/addDevice';

@@ -9,7 +9,7 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { trackStore } from '../stores/trackStore';
 import { pushUndo } from '#/modules/Command/stores';
 import { createCallbackUndoEntry } from '#/modules/Command/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 
 export const importAudioFile = inject({ getTrackState, setTrackState })(
     ({ getTrackState, setTrackState }) =>

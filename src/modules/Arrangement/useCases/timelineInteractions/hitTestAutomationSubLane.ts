@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
-import { workspaceStore } from '#/modules/Workspace';
+import { workspaceStore } from '#/modules/Workspace/stores';
 import { automationStore } from '#/modules/Automation';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../../automationConstants';

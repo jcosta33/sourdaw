@@ -12,7 +12,7 @@
 import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
 
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { useStore } from '#/infra/store/useStore';
 

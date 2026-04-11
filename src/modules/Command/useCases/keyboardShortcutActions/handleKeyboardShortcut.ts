@@ -10,8 +10,8 @@ import {
 } from './trackShortcuts';
 import { setEditingTool, zoomToFit, zoomToSelection } from './workspaceShortcuts';
 
+import { workspaceStore } from '#/modules/Workspace/stores';
 import {
-    workspaceStore,
     cycleAutomationVisibility,
     toggleCommandPalette,
     selectAllClips,
@@ -19,7 +19,7 @@ import {
     toggleWorkspaceMode,
     type EditingTool,
     TOOL_SHORTCUTS,
-} from '#/modules/Workspace';
+} from '#/modules/Workspace/useCases';
 import { trackStore, zoomTimeline } from '#/modules/Arrangement/stores';
 import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../selectionHelpers';
 import { eventBus } from '#/app/registerDependencies';

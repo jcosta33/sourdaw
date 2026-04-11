@@ -1,10 +1,10 @@
 import { inject } from '#/infra/di/inject';
 import { trackStore } from '../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { addMidiNote } from '#/modules/MIDI';
+import { addMidiNote } from '#/modules/MIDI/useCases';
 import { addTrack } from './addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { summarizeFeatures } from '#/modules/AudioAnalysis';
+import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 
 export const detectKeyDependencies = {
     summarizeFeatures,

@@ -10,7 +10,7 @@ vi.mock('../../useCases/analyzeMix', () => ({
     analyzeMix: vi.fn(),
 }));
 
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime';
+import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
 import { analyzeMix } from '../../useCases/analyzeMix';
 
 describe('handleAnalyzeMix', () => {

@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime';
+import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
 import { analyzeMix } from '../../useCases/analyzeMix';
 
 export const handleAnalyzeMix = createHandler<'analyzeMix'>({

@@ -15,7 +15,7 @@ import {
     hasCrdtDoc,
     getCrdtDocIds,
     persistCrdtProject,
-} from '#/modules/CrdtDocument';
+} from '#/modules/CrdtDocument/useCases';
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
@@ -25,18 +25,6 @@ const DOC_BRANCHES = '__branches__';
 // Sync state is per-peer per-doc: each document requires its own Automerge SyncState.
 type PerDocSyncStateMap = Map<string, SyncState>;
 type SyncStateMap = Map<PeerId, PerDocSyncStateMap>;
-
-export const automergeSyncDefaultDependencies = {
-    subscribeToCrdtChanges,
-    getCrdtDoc,
-    createCrdtDoc,
-    replaceCrdtDoc,
-    hasCrdtDoc,
-    getCrdtDocIds,
-    persistCrdtProject,
-} as const;
-
-export type AutomergeSyncDependencies = typeof automergeSyncDefaultDependencies;
 
 /**
  * Manages the Automerge sync protocol for all connected peers.
@@ -54,16 +42,14 @@ export class AutomergeSync {
     private syncStates: SyncStateMap = new Map();
     private peerManager: PeerConnectionManager;
     private unsubscribeFromChanges: (() => void) | null = null;
-    private readonly deps: AutomergeSyncDependencies;
 
-    constructor(peerManager: PeerConnectionManager, deps: AutomergeSyncDependencies = automergeSyncDefaultDependencies) {
+    constructor(peerManager: PeerConnectionManager) {
         this.peerManager = peerManager;
-        this.deps = deps;
     }
 
     /** Start syncing: subscribe to local document changes. */
     start(): void {
-        this.unsubscribeFromChanges = this.deps.subscribeToCrdtChanges(() => {
+        this.unsubscribeFromChanges = subscribeToCrdtChanges(() => {
             this.sendSyncToAllPeers();
         });
     }
@@ -98,12 +84,12 @@ export class AutomergeSync {
         docId: string;
         syncMessageBase64: string;
     }): void {
-        let doc = this.deps.getCrdtDoc(docId);
+        let doc = getCrdtDoc(docId);
         if (!doc) {
             // Unknown doc — peer is syncing a branch or metadata doc we don't have yet.
             // Initialize empty and let the sync message fill it in.
-            this.deps.createCrdtDoc(docId);
-            doc = this.deps.getCrdtDoc(docId)!;
+            createCrdtDoc(docId);
+            doc = getCrdtDoc(docId)!;
         }
 
         const peerStates = this.syncStates.get(peerId) ?? new Map<string, SyncState>();
@@ -124,10 +110,10 @@ export class AutomergeSync {
 
         // Update the document in the repository.
         // This triggers onChange → hydration + response sync messages.
-        this.deps.replaceCrdtDoc({ id: docId, doc: newDoc });
+        replaceCrdtDoc({ id: docId, doc: newDoc });
 
         // Persist asynchronously — don't block the sync loop.
-        this.deps.persistCrdtProject().catch((error) => {
+        persistCrdtProject().catch((error) => {
             console.error('[AutomergeSync] Failed to persist after receiving sync:', error);
         });
     }
@@ -145,12 +131,12 @@ export class AutomergeSync {
         this.sendDocSyncToPeer({ peerId, docId: DOC_PREFIX_ROOT });
 
         // Sync branch metadata doc if it exists (session-scoped)
-        if (this.deps.hasCrdtDoc(DOC_BRANCHES)) {
+        if (hasCrdtDoc(DOC_BRANCHES)) {
             this.sendDocSyncToPeer({ peerId, docId: DOC_BRANCHES });
         }
 
         // Sync branch content docs
-        for (const docId of this.deps.getCrdtDocIds()) {
+        for (const docId of getCrdtDocIds()) {
             if (docId.startsWith('branch_')) {
                 this.sendDocSyncToPeer({ peerId, docId });
             }
@@ -159,7 +145,7 @@ export class AutomergeSync {
 
     /** Generate and send a sync message for one document to one peer. */
     private sendDocSyncToPeer({ peerId, docId }: { peerId: PeerId; docId: string }): void {
-        const doc = this.deps.getCrdtDoc(docId);
+        const doc = getCrdtDoc(docId);
         if (!doc) {
             return;
         }

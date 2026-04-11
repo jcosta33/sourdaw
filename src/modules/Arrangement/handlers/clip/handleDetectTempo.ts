@@ -1,6 +1,6 @@
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { createHandler } from '#/helpers/createHandler';
-import { detectTempo as detectTempoFromBuffer } from '#/modules/AudioAnalysis';
+import { detectTempo as detectTempoFromBuffer } from '#/modules/AudioAnalysis/useCases';
 import { detectProjectTempo } from '#/modules/Transport/useCases';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 

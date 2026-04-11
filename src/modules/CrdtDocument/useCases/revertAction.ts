@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { executeAppAction } from '#/modules/Command/useCases';
 
 import { type ActionHistoryEntry, actionHistoryStore, markEntryReverted } from '../stores/actionHistoryStore';
@@ -12,36 +11,33 @@ import { type ActionHistoryEntry, actionHistoryStore, markEntryReverted } from '
  *
  * Returns true if the revert was applied, false if it can't be safely reverted.
  */
-export const revertAction = inject({ executeAppAction, actionHistoryStore, markEntryReverted })(
-    ({ executeAppAction, actionHistoryStore, markEntryReverted }) =>
-        async function revertAction(entryId: string): Promise<boolean> {
-            const state = actionHistoryStore.value;
-            if (!state) {
-                return false;
-            }
+export async function revertAction(entryId: string): Promise<boolean> {
+    const state = actionHistoryStore.value;
+    if (!state) {
+        return false;
+    }
 
-            const entry = state.entries.find((e) => e.id === entryId);
-            if (!entry) {
-                return false;
-            }
+    const entry = state.entries.find((e) => e.id === entryId);
+    if (!entry) {
+        return false;
+    }
 
-            if (entry.reverted) {
-                return false;
-            }
+    if (entry.reverted) {
+        return false;
+    }
 
-            if (!entry.inverseAction) {
-                return false;
-            }
+    if (!entry.inverseAction) {
+        return false;
+    }
 
-            await executeAppAction(entry.inverseAction, {
-                source: entry.source,
-                groupLabel: `Reverted: ${entry.label}`,
-            });
+    await executeAppAction(entry.inverseAction, {
+        source: entry.source,
+        groupLabel: `Reverted: ${entry.label}`,
+    });
 
-            markEntryReverted(entryId);
-            return true;
-        }
-);
+    markEntryReverted(entryId);
+    return true;
+}
 
 /**
  * Check whether a history entry can be safely reverted.

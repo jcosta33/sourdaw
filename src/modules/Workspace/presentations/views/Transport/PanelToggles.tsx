@@ -22,7 +22,8 @@ import {
     toggleVirtualKeyboard,
 } from '../../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
-import { aiStore, toggleAiPanel } from '#/modules/AiGeneration';
+import { aiStore } from '#/modules/AiGeneration/stores';
+import { toggleAiPanel } from '#/modules/AiGeneration/useCases';
 import { linkStatusStore, defaultLinkStatus } from '#/modules/AudioEngine/stores';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases';
 import { openPreferencesDialog } from '../../../useCases/dialogs';

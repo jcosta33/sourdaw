@@ -1,25 +1,26 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { setSemanticContext, clearSemanticContext, pushActionHistoryEntry, getDsoSnapshotHandlers } from '#/modules/CrdtDocument';
+import { setSemanticContext, clearSemanticContext, getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
+import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores';
 import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
 import { pushUndo } from '../stores/undoStore';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace';
-import { getAutomationHandlers } from '#/modules/Automation';
-import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration';
-import { getAnalysisHandlers } from '#/modules/AudioAnalysis';
-import { getCollaborationHandlers } from '#/modules/Collaboration';
-import { getPluginHostHandlers } from '#/modules/Plugin';
-import { getAiOrganizationHandlers } from '#/modules/AiRuntime';
+import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace/useCases';
+import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration/useCases';
+import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
+import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
+import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
+import { getAiOrganizationHandlers } from '#/modules/AiRuntime/useCases';
 import {
     getChordTrackHandlers,
     getMidiRoutingHandlers,
     getPatternInstanceHandlers,
-} from '#/modules/MIDI';
+} from '#/modules/MIDI/useCases';
 import { getMacroHandlers } from './getMacroHandlers';
 import { getUndoTreeHandlers } from './getUndoTreeHandlers';
-import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project';
+import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project/useCases';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { recordAction } from './macro/recording';
 

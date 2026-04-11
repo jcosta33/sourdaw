@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { persistCrdtProject } from '#/modules/CrdtDocument';
+import { persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 
 import { projectStore } from '../../stores/projectStore';
 import { addToRecentProjects } from '../recentProjects';

@@ -2,9 +2,9 @@ import { type ReactElement, useState } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Sparkles, Loader2, Music } from 'lucide-react';
-import { generateMidiVariations } from '#/modules/AiGeneration';
+import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { notifyAiChange } from '#/modules/AiRuntime';
+import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 
 type ClipMidiAiSectionProps = {
     clipId: string;

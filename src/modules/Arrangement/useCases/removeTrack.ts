@@ -4,7 +4,7 @@ import { setTrackState } from '../repositories/track/setTrackState';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { eventBus } from '#/app/registerDependencies';
 import { automationStore } from '#/modules/Automation';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 
 export const removeTrack = inject({ eventBus, getTrackState, setTrackState, getTrackById })(

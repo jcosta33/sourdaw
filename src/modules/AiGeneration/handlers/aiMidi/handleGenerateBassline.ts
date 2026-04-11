@@ -1,8 +1,8 @@
 import { createHandler } from '#/helpers/createHandler';
 import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { generateToolCalls } from '#/modules/AiRuntime';
-import { addMidiNote, getNotesForClip } from '#/modules/MIDI';
+import { generateToolCalls } from '#/modules/AiRuntime/useCases';
+import { addMidiNote, getNotesForClip } from '#/modules/MIDI/useCases';
 import { llmGenerateNotes } from './llmNoteHelpers';
 
 export const handleGenerateBassline = createHandler<'generateBassline'>({

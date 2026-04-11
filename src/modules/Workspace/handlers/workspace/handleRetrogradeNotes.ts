@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { retrogradeNotes } from '#/modules/MIDI';
+import { retrogradeNotes } from '#/modules/MIDI/useCases';
 
 export const handleRetrogradeNotes = createHandler<'retrogradeNotes'>({
     execute: (a) => {

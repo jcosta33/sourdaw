@@ -1,4 +1,4 @@
-import { type DocumentBundle } from '#/modules/CrdtDocument';
+import { type DocumentBundle } from '#/modules/CrdtDocument/useCases';
 
 export type RuntimeTrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 

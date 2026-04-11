@@ -7,7 +7,7 @@ import { audioBufferToWav } from './audioBufferToWav';
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({
     execute: async (a) => {
-        const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis');
+        const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis/useCases');
 
         const stems = a.payload.stems ?? ['all'];
         logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);

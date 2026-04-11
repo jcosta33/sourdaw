@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { preferencesStore, gridSnapBeats } from '#/modules/Workspace';
+import { preferencesStore } from '#/modules/Workspace/stores';
+import { gridSnapBeats } from '#/modules/Workspace/useCases';
 
 function computeGridSnap(gridSnapBeatsFn: typeof gridSnapBeats): number {
     const prefs = preferencesStore.value;

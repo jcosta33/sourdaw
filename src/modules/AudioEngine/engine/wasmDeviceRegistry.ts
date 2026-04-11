@@ -25,12 +25,10 @@ import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } f
 import { updateBacteriaMeters } from '#/modules/Bacteria';
 import { updateGlutenMeters } from '#/modules/Gluten';
 import { updateGrinderMeters } from '#/modules/Grinder';
-import {
-    registerLevainDevice,
-    unregisterLevainDevice as _unregisterLevainDevice,
-    setEngineReady,
-} from '#/modules/Levain';
-import { registerProofDevice, syncFullPatch, updateProofMeters } from '#/modules/Proof';
+import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
+import { setEngineReady } from '#/modules/Levain/stores';
+import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
+import { updateProofMeters } from '#/modules/Proof/stores';
 import { updateTunerTelemetry } from '#/modules/Scoring';
 
 // ── Types ────────────────────────────────────────────────────────────────────

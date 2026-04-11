@@ -48,7 +48,7 @@ import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from './SidebarTypes';
 import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2, SoonBadge } from './effectsTabHelpers';
-import { MODULATOR_PRESETS, MIDI_EFFECT_FACTORIES } from '#/modules/Plugin';
+import { MODULATOR_PRESETS, MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
 
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
 

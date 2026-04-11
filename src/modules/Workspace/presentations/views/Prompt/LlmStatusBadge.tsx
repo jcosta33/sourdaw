@@ -9,7 +9,7 @@ import {
     CLOUD_MODEL_INFO,
     WEBLLM_MODELS,
     getActiveModelId,
-} from '#/modules/AiRuntime';
+} from '#/modules/AiRuntime/useCases';
 import { Button } from '#/components/ui/button';
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';

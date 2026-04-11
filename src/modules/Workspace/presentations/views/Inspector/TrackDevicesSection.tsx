@@ -14,11 +14,8 @@ import {
     reorderDevices,
 } from '#/modules/Arrangement/useCases';
 import { useStore } from '#/infra/store/useStore';
-import {
-    pluginScanStore,
-    defaultPluginScanState,
-    openPluginGui,
-} from '#/modules/Plugin';
+import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
+import { openPluginGui } from '#/modules/Plugin/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';

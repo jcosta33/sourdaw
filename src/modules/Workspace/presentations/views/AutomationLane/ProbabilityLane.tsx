@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { setNoteProbability } from '#/modules/MIDI';
+import { setNoteProbability } from '#/modules/MIDI/useCases';
 import { NotePropertyLane } from './NotePropertyLane';
 
 type ProbabilityLaneProps = {

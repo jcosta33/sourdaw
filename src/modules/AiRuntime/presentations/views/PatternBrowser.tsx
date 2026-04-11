@@ -26,9 +26,9 @@ import {
 } from '../../models/midiPatternLibrary';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI';
+import { addMidiNote } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { selectClip } from '#/modules/Workspace';
+import { selectClip } from '#/modules/Workspace/useCases';
 
 // ── Mini piano-roll preview ──
 

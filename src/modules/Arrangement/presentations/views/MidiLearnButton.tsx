@@ -3,15 +3,8 @@ import { useStore } from '#/infra/store/useStore';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
-import {
-    midiLearnStore,
-    type LearningTarget,
-    type MidiMappingTargetType,
-    type MidiLearnState,
-    startMidiLearn,
-    stopMidiLearn,
-    findMappingForTarget,
-} from '#/modules/MIDI';
+import { midiLearnStore, type LearningTarget, type MidiMappingTargetType, type MidiLearnState } from '#/modules/MIDI/stores';
+import { startMidiLearn, stopMidiLearn, findMappingForTarget } from '#/modules/MIDI/useCases';
 
 type MidiLearnButtonProps = {
     targetType: MidiMappingTargetType;

@@ -1,16 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { addClip, addTrack, getAllTracks } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { addMidiNote } from '#/modules/MIDI';
+import { addMidiNote } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-
-export const audioAnalysisAudioToMidiDependencies = {
-    getTransportState,
-    getAllTracks,
-    addTrack,
-    addClip,
-    addMidiNote,
-} as const;
 
 export type AudioToMidiOptions = {
     clipId: string;
@@ -166,75 +158,71 @@ function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targ
     });
 }
 
-export const audioToMidi = inject(audioAnalysisAudioToMidiDependencies)(
-    ({ getTransportState, getAllTracks, addTrack, addClip, addMidiNote }) =>
-        function audioToMidi(options: AudioToMidiOptions): void {
-            const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } =
-                options;
+export const audioToMidi = function audioToMidi(options: AudioToMidiOptions): void {
+    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
 
-            const clip = getAllTracks()
-                .flatMap((t) => t.clips)
-                .find((c) => c.id === clipId);
-            if (!clip) {
-                return;
-            }
+    const clip = getAllTracks()
+        .flatMap((t) => t.clips)
+        .find((c) => c.id === clipId);
+    if (!clip) {
+        return;
+    }
 
-            const bufferId = clip.audioBufferId ?? clipId;
-            const buffer = audioBufferCache.get(bufferId);
-            if (!buffer) {
-                return;
-            }
+    const bufferId = clip.audioBufferId ?? clipId;
+    const buffer = audioBufferCache.get(bufferId);
+    if (!buffer) {
+        return;
+    }
 
-            const tempo = getTransportState()?.tempo ?? 120;
-            const beatsPerSecond = tempo / 60;
-            const minIntervalSec = minInterval / beatsPerSecond;
+    const tempo = getTransportState()?.tempo ?? 120;
+    const beatsPerSecond = tempo / 60;
+    const minIntervalSec = minInterval / beatsPerSecond;
 
-            let onsets = detectOnsets(buffer, sensitivity, minIntervalSec);
+    let onsets = detectOnsets(buffer, sensitivity, minIntervalSec);
 
-            if (mode === 'pitched') {
-                onsets = detectPitchForOnsets(onsets, buffer, targetPitch);
-            }
+    if (mode === 'pitched') {
+        onsets = detectPitchForOnsets(onsets, buffer, targetPitch);
+    }
 
-            if (onsets.length === 0) {
-                return;
-            }
+    if (onsets.length === 0) {
+        return;
+    }
 
-            let midiTrackId = trackId;
-            const existingTrack = getAllTracks().find((t) => t.id === trackId);
-            if (!existingTrack || existingTrack.kind !== 'midi') {
-                const newTrack = addTrack({ name: `${clip.name} (MIDI)`, kind: 'midi' });
-                if (!newTrack) {
-                    return;
-                }
-                midiTrackId = newTrack.id;
-            }
-
-            const clipStartBeat = clip.startBeat;
-            const endBeat = clip.endBeat;
-
-            const midiClip = addClip({
-                trackId: midiTrackId,
-                startBeat: clipStartBeat,
-                endBeat: Math.ceil(endBeat),
-                name: `${clip.name} → MIDI`,
-                type: 'midi',
-            });
-
-            if (!midiClip) {
-                return;
-            }
-
-            const maxAmplitude = Math.max(...onsets.map((o) => o.amplitude), 1e-8);
-
-            for (let i = 0; i < onsets.length; i++) {
-                const onset = onsets[i]!;
-                const startBeat = onset.timeSec * beatsPerSecond;
-                const nextOnsetBeat = i < onsets.length - 1 ? onsets[i + 1]!.timeSec * beatsPerSecond : startBeat + 1;
-                const duration = Math.max(minInterval, (nextOnsetBeat - startBeat) * 0.9);
-                const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
-                const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;
-
-                addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
-            }
+    let midiTrackId = trackId;
+    const existingTrack = getAllTracks().find((t) => t.id === trackId);
+    if (!existingTrack || existingTrack.kind !== 'midi') {
+        const newTrack = addTrack({ name: `${clip.name} (MIDI)`, kind: 'midi' });
+        if (!newTrack) {
+            return;
         }
-);
+        midiTrackId = newTrack.id;
+    }
+
+    const clipStartBeat = clip.startBeat;
+    const endBeat = clip.endBeat;
+
+    const midiClip = addClip({
+        trackId: midiTrackId,
+        startBeat: clipStartBeat,
+        endBeat: Math.ceil(endBeat),
+        name: `${clip.name} → MIDI`,
+        type: 'midi',
+    });
+
+    if (!midiClip) {
+        return;
+    }
+
+    const maxAmplitude = Math.max(...onsets.map((o) => o.amplitude), 1e-8);
+
+    for (let i = 0; i < onsets.length; i++) {
+        const onset = onsets[i]!;
+        const startBeat = onset.timeSec * beatsPerSecond;
+        const nextOnsetBeat = i < onsets.length - 1 ? onsets[i + 1]!.timeSec * beatsPerSecond : startBeat + 1;
+        const duration = Math.max(minInterval, (nextOnsetBeat - startBeat) * 0.9);
+        const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
+        const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;
+
+        addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
+    }
+};

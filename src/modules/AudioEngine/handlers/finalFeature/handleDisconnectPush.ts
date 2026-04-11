@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { disconnectPush } from '#/modules/Plugin';
+import { disconnectPush } from '#/modules/Plugin/useCases';
 
 export const handleDisconnectPush = createHandler<'disconnectPush'>({
     execute: () => {

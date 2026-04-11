@@ -30,7 +30,7 @@ import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../s
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { pushUndo } from '#/modules/Command/stores';
 import { createUndoEntry, generateGroupId } from '#/modules/Command/useCases';
-import { saveSnapshot } from '#/modules/CrdtDocument';
+import { saveSnapshot } from '#/modules/CrdtDocument/useCases';
 
 export type DsoEditResult = {
     success: boolean;

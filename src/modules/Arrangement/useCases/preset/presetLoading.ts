@@ -13,7 +13,7 @@ import { setDeviceParameter } from '../device/setDeviceParameter';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
-import { compileFaustDSP } from '#/modules/Plugin';
+import { compileFaustDSP } from '#/modules/Plugin/useCases';
 
 let nextPresetDeviceId = 1;
 

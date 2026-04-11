@@ -3,7 +3,7 @@ import { removeTrack } from '../../useCases/removeTrack';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { automationStore } from '#/modules/Automation';
 import { createHandler } from '#/helpers/createHandler';
-import { midiStore } from '#/modules/MIDI';
+import { midiStore } from '#/modules/MIDI/stores';
 
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     execute: (action) => {

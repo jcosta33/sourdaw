@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { getSidechainRoutesForTrack, removeSidechainRoute } from '#/modules/Routing';
+import { getSidechainRoutesForTrack, removeSidechainRoute } from '#/modules/Routing/useCases';
 
 export const handleRemoveSidechainRoute = createHandler<'removeSidechainRoute'>({
     execute: (a) => {

@@ -1,5 +1,6 @@
 import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
-import { broadcastPresence, collaborationStore } from '#/modules/Collaboration';
+import { broadcastPresence } from '#/modules/Collaboration/useCases';
+import { collaborationStore } from '#/modules/Collaboration/stores';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { useTimelineGestures } from './useTimelineGestures';
 import { useTimelineFileDrop } from './useTimelineFileDrop';
@@ -11,19 +12,19 @@ import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClip
 import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
+import { workspaceStore } from '#/modules/Workspace/stores';
 import {
-    workspaceStore,
     toggleClipInSelection,
     selectClipWithFocus,
     clearClipSelection,
     setClipSelection,
     selectClip,
-} from '#/modules/Workspace';
+    setWorkspaceMode,
+} from '#/modules/Workspace/useCases';
 import { trackStore } from '../../stores/trackStore';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { setWorkspaceMode } from '#/modules/Workspace';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { addClip } from '../../useCases/clip/addClip';
 import { removeClip } from '../../useCases/clip/removeClip';

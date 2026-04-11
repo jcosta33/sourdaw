@@ -28,9 +28,9 @@ import {
     removeWarpMarker,
     moveWarpMarker,
 } from '#/modules/Arrangement/useCases';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { audioToMidi } from '#/modules/AudioAnalysis';
+import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
 // Structurally compatible with the value returned by `getWarpState`.

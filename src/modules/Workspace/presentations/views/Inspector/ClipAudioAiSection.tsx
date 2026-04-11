@@ -5,17 +5,17 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
 import { type Clip } from '../../../models/TrackViewTypes';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
 import {
     polyphonicAudioToMidi,
     insertPolyphonicMidiNotes,
     detectDominantPitch,
     summarizeFeatures,
     audioToMidi,
-} from '#/modules/AudioAnalysis';
+} from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { notifyAiChange } from '#/modules/AiRuntime';
+import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 
 type ClipAudioAiSectionProps = {
