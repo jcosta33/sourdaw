@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -22,26 +21,12 @@ const projectStores = [
     projectStore,
 ];
 
-/**
- * Hydrate all project stores from the current Automerge document state.
- *
- * Each store uses AutomergeStorage, which reads its key from the Automerge doc
- * and populates the in-memory cache. Subscribers are notified so the UI updates.
- *
- * Used after:
- * - Loading a project from IndexedDB/filesystem
- * - Receiving remote changes via sync (Phase 2)
- * - Merging an external .sdaw file
- */
-export const projectCrdtToStores = inject({ hydrateSidechainRoutes })(
-    ({ hydrateSidechainRoutes }) =>
-        function projectCrdtToStores(): void {
-            for (const store of projectStores) {
-                store.hydrate();
-            }
-            hydrateSidechainRoutes();
-        }
-);
+export function projectCrdtToStores(): void {
+    for (const store of projectStores) {
+        store.hydrate();
+    }
+    hydrateSidechainRoutes();
+}
 
 /**
  * Set up the projection bridge: subscribe to Automerge changes and hydrate stores.

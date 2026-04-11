@@ -1,9 +1,3 @@
-/**
- * Workspace Queries — use case layer exposing Workspace constants
- * and preferences to cross-module consumers.
- */
-
-import { inject } from '#/infra/di/inject';
 import { getWorkspaceState as repoGetWorkspaceState } from '../repositories/workspace';
 import {
     type WorkspaceState,
@@ -95,9 +89,6 @@ export const TOOL_SHORTCUTS: Record<string, EditingTool> = {
     t: 'stretch',
 };
 
-export const getWorkspaceState = inject({ repoGetWorkspaceState })(
-    ({ repoGetWorkspaceState }) =>
-        function getWorkspaceState(): WorkspaceState | null {
-            return repoGetWorkspaceState();
-        }
-);
+export function getWorkspaceState(): WorkspaceState | null {
+    return repoGetWorkspaceState();
+}

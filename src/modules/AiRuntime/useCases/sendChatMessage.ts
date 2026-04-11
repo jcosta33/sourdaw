@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { isAppError } from '#/infra/errors/isAppError';
 import { getLlmEngine } from '../repositories/webLlm/engineLifecycle';
@@ -92,294 +91,249 @@ The prompt bar at the bottom accepts natural language. Examples:
 - When referring to tracks, clips, or devices, use their names from the project context
 - If asked something unrelated to music production or this DAW, respond helpfully but start with: "You know there are better tools for this type of question, right?" then answer briefly anyway`;
 
-export const sendChatMessage = inject({
-    createAiRuntimeError,
-    isAppError,
-    getLlmEngine,
-    streamNativeCompletion,
-    isNativeEngineReady,
-    isCloudAvailable,
-    streamCloudChatCompletion,
-    resolveBackend,
-    chatStore,
-    appendChatMessage,
-    updateChatMessage,
-    setChatGenerating,
-    getProjectContext,
-    parsePromptToActions,
-    executeAppAction,
-    generateGroupId,
-    describeAction,
-    pushAiActionGroup,
-    notifyAiChange,
-    setActiveAborter,
-})(
-    ({
-        createAiRuntimeError,
-        isAppError,
-        getLlmEngine,
-        streamNativeCompletion,
-        isNativeEngineReady,
-        isCloudAvailable,
-        streamCloudChatCompletion,
-        resolveBackend,
-        chatStore,
-        appendChatMessage,
-        updateChatMessage,
-        setChatGenerating,
-        getProjectContext,
-        parsePromptToActions,
-        executeAppAction,
-        generateGroupId,
-        describeAction,
-        pushAiActionGroup,
-        notifyAiChange,
-        setActiveAborter,
-    }) =>
-        async function sendChatMessage(userText: string): Promise<void> {
-    const backend = resolveBackend();
+export async function sendChatMessage(userText: string): Promise<void> {
+const backend = resolveBackend();
 
-    // Verify the appropriate engine is available
-    if (backend === 'none') {
-        throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
-    }
-    if (backend === 'native' && !isNativeEngineReady()) {
-        throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
-    }
-    if (backend === 'webllm' && !getLlmEngine()) {
-        throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
-    }
-    if (backend === 'cloud' && !isCloudAvailable()) {
-        throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
-    }
+// Verify the appropriate engine is available
+if (backend === 'none') {
+throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
+}
+if (backend === 'native' && !isNativeEngineReady()) {
+throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
+}
+if (backend === 'webllm' && !getLlmEngine()) {
+throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
+}
+if (backend === 'cloud' && !isCloudAvailable()) {
+throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
+}
 
-    const state = chatStore.value;
-    if (!state || state.isGenerating) {
-        return;
-    }
+const state = chatStore.value;
+if (!state || state.isGenerating) {
+return;
+}
 
-    setChatGenerating(true);
+setChatGenerating(true);
 
-    // ── Prompt Command Mode ──────────────────────────────────────────────
-    if (state.chatMode === 'prompt') {
-        const aborter = new AbortController();
-        setActiveAborter(aborter);
+// ── Prompt Command Mode ──────────────────────────────────────────────
+if (state.chatMode === 'prompt') {
+const aborter = new AbortController();
+setActiveAborter(aborter);
 
-        try {
-            const context = getProjectContext();
-            const result = await parsePromptToActions(userText, context, aborter.signal);
+try {
+    const context = getProjectContext();
+    const result = await parsePromptToActions(userText, context, aborter.signal);
 
-            if (result.actions.length > 0) {
-                // Manually inject messages for Fast-Path execution
-                const userMsgId = `msg-${crypto.randomUUID()}`;
-                appendChatMessage({
-                    id: userMsgId,
-                    role: 'user',
-                    content: userText,
-                    timestamp: Date.now(),
-                    isDsoAction: true,
-                });
+    if (result.actions.length > 0) {
+        // Manually inject messages for Fast-Path execution
+        const userMsgId = `msg-${crypto.randomUUID()}`;
+        appendChatMessage({
+            id: userMsgId,
+            role: 'user',
+            content: userText,
+            timestamp: Date.now(),
+            isDsoAction: true,
+        });
 
-                const assistantMsgId = `msg-${crypto.randomUUID()}`;
-                appendChatMessage({
-                    id: assistantMsgId,
-                    role: 'assistant',
-                    content: 'Executing...',
-                    timestamp: Date.now(),
-                    isDsoAction: true,
-                });
-                const group = generateGroupId(userText);
-                const executedLabels: Array<{ action: RuntimeAction; label: string }> = [];
+        const assistantMsgId = `msg-${crypto.randomUUID()}`;
+        appendChatMessage({
+            id: assistantMsgId,
+            role: 'assistant',
+            content: 'Executing...',
+            timestamp: Date.now(),
+            isDsoAction: true,
+        });
+        const group = generateGroupId(userText);
+        const executedLabels: Array<{ action: RuntimeAction; label: string }> = [];
 
-                for (const action of result.actions) {
-                    await executeAppAction(action, { ...group, source: 'prompt' });
-                    executedLabels.push({ action, label: describeAction(action) });
-                }
-
-                const historyGroup: AiActionGroup = {
-                    id: group.groupId,
-                    prompt: userText,
-                    actions: executedLabels.map((l) => ({ kind: 'appAction', actionType: l.action.type, label: l.label })),
-                    groupId: group.groupId,
-                    timestamp: Date.now(),
-                    reverted: false,
-                };
-                pushAiActionGroup(historyGroup);
-
-                notifyAiChange(
-                    `Executed: ${userText}`,
-                    result.actions.map((a) => a.type)
-                );
-
-                updateChatMessage(assistantMsgId, {
-                    isStreaming: false,
-                    content: `Executed:\n\n${executedLabels.map((l) => `- **${l.action.type.replace(/_/g, ' ')}**: ${l.label}`).join('\n')}`,
-                });
-            } else if (result._jsonEditApplied) {
-                // executeDsoEdit already injected the user message and the assistant streaming message.
-                // We just need to trigger the toast notification.
-                const summary = result._jsonEditSummaries?.join('. ') ?? `Executed: ${userText}`;
-                notifyAiChange(summary, []);
-            } else if (!result._jsonEditAttempted) {
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'user',
-                    content: userText,
-                    timestamp: Date.now(),
-                    isDsoAction: true,
-                });
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'assistant',
-                    content: 'No actions were matched or executed for your command.',
-                    timestamp: Date.now(),
-                    error: 'No actions matched',
-                });
-            }
-        } catch (error) {
-            appendChatMessage({
-                id: `msg-${crypto.randomUUID()}`,
-                role: 'user',
-                content: userText,
-                timestamp: Date.now(),
-            });
-            appendChatMessage({
-                id: `msg-${crypto.randomUUID()}`,
-                role: 'assistant',
-                content: 'Failed to process prompt command.',
-                error: String(error),
-                timestamp: Date.now(),
-            });
-        } finally {
-            setActiveAborter(null);
-            setChatGenerating(false);
+        for (const action of result.actions) {
+            await executeAppAction(action, { ...group, source: 'prompt' });
+            executedLabels.push({ action, label: describeAction(action) });
         }
-        return;
-    }
 
-    // ── Regular Chat Mode ───────────────────────────────────────────────
-    const userMsgId = `msg-${crypto.randomUUID()}`;
+        const historyGroup: AiActionGroup = {
+            id: group.groupId,
+            prompt: userText,
+            actions: executedLabels.map((l) => ({ kind: 'appAction', actionType: l.action.type, label: l.label })),
+            groupId: group.groupId,
+            timestamp: Date.now(),
+            reverted: false,
+        };
+        pushAiActionGroup(historyGroup);
+
+        notifyAiChange(
+            `Executed: ${userText}`,
+            result.actions.map((a) => a.type)
+        );
+
+        updateChatMessage(assistantMsgId, {
+            isStreaming: false,
+            content: `Executed:\n\n${executedLabels.map((l) => `- **${l.action.type.replace(/_/g, ' ')}**: ${l.label}`).join('\n')}`,
+        });
+    } else if (result._jsonEditApplied) {
+        // executeDsoEdit already injected the user message and the assistant streaming message.
+        // We just need to trigger the toast notification.
+        const summary = result._jsonEditSummaries?.join('. ') ?? `Executed: ${userText}`;
+        notifyAiChange(summary, []);
+    } else if (!result._jsonEditAttempted) {
+        appendChatMessage({
+            id: `msg-${crypto.randomUUID()}`,
+            role: 'user',
+            content: userText,
+            timestamp: Date.now(),
+            isDsoAction: true,
+        });
+        appendChatMessage({
+            id: `msg-${crypto.randomUUID()}`,
+            role: 'assistant',
+            content: 'No actions were matched or executed for your command.',
+            timestamp: Date.now(),
+            error: 'No actions matched',
+        });
+    }
+} catch (error) {
     appendChatMessage({
-        id: userMsgId,
+        id: `msg-${crypto.randomUUID()}`,
         role: 'user',
         content: userText,
         timestamp: Date.now(),
     });
-
-    const assistantMsgId = `msg-${crypto.randomUUID()}`;
-    const initialAssistantMessage: ChatMessage = {
-        id: assistantMsgId,
+    appendChatMessage({
+        id: `msg-${crypto.randomUUID()}`,
         role: 'assistant',
-        content: '',
+        content: 'Failed to process prompt command.',
+        error: String(error),
         timestamp: Date.now(),
-        isStreaming: true,
-    };
-    appendChatMessage(initialAssistantMessage);
+    });
+} finally {
+    setActiveAborter(null);
+    setChatGenerating(false);
+}
+return;
+}
 
-    const aborter = new AbortController();
-    setActiveAborter(aborter);
-    let fullContent = '';
+// ── Regular Chat Mode ───────────────────────────────────────────────
+const userMsgId = `msg-${crypto.randomUUID()}`;
+appendChatMessage({
+id: userMsgId,
+role: 'user',
+content: userText,
+timestamp: Date.now(),
+});
 
-    try {
-        const workspaceContext = getProjectContext();
+const assistantMsgId = `msg-${crypto.randomUUID()}`;
+const initialAssistantMessage: ChatMessage = {
+id: assistantMsgId,
+role: 'assistant',
+content: '',
+timestamp: Date.now(),
+isStreaming: true,
+};
+appendChatMessage(initialAssistantMessage);
 
-        const systemPrompt = `${CHAT_SYSTEM_PROMPT}\n\nCURRENT DAW CONTEXT:\n${JSON.stringify(workspaceContext)}`;
+const aborter = new AbortController();
+setActiveAborter(aborter);
+let fullContent = '';
 
-        // Keep only the last 24 messages (12 user+assistant pairs) to avoid
-        // blowing the context window on long conversations.
-        const conversationHistory = chatStore
-            .value!.messages.filter((m) => m.id !== assistantMsgId && !m.error)
-            .slice(-24)
-            .map((m) => ({
-                role: m.role,
-                content: m.content,
-            }));
+try {
+const workspaceContext = getProjectContext();
 
-        const completionMessages = [{ role: 'system' as const, content: systemPrompt }, ...conversationHistory].filter(
-            (m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant'
-        ) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+const systemPrompt = `${CHAT_SYSTEM_PROMPT}\n\nCURRENT DAW CONTEXT:\n${JSON.stringify(workspaceContext)}`;
 
-        if (backend === 'native') {
-            // Native: streaming completion via Tauri Channel API
-            await streamNativeCompletion(
-                completionMessages,
-                (token) => {
-                    if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
-                    fullContent += token;
-                    const parsed = extractThinkBlock(fullContent);
-                    updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                },
-                { temperature: 0.7, maxTokens: 2048 }
-            );
-        } else if (backend === 'cloud') {
-            // Cloud: streaming completion via Claude API
-            await streamCloudChatCompletion(
-                completionMessages,
-                (token) => {
-                    if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
-                    fullContent += token;
-                    const parsed = extractThinkBlock(fullContent);
-                    updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                },
-                { temperature: 0.7, maxTokens: 2048 }
-            );
-        } else {
-            // WebLLM: streaming completion via the in-browser engine.
-            // Yield to the render loop before starting inference — the first
-            // forward pass triggers WebGPU shader compilation which locks the
-            // GPU (shared with the compositor). Without this yield, the browser
-            // can't paint the "Thinking..." state before the GPU gets busy.
-            await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+// Keep only the last 24 messages (12 user+assistant pairs) to avoid
+// blowing the context window on long conversations.
+const conversationHistory = chatStore
+    .value!.messages.filter((m) => m.id !== assistantMsgId && !m.error)
+    .slice(-24)
+    .map((m) => ({
+        role: m.role,
+        content: m.content,
+    }));
 
-            const engine = getLlmEngine()!;
-            const asyncChunkGenerator = (await engine.chat.completions.create({
-                messages: completionMessages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-                extra_body: { enable_thinking: state.enableReasoning },
-            })) as AsyncIterable<any>;
+const completionMessages = [{ role: 'system' as const, content: systemPrompt }, ...conversationHistory].filter(
+    (m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant'
+) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 
-            for await (const chunk of asyncChunkGenerator) {
-                if (aborter.signal.aborted) {
-                    break;
-                }
-                const deltaDesc = chunk.choices[0]?.delta.content;
-                if (deltaDesc !== undefined) {
-                    fullContent += deltaDesc;
-                    const parsed = extractThinkBlock(fullContent);
-                    updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                }
-            }
-        }
-
-        // Strip <think>…</think> reasoning block before storing the final message.
-        const { reasoning, content: cleanContent } = extractThinkBlock(fullContent);
-        updateChatMessage(assistantMsgId, { isStreaming: false, content: cleanContent, reasoning });
-    } catch (error) {
-        const errorMessage = isAppError(error)
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'An unknown error occurred during generation.';
-        if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {
-            // Clean abort, leave generated partial content intact and strip parsing blocks
+if (backend === 'native') {
+    // Native: streaming completion via Tauri Channel API
+    await streamNativeCompletion(
+        completionMessages,
+        (token) => {
+            if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
+            fullContent += token;
             const parsed = extractThinkBlock(fullContent);
-            updateChatMessage(assistantMsgId, {
-                isStreaming: false,
-                content: parsed.content,
-                reasoning: parsed.reasoning,
-            });
-        } else {
-            updateChatMessage(assistantMsgId, {
-                isStreaming: false,
-                error: errorMessage,
-                content: 'Sorry, I encountered an error while thinking about that.',
-            });
+            updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
+        },
+        { temperature: 0.7, maxTokens: 2048 }
+    );
+} else if (backend === 'cloud') {
+    // Cloud: streaming completion via Claude API
+    await streamCloudChatCompletion(
+        completionMessages,
+        (token) => {
+            if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
+            fullContent += token;
+            const parsed = extractThinkBlock(fullContent);
+            updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
+        },
+        { temperature: 0.7, maxTokens: 2048 }
+    );
+} else {
+    // WebLLM: streaming completion via the in-browser engine.
+    // Yield to the render loop before starting inference — the first
+    // forward pass triggers WebGPU shader compilation which locks the
+    // GPU (shared with the compositor). Without this yield, the browser
+    // can't paint the "Thinking..." state before the GPU gets busy.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+    const engine = getLlmEngine()!;
+    const asyncChunkGenerator = (await engine.chat.completions.create({
+        messages: completionMessages,
+        temperature: 0.7,
+        max_tokens: 2048,
+        stream: true,
+        extra_body: { enable_thinking: state.enableReasoning },
+    })) as AsyncIterable<any>;
+
+    for await (const chunk of asyncChunkGenerator) {
+        if (aborter.signal.aborted) {
+            break;
         }
-    } finally {
-        setActiveAborter(null);
-        setChatGenerating(false);
+        const deltaDesc = chunk.choices[0]?.delta.content;
+        if (deltaDesc !== undefined) {
+            fullContent += deltaDesc;
+            const parsed = extractThinkBlock(fullContent);
+            updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
+        }
     }
-        }
-);
+}
+
+// Strip <think>…</think> reasoning block before storing the final message.
+const { reasoning, content: cleanContent } = extractThinkBlock(fullContent);
+updateChatMessage(assistantMsgId, { isStreaming: false, content: cleanContent, reasoning });
+} catch (error) {
+const errorMessage = isAppError(error)
+    ? error.message
+    : error instanceof Error
+      ? error.message
+      : 'An unknown error occurred during generation.';
+if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {
+    // Clean abort, leave generated partial content intact and strip parsing blocks
+    const parsed = extractThinkBlock(fullContent);
+    updateChatMessage(assistantMsgId, {
+        isStreaming: false,
+        content: parsed.content,
+        reasoning: parsed.reasoning,
+    });
+} else {
+    updateChatMessage(assistantMsgId, {
+        isStreaming: false,
+        error: errorMessage,
+        content: 'Sorry, I encountered an error while thinking about that.',
+    });
+}
+} finally {
+setActiveAborter(null);
+setChatGenerating(false);
+}
+}

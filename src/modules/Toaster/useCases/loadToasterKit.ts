@@ -1,8 +1,3 @@
-/**
- * Load a Toaster kit — updates the store AND forwards all params to the WASM engine.
- */
-
-import { inject } from '#/infra/di/inject';
 import { type ToasterKit, type DrumEngineType } from '../models/ToasterKit';
 import { loadKit } from '../stores/toasterStore';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
@@ -41,26 +36,24 @@ export const getToasterControlsDependencies = {
     getTrackStrip,
 } as const;
 
-export const getToasterControls = inject(getToasterControlsDependencies)(({ getAllTracks, getTrackStrip }) =>
-    function getToasterControls(): {
-        setPadParam: (pad: number, name: string, value: number) => void;
-        setParam: (name: string, value: number) => void;
-    } | null {
-        const tracks = getAllTracks();
-        const toasterTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
-        if (!toasterTrack) {
-            return null;
-        }
-
-        const strip = getTrackStrip(toasterTrack.id);
-        if (!strip) {
-            return null;
-        }
-
-        const dn = strip.deviceNodes.find((d) => d.toasterControls?.ready);
-        return dn?.toasterControls ?? null;
+export function getToasterControls(): {
+    setPadParam: (pad: number, name: string, value: number) => void;
+    setParam: (name: string, value: number) => void;
+} | null {
+    const tracks = getAllTracks();
+    const toasterTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
+    if (!toasterTrack) {
+        return null;
     }
-);
+
+    const strip = getTrackStrip(toasterTrack.id);
+    if (!strip) {
+        return null;
+    }
+
+    const dn = strip.deviceNodes.find((d) => d.toasterControls?.ready);
+    return dn?.toasterControls ?? null;
+}
 
 export function loadToasterKitPreset(kit: ToasterKit): void {
     // Update the UI store first

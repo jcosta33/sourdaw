@@ -5,7 +5,6 @@
  */
 
 import type { DragEvent } from 'react';
-import { inject } from '#/infra/di/inject';
 import { isTauri } from '#/helpers/tauriBridge';
 import type { SampleCategory, SamplerMode } from '../models/SamplerTypes';
 import { loadSampleFromPath } from './loadSample';
@@ -39,42 +38,39 @@ export const handleSamplerFileDropDependencies = {
     samplerStore,
 } as const;
 
-export const handleSamplerFileDrop = inject(handleSamplerFileDropDependencies)(
-    ({ isTauri: isTauriFn, loadSampleFromPath: loadSampleFromPathFn, switchSamplerMode: switchSamplerModeFn, samplerStore: samplerStoreDep }) =>
-        async function handleSamplerFileDrop(event: DragEvent): Promise<void> {
-            event.preventDefault();
-            event.stopPropagation();
+export async function handleSamplerFileDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
 
-            const files = event.dataTransfer.files;
-            if (files.length === 0) {
-                return;
-            }
+    const files = event.dataTransfer.files;
+    if (files.length === 0) {
+        return;
+    }
 
-            const file = files[0];
-            if (!file || !isAudioFile(file.name)) {
-                return;
-            }
+    const file = files[0];
+    if (!file || !isAudioFile(file.name)) {
+        return;
+    }
 
-            if (isTauriFn()) {
-                let filePath: string | null = null;
+    if (isTauri()) {
+        let filePath: string | null = null;
 
-                if ('path' in file) {
-                    filePath = (file as File & { path: string }).path;
-                }
+        if ('path' in file) {
+            filePath = (file as File & { path: string }).path;
+        }
 
-                if (!filePath) {
-                    filePath = file.webkitRelativePath || file.name;
-                }
+        if (!filePath) {
+            filePath = file.webkitRelativePath || file.name;
+        }
 
-                if (filePath) {
-                    await loadSampleFromPathFn(filePath);
+        if (filePath) {
+            await loadSampleFromPath(filePath);
 
-                    const state = samplerStoreDep.value;
-                    if (state?.activeSample) {
-                        const suggestedMode = categoryToMode(state.activeSample.category);
-                        await switchSamplerModeFn(suggestedMode);
-                    }
-                }
+            const state = samplerStore.value;
+            if (state?.activeSample) {
+                const suggestedMode = categoryToMode(state.activeSample.category);
+                await switchSamplerMode(suggestedMode);
             }
         }
-);
+    }
+}

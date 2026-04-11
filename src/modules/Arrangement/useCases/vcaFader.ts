@@ -1,17 +1,3 @@
-/**
- * VCA Fader use cases.
- * VCA (Voltage-Controlled Amplifier) groups allow a single fader to
- * control the gain of multiple tracks without summing their audio.
- *
- * Unlike bus/folder summing, VCA tracks:
- * - Don't route audio through themselves
- * - Scale the gain of assigned tracks multiplicatively
- * - Preserve each track's sends, aux levels, and fader post values
- *
- * The Track model already has `vcaGroupId: string | null`.
- */
-
-import { inject } from '#/infra/di/inject';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 
@@ -37,41 +23,29 @@ export function createVCAGroup(name: string): VCAGroup {
     return group;
 }
 
-/**
- * Assign a track to a VCA group.
- */
-export const assignTrackToVCA = inject({ getTrackState, setTrackState })(
-    ({ getTrackState, setTrackState }) =>
-        function assignTrackToVCA(trackId: string, vcaGroupId: string): void {
-            const state = getTrackState();
-            if (!state) {
-                return;
-            }
+export function assignTrackToVCA(trackId: string, vcaGroupId: string): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
 
-            setTrackState({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId } : t)),
-            });
-        }
-);
+    setTrackState({
+        ...state,
+        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId } : t)),
+    });
+}
 
-/**
- * Remove a track from its VCA group.
- */
-export const removeTrackFromVCA = inject({ getTrackState, setTrackState })(
-    ({ getTrackState, setTrackState }) =>
-        function removeTrackFromVCA(trackId: string): void {
-            const state = getTrackState();
-            if (!state) {
-                return;
-            }
+export function removeTrackFromVCA(trackId: string): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
 
-            setTrackState({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId: null } : t)),
-            });
-        }
-);
+    setTrackState({
+        ...state,
+        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId: null } : t)),
+    });
+}
 
 /**
  * Get all VCA groups.

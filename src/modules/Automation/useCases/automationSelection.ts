@@ -1,6 +1,9 @@
-import { inject } from '#/infra/di/inject';
 import { automationStore } from '../stores/automationStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+
+export const deleteSelectedPointsDependencies = {
+    pushUndoEntry,
+} as const;
 
 /**
  * Find all points within a rectangular region (beat range + value range).
@@ -96,9 +99,6 @@ export function transformSelectedPoints(
     });
 }
 
-/**
- * Delete selected points with undo support.
- */
 export function deleteSelectedPoints(laneId: string, selectedBeats: number[]): void {
     const state = automationStore.value;
     if (!state) {

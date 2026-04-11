@@ -11,10 +11,10 @@ import {
     subscribeToCrdtChanges,
     getCrdtDoc,
     createCrdtDoc,
-    hasCrdtDoc,
     removeCrdtDoc,
     mutateCrdtDoc,
     persistCrdtProject,
+    hasCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 import { branchStore } from '#/modules/CrdtDocument/stores';
 import { collaborationStore } from '../../stores/collaborationStore';
@@ -112,7 +112,7 @@ const startBranchSync = (isHost: boolean): void => {
         if (isProjectingBranches || !state) {
             return;
         }
-        if (!deps.hasCrdtDoc(DOC_BRANCHES)) {
+        if (!hasCrdtDoc(DOC_BRANCHES)) {
             return;
         }
         mutateCrdtDoc({
@@ -211,7 +211,7 @@ const getLocalPeerInfo = (): CollaborationPeer => {
  */
 export function createSession(name: string): string {
     // Clean up any existing session first
-    cleanupSubsystems(deps);
+    cleanupSubsystems();
 
     const peerId = generatePeerId();
     const sessionId = generateSessionId();
@@ -229,7 +229,7 @@ export function createSession(name: string): string {
 
     assetTransfer = new AssetTransfer(peerManager, {
         onAssetAvailable: (hash) => {
-            void resolveAssetForClips(deps, hash);
+            void resolveAssetForClips(hash);
         },
         onProgress: (_hash, _received, _total) => {
             // Could update a UI progress indicator.
@@ -238,7 +238,7 @@ export function createSession(name: string): string {
 
     permissionManager = new PermissionManager(peerManager);
     startPlayheadBroadcast();
-    startBranchSync(deps, true);
+    startBranchSync(true);
 
     collaborationStore.set({
         isEnabled: true,
@@ -293,7 +293,7 @@ export const generateInvite = async (): Promise<string> => {
  * Returns an answer string to send back to the host.
  */
 export async function joinSession(inviteString: string, name: string): Promise<string> {
-    cleanupSubsystems(deps);
+    cleanupSubsystems();
 
     if (!inviteString.trim()) {
         throw createCollaborationError('Invite string is empty');
@@ -326,15 +326,13 @@ export async function joinSession(inviteString: string, name: string): Promise<s
     cleanupProjectionBridge = setupProjectionBridge();
 
     assetTransfer = new AssetTransfer(peerManager, {
-        onAssetAvailable: (hash) => {
-            void resolveAssetForClips(deps, hash);
-        },
+        onAssetAvailable: resolveAssetForClips,
         onProgress: (_hash, _received, _total) => {},
     });
 
     permissionManager = new PermissionManager(peerManager);
     startPlayheadBroadcast();
-    startBranchSync(deps, false);
+    startBranchSync(false);
 
     const peer = peerManager.createPeer(invite.peerId);
     const answerSdp = await peer.acceptOffer(invite.sdp);
@@ -449,7 +447,7 @@ const cleanupSubsystems = (): void => {
  * and decode the blob into the audioBufferCache under their audioBufferId.
  * This lets the scheduler play the clip on the next playback start.
  */
-async function resolveAssetForClips(deps: SessionManagementDeps, hash: string): Promise<void> {
+async function resolveAssetForClips(hash: string): Promise<void> {
     const blob = assetTransfer?.getAsset(hash);
     if (!blob) {
         return;

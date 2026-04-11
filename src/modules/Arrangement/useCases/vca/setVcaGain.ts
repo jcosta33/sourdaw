@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { getVcaGroupsState, setVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
 
 export const setVcaGainDependencies = {
@@ -6,13 +5,10 @@ export const setVcaGainDependencies = {
     setVcaGroupsState,
 };
 
-export const setVcaGain = inject(setVcaGainDependencies)(
-    ({ getVcaGroupsState: getGroups, setVcaGroupsState: setGroups }) =>
-        function setVcaGain(vcaGroupId: string, gain: number): void {
-            setGroups(
-                getGroups().map((g) =>
-                    g.id === vcaGroupId ? { ...g, gain: Math.max(0, Math.min(2, gain)) } : g
-                )
-            );
-        }
-);
+export function setVcaGain(vcaGroupId: string, gain: number): void {
+    setVcaGroupsState(
+        getVcaGroupsState().map((g) =>
+            g.id === vcaGroupId ? { ...g, gain: Math.max(0, Math.min(2, gain)) } : g
+        )
+    );
+}

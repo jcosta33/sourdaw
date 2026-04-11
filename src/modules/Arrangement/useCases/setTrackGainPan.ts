@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { updateTrack } from '../repositories/track/updateTrack';
 import { getTransportState } from '#/modules/Transport/useCases';
@@ -68,67 +67,36 @@ function maybeRecordAutomation(
     deps.recordAutomationValue(trackId, parameterId, value, transport.playheadPosition);
 }
 
-export const setTrackGain = inject({
-    getTrackById,
-    updateTrack,
-    engineSetTrackGain,
-    getTransportState,
-    recordAutomationValue,
-    updateDeviceParam,
-    getAllTracks,
-})(
-    ({ getTrackById, updateTrack, engineSetTrackGain, getTransportState, recordAutomationValue, updateDeviceParam, getAllTracks }) =>
-        function setTrackGain(trackId: string, gain: number): void {
-            const clamped = Math.max(0, Math.min(1, gain));
-            updateTrack(trackId, (t) => ({ ...t, gain: clamped }));
-            engineSetTrackGain(trackId, clamped);
-            syncToasterPadParam(trackId, 'volume', clamped, { updateDeviceParam, getAllTracks });
-            maybeRecordAutomation({ getTransportState, getTrackById, recordAutomationValue }, trackId, 'gain', clamped);
-        }
-);
+export function setTrackGain(trackId: string, gain: number): void {
+    const clamped = Math.max(0, Math.min(1, gain));
+    updateTrack(trackId, (t) => ({ ...t, gain: clamped }));
+    engineSetTrackGain(trackId, clamped);
+    syncToasterPadParam(trackId, 'volume', clamped, { updateDeviceParam, getAllTracks });
+    maybeRecordAutomation({ getTransportState, getTrackById, recordAutomationValue }, trackId, 'gain', clamped);
+}
 
-export const setTrackPan = inject({
-    getTrackById,
-    updateTrack,
-    engineSetTrackPan,
-    getTransportState,
-    recordAutomationValue,
-    updateDeviceParam,
-    getAllTracks,
-})(
-    ({ getTrackById, updateTrack, engineSetTrackPan, getTransportState, recordAutomationValue, updateDeviceParam, getAllTracks }) =>
-        function setTrackPan(trackId: string, pan: number): void {
-            const clamped = Math.max(-50, Math.min(50, pan));
-            updateTrack(trackId, (t) => ({ ...t, pan: clamped }));
-            engineSetTrackPan(trackId, clamped);
-            syncToasterPadParam(trackId, 'pan', clamped / 50, { updateDeviceParam, getAllTracks });
-            maybeRecordAutomation({ getTransportState, getTrackById, recordAutomationValue }, trackId, 'pan', clamped);
-        }
-);
+export function setTrackPan(trackId: string, pan: number): void {
+    const clamped = Math.max(-50, Math.min(50, pan));
+    updateTrack(trackId, (t) => ({ ...t, pan: clamped }));
+    engineSetTrackPan(trackId, clamped);
+    syncToasterPadParam(trackId, 'pan', clamped / 50, { updateDeviceParam, getAllTracks });
+    maybeRecordAutomation({ getTransportState, getTrackById, recordAutomationValue }, trackId, 'pan', clamped);
+}
 
-export const setTrackColor = inject({ updateTrack })(
-    ({ updateTrack }) =>
-        function setTrackColor(trackId: string, color: string): void {
-            updateTrack(trackId, (t) => ({ ...t, color }));
-        }
-);
+export function setTrackColor(trackId: string, color: string): void {
+    updateTrack(trackId, (t) => ({ ...t, color }));
+}
 
-export const setTrackNotes = inject({ updateTrack })(
-    ({ updateTrack }) =>
-        function setTrackNotes(trackId: string, notes: string): void {
-            updateTrack(trackId, (t) => ({ ...t, notes }));
-        }
-);
+export function setTrackNotes(trackId: string, notes: string): void {
+    updateTrack(trackId, (t) => ({ ...t, notes }));
+}
 
-export const setInputMonitoring = inject({ updateTrack, startInputMonitoring, stopInputMonitoring })(
-    ({ updateTrack, startInputMonitoring, stopInputMonitoring }) =>
-        function setInputMonitoring(trackId: string, mode: InputMonitoring): void {
-            updateTrack(trackId, (t) => ({ ...t, inputMonitoring: mode }));
+export function setInputMonitoring(trackId: string, mode: InputMonitoring): void {
+    updateTrack(trackId, (t) => ({ ...t, inputMonitoring: mode }));
 
-            if (mode === 'on') {
-                startInputMonitoring(trackId);
-            } else {
-                stopInputMonitoring();
-            }
-        }
-);
+    if (mode === 'on') {
+        startInputMonitoring(trackId);
+    } else {
+        stopInputMonitoring();
+    }
+}

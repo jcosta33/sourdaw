@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { downloadBlob } from '../repositories/downloadFile';
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
 
@@ -84,26 +83,23 @@ type DownloadMidiFileInput = {
     ccs: MidiCC[];
 };
 
-export const downloadMidiFile = inject({ downloadBlob })(
-    ({ downloadBlob }) =>
-        function downloadMidiFile({ clipName, clipStartBeat, notes, ccs }: DownloadMidiFileInput): void {
-            if (notes.length === 0 && ccs.length === 0) {
-                return;
-            }
+export function downloadMidiFile({ clipName, clipStartBeat, notes, ccs }: DownloadMidiFileInput): void {
+    if (notes.length === 0 && ccs.length === 0) {
+        return;
+    }
 
-            const trackData = buildTrackEvents(notes, ccs, clipStartBeat, clipName);
-            const headerChunk = [
-                ...writeString('MThd'),
-                ...write32(6),
-                ...write16(0),
-                ...write16(1),
-                ...write16(TICKS_PER_BEAT),
-            ];
+    const trackData = buildTrackEvents(notes, ccs, clipStartBeat, clipName);
+    const headerChunk = [
+        ...writeString('MThd'),
+        ...write32(6),
+        ...write16(0),
+        ...write16(1),
+        ...write16(TICKS_PER_BEAT),
+    ];
 
-            const trackChunk = [...writeString('MTrk'), ...write32(trackData.length), ...trackData];
+    const trackChunk = [...writeString('MTrk'), ...write32(trackData.length), ...trackData];
 
-            const bytes = new Uint8Array([...headerChunk, ...trackChunk]);
-            const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
-            downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
-        }
-);
+    const bytes = new Uint8Array([...headerChunk, ...trackChunk]);
+    const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
+    downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
+}

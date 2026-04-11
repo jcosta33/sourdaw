@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';

@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { addClip, addTrack, getAllTracks } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { addMidiNote } from '#/modules/MIDI/useCases';
@@ -158,8 +157,9 @@ function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targ
     });
 }
 
-export const audioToMidi = function audioToMidi(options: AudioToMidiOptions): void {
-    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
+export function audioToMidi(options: AudioToMidiOptions): void {
+    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } =
+        options;
 
     const clip = getAllTracks()
         .flatMap((t) => t.clips)
@@ -225,4 +225,4 @@ export const audioToMidi = function audioToMidi(options: AudioToMidiOptions): vo
 
         addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
     }
-};
+}

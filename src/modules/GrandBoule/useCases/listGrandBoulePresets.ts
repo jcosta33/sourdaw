@@ -1,12 +1,3 @@
-/**
- * Public read use case exposing the built-in Grand Boule preset list.
- *
- * Returns a dedicated summary shape so the module's `GrandBoulePreset`
- * model does not leak across bounded-context boundaries. Consumers that
- * only need to display a list of presets get exactly those fields.
- */
-
-import { inject } from '#/infra/di/inject';
 import { listBuiltinGrandBoulePresets } from '../repositories/grandBoulePresetCatalog';
 
 export type ListGrandBoulePresetsOutput = ReadonlyArray<{
@@ -15,13 +6,10 @@ export type ListGrandBoulePresetsOutput = ReadonlyArray<{
     description: string;
 }>;
 
-export const listGrandBoulePresets = inject({ listBuiltinGrandBoulePresets })(
-    ({ listBuiltinGrandBoulePresets }) =>
-        function listGrandBoulePresets(): ListGrandBoulePresetsOutput {
-            return listBuiltinGrandBoulePresets().map((preset) => ({
-                id: preset.id,
-                name: preset.name,
-                description: preset.description,
-            }));
-        }
-);
+export function listGrandBoulePresets(): ListGrandBoulePresetsOutput {
+    return listBuiltinGrandBoulePresets().map((preset) => ({
+        id: preset.id,
+        name: preset.name,
+        description: preset.description,
+    }));
+}

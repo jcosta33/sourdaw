@@ -1,38 +1,31 @@
-import { inject } from '#/infra/di/inject';
 import { addClip } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
 
-export const applyDrumPatternToTrack = inject({
-    addClip,
-    addMidiNote,
-})(
-    ({ addClip, addMidiNote }) =>
-        function applyDrumPatternToTrack(
-            trackId: string,
-            options: GenerateDrumPatternOptions,
-            startBeat: number = 0
-        ): void {
-            const bars = options.bars ?? 4;
-            const [numerator] = options.timeSignature ?? [4, 4];
-            const totalBeats = bars * numerator;
+export function applyDrumPatternToTrack(
+    trackId: string,
+    options: GenerateDrumPatternOptions,
+    startBeat: number = 0
+): void {
+    const bars = options.bars ?? 4;
+    const [numerator] = options.timeSignature ?? [4, 4];
+    const totalBeats = bars * numerator;
 
-            const clip = addClip({
-                trackId,
-                startBeat,
-                endBeat: startBeat + totalBeats,
-                name: `${options.style} drums`,
-                type: 'midi',
-            });
+    const clip = addClip({
+        trackId,
+        startBeat,
+        endBeat: startBeat + totalBeats,
+        name: `${options.style} drums`,
+        type: 'midi',
+    });
 
-            if (!clip) {
-                return;
-            }
+    if (!clip) {
+        return;
+    }
 
-            const { notes } = generateDrumPattern(options);
-            for (const note of notes) {
-                addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, note.duration, note.velocity);
-            }
-        }
-);
+    const { notes } = generateDrumPattern(options);
+    for (const note of notes) {
+        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, note.duration, note.velocity);
+    }
+}

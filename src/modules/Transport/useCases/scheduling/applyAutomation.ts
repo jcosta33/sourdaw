@@ -1,4 +1,5 @@
-import { automationStore, getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
@@ -92,3 +93,6 @@ export function applyAutomation(currentBeat: number): void {
         }
     }
 }
+
+// Re-export to avoid breaking callers that may import from this path
+export { ensureTrackStrip };

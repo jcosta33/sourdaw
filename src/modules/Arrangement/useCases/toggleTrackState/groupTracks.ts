@@ -1,15 +1,11 @@
-import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { mapAllTracks } from '#/modules/Arrangement/repositories/track/mapAllTracks';
 
-export const groupTracks = inject({ getTrackState, mapAllTracks })(
-    ({ getTrackState, mapAllTracks }) =>
-        function groupTracks(trackIds: string[], _name: string): void {
-            const state = getTrackState();
-            if (!state) {
-                return;
-            }
-            const groupId = `group-${Date.now()}`;
-            mapAllTracks((t) => (trackIds.includes(t.id) ? { ...t, groupId } : t));
-        }
-);
+export function groupTracks(trackIds: string[], _name: string): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
+    const groupId = `group-${Date.now()}`;
+    mapAllTracks((t) => (trackIds.includes(t.id) ? { ...t, groupId } : t));
+}

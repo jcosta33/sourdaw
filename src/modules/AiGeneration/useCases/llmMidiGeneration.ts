@@ -1,12 +1,3 @@
-/**
- * Use case: LLM-powered MIDI generation.
- *
- * Routes MIDI generation through the WebLLM pipeline with a music-specific
- * system prompt that produces structured JSON note arrays.
- * Falls back to pattern-based generation if LLM output is malformed.
- */
-
-import { inject } from '#/infra/di/inject';
 import {
     filterTemplates,
     generateNativeCompletion,
@@ -48,90 +39,63 @@ type LlmMidiResponse = {
     }>;
 };
 
-// ── Core generation ──
+export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, creativity: number = 0.65): Promise<MidiGenerationNote[]> {
+    const userMessage = buildUserMessage(prompt, numNotes, creativity);
 
-/**
- * Generate MIDI notes using the LLM (WebLLM in browser or native mistral.rs).
- * Returns MidiGenerationNote[] compatible with the existing clip insertion pipeline.
- */
-export const generateMidiViaLlm = inject({
-    resolveBackend,
-    generateWebLlmCompletion,
-    generateNativeCompletion,
-    isNativeEngineReady,
-    filterTemplates,
-    patternTemplates: PATTERN_TEMPLATES,
-})(
-    ({
-        resolveBackend,
-        generateWebLlmCompletion,
-        generateNativeCompletion,
-        isNativeEngineReady,
-        filterTemplates,
-        patternTemplates,
-    }) =>
-        async function generateMidiViaLlm(
-            prompt: string,
-            numNotes: number = 32,
-            creativity: number = 0.65
-        ): Promise<MidiGenerationNote[]> {
-            const userMessage = buildUserMessage(prompt, numNotes, creativity);
+    const backend = resolveBackend();
+    let rawResponse: string;
 
-            const backend = resolveBackend();
-            let rawResponse: string;
+    function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
+        const q = promptText.toLowerCase();
 
-            function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
-                const q = promptText.toLowerCase();
+        const matched =
+            filterTemplates({ query: q })[0] ??
+            PATTERN_TEMPLATES.find(
+                (t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q)
+            );
 
-                const matched =
-                    filterTemplates({ query: q })[0] ??
-                    patternTemplates.find(
-                        (t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q)
-                    );
-
-                if (matched) {
-                    const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
-                    return notes.map((note) => ({
-                        pitch: note.pitch,
-                        velocity: note.velocity,
-                        start_beat: note.startBeat,
-                        duration_beats: note.durationBeats,
-                    }));
-                }
-
-                return [
-                    { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 0.5 },
-                    { pitch: 64, velocity: 75, start_beat: 0.5, duration_beats: 0.5 },
-                    { pitch: 67, velocity: 70, start_beat: 1, duration_beats: 0.5 },
-                    { pitch: 72, velocity: 75, start_beat: 1.5, duration_beats: 0.5 },
-                    { pitch: 67, velocity: 70, start_beat: 2, duration_beats: 0.5 },
-                    { pitch: 64, velocity: 75, start_beat: 2.5, duration_beats: 0.5 },
-                    { pitch: 60, velocity: 80, start_beat: 3, duration_beats: 0.5 },
-                    { pitch: 64, velocity: 75, start_beat: 3.5, duration_beats: 0.5 },
-                ];
-            }
-
-            if (backend === 'none') {
-                return fallbackToPatternMatch(prompt);
-            }
-
-            if (backend === 'native' && isNativeEngineReady()) {
-                rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
-            } else if (backend === 'cloud') {
-                return fallbackToPatternMatch(prompt);
-            } else {
-                rawResponse = await generateWebLlmCompletion(MIDI_SYSTEM_PROMPT, userMessage);
-            }
-
-            const notes = parseMidiResponse(rawResponse);
-
-            if (notes.length === 0) {
-                return fallbackToPatternMatch(prompt);
-            }
-
-            return notes;
+        if (matched) {
+            const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
+            return notes.map((note) => ({
+                pitch: note.pitch,
+                velocity: note.velocity,
+                start_beat: note.startBeat,
+                duration_beats: note.durationBeats,
+            }));
         }
-);
+
+        return [
+            { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 0.5 },
+            { pitch: 64, velocity: 75, start_beat: 0.5, duration_beats: 0.5 },
+            { pitch: 67, velocity: 70, start_beat: 1, duration_beats: 0.5 },
+            { pitch: 72, velocity: 75, start_beat: 1.5, duration_beats: 0.5 },
+            { pitch: 67, velocity: 70, start_beat: 2, duration_beats: 0.5 },
+            { pitch: 64, velocity: 75, start_beat: 2.5, duration_beats: 0.5 },
+            { pitch: 60, velocity: 80, start_beat: 3, duration_beats: 0.5 },
+            { pitch: 64, velocity: 75, start_beat: 3.5, duration_beats: 0.5 },
+        ];
+    }
+
+    if (backend === 'none') {
+        return fallbackToPatternMatch(prompt);
+    }
+
+    if (backend === 'native' && isNativeEngineReady()) {
+        rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
+    } else if (backend === 'cloud') {
+        return fallbackToPatternMatch(prompt);
+    } else {
+        rawResponse = await generateWebLlmCompletion(MIDI_SYSTEM_PROMPT, userMessage);
+    }
+
+    const notes = parseMidiResponse(rawResponse);
+
+    if (notes.length === 0) {
+        return fallbackToPatternMatch(prompt);
+    }
+
+    return notes;
+}
 
 // ── Helpers ──
 

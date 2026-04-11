@@ -1,7 +1,3 @@
-/**
- * Workspace keyboard shortcut delegates.
- */
-import { inject } from '#/infra/di/inject';
 import {
     type EditingTool,
     setEditingTool as setEditingToolImpl,
@@ -15,8 +11,14 @@ export const workspaceShortcutsDependencies = {
     zoomToSelection: zoomToSelectionImpl,
 } as const;
 
-export const setEditingTool = inject(workspaceShortcutsDependencies)((d) => (tool: EditingTool) =>
-    d.setEditingTool(tool)
-);
-export const zoomToFit = inject(workspaceShortcutsDependencies)((d) => () => d.zoomToFit());
-export const zoomToSelection = inject(workspaceShortcutsDependencies)((d) => () => d.zoomToSelection());
+export function setEditingTool(tool: EditingTool) {
+    return setEditingToolImpl(tool);
+}
+
+export function zoomToFit() {
+    return zoomToFitImpl();
+}
+
+export function zoomToSelection() {
+    return zoomToSelectionImpl();
+}

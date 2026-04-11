@@ -1,10 +1,6 @@
-/**
- * Transport MIDI scheduling (playhead tick).
- */
-import { midiStore } from '#/modules/MIDI/stores';
 import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -15,7 +11,6 @@ import {
     getCompensationDelay,
     getCurrentTime,
     getDrumKitByIndex,
-    setTrackGain as engineSetTrackGain,
 } from '#/modules/AudioEngine/useCases';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -26,9 +21,8 @@ import {
     scheduleKitNote,
     scheduleNote,
 } from '#/modules/Synth/useCases';
+import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores/yeastStore';
 import type { SynthParams } from '#/modules/AudioEngine/useCases';
-
-import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
 
 // Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible
 // with the drum kit shape scheduleKitNote / getDrumKitByIndex operate on.
@@ -227,8 +221,18 @@ export async function scheduleMidiNotes(
                     const ctx = getAudioContext();
                     const workletNode = await getYeastWorkletNodeAsync(ctx);
                     const processed = workletNode
-                        ? await workletNode.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport)
-                        : yeastRack.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport);
+                        ? await workletNode.processBlock(
+                              midiEvents,
+                              blockStartSamples,
+                              blockEndSamples,
+                              yeastTransport
+                          )
+                        : yeastRack.processBlock(
+                              midiEvents,
+                              blockStartSamples,
+                              blockEndSamples,
+                              yeastTransport
+                          );
 
                     const transformedNotes: NonNullable<(typeof midiState.notesByClipId)[string]> = [];
                     for (const evt of processed) {

@@ -240,7 +240,7 @@ export const handleNoteOn = inject({
     ...midiMessageHandlerDependencies,
     handleNoteOff,
 })(({ handleNoteOff, ...deps }) =>
-    function handleNoteOn(channel: number, note: number, velocity: number): void {
+    (function handleNoteOn(channel: number, note: number, velocity: number): void {
         if (velocity === 0) {
             handleNoteOff(channel, note);
             return;
@@ -439,11 +439,11 @@ export const handleNoteOn = inject({
         if (osc) {
             noteData.osc = osc;
         }
-    }
+    })
 );
 
 export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
-    function handleCC(channel: number, cc: number, value: number): void {
+    (function handleCC(channel: number, cc: number, value: number): void {
         const learnState = deps.getMidiLearnState();
         if (learnState?.isLearning && learnState.learningTarget) {
             deps.completeMidiLearn(channel, cc);
@@ -501,11 +501,11 @@ export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
                 dn.levainControls.handleCc(cc, value);
             }
         }
-    }
+    })
 );
 
 export const handleChannelPressure = inject({})(() =>
-    function handleChannelPressure(channel: number, pressure: number): void {
+    (function handleChannelPressure(channel: number, pressure: number): void {
         if (!mpeEnabled || channel < 1) {
             return;
         }
@@ -519,14 +519,14 @@ export const handleChannelPressure = inject({})(() =>
         if (noteData) {
             noteData.pressure = pressure;
         }
-    }
+    })
 );
 
 const STANDARD_BEND_RANGE_CENTS = 200;
 const MPE_BEND_RANGE_CENTS = 48 * 100;
 
 export const handlePitchBend = inject(midiMessageHandlerDependencies)((deps) =>
-    function handlePitchBend(channel: number, lsb: number, msb: number): void {
+    (function handlePitchBend(channel: number, lsb: number, msb: number): void {
         const bendValue = ((msb << 7) | lsb) - 8192;
 
         if (mpeEnabled && channel >= 1) {
@@ -555,42 +555,34 @@ export const handlePitchBend = inject(midiMessageHandlerDependencies)((deps) =>
                 noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, now, 0.003);
             }
         }
-    }
+    })
 );
 
-export const onMidiMessage = inject({
-    handleNoteOn,
-    handleNoteOff,
-    handleCC,
-    handleChannelPressure,
-    handlePitchBend,
-})(({ handleNoteOn, handleNoteOff, handleCC, handleChannelPressure, handlePitchBend }) =>
-    function onMidiMessage(event: MIDIMessageEvent): void {
-        const data = event.data;
-        if (!data || data.length < 2) {
-            return;
-        }
-
-        const status = data[0]!;
-        const messageType = status & 0xf0;
-        const channel = status & 0x0f;
-
-        switch (messageType) {
-            case MIDI_NOTE_ON:
-                handleNoteOn(channel, data[1]!, data[2] ?? 0);
-                break;
-            case MIDI_NOTE_OFF:
-                handleNoteOff(channel, data[1]!);
-                break;
-            case MIDI_CC:
-                handleCC(channel, data[1]!, data[2] ?? 0);
-                break;
-            case MIDI_CHANNEL_PRESSURE:
-                handleChannelPressure(channel, data[1]!);
-                break;
-            case MIDI_PITCH_BEND:
-                handlePitchBend(channel, data[1]!, data[2] ?? 0);
-                break;
-        }
+export function onMidiMessage(event: MIDIMessageEvent): void {
+    const data = event.data;
+    if (!data || data.length < 2) {
+        return;
     }
-);
+
+    const status = data[0]!;
+    const messageType = status & 0xf0;
+    const channel = status & 0x0f;
+
+    switch (messageType) {
+        case MIDI_NOTE_ON:
+            handleNoteOn(channel, data[1]!, data[2] ?? 0);
+            break;
+        case MIDI_NOTE_OFF:
+            handleNoteOff(channel, data[1]!);
+            break;
+        case MIDI_CC:
+            handleCC(channel, data[1]!, data[2] ?? 0);
+            break;
+        case MIDI_CHANNEL_PRESSURE:
+            handleChannelPressure(channel, data[1]!);
+            break;
+        case MIDI_PITCH_BEND:
+            handlePitchBend(channel, data[1]!, data[2] ?? 0);
+            break;
+    }
+}

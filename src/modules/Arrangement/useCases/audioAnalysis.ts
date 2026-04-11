@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { trackStore } from '../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { addMidiNote } from '#/modules/MIDI/useCases';
@@ -116,125 +115,117 @@ function rotateArray(arr: number[], offset: number): number[] {
     return result;
 }
 
-export const detectKey = inject(detectKeyDependencies)(
-    ({ summarizeFeatures }) =>
-        async function detectKey(clipId: string): Promise<string | null> {
-            const result = getBufferForClip(clipId);
-            if (!result) {
-                return null;
-            }
+export async function detectKey(clipId: string): Promise<string | null> {
+    const result = getBufferForClip(clipId);
+    if (!result) {
+        return null;
+    }
 
-            // Use Meyda's chroma feature extraction via summarizeFeatures
-            const summary = summarizeFeatures(result.audioBufferId);
-            if (!summary || summary.chromaProfile.length !== 12) {
-                // Fallback if Meyda analysis fails
-                return 'C Major';
-            }
+    // Use Meyda's chroma feature extraction via summarizeFeatures
+    const summary = summarizeFeatures(result.audioBufferId);
+    if (!summary || summary.chromaProfile.length !== 12) {
+        // Fallback if Meyda analysis fails
+        return 'C Major';
+    }
 
-            const chroma = summary.chromaProfile;
+    const chroma = summary.chromaProfile;
 
-            // Correlate the chroma profile against all 24 major/minor key profiles
-            let bestKey = 'C Major';
-            let bestCorr = -Infinity;
+    // Correlate the chroma profile against all 24 major/minor key profiles
+    let bestKey = 'C Major';
+    let bestCorr = -Infinity;
 
-            for (let root = 0; root < 12; root++) {
-                const rotatedChroma = rotateArray(chroma, root);
+    for (let root = 0; root < 12; root++) {
+        const rotatedChroma = rotateArray(chroma, root);
 
-                const majorCorr = pearsonCorrelation(rotatedChroma, MAJOR_PROFILE);
-                if (majorCorr > bestCorr) {
-                    bestCorr = majorCorr;
-                    bestKey = `${NOTE_NAMES[root]!} Major`;
-                }
-
-                const minorCorr = pearsonCorrelation(rotatedChroma, MINOR_PROFILE);
-                if (minorCorr > bestCorr) {
-                    bestCorr = minorCorr;
-                    bestKey = `${NOTE_NAMES[root]!} Minor`;
-                }
-            }
-
-            return bestKey;
+        const majorCorr = pearsonCorrelation(rotatedChroma, MAJOR_PROFILE);
+        if (majorCorr > bestCorr) {
+            bestCorr = majorCorr;
+            bestKey = `${NOTE_NAMES[root]!} Major`;
         }
-);
 
-// ── Audio-to-MIDI (improved zero-crossing frequency estimation) ─────────
+        const minorCorr = pearsonCorrelation(rotatedChroma, MINOR_PROFILE);
+        if (minorCorr > bestCorr) {
+            bestCorr = minorCorr;
+            bestKey = `${NOTE_NAMES[root]!} Minor`;
+        }
+    }
 
-export const audioToMidi = inject(audioToMidiDependencies)(
-    ({ addTrack, addClip, addMidiNote }) =>
-        async function audioToMidi(clipId: string): Promise<void> {
-            const result = getBufferForClip(clipId);
-            if (!result) {
-                return;
-            }
-            const { buffer } = result;
+    return bestKey;
+}
 
-            // 1. Create a new MIDI track to dump the notes into
-            const newTrack = addTrack({ name: 'Extracted MIDI', kind: 'midi' });
-            if (!newTrack) {
-                return;
-            }
+export async function audioToMidi(clipId: string): Promise<void> {
+    const result = getBufferForClip(clipId);
+    if (!result) {
+        return;
+    }
+    const { buffer } = result;
 
-            const totalDurationSecs = buffer.length / buffer.sampleRate;
-            const newClip = addClip({
-                trackId: newTrack.id,
-                startBeat: 0,
-                endBeat: totalDurationSecs * 2,
-                name: 'Extracted Notes',
-                type: 'midi',
-            });
-            if (!newClip) {
-                return;
-            }
+    // 1. Create a new MIDI track to dump the notes into
+    const newTrack = addTrack({ name: 'Extracted MIDI', kind: 'midi' });
+    if (!newTrack) {
+        return;
+    }
 
-            // 2. Onset detection via amplitude threshold
-            const data = buffer.getChannelData(0);
-            let maxAmp = 0;
-            for (let i = 0; i < data.length; i++) {
-                if (Math.abs(data[i]!) > maxAmp) {
-                    maxAmp = Math.abs(data[i]!);
-                }
-            }
-            const onsetThreshold = maxAmp * 0.4;
+    const totalDurationSecs = buffer.length / buffer.sampleRate;
+    const newClip = addClip({
+        trackId: newTrack.id,
+        startBeat: 0,
+        endBeat: totalDurationSecs * 2,
+        name: 'Extracted Notes',
+        type: 'midi',
+    });
+    if (!newClip) {
+        return;
+    }
 
-            const onsets: number[] = [];
-            for (let i = 0; i < data.length; i++) {
-                if (Math.abs(data[i]!) > onsetThreshold) {
-                    onsets.push(i);
-                    i += Math.floor(buffer.sampleRate * 0.125); // 8th note skip
-                }
-            }
+    // 2. Onset detection via amplitude threshold
+    const data = buffer.getChannelData(0);
+    let maxAmp = 0;
+    for (let i = 0; i < data.length; i++) {
+        if (Math.abs(data[i]!) > maxAmp) {
+            maxAmp = Math.abs(data[i]!);
+        }
+    }
+    const onsetThreshold = maxAmp * 0.4;
 
-            // 3. For each onset, estimate pitch via zero-crossing frequency
-            for (let i = 0; i < onsets.length; i++) {
-                const onset = onsets[i]!;
+    const onsets: number[] = [];
+    for (let i = 0; i < data.length; i++) {
+        if (Math.abs(data[i]!) > onsetThreshold) {
+            onsets.push(i);
+            i += Math.floor(buffer.sampleRate * 0.125); // 8th note skip
+        }
+    }
 
-                // Count zero crossings in a window to estimate frequency
-                const windowSamples = Math.min(2048, data.length - onset);
-                let crossings = 0;
-                for (let j = onset + 1; j < onset + windowSamples; j++) {
-                    if ((data[j]! >= 0 && data[j - 1]! < 0) || (data[j]! < 0 && data[j - 1]! >= 0)) {
-                        crossings++;
-                    }
-                }
+    // 3. For each onset, estimate pitch via zero-crossing frequency
+    for (let i = 0; i < onsets.length; i++) {
+        const onset = onsets[i]!;
 
-                // Zero-crossing rate to frequency: freq ≈ (crossings / 2) * (sampleRate / windowSamples)
-                const estimatedHz = (crossings / 2) * (buffer.sampleRate / windowSamples);
-
-                // Convert Hz to MIDI pitch: MIDI = 69 + 12 * log2(freq / 440)
-                // Clamp to audible/musical range (50 Hz to 4000 Hz)
-                const clampedHz = Math.max(50, Math.min(4000, estimatedHz));
-                const midiPitch = Math.round(69 + 12 * Math.log2(clampedHz / 440));
-                const pitch = Math.max(21, Math.min(108, midiPitch)); // Piano range A0-C8
-
-                // Calculate beat position (assuming 120 BPM = 2 beats per second)
-                const timeSecs = onset / buffer.sampleRate;
-                const beatPos = timeSecs * 2;
-
-                // Estimate velocity from local amplitude
-                const localAmp = Math.abs(data[onset]!);
-                const velocity = Math.max(30, Math.min(127, Math.round((localAmp / maxAmp) * 127)));
-
-                addMidiNote(newClip.id, pitch, beatPos, 0.25, velocity);
+        // Count zero crossings in a window to estimate frequency
+        const windowSamples = Math.min(2048, data.length - onset);
+        let crossings = 0;
+        for (let j = onset + 1; j < onset + windowSamples; j++) {
+            if ((data[j]! >= 0 && data[j - 1]! < 0) || (data[j]! < 0 && data[j - 1]! >= 0)) {
+                crossings++;
             }
         }
-);
+
+        // Zero-crossing rate to frequency: freq ≈ (crossings / 2) * (sampleRate / windowSamples)
+        const estimatedHz = (crossings / 2) * (buffer.sampleRate / windowSamples);
+
+        // Convert Hz to MIDI pitch: MIDI = 69 + 12 * log2(freq / 440)
+        // Clamp to audible/musical range (50 Hz to 4000 Hz)
+        const clampedHz = Math.max(50, Math.min(4000, estimatedHz));
+        const midiPitch = Math.round(69 + 12 * Math.log2(clampedHz / 440));
+        const pitch = Math.max(21, Math.min(108, midiPitch)); // Piano range A0-C8
+
+        // Calculate beat position (assuming 120 BPM = 2 beats per second)
+        const timeSecs = onset / buffer.sampleRate;
+        const beatPos = timeSecs * 2;
+
+        // Estimate velocity from local amplitude
+        const localAmp = Math.abs(data[onset]!);
+        const velocity = Math.max(30, Math.min(127, Math.round((localAmp / maxAmp) * 127)));
+
+        addMidiNote(newClip.id, pitch, beatPos, 0.25, velocity);
+    }
+}

@@ -27,21 +27,15 @@ export const getFirstToasterDeviceIdDependencies = {
     getAllTracks,
 } as const;
 
-/**
- * Returns the first Toaster device ID found across all tracks.
- * Used by the sequencer and 16 Levels which operate on the single global kit.
- */
-export const getFirstToasterDeviceId = inject(getFirstToasterDeviceIdDependencies)(({ getAllTracks: getAllTracksFn }) =>
-    function getFirstToasterDeviceId(): string | null {
-        for (const track of getAllTracksFn()) {
-            const device = track.devices.find((d) => d.type === 'toaster');
-            if (device) {
-                return device.id;
-            }
+export function getFirstToasterDeviceId(): string | null {
+    for (const track of getAllTracks()) {
+        const device = track.devices.find((d) => d.type === 'toaster');
+        if (device) {
+            return device.id;
         }
-        return null;
     }
-);
+    return null;
+}
 
 // Throttling for pad-level params
 const padPending = new Map<string, number>();

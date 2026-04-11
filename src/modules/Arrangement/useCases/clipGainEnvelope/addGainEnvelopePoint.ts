@@ -1,4 +1,3 @@
-import { inject } from '#/infra/di/inject';
 import { type GainEnvelopePoint, gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
 import { getClipGainEnvelope } from './getClipGainEnvelope';
 
@@ -9,24 +8,21 @@ export const addGainEnvelopePointDeps = {
     gainEnvelopeStore,
 };
 
-export const addGainEnvelopePoint = inject(addGainEnvelopePointDeps)(
-    ({ getClipGainEnvelope: getEnv, gainEnvelopeStore: store }) =>
-        function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb: number): GainEnvelopePoint {
-            const env = getEnv(clipId);
-            const point: GainEnvelopePoint = {
-                id: `gep-${crypto.randomUUID().slice(0, 6)}`,
-                beatOffset: Math.max(0, beatOffset),
-                gainDb: Math.max(-60, Math.min(12, gainDb)),
-            };
+export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb: number): GainEnvelopePoint {
+    const env = getClipGainEnvelope(clipId);
+    const point: GainEnvelopePoint = {
+        id: `gep-${crypto.randomUUID().slice(0, 6)}`,
+        beatOffset: Math.max(0, beatOffset),
+        gainDb: Math.max(-60, Math.min(12, gainDb)),
+    };
 
-            const idx = env.points.findIndex((p) => p.beatOffset > beatOffset);
-            if (idx === -1) {
-                env.points.push(point);
-            } else {
-                env.points.splice(idx, 0, point);
-            }
+    const idx = env.points.findIndex((p) => p.beatOffset > beatOffset);
+    if (idx === -1) {
+        env.points.push(point);
+    } else {
+        env.points.splice(idx, 0, point);
+    }
 
-            store.set(clipId, env);
-            return point;
-        }
-);
+    gainEnvelopeStore.set(clipId, env);
+    return point;
+}

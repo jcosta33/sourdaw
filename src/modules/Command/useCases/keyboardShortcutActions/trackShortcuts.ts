@@ -1,7 +1,3 @@
-/**
- * Track/Clip keyboard shortcut delegates.
- */
-import { inject } from '#/infra/di/inject';
 import {
     addTrack as addTrackImpl,
     clearSolos as clearSolosImpl,
@@ -20,21 +16,26 @@ export const trackShortcutsDependencies = {
     zoomTracksVertical: zoomTracksVerticalImpl,
 } as const;
 
-export const clearSolos = inject(trackShortcutsDependencies)((d) => () => d.clearSolos());
-export const addTrack = inject(trackShortcutsDependencies)(
-    (d) => (opts: Parameters<typeof addTrackImpl>[0]) => {
-        d.addTrack(opts);
-    }
-);
-export const duplicateTrack = inject(trackShortcutsDependencies)((d) => (trackId: string) =>
-    d.duplicateTrack(trackId)
-);
-export const duplicateClip = inject(trackShortcutsDependencies)((d) => (clipId: string) =>
-    d.duplicateClip(clipId)
-);
-export const duplicateClipToNextBar = inject(trackShortcutsDependencies)((d) => (clipId: string) =>
-    d.duplicateClipToNextBar(clipId)
-);
-export const zoomTracksVertical = inject(trackShortcutsDependencies)((d) => (delta: number) =>
-    d.zoomTracksVertical(delta)
-);
+export function clearSolos() {
+    return clearSolosImpl();
+}
+
+export function addTrack(opts: Parameters<typeof addTrackImpl>[0]) {
+    addTrackImpl(opts);
+}
+
+export function duplicateTrack(trackId: string) {
+    return duplicateTrackImpl(trackId);
+}
+
+export function duplicateClip(clipId: string) {
+    return duplicateClipImpl(clipId);
+}
+
+export function duplicateClipToNextBar(clipId: string) {
+    return duplicateClipToNextBarImpl(clipId);
+}
+
+export function zoomTracksVertical(delta: number) {
+    return zoomTracksVerticalImpl(delta);
+}

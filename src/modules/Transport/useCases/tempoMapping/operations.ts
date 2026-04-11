@@ -1,11 +1,3 @@
-/**
- * AI Tempo Mapping — beat tracking from audio for live rubato performances.
- *
- * TODO: estimateOnsetsFromClips simulates onsets from clip positions instead of actual audio onset detection.
- * TODO: detectProjectTempo auto-applies tempo if confidence > 0.5 — should require user confirmation.
- */
-
-import { inject } from '#/infra/di/inject';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { type TempoMapPoint, type TempoMapResult } from '#/modules/Transport/models/TempoMappingTypes';
@@ -95,55 +87,43 @@ export function detectTempoFromOnsets(onsets: number[]): TempoMapResult {
     };
 }
 
-/**
- * Generate a simulated onset array from clip positions.
- */
-export const estimateOnsetsFromClips = inject({ getTransportState })(
-    ({ getTransportState }) =>
-        function estimateOnsetsFromClips(): number[] {
-            const state = trackStore.value;
-            if (!state) {
-                return [];
-            }
+export function estimateOnsetsFromClips(): number[] {
+    const state = trackStore.value;
+    if (!state) {
+        return [];
+    }
 
-            const transport = getTransportState();
-            const currentTempo = transport?.tempo ?? 120;
-            const beatDuration = 60 / currentTempo;
+    const transport = getTransportState();
+    const currentTempo = transport?.tempo ?? 120;
+    const beatDuration = 60 / currentTempo;
 
-            const onsets: number[] = [];
-            for (const track of state.tracks) {
-                if (track.kind !== 'midi') {
-                    continue;
-                }
-                for (const clip of track.clips) {
-                    const clipStartSec = clip.startBeat * beatDuration;
-                    const clipDuration = (clip.endBeat - clip.startBeat) * beatDuration;
-                    for (let t = 0; t < clipDuration; t += beatDuration) {
-                        onsets.push(clipStartSec + t);
-                    }
-                }
-            }
-
-            return onsets.sort((a, b) => a - b);
+    const onsets: number[] = [];
+    for (const track of state.tracks) {
+        if (track.kind !== 'midi') {
+            continue;
         }
-);
-
-/**
- * Apply detected tempo map to the transport.
- */
-export const applyTempoMap = inject({ getTransportState, updateTransportState })(
-    ({ getTransportState, updateTransportState }) =>
-        function applyTempoMap(result: TempoMapResult): void {
-            const state = getTransportState();
-            if (!state) {
-                return;
-            }
-
-            if (result.averageBpm > 0) {
-                updateTransportState({ tempo: Math.round(result.averageBpm) });
+        for (const clip of track.clips) {
+            const clipStartSec = clip.startBeat * beatDuration;
+            const clipDuration = (clip.endBeat - clip.startBeat) * beatDuration;
+            for (let t = 0; t < clipDuration; t += beatDuration) {
+                onsets.push(clipStartSec + t);
             }
         }
-);
+    }
+
+    return onsets.sort((a, b) => a - b);
+}
+
+export function applyTempoMap(result: TempoMapResult): void {
+    const state = getTransportState();
+    if (!state) {
+        return;
+    }
+
+    if (result.averageBpm > 0) {
+        updateTransportState({ tempo: Math.round(result.averageBpm) });
+    }
+}
 
 /**
  * Run full tempo detection on the current project.

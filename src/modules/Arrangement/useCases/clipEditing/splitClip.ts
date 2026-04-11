@@ -1,55 +1,51 @@
-import { inject } from '#/infra/di/inject';
 import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
 import { type Clip } from '#/modules/Arrangement/stores/trackStore';
 import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 import { snapSplitBeatToZeroCrossing } from '#/modules/Arrangement/services/snapSplitBeatToZeroCrossing';
 
-export const splitClip = inject({ getTrackState, setTrackState, getNextClipId })(
-    ({ getTrackState, setTrackState, getNextClipId }) =>
-        function splitClip(clipId: string, splitBeat: number): void {
-            const state = getTrackState();
-            if (!state) {
-                return;
+export function splitClip(clipId: string, splitBeat: number): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
+
+    setTrackState({
+        ...state,
+        tracks: state.tracks.map((t) => {
+            const clip = t.clips.find((c) => c.id === clipId);
+            if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
+                return t;
             }
 
-            setTrackState({
-                ...state,
-                tracks: state.tracks.map((t) => {
-                    const clip = t.clips.find((c) => c.id === clipId);
-                    if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
-                        return t;
-                    }
+            const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
 
-                    const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
+            if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
+                return t;
+            }
 
-                    if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
-                        return t;
-                    }
+            const leftClip: Clip = {
+                ...clip,
+                endBeat: adjustedSplitBeat,
+                name: `${clip.name} (L)`,
+                fadeOutBeats: 0,
+            };
 
-                    const leftClip: Clip = {
-                        ...clip,
-                        endBeat: adjustedSplitBeat,
-                        name: `${clip.name} (L)`,
-                        fadeOutBeats: 0,
-                    };
+            const rightClip: Clip = {
+                ...clip,
+                id: getNextClipId(),
+                name: `${clip.name} (R)`,
+                startBeat: adjustedSplitBeat,
+                endBeat: clip.endBeat,
+                fadeInBeats: 0,
+                fadeOutBeats: clip.fadeOutBeats,
+                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
+            };
 
-                    const rightClip: Clip = {
-                        ...clip,
-                        id: getNextClipId(),
-                        name: `${clip.name} (R)`,
-                        startBeat: adjustedSplitBeat,
-                        endBeat: clip.endBeat,
-                        fadeInBeats: 0,
-                        fadeOutBeats: clip.fadeOutBeats,
-                        audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
-                    };
-
-                    return {
-                        ...t,
-                        clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
-                    };
-                }),
-            });
-        }
-);
+            return {
+                ...t,
+                clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
+            };
+        }),
+    });
+}
