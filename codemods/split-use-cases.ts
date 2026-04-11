@@ -1,25 +1,18 @@
+/**
+ * Splits a TypeScript module that contains multiple exported "roots" into:
+ * - one file per root under `<originalBasename>/`
+ * - optional `helpers.ts` for symbols shared by more than one root
+ * - a barrel file at the original path (`<originalBasename>.ts`) that re-exports the split modules
+ *
+ * The barrel preserves import paths like `./helpers` and `./webMidi` (directory → index.ts resolution),
+ * so consumers do not need updating.
+ *
+ * Note: jscodeshift reports 0 "ok" / many "skipped" because the transform returns `null` and writes
+ * via the filesystem instead of returning modified `fileInfo.source`.
+ */
 import { FileInfo, API, Options } from 'jscodeshift';
 import * as fs from 'fs';
 import * as path from 'path';
-
-// Helper to recursively find all TypeScript files in a directory
-function getAllTsFiles(dir: string): string[] {
-  let results: string[] = [];
-  if (!fs.existsSync(dir)) return results;
-  const list = fs.readdirSync(dir);
-  list.forEach(file => {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-    if (stat && stat.isDirectory()) {
-      if (!filePath.includes('node_modules') && !filePath.includes('.git') && !filePath.includes('dist')) {
-        results = results.concat(getAllTsFiles(filePath));
-      }
-    } else if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
-      results.push(filePath);
-    }
-  });
-  return results;
-}
 
 interface NodeMeta {
   astNode: any;
@@ -222,6 +215,23 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     return `useCase_${index}`;
   };
 
+  const reservedRootFileNames = new Set<string>();
+  if (sharedAuxiliaries.size > 0) {
+    reservedRootFileNames.add('helpers');
+  }
+
+  const rootFileNames = roots.map((rootNode, index) => {
+    let base = getExportName(rootNode, index);
+    let candidate = base;
+    let n = 0;
+    while (reservedRootFileNames.has(candidate)) {
+      n += 1;
+      candidate = `${base}_${n}`;
+    }
+    reservedRootFileNames.add(candidate);
+    return candidate;
+  });
+
   const filePath = fileInfo.path;
   const dirName = path.dirname(filePath);
   const extName = path.extname(filePath);
@@ -233,34 +243,17 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     fs.mkdirSync(newDirPath, { recursive: true });
   }
 
-  const exportLocationMap = new Map<string, string>();
-  nodesMeta.forEach((node, index) => {
-    if (node.isExported) {
-      let targetFileName = 'helpers';
-      if (roots.includes(node)) {
-        targetFileName = getExportName(node, index);
-      } else {
-        const owner = exclusiveAuxiliaries.get(node);
-        if (owner) targetFileName = getExportName(owner, roots.indexOf(owner));
-      }
-      
-      node.definedNames.forEach(name => exportLocationMap.set(name, targetFileName));
-      if (node.astNode.type === 'ExportNamedDeclaration' && node.astNode.specifiers) {
-         node.astNode.specifiers.forEach((spec: any) => {
-            if (spec.exported && spec.exported.type === 'Identifier') {
-               exportLocationMap.set(spec.exported.name, targetFileName);
-            }
-         });
-      }
-      if (node.astNode.type === 'ExportDefaultDeclaration') exportLocationMap.set('default', targetFileName);
-    }
-  });
-
   const getRequiredImports = (activeRefs: Set<string>, targetFileDepthIncrease: number) => {
     const reqImports: any[] = [];
     imports.forEach((imp: any) => {
       const neededSpecifiers = (imp.specifiers || []).filter((spec: any) => {
-        if (spec.local && (spec.local.type === 'Identifier' || spec.local.type === 'JSXIdentifier')) {
+        if (spec.type === 'ImportSpecifier' && spec.local?.type === 'Identifier') {
+          return activeRefs.has(spec.local.name);
+        }
+        if (spec.type === 'ImportDefaultSpecifier' && spec.local?.type === 'Identifier') {
+          return activeRefs.has(spec.local.name);
+        }
+        if (spec.type === 'ImportNamespaceSpecifier' && spec.local?.type === 'Identifier') {
           return activeRefs.has(spec.local.name);
         }
         return false;
@@ -277,6 +270,27 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
       }
     });
     return reqImports;
+  };
+
+  const buildBarrelSource = () => {
+    const printOpts = { quote: 'single' as const, trailingComma: true };
+    const parts: string[] = [];
+    imports.forEach((imp: any) => {
+      if (!imp.specifiers || imp.specifiers.length === 0) {
+        parts.push(j(imp).toSource(printOpts));
+      }
+    });
+    sideEffects.forEach(node => {
+      parts.push(j(node.astNode).toSource(printOpts));
+    });
+    const sharedExportsPublic = [...sharedAuxiliaries].some(n => n.isExported);
+    if (sharedAuxiliaries.size > 0 && sharedExportsPublic) {
+      parts.push(`export * from './${baseName}/helpers';`);
+    }
+    roots.forEach((_, idx) => {
+      parts.push(`export * from './${baseName}/${rootFileNames[idx]}';`);
+    });
+    return parts.join('\n') + '\n';
   };
 
   const filesToWrite = new Map<string, string>();
@@ -304,7 +318,7 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
 
   for (let index = 0; index < roots.length; index++) {
     const rootNode = roots[index];
-    const expName = getExportName(rootNode, index);
+    const expName = rootFileNames[index];
     const myAuxiliaries: NodeMeta[] = [];
     exclusiveAuxiliaries.forEach((owner, aux) => { if (owner === rootNode) myAuxiliaries.push(aux); });
     const myNodes = [rootNode, ...myAuxiliaries, ...sideEffects];
@@ -325,65 +339,14 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     filesToWrite.set(newFilePath, newSource);
   }
 
-  const srcDir = path.resolve(process.cwd(), 'src');
-  const allFiles = getAllTsFiles(srcDir);
-  const filesToUpdate = new Map<string, string>();
-
-  try {
-    allFiles.forEach(importerPath => {
-      if (importerPath === filePath) return;
-      let content = fs.readFileSync(importerPath, 'utf-8');
-      if (!content.includes(baseName)) return;
-      const rootAst = j(content);
-      let changed = false;
-
-      const updateStatement = (pathNode: any) => {
-        const source = pathNode.node.source?.value;
-        if (typeof source !== 'string') return;
-        let resolvedSource = source.startsWith('#/') ? path.resolve(process.cwd(), 'src', source.slice(2)) : path.resolve(path.dirname(importerPath), source);
-        const fileWithoutExt = filePath.replace(/\.[^.]+$/, '');
-        if (resolvedSource === fileWithoutExt || resolvedSource === filePath) {
-          if (pathNode.node.type === 'ExportAllDeclaration') {
-             const newExports = roots.map((rootNode, idx) => 
-                j.exportAllDeclaration(j.literal(`${source}/${getExportName(rootNode, idx)}`), null)
-             );
-             j(pathNode).replaceWith(newExports);
-             changed = true;
-             return;
-          }
-          const newMap = new Map<string, any[]>();
-          pathNode.node.specifiers?.forEach((spec: any) => {
-            let owner = (spec.type === 'ImportSpecifier' || spec.type === 'ExportSpecifier') ? exportLocationMap.get(spec.exported?.name || spec.imported?.name) : exportLocationMap.get('default');
-            const target = owner ? `${source}/${owner}` : source;
-            if (!newMap.has(target)) newMap.set(target, []);
-            newMap.get(target)!.push(spec);
-          });
-          if (newMap.size > 0) {
-            const newNodes = Array.from(newMap.entries()).map(([src, specs]) => 
-               pathNode.node.type === 'ImportDeclaration' ? j.importDeclaration(specs, j.literal(src)) : j.exportNamedDeclaration(null, specs, j.literal(src))
-            );
-            j(pathNode).replaceWith(newNodes);
-            changed = true;
-          }
-        }
-      };
-
-      rootAst.find(j.ImportDeclaration).forEach(updateStatement);
-      rootAst.find(j.ExportNamedDeclaration, { source: (s: any) => !!s }).forEach(updateStatement);
-      rootAst.find(j.ExportAllDeclaration).forEach(updateStatement);
-
-      if (changed) filesToUpdate.set(importerPath, rootAst.toSource({ quote: 'single', trailingComma: true }));
-    });
-  } catch (e) { return null; }
+  const barrelSource = buildBarrelSource();
 
   if (!isDryRun) {
     filesToWrite.forEach((source, targetPath) => fs.writeFileSync(targetPath, source, 'utf-8'));
-    filesToUpdate.forEach((source, targetPath) => fs.writeFileSync(targetPath, source, 'utf-8'));
-    fs.unlinkSync(filePath);
+    fs.writeFileSync(filePath, barrelSource, 'utf-8');
   } else {
     filesToWrite.forEach((_, p) => console.log(`[Dry Run] Would create: ${p}`));
-    filesToUpdate.forEach((_, p) => console.log(`[Dry Run] Would update imports in: ${p}`));
-    console.log(`[Dry Run] Would delete original file: ${filePath}`);
+    console.log(`[Dry Run] Would write barrel (replace original): ${filePath}`);
   }
   return null;
 }
