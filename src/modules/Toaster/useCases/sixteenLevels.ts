@@ -1,5 +1,6 @@
 import { triggerToasterPad } from './triggerPad';
-import { setToasterPadParam, getFirstToasterDeviceId } from './toasterParamBridge';
+import { setToasterPadParam } from './toasterParamBridge/setToasterPadParam';
+import { getFirstToasterDeviceId } from './toasterParamBridge/getFirstToasterDeviceId';
 
 export type SixteenLevelsTarget = 'velocity' | 'tune' | 'decay' | 'filter';
 

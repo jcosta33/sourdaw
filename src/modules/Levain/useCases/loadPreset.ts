@@ -5,7 +5,8 @@
 
 import { type LevainPatch, createDefaultPatch, type InstrumentId } from '../models/LevainPatch';
 import { levainStore } from '../stores/levainStore';
-import { setLevainParamWithAudio, loadSamplesForInstrument } from './levainParamBridge';
+import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithAudio';
+import { loadSamplesForInstrument } from './levainParamBridge/loadSamplesForInstrument';
 
 /**
  * Load an instrument with default settings and trigger sample loading.

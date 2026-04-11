@@ -18,11 +18,20 @@ vi.mock('../../stores/arrangementStore', () => ({
     arrangementStore: { name: 'arrangementStore', value: null },
 }));
 
-vi.mock('../../useCases/arrangement', () => ({
-    switchArrangement: vi.fn(),
-    createArrangement: vi.fn(),
-    duplicateArrangement: vi.fn(),
+vi.mock('../../useCases/arrangement/renameArrangement', () => ({
     renameArrangement: vi.fn(),
+}));
+
+vi.mock('../../useCases/arrangement/duplicateArrangement', () => ({
+    duplicateArrangement: vi.fn(),
+}));
+
+vi.mock('../../useCases/arrangement/createArrangement', () => ({
+    createArrangement: vi.fn(),
+}));
+
+vi.mock('../../useCases/arrangement/switchArrangement', () => ({
+    switchArrangement: vi.fn(),
 }));
 
 // Mock UI components

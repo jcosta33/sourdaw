@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../repositories/libraryPersistence', () => ({
+vi.mock('../repositories/libraryPersistence/restoreLibrary', () => ({
     restoreLibrary: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { restoreLibrary } from './restoreLibrary';
-import { restoreLibrary as repoRestoreLibrary } from '../repositories/libraryPersistence';
+import { restoreLibrary as repoRestoreLibrary } from '../repositories/libraryPersistence/restoreLibrary';
 
 describe('restoreLibrary', () => {
     beforeEach(() => {

@@ -17,15 +17,12 @@ export { setTimeSignature } from './setTimeSignature';
 export { nextItem } from './setlist/nextItem';
 export { previousItem } from './setlist/previousItem';
 
-export { addTempoChange, removeTempoChange, updateTempoChange } from './tempoMap';
+export { addTempoChange } from './tempoMap/addTempoChange';
+export { removeTempoChange } from './tempoMap/removeTempoChange';
+export { updateTempoChange } from './tempoMap/updateTempoChange';
 
-export {
-    detectTempoFromOnsets,
-    estimateOnsetsFromClips,
-    applyTempoMap,
-    detectProjectTempo,
-    adjustTempoPoint,
-} from './tempoMapping/operations';
+export { detectTempoFromOnsets, estimateOnsetsFromClips, applyTempoMap, detectProjectTempo } from './tempoMapping/operations/detectProjectTempo';
+export { adjustTempoPoint } from './tempoMapping/operations/adjustTempoPoint';
 
 export { seekPlayhead } from './transportControls/seekPlayhead';
 export { setCountInBars } from './transportControls/setCountInBars';
@@ -44,16 +41,15 @@ export { togglePunchEnabled } from './transportControls/togglePunchEnabled';
 export { togglePreRoll } from './transportControls/togglePreRoll';
 export { toggleRecording } from './transportControls/toggleRecording';
 
-export { addTimeSignatureChange, removeTimeSignatureChange } from './timeSignatureChanges';
+export { addTimeSignatureChange } from './timeSignatureChanges/addTimeSignatureChange';
+export { removeTimeSignatureChange } from './timeSignatureChanges/removeTimeSignatureChange';
 
 export { getTransportHandlers } from './getTransportHandlers';
 
-export type { TransportState, TempoChange, TimeSignatureChange } from './transportQueries';
-export {
-    defaultTransportState,
-    getTransportState,
-    getTransportStoreValue,
-    getTempoMapState,
-    getTempoAtBeat,
-    updateTransportState,
-} from './transportQueries';
+export type { TransportState, TempoChange, TimeSignatureChange } from './transportQueries/helpers';
+export { defaultTransportState } from './transportQueries/helpers';
+export { getTransportState } from './transportQueries/getTransportState';
+export { getTransportStoreValue } from './transportQueries/getTransportStoreValue';
+export { getTempoMapState } from './transportQueries/getTempoMapState';
+export { getTempoAtBeat } from './transportQueries/getTempoAtBeat';
+export { updateTransportState } from './transportQueries/updateTransportState';

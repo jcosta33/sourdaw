@@ -26,7 +26,10 @@ import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases';
 // ── Drum Kit presets ────────────────────────────────────────────────────────
 // Small enough to stay inline here (< 60 lines).
 import { type DevicePreset } from '#/modules/Arrangement/models/SoundPreset';
-import { comp, eq, reverb, AUTHOR } from './presetHelpers';
+import { comp } from './presetHelpers/comp';
+import { eq } from './presetHelpers/eq';
+import { reverb } from './presetHelpers/reverb';
+import { AUTHOR } from './presetHelpers/helpers';
 
 const DRUM_KIT_PRESETS: SoundPreset[] = [
     {

@@ -1,5 +1,6 @@
 
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
+import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { resumeEngine } from '#/modules/AudioEngine/useCases';
 import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';

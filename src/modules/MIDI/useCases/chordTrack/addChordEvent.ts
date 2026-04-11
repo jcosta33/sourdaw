@@ -1,6 +1,6 @@
 import { chordTrackStore } from '#/modules/Arrangement/stores';
 import { createChordEvent, type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
-import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
+import { type ChordType } from '#/modules/MIDI/useCases/chordStamps/helpers';
 
 export function addChordEvent(beat: number, root: number, quality: ChordType, duration: number): ChordEvent | null {
     const state = chordTrackStore.value;

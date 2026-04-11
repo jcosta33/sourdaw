@@ -1,0 +1,107 @@
+import { PRESET_ACTIONS } from '../../models/presetActions/registry';
+import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../models/midiPatternLibrary';
+
+export type MixIssue = {
+    severity: 'info' | 'warning' | 'critical';
+    category: 'level' | 'frequency' | 'stereo' | 'dynamics';
+    message: string;
+    trackId?: string;
+};
+
+export type MixAnalysis = {
+    timestamp: number;
+    overallLevel: { peakDb: number; rmsDb: number };
+    frequencyBalance: {
+        sub: number;
+        bass: number;
+        lowMid: number;
+        mid: number;
+        highMid: number;
+        high: number;
+    };
+    trackLevels: Array<{
+        trackId: string;
+        trackName: string;
+        peakDb: number;
+        rmsDb: number;
+        isMuted: boolean;
+        isSoloed: boolean;
+        isClipping: boolean;
+    }>;
+    issues: MixIssue[];
+    suggestions: string[];
+};
+
+export type PresetSearchContext = {
+    selectedTrackId: string | undefined;
+    selectedClipId: string | undefined;
+    selectedClipType: 'audio' | 'midi' | undefined;
+    trackCount: number;
+};
+
+export type PromptPresetCategory =
+    | 'Transport'
+    | 'Track'
+    | 'Clip'
+    | 'MIDI'
+    | 'Device'
+    | 'Workspace'
+    | 'Mix'
+    | 'Generate'
+    | 'File'
+    | 'Automation'
+    | 'Collaboration';
+
+export type PromptPreset = {
+    id: string;
+    label: string;
+    category: PromptPresetCategory;
+    isDestructive: boolean;
+};
+
+export type PatternTemplateModel = (typeof modelPatternTemplates)[number];
+export type PatternTemplateInput = Parameters<PatternTemplateModel['generate']>[0];
+export type PatternTemplateOutput = ReturnType<PatternTemplateModel['generate']>;
+
+export function toPublicPatternTemplate(template: PatternTemplateModel) {
+    return {
+        id: template.id,
+        name: template.name,
+        category: template.category,
+        genres: [...template.genres],
+        tags: [...template.tags],
+        description: template.description,
+        generate: (params: PatternTemplateInput): PatternTemplateOutput =>
+            template.generate(params).map((note) => ({ ...note })),
+        lengthBeats: template.lengthBeats,
+    };
+}
+
+export function toPromptPreset(preset: (typeof PRESET_ACTIONS)[number]): PromptPreset {
+    return {
+        id: preset.id,
+        label: preset.label,
+        category: preset.category,
+        isDestructive: preset.isDestructive ?? false,
+    };
+}
+
+export {
+    NATIVE_MODEL_INFO,
+    WEBLLM_MODEL_INFO,
+    CLOUD_MODEL_INFO,
+    WEBLLM_MODELS,
+    type ModelInfo,
+} from '../../models/ModelInfo';
+export { getActiveModelId } from '../../repositories/webLlm/engineLifecycle';
+
+// ─── Cross-module re-exports ───────────────────────────────────────────────────
+
+export { streamCloudChatCompletion } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
+export { readLevels } from '../../repositories/mixAnalysis/readLevels';
+export { readFrequencyBalance } from '../../repositories/mixAnalysis/readFrequencyBalance';
+export { detectIssues, generateSuggestions } from '../../transformers/mixAnalysisTransformers';
+export { generateWebLlmCompletion } from '../../repositories/webLlm/engineLifecycle';
+export { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
+export { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
+export { isComplexPrompt } from '../../transformers/promptParser/parsing';

@@ -10,12 +10,12 @@ import {
     stopGenerating,
 } from '../../stores/chatStore';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
-import { toggleChat } from '../../useCases/aiPanelActions';
+import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
-import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution';
+import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { ChatComposer } from '../components/ChatComposer';
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */

@@ -24,10 +24,16 @@ vi.mock('#/modules/Plugin/stores/pluginScanStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Plugin/useCases/pluginScan/scanning', () => ({
-    startPluginScan: vi.fn(),
-    addScanPath: vi.fn(),
+vi.mock('#/modules/Plugin/useCases/pluginScan/scanning/removeScanPath', () => ({
     removeScanPath: vi.fn(),
+}));
+
+vi.mock('#/modules/Plugin/useCases/pluginScan/scanning/addScanPath', () => ({
+    addScanPath: vi.fn(),
+}));
+
+vi.mock('#/modules/Plugin/useCases/pluginScan/scanning/startPluginScan', () => ({
+    startPluginScan: vi.fn(),
 }));
 
 vi.mock('#/helpers/platformCapabilities', () => ({

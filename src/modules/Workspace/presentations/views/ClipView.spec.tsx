@@ -42,7 +42,7 @@ vi.mock('../../useCases/setWorkspaceMode', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('../../useCases/togglePanel/panelToggles', () => ({
+vi.mock('../../useCases/togglePanel/panelToggles/selectClip', () => ({
     selectClip: vi.fn(),
 }));
 

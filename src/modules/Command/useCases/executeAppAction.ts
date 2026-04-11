@@ -22,7 +22,7 @@ import { getMacroHandlers } from './getMacroHandlers';
 import { getUndoTreeHandlers } from './getUndoTreeHandlers';
 import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project/useCases';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
-import { recordAction } from './macro/recording';
+import { recordAction } from './macro/recording/recordAction';
 
 /** Built lazily so `getArrangementHandlers` is not invoked while the Arrangement barrel is still
  *  initializing (e.g. `batchFeatureHandlers` imports from `#/modules/Arrangement` and re-enters). */
@@ -69,7 +69,7 @@ export type ExecuteOptions = {
 
 export const executeAppAction = inject({ logger })(
     ({ logger }) =>
-        async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
+        (async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const handler = getHandlerRegistry()[action.type] as ActionHandler<any> | undefined;
             if (!handler) {
@@ -133,5 +133,5 @@ export const executeAppAction = inject({ logger })(
                     pushUndo(entry);
                 }
             }
-        }
+        })
 );

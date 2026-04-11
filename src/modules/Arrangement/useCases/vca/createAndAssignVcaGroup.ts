@@ -1,4 +1,6 @@
-import { createVCAGroup, assignTrackToVCA, getAllVCAGroups } from '../vcaFader';
+import { createVCAGroup } from '../vcaFader/createVCAGroup';
+import { assignTrackToVCA } from '../vcaFader/assignTrackToVCA';
+import { getAllVCAGroups } from '../vcaFader/getAllVCAGroups';
 
 /**
  * Create a new VCA group named `VCA <n>` where `<n>` is the next sequential number,

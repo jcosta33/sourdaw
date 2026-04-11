@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
-import { FERMENTER_PARAMS } from './fermenterQueries';
-import { setFermenterParamWithAudio } from './fermenterParamBridge';
+import { FERMENTER_PARAMS } from './fermenterQueries/FERMENTER_PARAMS';
+import { setFermenterParamWithAudio } from './fermenterParamBridge/setFermenterParamWithAudio';
 import { type FermenterPatch } from '../models/FermenterPatch';
 
 const FERMENTER_PARAM_IDS = new Set(FERMENTER_PARAMS.map((param) => param.id));

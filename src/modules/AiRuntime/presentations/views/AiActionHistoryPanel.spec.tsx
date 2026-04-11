@@ -22,9 +22,12 @@ vi.mock('#/modules/AiRuntime/useCases/aiHistoryActions', () => ({
     revertAiActionGroup: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases/revertAction', () => ({
-    revertAction: vi.fn(),
+vi.mock('#/modules/CrdtDocument/useCases/revertAction/canRevertAction', () => ({
     canRevertAction: vi.fn(() => true),
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases/revertAction/revertAction', () => ({
+    revertAction: vi.fn(),
 }));
 
 const { useStore } = await import('#/infra/store/useStore');

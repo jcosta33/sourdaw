@@ -8,16 +8,21 @@ vi.mock('../stores/libraryStore', () => ({
     setScanProgress: vi.fn(),
 }));
 
-vi.mock('../repositories/libraryPersistence', () => ({
-    persistLibraryRoots: vi.fn(),
+vi.mock('../repositories/libraryPersistence/persistSamples', () => ({
     persistSamples: vi.fn(),
+}));
+
+vi.mock('../repositories/libraryPersistence/persistLibraryRoots', () => ({
+    persistLibraryRoots: vi.fn(),
 }));
 
 vi.mock('./buildFolderTree', () => ({
     buildFolderTree: vi.fn(),
 }));
 
-import { connectFolder, cancelScan, rescanRoot } from './connectFolder';
+import { connectFolder } from './connectFolder/connectFolder';
+import { cancelScan } from './connectFolder/cancelScan';
+import { rescanRoot } from './connectFolder/rescanRoot';
 
 describe('connectFolder', () => {
     beforeEach(() => {

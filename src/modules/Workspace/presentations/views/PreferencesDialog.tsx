@@ -45,7 +45,7 @@ import {
 import { cn } from '#/helpers/Styles/cn';
 import { SectionTitle, FieldGroup, ToggleRow, VoiceKeyEditor, GridSubdivisionSection } from './preferencesShared';
 import { ShortcutsSection } from './ShortcutsSection';
-import { setSoloMode } from '../../useCases/togglePanel/panelToggles';
+import { setSoloMode } from '../../useCases/togglePanel/panelToggles/setSoloMode';
 
 // ── Types ─────────────────────────────────────────────────────────────
 

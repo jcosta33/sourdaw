@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { clearSolos } from './trackShortcuts';
+import { clearSolos } from './trackShortcuts/clearSolos';
 
 const noop = (): void => {};
 

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { loadGrinderPatchWithAudio, setGrinderParamWithAudio } from './grinderParamBridge';
+import { loadGrinderPatchWithAudio } from './grinderParamBridge/loadGrinderPatchWithAudio';
+import { setGrinderParamWithAudio } from './grinderParamBridge/setGrinderParamWithAudio';
 
 describe('grinderParamBridge', () => {
     beforeEach(() => {

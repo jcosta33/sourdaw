@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ArrangementBar } from './ArrangementBar';
 import { useStore } from '#/infra/store/useStore';
-import { addSection } from '../../useCases/marker/sectionOperations';
+import { addSection } from '../../useCases/marker/sectionOperations/addSection';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
@@ -13,14 +13,32 @@ vi.mock('../../stores/markerStore', () => ({
     markerStore: {},
 }));
 
-vi.mock('../../useCases/marker/sectionOperations', () => ({
-    addSection: vi.fn(),
-    removeSection: vi.fn(),
-    renameSection: vi.fn(),
-    setSectionColor: vi.fn(),
-    moveSection: vi.fn(),
-    resizeSection: vi.fn(),
+vi.mock('../../useCases/marker/sectionOperations/reorderSection', () => ({
     reorderSection: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/sectionOperations/resizeSection', () => ({
+    resizeSection: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/sectionOperations/moveSection', () => ({
+    moveSection: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/sectionOperations/setSectionColor', () => ({
+    setSectionColor: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/sectionOperations/renameSection', () => ({
+    renameSection: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/sectionOperations/removeSection', () => ({
+    removeSection: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/sectionOperations/addSection', () => ({
+    addSection: vi.fn(),
 }));
 
 vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({

@@ -29,7 +29,7 @@ vi.mock('#/components/daw/visualizers/FilterResponse', () => ({
     FilterResponse: () => <div data-testid="filter-response">Filter Response</div>,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: vi.fn(),
 }));
 

@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../repositories/sampleLoader', () => ({
-    loadInstrumentFromManifest: vi.fn().mockResolvedValue(undefined),
+vi.mock('../repositories/sampleLoader/helpers', () => ({
     WEB_LOD: 0,
+}));
+
+vi.mock('../repositories/sampleLoader/loadInstrumentFromManifest', () => ({
+    loadInstrumentFromManifest: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../stores/levainStore', () => ({
@@ -14,7 +17,7 @@ vi.mock('@tauri-apps/api/path', () => ({
 }));
 
 import { autoLoadLevainSamples } from './autoLoadSamples';
-import { loadInstrumentFromManifest } from '../repositories/sampleLoader';
+import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
 import { setSampleLoadProgress } from '../stores/levainStore';
 
 describe('autoLoadLevainSamples', () => {

@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Track } from '#/modules/Arrangement/models/Track';
-import { assignTrackToVCA, removeTrackFromVCA } from '../vcaFader';
+import { assignTrackToVCA } from '../vcaFader/assignTrackToVCA';
+import { removeTrackFromVCA } from '../vcaFader/removeTrackFromVCA';
 import { toggleVcaMembership } from './toggleVcaMembership';
 
-vi.mock('../vcaFader', () => ({
-    assignTrackToVCA: vi.fn(),
+vi.mock('../vcaFader/removeTrackFromVCA', () => ({
     removeTrackFromVCA: vi.fn(),
+}));
+
+vi.mock('../vcaFader/assignTrackToVCA', () => ({
+    assignTrackToVCA: vi.fn(),
 }));
 
 describe('toggleVcaMembership', () => {

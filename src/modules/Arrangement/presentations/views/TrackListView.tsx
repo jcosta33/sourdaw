@@ -23,7 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useTracks } from '../hooks/useTracks';
 import { TrackHeader } from './TrackHeader';
 import { addTrack } from '../../useCases/addTrack';
-import { createFolder } from '../../useCases/folder';
+import { createFolder } from '../../useCases/folder/createFolder';
 import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { removeTrack } from '../../useCases/removeTrack';

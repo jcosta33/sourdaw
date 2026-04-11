@@ -6,7 +6,7 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
-import { selectClip } from '../../useCases/togglePanel/panelToggles';
+import { selectClip } from '../../useCases/togglePanel/panelToggles/selectClip';
 import { workspaceStore } from '../../stores/workspaceStore';
 import { useStore } from '#/infra/store/useStore';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';

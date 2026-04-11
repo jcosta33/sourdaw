@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    loadBacteriaPatchWithAudio,
-    setBacteriaBandParamWithAudio,
-    setBacteriaParamWithAudio,
-} from './bacteriaParamBridge';
+import { loadBacteriaPatchWithAudio } from './bacteriaParamBridge/loadBacteriaPatchWithAudio';
+import { setBacteriaBandParamWithAudio } from './bacteriaParamBridge/setBacteriaBandParamWithAudio';
+import { setBacteriaParamWithAudio } from './bacteriaParamBridge/setBacteriaParamWithAudio';
 
 describe('bacteriaParamBridge', () => {
     beforeEach(() => {

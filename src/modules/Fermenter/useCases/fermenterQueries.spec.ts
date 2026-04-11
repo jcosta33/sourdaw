@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { getFermenterPresets, FERMENTER_PRESETS, FERMENTER_PARAMS } from './fermenterQueries';
+import { getFermenterPresets } from './fermenterQueries/getFermenterPresets';
+import { FERMENTER_PRESETS } from './fermenterQueries/helpers';
+import { FERMENTER_PARAMS } from './fermenterQueries/FERMENTER_PARAMS';
 
 describe('fermenterQueries', () => {
     it('exposes a non-empty preset list via getter and constant', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { restoreSnapshot } from './snapshotHelpers';
+import { restoreSnapshot } from './snapshotHelpers/restoreSnapshot';
 import { type Logger } from '#/helpers/Logger/Logger';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';

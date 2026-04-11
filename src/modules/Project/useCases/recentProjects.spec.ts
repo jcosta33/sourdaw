@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    addToRecentProjects,
-    removeFromRecentProjects,
-    getRecentProjects,
-    loadRecentProject,
-} from './recentProjects';
+import { addToRecentProjects } from './recentProjects/addToRecentProjects';
+import { removeFromRecentProjects } from './recentProjects/removeFromRecentProjects';
+import { getRecentProjects } from './recentProjects/helpers';
+import { loadRecentProject } from './recentProjects/loadRecentProject';
 import { readNamedProjectJson } from '../repositories/project/storageOperations';
 import { type Logger } from '#/helpers/Logger/Logger';
 

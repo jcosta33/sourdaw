@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { audioToMidi, detectKey } from './audioAnalysis';
+import { audioToMidi } from './audioAnalysis/audioToMidi';
+import { detectKey } from './audioAnalysis/detectKey';
 
 describe('detectKey', () => {
     beforeEach(() => {

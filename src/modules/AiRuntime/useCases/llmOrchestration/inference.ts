@@ -11,9 +11,9 @@ import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 import { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
 import { initWebLlmEngine, isWebLlmLoaded } from '../../repositories/webLlm/engineLifecycle';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
-import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference';
+import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
-import { getBackendChain } from './backendResolution';
+import { getBackendChain } from './backendResolution/getBackendChain';
 
 /**
  * Send a prompt to the model and get parsed tool calls.

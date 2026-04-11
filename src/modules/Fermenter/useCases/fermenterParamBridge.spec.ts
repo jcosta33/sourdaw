@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { loadFermenterPatchWithAudio, setFermenterParamWithAudio } from './fermenterParamBridge';
+import { loadFermenterPatchWithAudio } from './fermenterParamBridge/loadFermenterPatchWithAudio';
+import { setFermenterParamWithAudio } from './fermenterParamBridge/setFermenterParamWithAudio';
 
 describe('fermenterParamBridge', () => {
     beforeEach(() => {

@@ -5,7 +5,7 @@ import { parsePromptToActions } from './parsePromptToActions';
 import { type Logger } from '#/helpers/Logger/Logger';
 import { type ProjectContext } from '../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../transformers/promptParser/parsing';
-import { isDsoBackendAvailable } from './llmOrchestration/backendResolution';
+import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
 
 vi.mock('../transformers/promptParser/parsing', () => ({
     tryPresetMatch: vi.fn(() => []),
@@ -15,7 +15,7 @@ vi.mock('../transformers/promptParser/parsing', () => ({
     requiresConfirmation: vi.fn(() => false),
 }));
 
-vi.mock('./llmOrchestration/backendResolution', () => ({
+vi.mock('./llmOrchestration/backendResolution/isDsoBackendAvailable', () => ({
     isDsoBackendAvailable: vi.fn(() => false),
 }));
 

@@ -1,11 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    getTransportState,
-    getTransportStoreValue,
-    getTempoMapState,
-    updateTransportState,
-} from './transportQueries';
+import { getTransportState } from './transportQueries/getTransportState';
+import { getTransportStoreValue } from './transportQueries/getTransportStoreValue';
+import { getTempoMapState } from './transportQueries/getTempoMapState';
+import { updateTransportState } from './transportQueries/updateTransportState';
 import { defaultTransportState } from '../models/TransportState';
 import { type TransportState } from '../models/TransportState';
 

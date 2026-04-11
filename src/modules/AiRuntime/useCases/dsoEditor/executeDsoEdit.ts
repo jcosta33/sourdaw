@@ -21,7 +21,8 @@ import { buildDsoPrompt } from './dsoPrompt';
 import { resolveDsoNames, validateDsos, executeDsos } from './compileDso';
 
 type ExecuteDsosFn = (dsos: Dso[]) => Promise<string[]>;
-import { resolveBackend, isDsoBackendAvailable } from '../llmOrchestration/backendResolution';
+import { resolveBackend } from '../llmOrchestration/backendResolution/helpers';
+import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
 import { getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
@@ -43,7 +44,7 @@ export type DsoEditResult = {
  * Execute a DSO edit request — the single orchestration entrypoint.
  */
 export const executeDsoEdit = inject({ logger })(({ logger }) =>
-    async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
+    (async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
     const backend = resolveBackend();
 
     if (!isDsoBackendAvailable()) {
@@ -176,7 +177,7 @@ export const executeDsoEdit = inject({ logger })(({ logger }) =>
         llmStatusStore.set({ state: 'error', message: err.message });
         return { success: false, plan: null, summaries: [], error: err.message };
     }
-}
+})
 );
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

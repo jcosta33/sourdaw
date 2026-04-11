@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    addSidechainRoute,
-    removeSidechainRoute,
-    setSidechainRoutes,
-    getSidechainRoutesForTrack,
-    getSidechainSource,
-    getAllSidechainRoutes,
-} from './sidechain';
+import { addSidechainRoute } from './sidechain/addSidechainRoute';
+import { removeSidechainRoute } from './sidechain/removeSidechainRoute';
+import { setSidechainRoutes } from './sidechain/setSidechainRoutes';
+import { getSidechainRoutesForTrack } from './sidechain/getSidechainRoutesForTrack';
+import { getSidechainSource } from './sidechain/getSidechainSource';
+import { getAllSidechainRoutes } from './sidechain/getAllSidechainRoutes';
 import { SidechainCycleError } from '../errors/RoutingErrors';
 
 function makeStore(initial: { routes: { id: string; sourceTrackId: string; targetTrackId: string; targetDeviceId: string; targetParameterId: string }[] } | null) {

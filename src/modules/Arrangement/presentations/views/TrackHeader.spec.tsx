@@ -5,8 +5,8 @@ import { TrackHeader } from './TrackHeader';
 
 // Import mocked functions
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { toggleFolderCollapse } from '../../useCases/folder';
-import { setInputMonitoring } from '../../useCases/setTrackGainPan';
+import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
+import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 
 // Mock external dependencies
 vi.mock('../../useCases/toggleTrackState/muteTrack', () => ({
@@ -25,15 +25,15 @@ vi.mock('../../useCases/toggleTrackState/selectTrack', () => ({
     selectTrack: vi.fn(),
 }));
 
-vi.mock('../../useCases/recording', () => ({
+vi.mock('../../useCases/recording/armTrack', () => ({
     armTrack: vi.fn(),
 }));
 
-vi.mock('../../useCases/folder', () => ({
+vi.mock('../../useCases/folder/toggleFolderCollapse', () => ({
     toggleFolderCollapse: vi.fn(),
 }));
 
-vi.mock('../../useCases/setTrackGainPan', () => ({
+vi.mock('../../useCases/setTrackGainPan/setInputMonitoring', () => ({
     setInputMonitoring: vi.fn(),
 }));
 

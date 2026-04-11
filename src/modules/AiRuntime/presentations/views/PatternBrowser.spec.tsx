@@ -55,11 +55,11 @@ vi.mock('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote', () => ({
     addMidiNote: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/useCases/transportQueries', () => ({
+vi.mock('#/modules/Transport/useCases/transportQueries/getTransportState', () => ({
     getTransportState: vi.fn(() => ({ playheadPosition: 0 })),
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles', () => ({
+vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/selectClip', () => ({
     selectClip: vi.fn(),
 }));
 

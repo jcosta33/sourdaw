@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { createVersionBranch } from '../../useCases/versionControl/branching';
+import { createVersionBranch } from '../../useCases/versionControl/branching/createVersionBranch';
 
 export const handleCreateVersionBranch = createHandler<'createVersionBranch'>({
     execute: async (a) => {

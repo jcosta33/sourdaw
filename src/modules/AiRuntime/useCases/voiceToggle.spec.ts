@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { toggleVoiceInput, onVoiceToggle } from './voiceToggle';
+import { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
+import { onVoiceToggle } from './voiceToggle/onVoiceToggle';
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;

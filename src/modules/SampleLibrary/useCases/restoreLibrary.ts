@@ -1,4 +1,4 @@
-import { restoreLibrary as restoreLibraryFromRepo } from '../repositories/libraryPersistence';
+import { restoreLibrary as restoreLibraryFromRepo } from '../repositories/libraryPersistence/restoreLibrary';
 
 /**
  * Restore library roots and sample metadata from IndexedDB on app launch.

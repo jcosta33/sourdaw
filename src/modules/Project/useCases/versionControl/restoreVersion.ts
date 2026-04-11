@@ -1,5 +1,5 @@
 import { versionControlStore } from '../../stores/versionControlStore';
-import { restoreSnapshot } from './snapshotHelpers';
+import { restoreSnapshot } from './snapshotHelpers/restoreSnapshot';
 
 export function restoreVersion(versionId: string): void {
     const state = versionControlStore.value;

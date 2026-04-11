@@ -1,5 +1,13 @@
 import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
-import { synth, reverb, delay, eq, flanger, bitcrusher, tremolo, autopan, AUTHOR } from './presetHelpers';
+import { synth } from './presetHelpers/synth';
+import { reverb } from './presetHelpers/reverb';
+import { delay } from './presetHelpers/delay';
+import { eq } from './presetHelpers/eq';
+import { flanger } from './presetHelpers/flanger';
+import { bitcrusher } from './presetHelpers/bitcrusher';
+import { tremolo } from './presetHelpers/tremolo';
+import { autopan } from './presetHelpers/autopan';
+import { AUTHOR } from './presetHelpers/helpers';
 
 export const leadPresets: SoundPreset[] = [
     // ─── Lead ────────────────────────────────────────────────────────────

@@ -11,7 +11,8 @@ vi.mock('#/modules/Arrangement', () => ({
     },
 }));
 
-import { analyzeMix, createReferenceAnalysis } from './analyzeMix';
+import { analyzeMix } from './analyzeMix/analyzeMix';
+import { createReferenceAnalysis } from './analyzeMix/createReferenceAnalysis';
 
 describe('analyzeMix (track layout)', () => {
     it('analyzeMix returns a profile shaped like the MixAnalysis type', () => {

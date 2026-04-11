@@ -1,5 +1,11 @@
 import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
-import { synth, comp, delay, eq, filter, bitcrusher, AUTHOR } from './presetHelpers';
+import { synth } from './presetHelpers/synth';
+import { comp } from './presetHelpers/comp';
+import { delay } from './presetHelpers/delay';
+import { eq } from './presetHelpers/eq';
+import { filter } from './presetHelpers/filter';
+import { bitcrusher } from './presetHelpers/bitcrusher';
+import { AUTHOR } from './presetHelpers/helpers';
 
 export const bassPresets: SoundPreset[] = [
     // ─── Bass ────────────────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { runAppAction, undoLastAction, toggleChat } from './aiPanelActions';
+import { runAppAction } from './aiPanelActions/runAppAction';
+import { undoLastAction } from './aiPanelActions/undoLastAction';
+import { toggleChat } from './aiPanelActions/toggleChat';
 
 describe('aiPanelActions injectables', () => {
     beforeEach(() => {

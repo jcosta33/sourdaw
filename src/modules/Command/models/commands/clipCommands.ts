@@ -1,5 +1,7 @@
 import { type CommandEntry } from '../CommandEntry';
-import { getSelectedClipId, getSelectedClipIds, getSelectedTrackId } from '../../useCases/selectionHelpers';
+import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
+import { getSelectedClipIds } from '../../useCases/selectionHelpers/getSelectedClipIds';
+import { getSelectedTrackId } from '../../useCases/selectionHelpers/getSelectedTrackId';
 import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';

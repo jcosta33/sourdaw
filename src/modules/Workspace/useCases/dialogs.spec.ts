@@ -1,12 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    openExportDialog,
-    openPreferencesDialog,
-    onDialogOpenExport,
-    onDialogOpenPreferences,
-} from './dialogs';
+import { openExportDialog } from './dialogs/openExportDialog';
+import { openPreferencesDialog } from './dialogs/openPreferencesDialog';
+import { onDialogOpenExport } from './dialogs/onDialogOpenExport';
+import { onDialogOpenPreferences } from './dialogs/onDialogOpenPreferences';
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;

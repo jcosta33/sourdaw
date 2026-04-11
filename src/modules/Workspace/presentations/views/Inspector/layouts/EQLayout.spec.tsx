@@ -18,7 +18,7 @@ vi.mock('#/components/daw/visualizers/EQCurve', () => ({
     EQCurve: () => <div data-testid="eq-curve">EQ Curve</div>,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: vi.fn(),
 }));
 

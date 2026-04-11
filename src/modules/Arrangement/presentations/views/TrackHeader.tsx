@@ -9,9 +9,9 @@ import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { armTrack } from '../../useCases/recording';
-import { toggleFolderCollapse } from '../../useCases/folder';
-import { setInputMonitoring } from '../../useCases/setTrackGainPan';
+import { armTrack } from '../../useCases/recording/armTrack';
+import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
+import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 
 import { TrackContextMenu } from './TrackContextMenu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';

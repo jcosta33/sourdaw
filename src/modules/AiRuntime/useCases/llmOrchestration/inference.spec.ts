@@ -4,7 +4,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { generateToolCalls } from './inference';
 import { type Logger } from '#/helpers/Logger/Logger';
 
-vi.mock('./backendResolution', () => ({
+vi.mock('./backendResolution/getBackendChain', () => ({
     getBackendChain: vi.fn(() => []),
 }));
 

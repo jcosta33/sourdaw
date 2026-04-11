@@ -1,5 +1,5 @@
 import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
-import { type WorkspaceMode } from './workspaceQueries';
+import { type WorkspaceMode } from './workspaceQueries/helpers';
 
 export function setWorkspaceMode(mode: WorkspaceMode): void {
     const current = getWorkspaceState();

@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { startPluginScan } from '../../useCases/pluginScan/scanning';
+import { startPluginScan } from '../../useCases/pluginScan/scanning/startPluginScan';
 
 export const handleScanPlugins = createHandler<'scanPlugins'>({
     execute: async () => {

@@ -4,15 +4,13 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
-import {
-    addSection,
-    removeSection,
-    renameSection,
-    setSectionColor,
-    moveSection,
-    resizeSection,
-    reorderSection,
-} from '../../useCases/marker/sectionOperations';
+import { addSection } from '../../useCases/marker/sectionOperations/addSection';
+import { removeSection } from '../../useCases/marker/sectionOperations/removeSection';
+import { renameSection } from '../../useCases/marker/sectionOperations/renameSection';
+import { setSectionColor } from '../../useCases/marker/sectionOperations/setSectionColor';
+import { moveSection } from '../../useCases/marker/sectionOperations/moveSection';
+import { resizeSection } from '../../useCases/marker/sectionOperations/resizeSection';
+import { reorderSection } from '../../useCases/marker/sectionOperations/reorderSection';
 import { type ArrangementSection } from '../../models/Marker';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { cn } from '#/helpers/Styles/cn';

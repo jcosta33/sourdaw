@@ -23,16 +23,14 @@ import {
     BACTERIA_THEME,
     YEAST_THEME,
 } from '../../components/Sidebar/InstrumentCard';
-import {
-    showProofPanel,
-    showGlutenPanel,
-    showCrustPanel,
-    showDutchOvenPanel,
-    showScoringPanel,
-    showGrinderPanel,
-    showBacteriaPanel,
-    showYeastPanel,
-} from '../../../useCases/panels/devicePanels';
+import { showProofPanel } from '../../../useCases/panels/devicePanels/showProofPanel';
+import { showGlutenPanel } from '../../../useCases/panels/devicePanels/showGlutenPanel';
+import { showCrustPanel } from '../../../useCases/panels/devicePanels/showCrustPanel';
+import { showDutchOvenPanel } from '../../../useCases/panels/devicePanels/showDutchOvenPanel';
+import { showScoringPanel } from '../../../useCases/panels/devicePanels/showScoringPanel';
+import { showGrinderPanel } from '../../../useCases/panels/devicePanels/showGrinderPanel';
+import { showBacteriaPanel } from '../../../useCases/panels/devicePanels/showBacteriaPanel';
+import { showYeastPanel } from '../../../useCases/panels/devicePanels/showYeastPanel';
 import {
     addDevice,
     getFactoryPresets,

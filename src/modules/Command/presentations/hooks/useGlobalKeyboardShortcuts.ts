@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { handleKeydown, handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut';
+import { handleKeydown } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
+import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
 
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {

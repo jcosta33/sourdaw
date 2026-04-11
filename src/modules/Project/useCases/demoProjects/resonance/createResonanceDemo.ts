@@ -6,14 +6,12 @@ import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { automationStore, createAutomationLane } from '#/modules/Automation';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
-import {
-    note,
-    applyPreset,
-    createAudioClip,
-    createMidiClip,
-    generateDemoDrumBuffer,
-    syncArrangement,
-} from '../demoUtils';
+import { note } from '../demoUtils/note';
+import { applyPreset } from '../demoUtils/applyPreset';
+import { createAudioClip } from '../demoUtils/createAudioClip';
+import { createMidiClip } from '../demoUtils/createMidiClip';
+import { generateDemoDrumBuffer } from '../demoUtils/generateDemoDrumBuffer';
+import { syncArrangement } from '../demoUtils/syncArrangement';
 export async function demo1_TheCompleteMix(): Promise<void> {
     const bpm = 120;
     const TB = 640; // totalBeats — ~5:20

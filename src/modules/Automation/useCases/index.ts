@@ -23,13 +23,14 @@ export { recordAutomationValue } from './automationRecording/recordAutomationVal
 export { releaseTouchAutomation } from './automationRecording/releaseTouchAutomation';
 export { startAutomationRecording } from './automationRecording/startAutomationRecording';
 export { stopAutomationRecording } from './automationRecording/stopAutomationRecording';
-export {
-    selectPointsInRange,
-    transformSelectedPoints,
-    deleteSelectedPoints,
-    getSelectionBounds,
-} from './automationSelection';
+export { selectPointsInRange } from './automationSelection/selectPointsInRange';
+export { transformSelectedPoints } from './automationSelection/transformSelectedPoints';
+export { deleteSelectedPoints } from './automationSelection/deleteSelectedPoints';
+export { getSelectionBounds } from './automationSelection/getSelectionBounds';
 export { insertAutomationShape } from './automationShapes';
-export { zoomToUsedRange, resetYZoom, adjustYZoom, toggleVirginTerritory } from './automationZoom';
+export { zoomToUsedRange } from './automationZoom/zoomToUsedRange';
+export { resetYZoom } from './automationZoom/resetYZoom';
+export { adjustYZoom } from './automationZoom/adjustYZoom';
+export { toggleVirginTerritory } from './automationZoom/toggleVirginTerritory';
 export { getAutomationLanes } from './getAutomationLanes';
 export { getAutomationStoreState } from './getAutomationStoreState';

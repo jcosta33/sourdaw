@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { showAutomationPanel } from '../../useCases/panels/devicePanels';
+import { showAutomationPanel } from '../../useCases/panels/devicePanels/showAutomationPanel';
 import {
     copySelectedClip,
     cutSelectedClip,
@@ -12,15 +12,13 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { saveProject } from '#/modules/Project';
 import { workspaceStore } from '../../stores/workspaceStore';
 
-import {
-    toggleChatPanel,
-    toggleSidebar,
-    toggleInspector,
-    toggleMixer,
-    toggleTrackList,
-    toggleVirtualKeyboard,
-    clearClipSelection,
-} from '../../useCases/togglePanel/panelToggles';
+import { toggleChatPanel } from '../../useCases/togglePanel/panelToggles/toggleChatPanel';
+import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
+import { toggleInspector } from '../../useCases/togglePanel/panelToggles/toggleInspector';
+import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
+import { toggleTrackList } from '../../useCases/togglePanel/panelToggles/toggleTrackList';
+import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
+import { clearClipSelection } from '../../useCases/togglePanel/panelToggles/clearClipSelection';
 
 type ShortcutCallbacks = {
     onOpenExport: () => void;

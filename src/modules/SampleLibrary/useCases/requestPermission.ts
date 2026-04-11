@@ -1,4 +1,4 @@
-import { requestPermission as requestPermissionFromRepo } from '../repositories/libraryPersistence';
+import { requestPermission as requestPermissionFromRepo } from '../repositories/libraryPersistence/requestPermission';
 
 /**
  * Request file system permission for a browser directory handle that needs

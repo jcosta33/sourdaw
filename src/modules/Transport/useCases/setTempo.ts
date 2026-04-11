@@ -1,4 +1,5 @@
-import { getTransportState, updateTransportState } from '../repositories/transport';
+import { getTransportState } from '../repositories/transport/getTransportState';
+import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { createInvalidTempoError } from '../errors/InvalidTempoError';
 
 export function setTempo(bpm: number): void {

@@ -17,10 +17,16 @@ vi.mock('#/infra/store/useStore', () => ({
 const mockInitWebMidi = vi.fn(() => Promise.resolve());
 const mockSelectMidiInput = vi.fn();
 
-vi.mock('../../useCases/webMidiInput', () => ({
-    webMidiStore: {},
-    initWebMidi: () => mockInitWebMidi(),
+vi.mock('../../useCases/webMidiInput/selectMidiInput', () => ({
     selectMidiInput: (id: string) => mockSelectMidiInput(id),
+}));
+
+vi.mock('../../useCases/webMidiInput/initWebMidi', () => ({
+    initWebMidi: () => mockInitWebMidi(),
+}));
+
+vi.mock('../../useCases/webMidiInput/helpers', () => ({
+    webMidiStore: {},
 }));
 
 const { useStore } = await import('#/infra/store/useStore');

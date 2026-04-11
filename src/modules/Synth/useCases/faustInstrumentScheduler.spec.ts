@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { scheduleFaustNote, startFaustNote } from './faustInstrumentScheduler';
+import { scheduleFaustNote } from './faustInstrumentScheduler/scheduleFaustNote';
+import { startFaustNote } from './faustInstrumentScheduler/startFaustNote';
 
 describe('scheduleFaustNote', () => {
     beforeEach(() => {

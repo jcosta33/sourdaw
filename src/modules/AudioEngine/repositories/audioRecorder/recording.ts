@@ -19,7 +19,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '../createWebAudioEngine';
-import { getSelectedInputId } from '../../useCases/audioDeviceSelection';
+import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
 
 export { audioRecordingStore };
@@ -63,10 +63,10 @@ export async function requestMicPermission(): Promise<boolean> {
 
 export const startAudioRecording = inject({ logger })(
     ({ logger }) =>
-        async function startAudioRecording(
+        (async function startAudioRecording(
             trackId: string,
             onComplete: (buffer: AudioBuffer) => void,
-            inputId?: string | null
+            inputId?: string | null,
         ): Promise<boolean> {
             try {
                 const selectedInputId = inputId ?? getSelectedInputId();
@@ -146,7 +146,7 @@ export const startAudioRecording = inject({ logger })(
                 cleanupNodes();
                 return false;
             }
-        }
+        })
 );
 
 export function stopAudioRecording(): void {

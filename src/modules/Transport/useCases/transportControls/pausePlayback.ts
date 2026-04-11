@@ -1,4 +1,5 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
+import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
 import { stopPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
 import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases';
 

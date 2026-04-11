@@ -18,10 +18,19 @@ vi.mock('#/modules/AudioEngine/useCases/triggerLiveNoteOff', () => ({
     triggerLiveNoteOff: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles', () => ({
-    setVirtualKeyboardOctave: vi.fn(),
-    setVirtualKeyboardVelocity: vi.fn(),
-}));
+vi.mock(
+    '#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardVelocity',
+    () => ({
+        setVirtualKeyboardVelocity: vi.fn(),
+    }),
+);
+
+vi.mock(
+    '#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave',
+    () => ({
+        setVirtualKeyboardOctave: vi.fn(),
+    }),
+);
 
 // Mock UI components
 vi.mock('#/components/daw/DawHeaderBand', () => ({

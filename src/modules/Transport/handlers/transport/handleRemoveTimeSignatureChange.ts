@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { removeTimeSignatureChange } from '../../useCases/timeSignatureChanges';
+import { removeTimeSignatureChange } from '../../useCases/timeSignatureChanges/removeTimeSignatureChange';
 
 export const handleRemoveTimeSignatureChange = createHandler<'removeTimeSignatureChange'>({
     execute: (a) => {

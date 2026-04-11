@@ -9,51 +9,43 @@
  */
 
 import { type OfflineDeviceNode } from './devices/types';
-import {
-    createEq,
-    applyEqParams,
-    createCompressor,
-    applyCompressorParams,
-    createSidechainCompressorFallback,
-    applySidechainCompressorParams,
-    createLimiter,
-    applyLimiterParams,
-} from './devices/dynamics';
-import {
-    createReverb,
-    applyReverbParams,
-    createDelay,
-    applyDelayParams,
-    createConvolutionReverb,
-    applyConvolutionReverbParams,
-} from './devices/reverbDelay';
-import {
-    createGainDevice,
-    applyGainParams,
-    createFilter,
-    applyFilterParams,
-    createDistortion,
-    applyDistortionParams,
-    createBitcrusher,
-    applyBitcrusherParams,
-    createDeEsser,
-    applyDeEsserParams,
-    createLufsMeter,
-} from './devices/toneShaping';
-import {
-    createChorus,
-    applyChorusParams,
-    createPhaser,
-    applyPhaserParams,
-    createFlanger,
-    applyFlangerParams,
-    createTremolo,
-    applyTremoloParams,
-    createAutoPan,
-    applyAutoPanParams,
-    createStereoWidener,
-    applyStereoWidenerParams,
-} from './devices/modulation';
+import { createEq } from './devices/dynamics/createEq';
+import { applyEqParams } from './devices/dynamics/applyEqParams';
+import { createCompressor } from './devices/dynamics/createCompressor';
+import { applyCompressorParams } from './devices/dynamics/applyCompressorParams';
+import { createSidechainCompressorFallback } from './devices/dynamics/createSidechainCompressorFallback';
+import { applySidechainCompressorParams } from './devices/dynamics/applySidechainCompressorParams';
+import { createLimiter } from './devices/dynamics/createLimiter';
+import { applyLimiterParams } from './devices/dynamics/applyLimiterParams';
+import { createReverb } from './devices/reverbDelay/createReverb';
+import { applyReverbParams } from './devices/reverbDelay/applyReverbParams';
+import { createDelay } from './devices/reverbDelay/createDelay';
+import { applyDelayParams } from './devices/reverbDelay/applyDelayParams';
+import { createConvolutionReverb } from './devices/reverbDelay/createConvolutionReverb';
+import { applyConvolutionReverbParams } from './devices/reverbDelay/applyConvolutionReverbParams';
+import { createGainDevice } from './devices/toneShaping/createGainDevice';
+import { applyGainParams } from './devices/toneShaping/applyGainParams';
+import { createFilter } from './devices/toneShaping/createFilter';
+import { applyFilterParams } from './devices/toneShaping/applyFilterParams';
+import { createDistortion } from './devices/toneShaping/createDistortion';
+import { applyDistortionParams } from './devices/toneShaping/applyDistortionParams';
+import { createBitcrusher } from './devices/toneShaping/createBitcrusher';
+import { applyBitcrusherParams } from './devices/toneShaping/applyBitcrusherParams';
+import { createDeEsser } from './devices/toneShaping/createDeEsser';
+import { applyDeEsserParams } from './devices/toneShaping/applyDeEsserParams';
+import { createLufsMeter } from './devices/toneShaping/createLufsMeter';
+import { createChorus } from './devices/modulation/createChorus';
+import { applyChorusParams } from './devices/modulation/applyChorusParams';
+import { createPhaser } from './devices/modulation/createPhaser';
+import { applyPhaserParams } from './devices/modulation/applyPhaserParams';
+import { createFlanger } from './devices/modulation/createFlanger';
+import { applyFlangerParams } from './devices/modulation/applyFlangerParams';
+import { createTremolo } from './devices/modulation/createTremolo';
+import { applyTremoloParams } from './devices/modulation/applyTremoloParams';
+import { createAutoPan } from './devices/modulation/createAutoPan';
+import { applyAutoPanParams } from './devices/modulation/applyAutoPanParams';
+import { createStereoWidener } from './devices/modulation/createStereoWidener';
+import { applyStereoWidenerParams } from './devices/modulation/applyStereoWidenerParams';
 
 export type { OfflineDeviceNode };
 

@@ -19,7 +19,9 @@ vi.mock('../stores/toasterStore', () => ({
     },
 }));
 
-import { setMorphPosition, setMorphTarget, toggleMorph } from './setMorphPosition';
+import { setMorphPosition } from './setMorphPosition/setMorphPosition';
+import { setMorphTarget } from './setMorphPosition/setMorphTarget';
+import { toggleMorph } from './setMorphPosition/toggleMorph';
 
 describe('toaster morph operations', () => {
     beforeEach(() => {

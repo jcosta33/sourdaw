@@ -4,7 +4,7 @@
 
 import { detectSmartLoopPoints } from '../repositories/samplerBridge';
 import { samplerStore, setLoopParams } from '../stores/samplerStore';
-import { setSamplerParamThrottled } from './samplerParamBridge';
+import { setSamplerParamThrottled } from './samplerParamBridge/setSamplerParamThrottled';
 
 export async function detectAndApplyLoopPoints(): Promise<void> {
     const state = samplerStore.value;

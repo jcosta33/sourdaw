@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { setClipStretchRatio } from '../../useCases/clipStretch';
+import { setClipStretchRatio } from '../../useCases/clipStretch/setClipStretchRatio';
 
 export const handleSetClipStretchRatio = createHandler<'setClipStretchRatio'>({
     execute: (action) => {

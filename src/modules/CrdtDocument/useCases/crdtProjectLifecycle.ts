@@ -1,13 +1,11 @@
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
-import {
-    hasCrdtDocsInIdb,
-    loadAllFromIdb,
-    saveAllToIdb,
-    saveIncrementalToIdb,
-    clearIncrementalsFromIdb,
-} from '../repositories/crdtPersistence';
-import { isNativeCrdtAvailable } from '../repositories/nativeCrdtPersistence';
+import { hasCrdtDocsInIdb } from '../repositories/crdtPersistence/hasCrdtDocsInIdb';
+import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
+import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
+import { saveIncrementalToIdb } from '../repositories/crdtPersistence/saveIncrementalToIdb';
+import { clearIncrementalsFromIdb } from '../repositories/crdtPersistence/clearIncrementalsFromIdb';
+import { isNativeCrdtAvailable } from '../repositories/nativeCrdtPersistence/isNativeCrdtAvailable';
 
 let incrementalSaveCount = 0;
 const COMPACTION_THRESHOLD = 50;

@@ -1,5 +1,5 @@
 import { loopStationStore, type LoopLayer } from '#/modules/Transport/stores/loopStationStore';
-import { getNextLayerId } from '../../repositories/loopStationIdCounter';
+import { getNextLayerId } from '../../repositories/loopStationIdCounter/getNextLayerId';
 
 export function toggleRecord(slotId: string): void {
     const state = loopStationStore.value;

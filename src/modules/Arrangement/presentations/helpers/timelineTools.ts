@@ -5,7 +5,8 @@
  * return early) or `false` to continue with the general select/drag logic.
  */
 import { type RefObject } from 'react';
-import { hitTestClip, hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
+import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
+import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
 import { splitClip } from '../../useCases/clipEditing/splitClip';
 import { addClip } from '../../useCases/clip/addClip';

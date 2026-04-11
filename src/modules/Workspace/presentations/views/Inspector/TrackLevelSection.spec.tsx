@@ -6,11 +6,21 @@ import type { Track } from '../../../models/TrackViewTypes';
 // Mock external dependencies
 const mockSetTrackGain = vi.fn();
 const mockSetTrackPan = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan', () => ({
-    setTrackGain: (...args: unknown[]) => mockSetTrackGain(...args),
-    setTrackPan: (...args: unknown[]) => mockSetTrackPan(...args),
-    setTrackColor: vi.fn(),
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackNotes', () => ({
     setTrackNotes: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackColor', () => ({
+    setTrackColor: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackPan', () => ({
+    setTrackPan: (...args: unknown[]) => mockSetTrackPan(...args),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackGain', () => ({
+    setTrackGain: (...args: unknown[]) => mockSetTrackGain(...args),
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({

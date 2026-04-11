@@ -1,2 +1,3 @@
 export { autoLoadLevainSamples } from './autoLoadSamples';
-export { registerLevainDevice, unregisterLevainDevice } from './levainParamBridge';
+export { registerLevainDevice } from './levainParamBridge/registerLevainDevice';
+export { unregisterLevainDevice } from './levainParamBridge/unregisterLevainDevice';

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { deleteSelectedPoints } from './automationSelection';
+import { deleteSelectedPoints } from './automationSelection/deleteSelectedPoints';
 
 describe('deleteSelectedPoints', () => {
     beforeEach(() => {

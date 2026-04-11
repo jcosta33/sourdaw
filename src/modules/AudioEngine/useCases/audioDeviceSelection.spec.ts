@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { getAudioDevices, setOutputDevice } from './audioDeviceSelection';
+import { getAudioDevices } from './audioDeviceSelection/getAudioDevices';
+import { setOutputDevice } from './audioDeviceSelection/setOutputDevice';
 import { type Logger } from '#/helpers/Logger/Logger';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 

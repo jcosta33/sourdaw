@@ -4,7 +4,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { startAudioRecording } from './recording';
 import { type Logger } from '#/helpers/Logger/Logger';
 import { audioEngine } from '../createWebAudioEngine';
-import { getSelectedInputId } from '../../useCases/audioDeviceSelection';
+import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
 
 vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
     audioEngine: {
@@ -21,7 +21,7 @@ vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
     },
 }));
 
-vi.mock('../../useCases/audioDeviceSelection', () => ({
+vi.mock('../../useCases/audioDeviceSelection/getSelectedInputId', () => ({
     getSelectedInputId: vi.fn(() => null),
 }));
 

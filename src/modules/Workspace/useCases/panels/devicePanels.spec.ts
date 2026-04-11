@@ -1,37 +1,35 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    showFermenterPanel,
-    showToasterPanel,
-    showLevainPanel,
-    showDutchOvenPanel,
-    showGlutenPanel,
-    showBacteriaPanel,
-    showGrinderPanel,
-    showProofPanel,
-    showYeastPanel,
-    showScoringPanel,
-    showCrustPanel,
-    showCrumbsPanel,
-    showGrandBoulePanel,
-    showAutomationPanel,
-    showDevicePanelForType,
-    onPanelShowFermenter,
-    onPanelShowToaster,
-    onPanelShowLevain,
-    onPanelShowDutchOven,
-    onPanelShowGluten,
-    onPanelShowBacteria,
-    onPanelShowGrinder,
-    onPanelShowProof,
-    onPanelShowYeast,
-    onPanelShowScoring,
-    onPanelShowCrust,
-    onPanelShowCrumbs,
-    onPanelShowGrandBoule,
-    onPanelShowAutomation,
-} from './devicePanels';
+import { showFermenterPanel } from './devicePanels/showFermenterPanel';
+import { showToasterPanel } from './devicePanels/showToasterPanel';
+import { showLevainPanel } from './devicePanels/showLevainPanel';
+import { showDutchOvenPanel } from './devicePanels/showDutchOvenPanel';
+import { showGlutenPanel } from './devicePanels/showGlutenPanel';
+import { showBacteriaPanel } from './devicePanels/showBacteriaPanel';
+import { showGrinderPanel } from './devicePanels/showGrinderPanel';
+import { showProofPanel } from './devicePanels/showProofPanel';
+import { showYeastPanel } from './devicePanels/showYeastPanel';
+import { showScoringPanel } from './devicePanels/showScoringPanel';
+import { showCrustPanel } from './devicePanels/showCrustPanel';
+import { showCrumbsPanel } from './devicePanels/showCrumbsPanel';
+import { showGrandBoulePanel } from './devicePanels/showGrandBoulePanel';
+import { showAutomationPanel } from './devicePanels/showAutomationPanel';
+import { showDevicePanelForType } from './devicePanels/showDevicePanelForType';
+import { onPanelShowFermenter } from './devicePanels/onPanelShowFermenter';
+import { onPanelShowToaster } from './devicePanels/onPanelShowToaster';
+import { onPanelShowLevain } from './devicePanels/onPanelShowLevain';
+import { onPanelShowDutchOven } from './devicePanels/onPanelShowDutchOven';
+import { onPanelShowGluten } from './devicePanels/onPanelShowGluten';
+import { onPanelShowBacteria } from './devicePanels/onPanelShowBacteria';
+import { onPanelShowGrinder } from './devicePanels/onPanelShowGrinder';
+import { onPanelShowProof } from './devicePanels/onPanelShowProof';
+import { onPanelShowYeast } from './devicePanels/onPanelShowYeast';
+import { onPanelShowScoring } from './devicePanels/onPanelShowScoring';
+import { onPanelShowCrust } from './devicePanels/onPanelShowCrust';
+import { onPanelShowCrumbs } from './devicePanels/onPanelShowCrumbs';
+import { onPanelShowGrandBoule } from './devicePanels/onPanelShowGrandBoule';
+import { onPanelShowAutomation } from './devicePanels/onPanelShowAutomation';
 import { type ShowDevicePanelPayload } from '#/modules/Workspace/events/WorkspaceEvents';
 
 type EventBusShape = {

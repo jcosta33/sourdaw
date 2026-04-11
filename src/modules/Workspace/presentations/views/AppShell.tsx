@@ -7,22 +7,20 @@ import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
-import {
-    onPanelShowFermenter,
-    onPanelShowToaster,
-    onPanelShowLevain,
-    onPanelShowDutchOven,
-    onPanelShowGluten,
-    onPanelShowBacteria,
-    onPanelShowGrinder,
-    onPanelShowProof,
-    onPanelShowYeast,
-    onPanelShowScoring,
-    onPanelShowCrust,
-    onPanelShowCrumbs,
-    onPanelShowGrandBoule,
-    onPanelShowAutomation,
-} from '../../useCases/panels/devicePanels';
+import { onPanelShowFermenter } from '../../useCases/panels/devicePanels/onPanelShowFermenter';
+import { onPanelShowToaster } from '../../useCases/panels/devicePanels/onPanelShowToaster';
+import { onPanelShowLevain } from '../../useCases/panels/devicePanels/onPanelShowLevain';
+import { onPanelShowDutchOven } from '../../useCases/panels/devicePanels/onPanelShowDutchOven';
+import { onPanelShowGluten } from '../../useCases/panels/devicePanels/onPanelShowGluten';
+import { onPanelShowBacteria } from '../../useCases/panels/devicePanels/onPanelShowBacteria';
+import { onPanelShowGrinder } from '../../useCases/panels/devicePanels/onPanelShowGrinder';
+import { onPanelShowProof } from '../../useCases/panels/devicePanels/onPanelShowProof';
+import { onPanelShowYeast } from '../../useCases/panels/devicePanels/onPanelShowYeast';
+import { onPanelShowScoring } from '../../useCases/panels/devicePanels/onPanelShowScoring';
+import { onPanelShowCrust } from '../../useCases/panels/devicePanels/onPanelShowCrust';
+import { onPanelShowCrumbs } from '../../useCases/panels/devicePanels/onPanelShowCrumbs';
+import { onPanelShowGrandBoule } from '../../useCases/panels/devicePanels/onPanelShowGrandBoule';
+import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
 import { clamp } from '#/helpers/Math/clamp';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
@@ -57,7 +55,8 @@ import { ScoringPanel } from '#/modules/Scoring/presentations/views';
 import { YeastPanel } from '#/modules/Yeast/presentations/views';
 import { CrustPanel } from '#/modules/Crust/presentations/views';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
-import { toggleVirtualKeyboard, closeBranchManager } from '../../useCases/togglePanel/panelToggles';
+import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
+import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
 
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { NotificationToast } from '../components/NotificationToast';
@@ -66,14 +65,14 @@ import { aiStore } from '#/modules/AiGeneration/stores';
 import { ExportDialog } from '#/modules/Project/presentations/views';
 import { PreferencesDialog } from './PreferencesDialog';
 import { startShortcutEngine } from '../../useCases/shortcutEngine';
-import { openMixer } from '../../useCases/togglePanel/panelToggles';
+import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 import { StatusBar } from './StatusBar';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 
 import { Button } from '#/components/ui/button';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { X } from 'lucide-react';
-import { toggleMixer } from '../../useCases/togglePanel/panelToggles';
+import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { defaultPreferences } from '../../models/Preferences';

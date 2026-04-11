@@ -1,5 +1,6 @@
 import { type TrackTemplate } from '../models/TrackTemplate';
-import { loadTrackTemplates, saveTrackTemplates } from '../repositories/trackTemplate';
+import { loadTrackTemplates } from '../repositories/trackTemplate/loadTrackTemplates';
+import { saveTrackTemplates } from '../repositories/trackTemplate/saveTrackTemplates';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';

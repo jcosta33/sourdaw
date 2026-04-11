@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { setClipStretchMode } from '../../useCases/clipStretch';
+import { setClipStretchMode } from '../../useCases/clipStretch/setClipStretchMode';
 
 export const handleSetClipStretchMode = createHandler<'setClipStretchMode'>({
     execute: (action) => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
+import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries/helpers';
 import { buildTimelineRenderModel } from './buildTimelineRenderModel';
 
 describe('buildTimelineRenderModel', () => {

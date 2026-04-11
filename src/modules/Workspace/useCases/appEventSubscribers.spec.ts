@@ -1,13 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    onProjectSave,
-    onProjectNew,
-    onCommandUndo,
-    onCommandRedo,
-    onMidiImport,
-} from './appEventSubscribers';
+import { onProjectSave } from './appEventSubscribers/onProjectSave';
+import { onProjectNew } from './appEventSubscribers/onProjectNew';
+import { onCommandUndo } from './appEventSubscribers/onCommandUndo';
+import { onCommandRedo } from './appEventSubscribers/onCommandRedo';
+import { onMidiImport } from './appEventSubscribers/onMidiImport';
 
 type EventBusShape = {
     on: ReturnType<typeof vi.fn>;

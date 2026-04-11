@@ -28,11 +28,9 @@ vi.mock('../models/TimeSignatureMap', () => ({
     })),
 }));
 
-import {
-    addTimeSignatureChange,
-    removeTimeSignatureChange,
-    getTimeSignatureChanges,
-} from './timeSignatureChanges';
+import { addTimeSignatureChange } from './timeSignatureChanges/addTimeSignatureChange';
+import { removeTimeSignatureChange } from './timeSignatureChanges/removeTimeSignatureChange';
+import { getTimeSignatureChanges } from './timeSignatureChanges/getTimeSignatureChanges';
 
 describe('timeSignatureChanges', () => {
     beforeEach(() => {

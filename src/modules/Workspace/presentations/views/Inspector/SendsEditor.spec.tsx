@@ -5,9 +5,16 @@ import type { Track } from '../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetSend = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/device/sendManagement', () => ({
+
+vi.mock(
+    '#/modules/Arrangement/useCases/device/sendManagement/toggleSendPreFader',
+    () => ({
+        toggleSendPreFader: vi.fn(),
+    }),
+);
+
+vi.mock('#/modules/Arrangement/useCases/device/sendManagement/setSend', () => ({
     setSend: (...args: unknown[]) => mockSetSend(...args),
-    toggleSendPreFader: vi.fn(),
 }));
 
 const mockAddTrack = vi.fn();

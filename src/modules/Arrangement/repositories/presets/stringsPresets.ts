@@ -1,5 +1,10 @@
 import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
-import { synth, reverb, eq, tremolo, chorus, AUTHOR } from './presetHelpers';
+import { synth } from './presetHelpers/synth';
+import { reverb } from './presetHelpers/reverb';
+import { eq } from './presetHelpers/eq';
+import { tremolo } from './presetHelpers/tremolo';
+import { chorus } from './presetHelpers/chorus';
+import { AUTHOR } from './presetHelpers/helpers';
 
 export const stringsPresets: SoundPreset[] = [
     // ─── Strings ─────────────────────────────────────────────────────────

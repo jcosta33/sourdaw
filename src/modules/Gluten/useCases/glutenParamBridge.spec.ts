@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { Container } from '#/infra/di/Container';
-import { setGlutenParamWithAudio, loadGlutenPatchWithAudio } from './glutenParamBridge';
+import { setGlutenParamWithAudio } from './glutenParamBridge/setGlutenParamWithAudio';
+import { loadGlutenPatchWithAudio } from './glutenParamBridge/loadGlutenPatchWithAudio';
 import { DEFAULT_PATCH } from '../models/GlutenPatch';
 
 vi.mock('../stores/glutenStore', () => ({

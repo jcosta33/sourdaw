@@ -4,13 +4,11 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
-import {
-    addMarker,
-    removeMarker,
-    renameMarker,
-    setMarkerColor,
-    moveMarker,
-} from '../../useCases/marker/markerOperations';
+import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
+import { removeMarker } from '../../useCases/marker/markerOperations/removeMarker';
+import { renameMarker } from '../../useCases/marker/markerOperations/renameMarker';
+import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarkerColor';
+import { moveMarker } from '../../useCases/marker/markerOperations/moveMarker';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
 import { TimelineChromeSurface } from './TimelineChromeSurface';

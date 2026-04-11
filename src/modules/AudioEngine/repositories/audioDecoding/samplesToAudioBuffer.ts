@@ -1,4 +1,4 @@
-import { type DecodedAudio } from './tauriDecoding';
+import { type DecodedAudio } from './tauriDecoding/decodeAudioFile';
 
 /**
  * Convert decoded audio samples to an AudioBuffer for Web Audio API playback.

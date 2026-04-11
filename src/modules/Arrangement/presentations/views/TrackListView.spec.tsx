@@ -54,7 +54,7 @@ vi.mock('../../useCases/addTrack', () => ({
     addTrack: vi.fn(),
 }));
 
-vi.mock('../../useCases/folder', () => ({
+vi.mock('../../useCases/folder/createFolder', () => ({
     createFolder: vi.fn(),
 }));
 
@@ -70,7 +70,7 @@ vi.mock('../../useCases/removeTrack', () => ({
     removeTrack: vi.fn(),
 }));
 
-vi.mock('../../useCases/trackViewActions', () => ({
+vi.mock('../../useCases/trackViewActions/setWorkspaceMode', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
@@ -87,7 +87,7 @@ vi.mock('#/modules/AiRuntime/useCases/promptInjection', () => ({
     injectPromptCommand: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases/workspaceQueries', () => ({
+vi.mock('#/modules/Workspace/useCases/workspaceQueries/helpers', () => ({
     defaultPreferences: { trackHeight: 'normal' },
 }));
 

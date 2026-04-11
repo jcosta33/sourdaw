@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { type MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
 import { RotaryKnob } from './RotaryKnob';
-import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn';
+import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn/startMidiLearn';
 
 const baseMidiState: MidiLearnState = {
     mappings: [],
@@ -15,7 +15,7 @@ let mockMidiState: MidiLearnState = { ...baseMidiState };
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => mockMidiState),
 }));
-vi.mock('#/modules/MIDI/useCases/midiLearn', () => ({
+vi.mock('#/modules/MIDI/useCases/midiLearn/startMidiLearn', () => ({
     startMidiLearn: vi.fn(),
 }));
 

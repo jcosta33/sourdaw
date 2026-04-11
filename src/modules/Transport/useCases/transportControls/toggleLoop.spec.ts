@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { toggleLoop } from './toggleLoop';
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
+import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
 describe('toggleLoop', () => {

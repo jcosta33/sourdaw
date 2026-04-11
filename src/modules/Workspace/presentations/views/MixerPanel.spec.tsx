@@ -20,18 +20,51 @@ vi.mock('../hooks/useWorkspaceState', () => ({
 }));
 
 // Mock useCases
-vi.mock('../../useCases/togglePanel/panelToggles', () => ({
+vi.mock('../../useCases/togglePanel/panelToggles/cycleChannelStripWidth', () => ({
     cycleChannelStripWidth: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations', () => ({
-    saveMixerSnapshot: vi.fn(),
-    recallMixerSnapshot: vi.fn(),
-    getMixerSnapshots: vi.fn(() => [{ id: 'snap-1', name: 'Snapshot 1' }]),
-    deleteMixerSnapshot: vi.fn(),
-    renameMixerSnapshot: vi.fn(),
-    restoreMixerChannels: vi.fn(),
-}));
+vi.mock(
+    '#/modules/Arrangement/useCases/mixerSnapshot/operations/restoreMixerChannels',
+    () => ({
+        restoreMixerChannels: vi.fn(),
+    }),
+);
+
+vi.mock(
+    '#/modules/Arrangement/useCases/mixerSnapshot/operations/renameMixerSnapshot',
+    () => ({
+        renameMixerSnapshot: vi.fn(),
+    }),
+);
+
+vi.mock(
+    '#/modules/Arrangement/useCases/mixerSnapshot/operations/deleteMixerSnapshot',
+    () => ({
+        deleteMixerSnapshot: vi.fn(),
+    }),
+);
+
+vi.mock(
+    '#/modules/Arrangement/useCases/mixerSnapshot/operations/getMixerSnapshots',
+    () => ({
+        getMixerSnapshots: vi.fn(() => [{ id: 'snap-1', name: 'Snapshot 1' }]),
+    }),
+);
+
+vi.mock(
+    '#/modules/Arrangement/useCases/mixerSnapshot/operations/recallMixerSnapshot',
+    () => ({
+        recallMixerSnapshot: vi.fn(),
+    }),
+);
+
+vi.mock(
+    '#/modules/Arrangement/useCases/mixerSnapshot/operations/saveMixerSnapshot',
+    () => ({
+        saveMixerSnapshot: vi.fn(),
+    }),
+);
 
 // Mock child components
 vi.mock('./Mixer/ExpandedChannelStrip', () => ({

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { applyVcaGains, applyAutomation } from './applyAutomation';
+import { applyVcaGains } from './applyAutomation/applyVcaGains';
+import { applyAutomation } from './applyAutomation/applyAutomation';
 
 function createApplyAutomationMocks() {
     return {

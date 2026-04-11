@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { setSnapValue } from '../../useCases/togglePanel/panelToggles';
+import { setSnapValue } from '../../useCases/togglePanel/panelToggles/setSnapValue';
 
 export const handleSetSnapValue = createHandler<'setSnapValue'>({
     execute: (a) => {

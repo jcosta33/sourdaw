@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { addTimeSignatureChange } from '../../useCases/timeSignatureChanges';
+import { addTimeSignatureChange } from '../../useCases/timeSignatureChanges/addTimeSignatureChange';
 
 export const handleAddTimeSignatureChange = createHandler<'addTimeSignatureChange'>({
     execute: (a) => {

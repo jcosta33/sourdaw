@@ -28,7 +28,9 @@ vi.mock('../models/TempoMap', () => ({
     })),
 }));
 
-import { addTempoChange, removeTempoChange, updateTempoChange } from './tempoMap';
+import { addTempoChange } from './tempoMap/addTempoChange';
+import { removeTempoChange } from './tempoMap/removeTempoChange';
+import { updateTempoChange } from './tempoMap/updateTempoChange';
 
 describe('tempoMap', () => {
     beforeEach(() => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { createCompGroup } from './compGroupOperations';
+import { createCompGroup } from './compGroupOperations/createCompGroup';
 
 describe('compGroupOperations', () => {
     beforeEach(() => {

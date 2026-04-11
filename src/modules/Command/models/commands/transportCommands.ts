@@ -1,5 +1,7 @@
 import { type CommandEntry } from '../CommandEntry';
-import { getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../useCases/selectionHelpers';
+import { getLastClipEndBeat } from '../../useCases/selectionHelpers/getLastClipEndBeat';
+import { goToNextMarker } from '../../useCases/selectionHelpers/goToNextMarker';
+import { goToPreviousMarker } from '../../useCases/selectionHelpers/goToPreviousMarker';
 import { seekPlayhead } from '#/modules/Transport/useCases';
 
 /** Transport commands — play, stop, record, loop, metronome, seek. */

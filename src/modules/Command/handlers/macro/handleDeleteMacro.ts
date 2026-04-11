@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { deleteMacro } from '../../useCases/macro/management';
+import { deleteMacro } from '../../useCases/macro/management/deleteMacro';
 
 export const handleDeleteMacro = createHandler<'deleteMacro'>({
     execute: (action) => {

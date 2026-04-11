@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { onMidiNoteOn, onMidiNoteOff, onMidiPedalCc } from './midiEventSubscribers';
+import { onMidiNoteOn } from './midiEventSubscribers/onMidiNoteOn';
+import { onMidiNoteOff } from './midiEventSubscribers/onMidiNoteOff';
+import { onMidiPedalCc } from './midiEventSubscribers/onMidiPedalCc';
 
 type EventBusShape = {
     on: ReturnType<typeof vi.fn>;

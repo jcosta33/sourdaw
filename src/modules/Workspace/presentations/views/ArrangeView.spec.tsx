@@ -68,10 +68,19 @@ vi.mock('../hooks/useWorkspaceState', () => ({
     })),
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles', () => ({
-    setTrackListWidth: vi.fn(),
-    closeScratchPad: vi.fn(),
-}));
+vi.mock(
+    '#/modules/Workspace/useCases/togglePanel/panelToggles/closeScratchPad',
+    () => ({
+        closeScratchPad: vi.fn(),
+    }),
+);
+
+vi.mock(
+    '#/modules/Workspace/useCases/togglePanel/panelToggles/setTrackListWidth',
+    () => ({
+        setTrackListWidth: vi.fn(),
+    }),
+);
 
 vi.mock('#/modules/Workspace/presentations/components/ResizeHandle', () => ({
     ResizeHandle: ({ direction, onResize, onResizeEnd }: { direction: string; onResize: (delta: number) => void; onResizeEnd: () => void }) => (
@@ -103,7 +112,7 @@ vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
     addClip: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/trackViewActions', () => ({
+vi.mock('#/modules/Arrangement/useCases/trackViewActions/decodeAudioFile', () => ({
     decodeAudioFile: vi.fn(),
 }));
 

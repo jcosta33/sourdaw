@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { handleKeydown, handleKeyup, type KeyDescriptor } from './handleKeyboardShortcut';
+import { handleKeydown, type KeyDescriptor } from './handleKeyboardShortcut/handleKeydown';
+import { handleKeyup } from './handleKeyboardShortcut/handleKeyup';
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;

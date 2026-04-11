@@ -9,7 +9,7 @@ import { Button } from '#/components/ui/button';
 import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { cycleChannelStripWidth } from '../../useCases/togglePanel/panelToggles';
+import { cycleChannelStripWidth } from '../../useCases/togglePanel/panelToggles/cycleChannelStripWidth';
 import { type ChannelStripWidth } from '../../models/WorkspaceState';
 import { ExpandedChannelStrip } from './Mixer/ExpandedChannelStrip';
 import { MasterChannelStrip } from './Mixer/MasterChannelStrip';

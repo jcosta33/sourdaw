@@ -37,10 +37,16 @@ vi.mock('../../useCases/clip/addClip', () => ({
     addClip: vi.fn(),
 }));
 
-vi.mock('../../useCases/marker/markerOperations', () => ({
-    addMarker: vi.fn(),
-    setMarkerColor: vi.fn(),
+vi.mock('../../useCases/marker/markerOperations/removeMarker', () => ({
     removeMarker: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/markerOperations/setMarkerColor', () => ({
+    setMarkerColor: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/markerOperations/addMarker', () => ({
+    addMarker: vi.fn(),
 }));
 
 vi.mock('#/helpers/Notification/notifyUser', () => ({

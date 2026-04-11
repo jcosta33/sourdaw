@@ -24,10 +24,17 @@ vi.mock('#/modules/Workspace/models/WorkspaceState', () => ({
 const mockToggleInspector = vi.fn();
 const mockClearClipSelection = vi.fn();
 const mockSelectClipWithFocus = vi.fn();
-vi.mock('../../useCases/togglePanel/panelToggles', () => ({
-    toggleInspector: () => mockToggleInspector(),
-    clearClipSelection: () => mockClearClipSelection(),
+
+vi.mock('../../useCases/togglePanel/panelToggles/selectClipWithFocus', () => ({
     selectClipWithFocus: (id: string) => mockSelectClipWithFocus(id),
+}));
+
+vi.mock('../../useCases/togglePanel/panelToggles/clearClipSelection', () => ({
+    clearClipSelection: () => mockClearClipSelection(),
+}));
+
+vi.mock('../../useCases/togglePanel/panelToggles/toggleInspector', () => ({
+    toggleInspector: () => mockToggleInspector(),
 }));
 
 vi.mock('#/components/daw/DawBlockedState', () => ({

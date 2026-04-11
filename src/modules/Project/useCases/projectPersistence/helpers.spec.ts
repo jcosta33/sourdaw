@@ -1,13 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries/helpers';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import {
-    hydrateModuleStoresFromProjectData,
-    resetModuleStoresToDefault,
-    verifyAudioBufferReferences,
-} from './helpers';
+import { hydrateModuleStoresFromProjectData } from './helpers/hydrateModuleStoresFromProjectData';
+import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
+import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { type ProjectData } from '../../models/ProjectData';
 
 function mockStore<T>(value: T | null) {

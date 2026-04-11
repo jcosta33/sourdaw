@@ -6,10 +6,19 @@ vi.mock('#/modules/Project/useCases/projectPersistence/newProject', () => ({
     newProject: vi.fn(),
 }));
 
-vi.mock('#/modules/Project/useCases/projectTemplates/templateDefinitions', () => ({
-    createFromTemplate: vi.fn(),
-    getTemplates: vi.fn(() => []),
-}));
+vi.mock(
+    '#/modules/Project/useCases/projectTemplates/templateDefinitions/getTemplates',
+    () => ({
+        getTemplates: vi.fn(() => []),
+    }),
+);
+
+vi.mock(
+    '#/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate',
+    () => ({
+        createFromTemplate: vi.fn(),
+    }),
+);
 
 vi.mock('#/modules/AudioEngine', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine')>();

@@ -5,7 +5,8 @@ import {
     type MixSuggestion,
     FREQUENCY_RANGES,
 } from '#/modules/AudioAnalysis/models/MixComparisonTypes';
-import { analyzeMix, createReferenceAnalysis } from './analyzeMix';
+import { analyzeMix } from './analyzeMix/analyzeMix';
+import { createReferenceAnalysis } from './analyzeMix/createReferenceAnalysis';
 
 /**
  * Compare current mix against a reference and generate suggestions.

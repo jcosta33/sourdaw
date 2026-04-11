@@ -21,18 +21,26 @@ export { MODULATOR_PRESETS } from './modulatorLibrary';
 
 export { toggleNodeView } from './nodeView/toggleNodeView';
 
-export { createTrackForPlugin, loadExternalPlugin } from './pluginBrowserActions';
+export { createTrackForPlugin } from './pluginBrowserActions/createTrackForPlugin';
+export { loadExternalPlugin } from './pluginBrowserActions/loadExternalPlugin';
 
 export { getPluginHostHandlers } from './getPluginHostHandlers';
 
-export { loadPlugin, unloadPlugin, processAudioIPC, openPluginGui, closePluginGui } from './pluginLifecycle';
+export { loadPlugin } from './pluginLifecycle/loadPlugin';
+export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
+export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
+export { openPluginGui } from './pluginLifecycle/openPluginGui';
+export { closePluginGui } from './pluginLifecycle/closePluginGui';
 
 export { MIDI_EFFECT_FACTORIES } from './pluginQueries';
 
 export { findPluginByName } from './pluginScan/queries';
 export type { ScannedPlugin } from './pluginScan/queries';
 
-export { startPluginScan, scanCustomPaths, addScanPath, removeScanPath } from './pluginScan/scanning';
+export { startPluginScan } from './pluginScan/scanning/startPluginScan';
+export { scanCustomPaths } from './pluginScan/scanning/scanCustomPaths';
+export { addScanPath } from './pluginScan/scanning/addScanPath';
+export { removeScanPath } from './pluginScan/scanning/removeScanPath';
 
 export { registerProModulationEffects } from './proModulationEffects';
 
@@ -42,13 +50,11 @@ export { disconnectPush } from './pushIntegration/disconnectPush';
 
 export { registerBuiltinPlugins } from './wamPluginHost/builtinDescriptors';
 
-export type { WAMDescriptor, WAMInstance } from './wamPluginHost/hostOperations';
-export {
-    initWAMEnvironment,
-    registerWAMPlugin,
-    getRegisteredPlugins,
-    getPluginsByCategory,
-    loadWAMPlugin,
-    unloadWAMPlugin,
-    getActiveInstances,
-} from './wamPluginHost/hostOperations';
+export type { WAMDescriptor, WAMInstance } from './wamPluginHost/hostOperations/helpers';
+export { initWAMEnvironment } from './wamPluginHost/hostOperations/initWAMEnvironment';
+export { registerWAMPlugin } from './wamPluginHost/hostOperations/registerWAMPlugin';
+export { getRegisteredPlugins } from './wamPluginHost/hostOperations/getRegisteredPlugins';
+export { getPluginsByCategory } from './wamPluginHost/hostOperations/getPluginsByCategory';
+export { loadWAMPlugin } from './wamPluginHost/hostOperations/loadWAMPlugin';
+export { unloadWAMPlugin } from './wamPluginHost/hostOperations/unloadWAMPlugin';
+export { getActiveInstances } from './wamPluginHost/hostOperations/getActiveInstances';

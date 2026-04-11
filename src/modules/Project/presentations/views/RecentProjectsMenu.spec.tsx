@@ -2,30 +2,41 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RecentProjectsMenu } from './RecentProjectsMenu';
 
-// Mock external dependencies
-vi.mock('../../useCases/recentProjects', () => ({
+vi.mock('../../useCases/recentProjects/loadRecentProject', () => ({
+    loadRecentProject: vi.fn(),
+}));
+
+vi.mock('../../useCases/recentProjects/removeFromRecentProjects', () => ({
+    removeFromRecentProjects: vi.fn(),
+}));
+
+vi.mock('../../useCases/recentProjects/helpers', () => ({
     getRecentProjects: vi.fn(() => [
         { key: 'proj-1', name: 'Project One', updatedAt: Date.now() - 100000 },
         { key: 'proj-2', name: 'Project Two', updatedAt: Date.now() - 200000 },
     ]),
-    removeFromRecentProjects: vi.fn(),
-    loadRecentProject: vi.fn(),
 }));
 
 vi.mock('../../useCases/projectPersistence/newProject', () => ({
     newProject: vi.fn(),
 }));
 
-vi.mock('../../useCases/projectPersistence/saveProject', () => ({
+vi.mock('../../useCases/projectPersistence/saveProject/saveProject', () => ({
     saveProject: vi.fn(),
 }));
 
-vi.mock('../../useCases/projectPersistence/fileIO', () => ({
+vi.mock(
+    '../../useCases/projectPersistence/fileIO/pickAndImportProjectFile',
+    () => ({
+        pickAndImportProjectFile: vi.fn(),
+    }),
+);
+
+vi.mock('../../useCases/projectPersistence/fileIO/exportProjectFile', () => ({
     exportProjectFile: vi.fn(),
-    pickAndImportProjectFile: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases/dialogs', () => ({
+vi.mock('#/modules/Workspace/useCases/dialogs/openExportDialog', () => ({
     openExportDialog: vi.fn(),
 }));
 

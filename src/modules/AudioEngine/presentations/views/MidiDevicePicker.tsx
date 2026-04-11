@@ -7,7 +7,9 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { KeyboardMusic, RefreshCw } from 'lucide-react';
 import { useStore } from '#/infra/store/useStore';
-import { initWebMidi, selectMidiInput, webMidiStore } from '../../useCases/webMidiInput';
+import { initWebMidi } from '../../useCases/webMidiInput/initWebMidi';
+import { selectMidiInput } from '../../useCases/webMidiInput/selectMidiInput';
+import { webMidiStore } from '../../useCases/webMidiInput/helpers';
 
 const defaultWebMidiState = {
     isSupported: false,

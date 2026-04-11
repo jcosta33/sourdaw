@@ -1,6 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
-import { defaultPreferences, type Preferences } from '../useCases/workspaceQueries';
+import { defaultPreferences, type Preferences } from '../useCases/workspaceQueries/helpers';
 
 const storage = createLocalStorage<Preferences>('sourdaw-preferences');
 

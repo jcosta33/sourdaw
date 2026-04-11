@@ -3,13 +3,11 @@
 
 export { getAnalysisHandlers } from './getAnalysisHandlers';
 
-export {
-    isStemSeparationAvailable,
-    isAudioGenerationAvailable,
-    isAudioAiServerRunning,
-    generateAudio,
-    separateStems,
-} from './audioAi';
+export { isStemSeparationAvailable } from './audioAi/isStemSeparationAvailable';
+export { isAudioGenerationAvailable } from './audioAi/isAudioGenerationAvailable';
+export { isAudioAiServerRunning } from './audioAi/isAudioAiServerRunning';
+export { generateAudio } from './audioAi/generateAudio';
+export { separateStems } from './audioAi/separateStems';
 
 export type { AudioFeatures, AudioFeaturesSummary, AnalysisOptions } from './audioFeatures';
 export { extractFeatures, summarizeFeatures } from './audioFeatures';
@@ -32,7 +30,8 @@ export { polyphonicAudioToMidi } from './polyphonicAudioToMidi';
 
 export { analyzeMix } from './analyzeMix';
 
-export { createReferenceAnalysis, analyzeMix as analyzeMixFromTrackLayout } from './referenceMixComparison/analyzeMix';
+export { createReferenceAnalysis } from './referenceMixComparison/analyzeMix/createReferenceAnalysis';
+export { analyzeMix as analyzeMixFromTrackLayout } from './referenceMixComparison/analyzeMix/analyzeMix';
 
 export { compareMixes, compareToReference } from './referenceMixComparison/compareMixes';
 

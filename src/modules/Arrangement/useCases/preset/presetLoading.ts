@@ -9,7 +9,7 @@ import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { type Device } from '../../stores/trackStore';
 import { addTrack } from '../addTrack';
 import { addDevice } from '../device/addDevice';
-import { setDeviceParameter } from '../device/setDeviceParameter';
+import { setDeviceParameter } from '../device/setDeviceParameter/setDeviceParameter';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';

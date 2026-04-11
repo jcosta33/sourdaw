@@ -19,11 +19,20 @@ const mockGetAudioDevices = vi.fn(() => Promise.resolve([
 const mockSetOutputDevice = vi.fn();
 const mockSetInputDevice = vi.fn();
 
-vi.mock('../../useCases/audioDeviceSelection', () => ({
-    audioDeviceStore: {},
-    getAudioDevices: () => mockGetAudioDevices(),
-    setOutputDevice: (id: string) => mockSetOutputDevice(id),
+vi.mock('../../useCases/audioDeviceSelection/setInputDevice', () => ({
     setInputDevice: (id: string) => mockSetInputDevice(id),
+}));
+
+vi.mock('../../useCases/audioDeviceSelection/setOutputDevice', () => ({
+    setOutputDevice: (id: string) => mockSetOutputDevice(id),
+}));
+
+vi.mock('../../useCases/audioDeviceSelection/getAudioDevices', () => ({
+    getAudioDevices: () => mockGetAudioDevices(),
+}));
+
+vi.mock('../../useCases/audioDeviceSelection/helpers', () => ({
+    audioDeviceStore: {},
 }));
 
 const { useStore } = await import('#/infra/store/useStore');

@@ -13,20 +13,18 @@ import {
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import {
-    toggleSidebar,
-    toggleInspector,
-    toggleMixer,
-    toggleChatPanel,
-    toggleTrackList,
-    toggleVirtualKeyboard,
-} from '../../../useCases/togglePanel/panelToggles';
+import { toggleSidebar } from '../../../useCases/togglePanel/panelToggles/toggleSidebar';
+import { toggleInspector } from '../../../useCases/togglePanel/panelToggles/toggleInspector';
+import { toggleMixer } from '../../../useCases/togglePanel/panelToggles/toggleMixer';
+import { toggleChatPanel } from '../../../useCases/togglePanel/panelToggles/toggleChatPanel';
+import { toggleTrackList } from '../../../useCases/togglePanel/panelToggles/toggleTrackList';
+import { toggleVirtualKeyboard } from '../../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases';
 import { linkStatusStore, defaultLinkStatus } from '#/modules/AudioEngine/stores';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases';
-import { openPreferencesDialog } from '../../../useCases/dialogs';
+import { openPreferencesDialog } from '../../../useCases/dialogs/openPreferencesDialog';
 
 type AiPanelState = {
     isPanelOpen: boolean;

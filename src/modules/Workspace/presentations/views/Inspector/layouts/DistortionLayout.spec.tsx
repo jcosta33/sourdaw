@@ -18,7 +18,7 @@ vi.mock('#/components/daw/visualizers/DistortionCurve', () => ({
     DistortionCurve: () => <div data-testid="distortion-curve">Distortion Curve</div>,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: vi.fn(),
 }));
 

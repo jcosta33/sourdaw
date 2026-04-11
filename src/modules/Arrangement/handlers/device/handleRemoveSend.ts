@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { removeSend } from '../../useCases/device/sendManagement';
+import { removeSend } from '../../useCases/device/sendManagement/removeSend';
 
 export const handleRemoveSend = createHandler<'removeSend'>({
     execute: (a) => {

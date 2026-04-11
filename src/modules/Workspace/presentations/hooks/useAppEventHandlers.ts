@@ -2,8 +2,13 @@ import { useEffect } from 'react';
 import { importMidiFile } from '#/modules/Arrangement/useCases';
 import { saveProject, newProject } from '#/modules/Project';
 import { undo, redo } from '#/modules/Command/useCases';
-import { onDialogOpenExport, onDialogOpenPreferences } from '../../useCases/dialogs';
-import { onProjectSave, onProjectNew, onCommandUndo, onCommandRedo, onMidiImport } from '../../useCases/appEventSubscribers';
+import { onDialogOpenExport } from '../../useCases/dialogs/onDialogOpenExport';
+import { onDialogOpenPreferences } from '../../useCases/dialogs/onDialogOpenPreferences';
+import { onProjectSave } from '../../useCases/appEventSubscribers/onProjectSave';
+import { onProjectNew } from '../../useCases/appEventSubscribers/onProjectNew';
+import { onCommandUndo } from '../../useCases/appEventSubscribers/onCommandUndo';
+import { onCommandRedo } from '../../useCases/appEventSubscribers/onCommandRedo';
+import { onMidiImport } from '../../useCases/appEventSubscribers/onMidiImport';
 
 type AppEventCallbacks = {
     onOpenExport: () => void;

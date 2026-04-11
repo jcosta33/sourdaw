@@ -5,13 +5,10 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useStore } from '#/infra/store/useStore';
-import {
-    audioDeviceStore,
-    getAudioDevices,
-    setOutputDevice,
-    setInputDevice,
-    type AudioDeviceInfo,
-} from '../../useCases/audioDeviceSelection';
+import { audioDeviceStore } from '../../useCases/audioDeviceSelection/helpers';
+import { getAudioDevices, type AudioDeviceInfo } from '../../useCases/audioDeviceSelection/getAudioDevices';
+import { setOutputDevice } from '../../useCases/audioDeviceSelection/setOutputDevice';
+import { setInputDevice } from '../../useCases/audioDeviceSelection/setInputDevice';
 
 const defaultAudioDeviceState = {
     selectedOutputId: null,

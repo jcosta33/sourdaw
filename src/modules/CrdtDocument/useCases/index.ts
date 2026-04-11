@@ -25,7 +25,8 @@ export type { ReplaceCrdtDocInput } from './replaceCrdtDoc';
 
 export { restoreSnapshot } from './restoreSnapshot';
 export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';
-export { revertAction, canRevertAction } from './revertAction';
+export { revertAction } from './revertAction/revertAction';
+export { canRevertAction } from './revertAction/canRevertAction';
 export { saveSnapshot } from './saveSnapshot';
 export { setSemanticContext, getSemanticContext, clearSemanticContext } from './semanticChangeContext';
 export { startCrdtAutoSave } from './startCrdtAutoSave';

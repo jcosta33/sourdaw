@@ -132,11 +132,26 @@ vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations', () => ({
-    onZoomToFit: vi.fn(() => vi.fn()),
-    onZoomToSelection: vi.fn(() => vi.fn()),
-    onScrollToPlayhead: vi.fn(() => vi.fn()),
-}));
+vi.mock(
+    '#/modules/Workspace/useCases/togglePanel/zoomOperations/onScrollToPlayhead',
+    () => ({
+        onScrollToPlayhead: vi.fn(() => vi.fn()),
+    }),
+);
+
+vi.mock(
+    '#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToSelection',
+    () => ({
+        onZoomToSelection: vi.fn(() => vi.fn()),
+    }),
+);
+
+vi.mock(
+    '#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToFit',
+    () => ({
+        onZoomToFit: vi.fn(() => vi.fn()),
+    }),
+);
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);

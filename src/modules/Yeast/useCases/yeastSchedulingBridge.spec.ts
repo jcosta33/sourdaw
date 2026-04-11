@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { processYeastMidi } from './yeastSchedulingBridge';
+import { processYeastMidi } from './yeastSchedulingBridge/processRealtimeMidiInput';
 
 describe('processYeastMidi', () => {
     beforeEach(() => {
@@ -21,7 +21,9 @@ describe('processYeastMidi', () => {
                 processBlock: vi.fn(),
             })),
             transportStore: { value: { tempo: 120, isPlaying: true, timeSignatureNumerator: 4, timeSignatureDenominator: 4, loopStart: 0, loopEnd: 0 } },
-            getAudioContext: vi.fn(() => ({ sampleRate: 48000 }) as AudioContext),
+            getAudioContext: vi.fn(() => (({
+                sampleRate: 48000,
+            }) as AudioContext)),
         });
 
         const out = processYeastMidi('t1', events, 0, 128);

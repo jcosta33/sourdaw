@@ -28,7 +28,7 @@ vi.mock('#/components/daw/visualizers/OscillatorWaveform', () => ({
     OscillatorWaveform: () => <div data-testid="oscillator-waveform">Oscillator Waveform</div>,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: vi.fn(),
 }));
 

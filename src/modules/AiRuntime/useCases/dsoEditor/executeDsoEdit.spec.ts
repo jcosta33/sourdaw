@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { executeDsoEdit } from './executeDsoEdit';
 
-vi.mock('../llmOrchestration/backendResolution', () => ({
-    resolveBackend: () => 'none' as const,
+vi.mock('../llmOrchestration/backendResolution/isDsoBackendAvailable', () => ({
     isDsoBackendAvailable: () => false,
+}));
+
+vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
+    resolveBackend: () => 'none' as const,
 }));
 
 describe('executeDsoEdit', () => {

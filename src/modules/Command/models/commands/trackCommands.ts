@@ -1,5 +1,5 @@
 import { type CommandEntry } from '../CommandEntry';
-import { getSelectedTrackId } from '../../useCases/selectionHelpers';
+import { getSelectedTrackId } from '../../useCases/selectionHelpers/getSelectedTrackId';
 import { duplicateTrack, removeTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';

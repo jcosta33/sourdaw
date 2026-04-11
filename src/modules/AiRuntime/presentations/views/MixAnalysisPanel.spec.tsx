@@ -16,7 +16,7 @@ vi.mock('#/modules/AiRuntime/stores/mixAnalysisStore', () => ({
     toggleMixAnalysisPanel: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/useCases/aiPanelActions', () => ({
+vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/runAppAction', () => ({
     runAppAction: vi.fn(),
 }));
 

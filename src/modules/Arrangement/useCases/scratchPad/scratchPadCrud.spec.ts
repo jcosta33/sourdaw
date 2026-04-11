@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { addScratchPadSection, clearScratchPad } from './scratchPadCrud';
+import { addScratchPadSection } from './scratchPadCrud/addScratchPadSection';
+import { clearScratchPad } from './scratchPadCrud/clearScratchPad';
 
 describe('scratchPadCrud', () => {
     beforeEach(() => {

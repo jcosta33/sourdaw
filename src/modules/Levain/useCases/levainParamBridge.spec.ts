@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { levainBridge, registerLevainDevice, unregisterLevainDevice } from './levainParamBridge';
+import { levainBridge } from './levainParamBridge/levainBridge';
+import { registerLevainDevice } from './levainParamBridge/registerLevainDevice';
+import { unregisterLevainDevice } from './levainParamBridge/unregisterLevainDevice';
 
 describe('levainParamBridge', () => {
     beforeEach(() => {

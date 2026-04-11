@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { Container } from '#/infra/di/Container';
-import { setCrustParamWithAudio, loadCrustPatchWithAudio } from './crustParamBridge';
+import { setCrustParamWithAudio } from './crustParamBridge/setCrustParamWithAudio';
+import { loadCrustPatchWithAudio } from './crustParamBridge/loadCrustPatchWithAudio';
 import { DEFAULT_CRUST_PATCH } from '../models/CrustPatch';
 
 vi.mock('../stores/crustStore', () => ({

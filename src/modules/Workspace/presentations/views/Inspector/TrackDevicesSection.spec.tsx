@@ -40,12 +40,12 @@ vi.mock('#/modules/Arrangement/useCases/getPluginById', () => ({
 }));
 
 const mockOpenPluginGui = vi.fn();
-vi.mock('#/modules/Plugin/useCases/pluginLifecycle', () => ({
+vi.mock('#/modules/Plugin/useCases/pluginLifecycle/openPluginGui', () => ({
     openPluginGui: (...args: unknown[]) => mockOpenPluginGui(...args),
 }));
 
 const mockShowDevicePanelForType = vi.fn();
-vi.mock('#/modules/Workspace/useCases/panels/devicePanels', () => ({
+vi.mock('#/modules/Workspace/useCases/panels/devicePanels/showDevicePanelForType', () => ({
     showDevicePanelForType: (...args: unknown[]) => mockShowDevicePanelForType(...args),
 }));
 

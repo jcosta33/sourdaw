@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('./fermenterParamBridge', () => ({
+vi.mock('./fermenterParamBridge/setFermenterParamWithAudio', () => ({
     setFermenterParamWithAudio: vi.fn(),
 }));
 
@@ -9,9 +9,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
 }));
 
 import { setFermenterMappedParam } from './setFermenterMappedParam';
-import { setFermenterParamWithAudio } from './fermenterParamBridge';
+import { setFermenterParamWithAudio } from './fermenterParamBridge/setFermenterParamWithAudio';
 import { logger } from '#/infra/logger/appLogger';
-import { FERMENTER_PARAMS } from './fermenterQueries';
+import { FERMENTER_PARAMS } from './fermenterQueries/FERMENTER_PARAMS';
 
 describe('setFermenterMappedParam', () => {
     beforeEach(() => {

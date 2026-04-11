@@ -1,5 +1,5 @@
 import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
-import { type EditingTool } from './workspaceQueries';
+import { type EditingTool } from './workspaceQueries/helpers';
 
 export function setEditingTool(tool: EditingTool): void {
     const current = getWorkspaceState();

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { initEngine } from './lifecycle';
+import { initEngine } from './lifecycle/initEngine';
 import { type Logger } from '#/helpers/Logger/Logger';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-import { resolveBackend } from './backendResolution';
+import { resolveBackend } from './backendResolution/helpers';
 import { initNativeEngine } from '../../repositories/nativeEngine/lifecycle';
 import { initWebLlmEngine } from '../../repositories/webLlm/engineLifecycle';
 import { isCloudAvailable } from '../../repositories/cloudLlm/keyManagement';
@@ -31,7 +31,7 @@ vi.mock('../../repositories/cloudLlm/keyManagement', () => ({
     isCloudAvailable: vi.fn(() => false),
 }));
 
-vi.mock('./backendResolution', () => ({
+vi.mock('./backendResolution/helpers', () => ({
     resolveBackend: vi.fn(),
 }));
 

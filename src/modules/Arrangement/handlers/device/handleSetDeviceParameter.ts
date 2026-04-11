@@ -1,6 +1,6 @@
 import { createHandler } from '#/helpers/createHandler';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { setDeviceParameter } from '../../useCases/device/setDeviceParameter';
+import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({

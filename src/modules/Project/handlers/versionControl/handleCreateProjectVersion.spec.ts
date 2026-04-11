@@ -11,13 +11,13 @@ vi.mock('../../useCases/versionControl/restoreVersion', () => ({
     restoreVersion: vi.fn(),
 }));
 
-vi.mock('../../useCases/versionControl/branching', () => ({
+vi.mock('../../useCases/versionControl/branching/createVersionBranch', () => ({
     createVersionBranch: vi.fn(),
 }));
 
 import { createProjectVersion } from '../../useCases/versionControl/createProjectVersion';
 import { restoreVersion } from '../../useCases/versionControl/restoreVersion';
-import { createVersionBranch } from '../../useCases/versionControl/branching';
+import { createVersionBranch } from '../../useCases/versionControl/branching/createVersionBranch';
 
 describe('version control handlers', () => {
     beforeEach(() => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { estimateOnsetsFromClips, applyTempoMap } from './operations';
+import { estimateOnsetsFromClips, applyTempoMap } from './operations/detectProjectTempo';
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
 const trackCell = vi.hoisted(() => ({

@@ -4,7 +4,7 @@ import { AiChangeToast } from './AiChangeToast';
 
 // Mock external dependencies
 const mockUndoLastAction = vi.fn();
-vi.mock('#/modules/AiRuntime/useCases/aiPanelActions', () => ({
+vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/undoLastAction', () => ({
     undoLastAction: () => mockUndoLastAction(),
 }));
 

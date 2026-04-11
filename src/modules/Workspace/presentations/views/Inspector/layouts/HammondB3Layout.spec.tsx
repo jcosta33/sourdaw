@@ -13,7 +13,7 @@ vi.mock('../deviceLayoutRegistry', async () => {
 });
 
 const mockSetDeviceParameter = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
 }));
 

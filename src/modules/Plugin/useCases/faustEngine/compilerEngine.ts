@@ -20,7 +20,8 @@ import {
 } from '@grame/faustwasm';
 import { createFaustError } from '#/modules/Plugin/errors/FaustError';
 import { isAppError } from '#/infra/errors/isAppError';
-import { registerWAMPlugin, type WAMDescriptor } from '../wamPluginHost/hostOperations';
+import { registerWAMPlugin } from '../wamPluginHost/hostOperations/registerWAMPlugin';
+import { type WAMDescriptor } from '../wamPluginHost/hostOperations/helpers';
 import { registerPluginLoader } from '../../services/pluginLoaderRegistry';
 import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/models/FaustEngineTypes';
 

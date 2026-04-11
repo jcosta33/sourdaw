@@ -13,11 +13,9 @@ import {
     setBacteriaActiveModule,
     setBacteriaUiLevel,
 } from '../../stores/bacteriaStore';
-import {
-    loadBacteriaPatchWithAudio,
-    setBacteriaBandParamWithAudio,
-    setBacteriaParamWithAudio,
-} from '../../useCases/bacteriaParamBridge';
+import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
+import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
+import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import { BACTERIA_PRESETS } from '../../useCases/bacteriaPresets';
 import { XYMorphPad } from '../components/XYMorphPad';

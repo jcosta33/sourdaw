@@ -9,7 +9,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 import { removeProjectJson } from '../../repositories/project/storageOperations';
-import { resetModuleStoresToDefault } from './helpers';
+import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 
 let stopAutoSave: (() => void) | null = null;
 

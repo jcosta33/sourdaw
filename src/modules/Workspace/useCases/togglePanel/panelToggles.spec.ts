@@ -1,40 +1,38 @@
 import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    setSoloMode,
-    toggleSidebar,
-    toggleInspector,
-    toggleChatPanel,
-    toggleMixer,
-    toggleVirtualKeyboard,
-    openVirtualKeyboard,
-    setVirtualKeyboardOctave,
-    setVirtualKeyboardVelocity,
-    toggleAutomationPanel,
-    toggleTrackList,
-    setSnapValue,
-    closeCollaborationPanel,
-    closeUndoHistory,
-    closeCommandPalette,
-    selectClip,
-    selectClipWithFocus,
-    clearClipSelection,
-    openMixer,
-    openInspector,
-    setTrackListWidth,
-    closeScratchPad,
-    cycleChannelStripWidth,
-    toggleCollaborationPanel,
-    toggleBranchManager,
-    closeBranchManager,
-    toggleUndoHistory,
-    toggleTimeDisplayMode,
-    toggleClipInSelection,
-    setClipSelection,
-    selectAllClips,
-    toggleCommandPalette,
-    toggleWorkspaceMode,
-} from './panelToggles';
+import { setSoloMode } from './panelToggles/setSoloMode';
+import { toggleSidebar } from './panelToggles/toggleSidebar';
+import { toggleInspector } from './panelToggles/toggleInspector';
+import { toggleChatPanel } from './panelToggles/toggleChatPanel';
+import { toggleMixer } from './panelToggles/toggleMixer';
+import { toggleVirtualKeyboard } from './panelToggles/toggleVirtualKeyboard';
+import { openVirtualKeyboard } from './panelToggles/openVirtualKeyboard';
+import { setVirtualKeyboardOctave } from './panelToggles/setVirtualKeyboardOctave';
+import { setVirtualKeyboardVelocity } from './panelToggles/setVirtualKeyboardVelocity';
+import { toggleAutomationPanel } from './panelToggles/toggleAutomationPanel';
+import { toggleTrackList } from './panelToggles/toggleTrackList';
+import { setSnapValue } from './panelToggles/setSnapValue';
+import { closeCollaborationPanel } from './panelToggles/closeCollaborationPanel';
+import { closeUndoHistory } from './panelToggles/closeUndoHistory';
+import { closeCommandPalette } from './panelToggles/closeCommandPalette';
+import { selectClip } from './panelToggles/selectClip';
+import { selectClipWithFocus } from './panelToggles/selectClipWithFocus';
+import { clearClipSelection } from './panelToggles/clearClipSelection';
+import { openMixer } from './panelToggles/openMixer';
+import { openInspector } from './panelToggles/openInspector';
+import { setTrackListWidth } from './panelToggles/setTrackListWidth';
+import { closeScratchPad } from './panelToggles/closeScratchPad';
+import { cycleChannelStripWidth } from './panelToggles/cycleChannelStripWidth';
+import { toggleCollaborationPanel } from './panelToggles/toggleCollaborationPanel';
+import { toggleBranchManager } from './panelToggles/toggleBranchManager';
+import { closeBranchManager } from './panelToggles/closeBranchManager';
+import { toggleUndoHistory } from './panelToggles/toggleUndoHistory';
+import { toggleTimeDisplayMode } from './panelToggles/toggleTimeDisplayMode';
+import { toggleClipInSelection } from './panelToggles/toggleClipInSelection';
+import { setClipSelection } from './panelToggles/setClipSelection';
+import { selectAllClips } from './panelToggles/selectAllClips';
+import { toggleCommandPalette } from './panelToggles/toggleCommandPalette';
+import { toggleWorkspaceMode } from './panelToggles/toggleWorkspaceMode';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 
 describe('panelToggles', () => {

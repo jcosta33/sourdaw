@@ -22,14 +22,23 @@ vi.mock('#/modules/Plugin/stores/pluginScanStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Plugin/useCases/pluginScan/scanning', () => ({
+vi.mock('#/modules/Plugin/useCases/pluginScan/scanning/startPluginScan', () => ({
     startPluginScan: vi.fn(),
 }));
 
-vi.mock('#/modules/Plugin/useCases/pluginBrowserActions', () => ({
-    createTrackForPlugin: vi.fn(() => ({ id: 'track1' })),
-    loadExternalPlugin: vi.fn(),
-}));
+vi.mock(
+    '#/modules/Plugin/useCases/pluginBrowserActions/loadExternalPlugin',
+    () => ({
+        loadExternalPlugin: vi.fn(),
+    }),
+);
+
+vi.mock(
+    '#/modules/Plugin/useCases/pluginBrowserActions/createTrackForPlugin',
+    () => ({
+        createTrackForPlugin: vi.fn(() => ({ id: 'track1' })),
+    }),
+);
 
 vi.mock('#/helpers/platformCapabilities', () => ({
     getPlatformCapabilities: vi.fn(() => ({ hasNativePlugins: true })),

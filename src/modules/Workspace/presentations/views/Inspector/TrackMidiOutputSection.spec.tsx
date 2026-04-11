@@ -6,9 +6,13 @@ import type { Track } from '../../../models/TrackViewTypes';
 // Mock external dependencies
 const mockSetMidiOutput = vi.fn();
 const mockClearMidiOutput = vi.fn();
-vi.mock('#/modules/MIDI/useCases/midiRouting', () => ({
-    setMidiOutput: (...args: unknown[]) => mockSetMidiOutput(...args),
+
+vi.mock('#/modules/MIDI/useCases/midiRouting/clearMidiOutput', () => ({
     clearMidiOutput: (...args: unknown[]) => mockClearMidiOutput(...args),
+}));
+
+vi.mock('#/modules/MIDI/useCases/midiRouting/setMidiOutput', () => ({
+    setMidiOutput: (...args: unknown[]) => mockSetMidiOutput(...args),
 }));
 
 const mockToggleChordTrackFollow = vi.fn();

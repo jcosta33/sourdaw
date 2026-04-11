@@ -6,12 +6,10 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { arrangementStore } from '../../stores/arrangementStore';
-import {
-    switchArrangement,
-    createArrangement,
-    duplicateArrangement,
-    renameArrangement,
-} from '../../useCases/arrangement';
+import { switchArrangement } from '../../useCases/arrangement/switchArrangement';
+import { createArrangement } from '../../useCases/arrangement/createArrangement';
+import { duplicateArrangement } from '../../useCases/arrangement/duplicateArrangement';
+import { renameArrangement } from '../../useCases/arrangement/renameArrangement';
 import { cn } from '#/helpers/Styles/cn';
 
 export const ArrangementSelector = (): ReactElement | null => {

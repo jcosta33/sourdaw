@@ -1,7 +1,8 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { type FermenterPatch, DEFAULT_PATCH } from '../../models/FermenterPatch';
-import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries';
-import { bilinearPatch, applyMorphedPatch } from '../../useCases/presetMorph';
+import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
+import { bilinearPatch } from '../../useCases/presetMorph/bilinearPatch';
+import { applyMorphedPatch } from '../../useCases/presetMorph/applyMorphedPatch';
 
 type TransformPadProps = { deviceId: string };
 

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { getAudioDevices } from '../../../useCases/trackViewActions';
+import { getAudioDevices } from '../../../useCases/trackViewActions/getAudioDevices';
 import { setTrackInput } from '#/modules/Arrangement/useCases/setTrackInput';
 import { InputSelector } from './InputSelector';
 
 // Mock external dependencies
-vi.mock('../../../useCases/trackViewActions', () => ({
+vi.mock('../../../useCases/trackViewActions/getAudioDevices', () => ({
     getAudioDevices: vi.fn(),
 }));
 

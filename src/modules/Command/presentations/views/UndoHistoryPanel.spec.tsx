@@ -20,7 +20,7 @@ vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
     workspaceStore: { name: 'workspaceStore' },
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles', () => ({
+vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/closeUndoHistory', () => ({
     closeUndoHistory: vi.fn(),
 }));
 

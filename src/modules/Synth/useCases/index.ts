@@ -1,6 +1,12 @@
 export { scheduleNote, getSynthParamsFromDevices, scheduleNoteOffline } from './builtinSynth';
-export { addCvOutput, removeCvOutput, setCvValue, setVoltageStandard, setClockDivision } from './cvGate/cvOutputOperations';
+export { addCvOutput } from './cvGate/cvOutputOperations/addCvOutput';
+export { removeCvOutput } from './cvGate/cvOutputOperations/removeCvOutput';
+export { setCvValue } from './cvGate/cvOutputOperations/setCvValue';
+export { setVoltageStandard } from './cvGate/cvOutputOperations/setVoltageStandard';
+export { setClockDivision } from './cvGate/cvOutputOperations/setClockDivision';
 export { scheduleKitNote } from './drumKitSynth';
-export { KIT_808_DEF, DRUM_KIT_DEFS, getDrumKitDefByIndex, findVoiceByNote, scheduleDrumKitNote } from './drumSynthEngine/kitDefinitions';
-export { scheduleFaustNote, startFaustNote } from './faustInstrumentScheduler';
+export { KIT_808_DEF, DRUM_KIT_DEFS, getDrumKitDefByIndex } from './drumSynthEngine/kitDefinitions/getDrumKitDefByIndex';
+export { findVoiceByNote, scheduleDrumKitNote } from './drumSynthEngine/kitDefinitions/scheduleDrumKitNote';
+export { scheduleFaustNote } from './faustInstrumentScheduler/scheduleFaustNote';
+export { startFaustNote } from './faustInstrumentScheduler/startFaustNote';
 export { registerProSynthInstruments } from './proSynthInstruments';

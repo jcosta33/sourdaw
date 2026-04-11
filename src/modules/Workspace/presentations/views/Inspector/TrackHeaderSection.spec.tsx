@@ -10,19 +10,39 @@ vi.mock('#/modules/Arrangement/useCases/renameTrack', () => ({
 }));
 
 const mockSetTrackColor = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan', () => ({
-    setTrackColor: (...args: unknown[]) => mockSetTrackColor(...args),
-    setTrackGain: vi.fn(),
-    setTrackPan: vi.fn(),
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackNotes', () => ({
     setTrackNotes: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackPan', () => ({
+    setTrackPan: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackGain', () => ({
+    setTrackGain: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackColor', () => ({
+    setTrackColor: (...args: unknown[]) => mockSetTrackColor(...args),
 }));
 
 const mockFreezeTrack = vi.fn();
 const mockUnfreezeTrack = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/freezeBounce/freezeTrack', () => ({
-    freezeTrack: (...args: unknown[]) => mockFreezeTrack(...args),
-    unfreezeTrack: (...args: unknown[]) => mockUnfreezeTrack(...args),
-}));
+
+vi.mock(
+    '#/modules/Arrangement/useCases/freezeBounce/freezeTrack/unfreezeTrack',
+    () => ({
+        unfreezeTrack: (...args: unknown[]) => mockUnfreezeTrack(...args),
+    }),
+);
+
+vi.mock(
+    '#/modules/Arrangement/useCases/freezeBounce/freezeTrack/freezeTrack',
+    () => ({
+        freezeTrack: (...args: unknown[]) => mockFreezeTrack(...args),
+    }),
+);
 
 vi.mock('#/components/daw/DawCompactInput', () => ({
     DawCompactInput: ({

@@ -7,17 +7,15 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { onVoiceToggle } from '../../useCases/voiceToggle';
+import { onVoiceToggle } from '../../useCases/voiceToggle/onVoiceToggle';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri as isTauriAvailable } from '#/helpers/tauriBridge';
 import { injectPromptCommand } from '../../useCases/promptInjection';
 import { voiceStatusStore } from '../../stores/voiceStatusStore';
-import {
-    ensureWhisperReady,
-    startDictation,
-    stopDictation,
-    onDictationResult,
-} from '../../useCases/voiceDictation';
+import { ensureWhisperReady } from '../../useCases/voiceDictation/ensureWhisperReady';
+import { startDictation } from '../../useCases/voiceDictation/startDictation';
+import { stopDictation } from '../../useCases/voiceDictation/stopDictation';
+import { onDictationResult } from '../../useCases/voiceDictation/onDictationResult';
 
 // ── Types ───────────────────────────────────────────────────────────────
 

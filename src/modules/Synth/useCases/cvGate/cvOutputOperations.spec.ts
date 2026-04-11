@@ -31,13 +31,11 @@ vi.mock('#/modules/Synth/stores/cvGate', () => {
     };
 });
 
-import {
-    addCvOutput,
-    removeCvOutput,
-    setCvValue,
-    setVoltageStandard,
-    setClockDivision,
-} from './cvOutputOperations';
+import { addCvOutput } from './cvOutputOperations/addCvOutput';
+import { removeCvOutput } from './cvOutputOperations/removeCvOutput';
+import { setCvValue } from './cvOutputOperations/setCvValue';
+import { setVoltageStandard } from './cvOutputOperations/setVoltageStandard';
+import { setClockDivision } from './cvOutputOperations/setClockDivision';
 
 describe('cvOutputOperations', () => {
     beforeEach(() => {

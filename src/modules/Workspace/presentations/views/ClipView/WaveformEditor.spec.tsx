@@ -61,7 +61,7 @@ vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/useCases/trackViewActions', () => ({
+vi.mock('#/modules/Arrangement/useCases/trackViewActions/decodeAudioFile', () => ({
     decodeAudioFile: vi.fn(),
 }));
 
@@ -81,14 +81,32 @@ vi.mock('#/modules/Arrangement/useCases/clipEditing/reverseClip', () => ({
     reverseClip: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/warp', () => ({
-    getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'complex', originalTempo: null })),
-    enableWarp: vi.fn(),
-    disableWarp: vi.fn(),
-    setStretchMode: vi.fn(),
-    addWarpMarker: vi.fn(),
-    removeWarpMarker: vi.fn(),
+vi.mock('#/modules/Arrangement/useCases/warp/moveWarpMarker', () => ({
     moveWarpMarker: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/warp/removeWarpMarker', () => ({
+    removeWarpMarker: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/warp/addWarpMarker', () => ({
+    addWarpMarker: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/warp/setStretchMode', () => ({
+    setStretchMode: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/warp/disableWarp', () => ({
+    disableWarp: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/warp/enableWarp', () => ({
+    enableWarp: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/warp/helpers', () => ({
+    getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'complex', originalTempo: null })),
 }));
 
 vi.mock('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip', () => ({
@@ -107,7 +125,7 @@ vi.mock('#/modules/AudioAnalysis/useCases/audioToMidi', () => ({
     audioToMidi: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge', () => ({
+vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge/isTauri', () => ({
     isTauri: vi.fn(() => false),
 }));
 

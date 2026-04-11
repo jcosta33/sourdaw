@@ -22,7 +22,8 @@ vi.mock('../stores/toasterStore', () => ({
     },
 }));
 
-import { setSoundLock, getSoundLock } from './soundLocks';
+import { setSoundLock } from './soundLocks/setSoundLock';
+import { getSoundLock } from './soundLocks/getSoundLock';
 
 function freshKit(): { kit: Kit } {
     return {

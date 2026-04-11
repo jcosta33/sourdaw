@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { setMasterGain } from './setMasterGain';
-import { getTransportState, updateTransportState } from '../repositories/transport';
+import { getTransportState } from '../repositories/transport/getTransportState';
+import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { defaultTransportState } from '../models/TransportState';
-import { setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess';
+import { setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess/setMasterGainValue';
 
-vi.mock('#/modules/AudioEngine/useCases/engineAccess', () => ({
+vi.mock('#/modules/AudioEngine/useCases/engineAccess/setMasterGainValue', () => ({
     setMasterGainValue: vi.fn(),
 }));
 

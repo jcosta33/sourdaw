@@ -6,7 +6,7 @@ import { useTracks } from '../hooks/useTracks';
 import { TrackAutomationSection } from './AutomationView/TrackAutomationSection';
 import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
-import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles';
+import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles/toggleAutomationPanel';
 import { useStore } from '#/infra/store/useStore';
 
 type AutomationTimelineState = {

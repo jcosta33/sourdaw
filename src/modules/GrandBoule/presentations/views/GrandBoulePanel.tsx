@@ -1,7 +1,9 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { Cpu, Power } from 'lucide-react';
-import { onMidiNoteOn, onMidiNoteOff, onMidiPedalCc } from '../../useCases/midiEventSubscribers';
+import { onMidiNoteOn } from '../../useCases/midiEventSubscribers/onMidiNoteOn';
+import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff';
+import { onMidiPedalCc } from '../../useCases/midiEventSubscribers/onMidiPedalCc';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -23,17 +25,16 @@ import { setGrandBouleTemperament } from '../../useCases/setGrandBouleTemperamen
 import { setGrandBouleUnaCorda } from '../../useCases/setGrandBouleUnaCorda';
 import { setGrandBouleVelocityCurve } from '../../useCases/setGrandBouleVelocityCurve';
 import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
-import { setGrandBoulePerNoteParam, resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam';
+import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
+import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
 import { triggerGrandBouleNote } from '../../useCases/triggerGrandBouleNote';
-import {
-    setVelocityCurveExponent,
-    setVelocityFloor,
-    setVelocityCeiling,
-    setCcSmoothingMs,
-    setSustainThreshold,
-    setAfterTouchSensitivity,
-    resetMidiCalibration,
-} from '../../useCases/calibrateGrandBouleMidi';
+import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi/setVelocityCurveExponent';
+import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
+import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVelocityCeiling';
+import { setCcSmoothingMs } from '../../useCases/calibrateGrandBouleMidi/setCcSmoothingMs';
+import { setSustainThreshold } from '../../useCases/calibrateGrandBouleMidi/setSustainThreshold';
+import { setAfterTouchSensitivity } from '../../useCases/calibrateGrandBouleMidi/setAfterTouchSensitivity';
+import { resetMidiCalibration } from '../../useCases/calibrateGrandBouleMidi/resetMidiCalibration';
 import { MidiCalibrationPanel } from '../components/MidiCalibrationPanel';
 import { MorphPanel } from '../components/MorphPanel';
 import { PerNoteEditor } from '../components/PerNoteEditor';

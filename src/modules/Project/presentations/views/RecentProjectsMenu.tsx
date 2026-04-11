@@ -14,16 +14,14 @@ import {
 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import {
-    getRecentProjects,
-    removeFromRecentProjects,
-    loadRecentProject,
-    type RecentProjectEntry,
-} from '../../useCases/recentProjects';
+import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
+import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
+import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
 import { type TemplateCategory } from '#/modules/Project/models/ProjectTemplateTypes';
 import { newProject } from '../../useCases/projectPersistence/newProject';
-import { saveProject } from '../../useCases/projectPersistence/saveProject';
-import { exportProjectFile, pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO';
+import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
+import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';
+import { pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO/pickAndImportProjectFile';
 import { TemplateChooser } from './TemplateChooser';
 import { openExportDialog } from '#/modules/Workspace/useCases';
 

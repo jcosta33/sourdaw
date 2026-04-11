@@ -1,5 +1,5 @@
 import { type ProjectData } from '../../models/ProjectData';
-import { saveProjectToFile } from '../nativeProjectFiles';
+import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
 import { isTauri } from '#/helpers/tauriBridge';
 import { save } from '@tauri-apps/plugin-dialog';
 

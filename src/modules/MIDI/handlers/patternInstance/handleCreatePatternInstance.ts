@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { createPatternInstance } from '../../useCases/patternInstance';
+import { createPatternInstance } from '../../useCases/patternInstance/createPatternInstance';
 
 export const handleCreatePatternInstance = createHandler<'createPatternInstance'>({
     execute: async (a) => {

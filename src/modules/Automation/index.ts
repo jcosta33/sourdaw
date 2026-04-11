@@ -67,19 +67,18 @@ export { startAutomationRecording } from './useCases/automationRecording/startAu
 // useCases/automationRecording/stopAutomationRecording
 export { stopAutomationRecording } from './useCases/automationRecording/stopAutomationRecording';
 
-// useCases/automationSelection
-export {
-    selectPointsInRange,
-    transformSelectedPoints,
-    deleteSelectedPoints,
-    getSelectionBounds,
-} from './useCases/automationSelection';
+export { selectPointsInRange } from './useCases/automationSelection/selectPointsInRange';
+export { transformSelectedPoints } from './useCases/automationSelection/transformSelectedPoints';
+export { deleteSelectedPoints } from './useCases/automationSelection/deleteSelectedPoints';
+export { getSelectionBounds } from './useCases/automationSelection/getSelectionBounds';
 
 // useCases/automationShapes
 export { insertAutomationShape } from './useCases/automationShapes';
 
-// useCases/automationZoom
-export { zoomToUsedRange, resetYZoom, adjustYZoom, toggleVirginTerritory } from './useCases/automationZoom';
+export { zoomToUsedRange } from './useCases/automationZoom/zoomToUsedRange';
+export { resetYZoom } from './useCases/automationZoom/resetYZoom';
+export { adjustYZoom } from './useCases/automationZoom/adjustYZoom';
+export { toggleVirginTerritory } from './useCases/automationZoom/toggleVirginTerritory';
 
 // useCases/getAutomationLanes
 export { getAutomationLanes } from './useCases/getAutomationLanes';

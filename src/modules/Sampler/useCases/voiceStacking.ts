@@ -4,7 +4,7 @@
 
 import type { VoiceStackParams } from '../models/SamplerTypes';
 import { samplerStore, setVoiceStack } from '../stores/samplerStore';
-import { setSamplerParamThrottled } from './samplerParamBridge';
+import { setSamplerParamThrottled } from './samplerParamBridge/setSamplerParamThrottled';
 
 export function updateVoiceStack(updates: Partial<VoiceStackParams>): void {
     const state = samplerStore.value;

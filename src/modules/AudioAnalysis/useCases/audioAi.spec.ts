@@ -8,13 +8,11 @@ vi.mock('../repositories/audioAiEngine', () => ({
     separateStems: vi.fn().mockResolvedValue({} as Record<string, AudioBuffer>),
 }));
 
-import {
-    isStemSeparationAvailable,
-    isAudioGenerationAvailable,
-    isAudioAiServerRunning,
-    generateAudio,
-    separateStems,
-} from './audioAi';
+import { isStemSeparationAvailable } from './audioAi/isStemSeparationAvailable';
+import { isAudioGenerationAvailable } from './audioAi/isAudioGenerationAvailable';
+import { isAudioAiServerRunning } from './audioAi/isAudioAiServerRunning';
+import { generateAudio } from './audioAi/generateAudio';
+import { separateStems } from './audioAi/separateStems';
 import * as repo from '../repositories/audioAiEngine';
 
 describe('audioAi delegates', () => {

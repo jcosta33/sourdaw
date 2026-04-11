@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { defaultArrangementId } from '../../stores/arrangementStore';
-import { applyPreset, syncArrangement } from './demoUtils';
+import { applyPreset } from './demoUtils/applyPreset';
+import { syncArrangement } from './demoUtils/syncArrangement';
 
 describe('applyPreset', () => {
     beforeEach(() => {

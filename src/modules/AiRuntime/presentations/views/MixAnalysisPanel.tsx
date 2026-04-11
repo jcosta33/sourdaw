@@ -8,7 +8,7 @@ import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Activity, RefreshCw, Wrench, X } from 'lucide-react';
 import { mixAnalysisStore, toggleMixAnalysisPanel } from '../../stores/mixAnalysisStore';
-import { runAppAction } from '../../useCases/aiPanelActions';
+import { runAppAction } from '../../useCases/aiPanelActions/runAppAction';
 import { type MixAnalysis } from '../../models/MixAnalysis';
 import {
     OverallLevel,

@@ -7,14 +7,18 @@ vi.mock('../stores/levainStore', () => ({
     },
 }));
 
-vi.mock('./levainParamBridge', () => ({
-    setLevainParamWithAudio: vi.fn(),
+vi.mock('./levainParamBridge/loadSamplesForInstrument', () => ({
     loadSamplesForInstrument: vi.fn(),
+}));
+
+vi.mock('./levainParamBridge/setLevainParamWithAudio', () => ({
+    setLevainParamWithAudio: vi.fn(),
 }));
 
 import { loadInstrument } from './loadPreset';
 import { levainStore } from '../stores/levainStore';
-import { setLevainParamWithAudio, loadSamplesForInstrument } from './levainParamBridge';
+import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithAudio';
+import { loadSamplesForInstrument } from './levainParamBridge/loadSamplesForInstrument';
 
 describe('loadInstrument', () => {
     beforeEach(() => {

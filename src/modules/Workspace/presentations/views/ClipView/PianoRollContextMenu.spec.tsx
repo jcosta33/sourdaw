@@ -69,20 +69,35 @@ vi.mock('#/modules/Arrangement/useCases/clipboard/pasteNotes', () => ({
     pasteNotes: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases/strumNotes', () => ({
-    strumNotes: vi.fn(),
+vi.mock('#/modules/MIDI/useCases/strumNotes/restoreStrumOriginals', () => ({
     restoreStrumOriginals: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases/grooveExtraction', () => ({
-    extractGrooveFromClip: vi.fn(),
-    applyGrooveToClip: vi.fn(),
-    restoreGrooveOriginals: vi.fn(),
+vi.mock('#/modules/MIDI/useCases/strumNotes/strumNotes', () => ({
+    strumNotes: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge', () => ({
-    generateMidiAI: vi.fn(),
+vi.mock(
+    '#/modules/MIDI/useCases/grooveExtraction/restoreGrooveOriginals',
+    () => ({
+        restoreGrooveOriginals: vi.fn(),
+    }),
+);
+
+vi.mock('#/modules/MIDI/useCases/grooveExtraction/applyGrooveToClip', () => ({
+    applyGrooveToClip: vi.fn(),
+}));
+
+vi.mock('#/modules/MIDI/useCases/grooveExtraction/extractGrooveFromClip', () => ({
+    extractGrooveFromClip: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge/isTauri', () => ({
     isTauri: vi.fn(() => false),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge/generateMidiAI', () => ({
+    generateMidiAI: vi.fn(),
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {

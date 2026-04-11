@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { fitClipToBeats } from '../../useCases/clipStretch';
+import { fitClipToBeats } from '../../useCases/clipStretch/fitClipToBeats';
 
 export const handleFitClipToBeats = createHandler<'fitClipToBeats'>({
     execute: (action) => {

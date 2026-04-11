@@ -5,9 +5,11 @@
 export { arpeggiate } from './arpeggiator';
 export type { ArpPattern, ArpRate } from './arpeggiator';
 
-// ── Chord Stamps ──────────────────────────────────────────────────────────────
-export { stampChord, removeNotesByIds, CHORD_TYPES, CHORD_TYPE_KEYS } from './chordStamps';
-export type { ChordType } from './chordStamps';
+export { stampChord } from './chordStamps/stampChord';
+export { removeNotesByIds } from './chordStamps/removeNotesByIds';
+export { CHORD_TYPES } from './chordStamps/helpers';
+export { CHORD_TYPE_KEYS } from './chordStamps/CHORD_TYPE_KEYS';
+export type { ChordType } from './chordStamps/helpers';
 
 // ── Chord Track ───────────────────────────────────────────────────────────────
 export { addChordEvent } from './chordTrack/addChordEvent';
@@ -35,9 +37,10 @@ export { getMidiLearnState } from './getMidiLearnState';
 export { getMidiStoreState } from './getMidiStoreState';
 export { setMidiStoreState } from './setMidiStoreState';
 
-// ── Groove Extraction ─────────────────────────────────────────────────────────
-export { extractGrooveFromClip, applyGrooveToClip, restoreGrooveOriginals } from './grooveExtraction';
-export type { GrooveTemplate } from './grooveExtraction';
+export { extractGrooveFromClip } from './grooveExtraction/extractGrooveFromClip';
+export { applyGrooveToClip } from './grooveExtraction/applyGrooveToClip';
+export { restoreGrooveOriginals } from './grooveExtraction/restoreGrooveOriginals';
+export type { GrooveTemplate } from './grooveExtraction/helpers';
 
 // ── MIDI Events ───────────────────────────────────────────────────────────────
 export { addMidiCC } from './midiEvent/addMidiCC';
@@ -49,15 +52,11 @@ export { removePitchBend } from './midiEvent/removePitchBend';
 export { setNotePressure } from './midiEvent/setNotePressure';
 export { setNoteSlide } from './midiEvent/setNoteSlide';
 
-// ── MIDI Learn ────────────────────────────────────────────────────────────────
-export {
-    startMidiLearn,
-    stopMidiLearn,
-    completeMidiLearn,
-    handleMidiMessage,
-    findMappingForTarget,
-    scaleMidiValue,
-} from './midiLearn';
+export { startMidiLearn } from './midiLearn/startMidiLearn';
+export { stopMidiLearn } from './midiLearn/stopMidiLearn';
+export { completeMidiLearn } from './midiLearn/completeMidiLearn';
+export { handleMidiMessage, scaleMidiValue } from './midiLearn/handleMidiMessage';
+export { findMappingForTarget } from './midiLearn/findMappingForTarget';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────
 export { addMidiNote } from './midiNoteCrud/addMidiNote';
@@ -82,16 +81,16 @@ export { scaleVelocities } from './midiNoteTransforms/scaleVelocities';
 export { setAllVelocities } from './midiNoteTransforms/setAllVelocities';
 export { transposeNotes } from './midiNoteTransforms/transposeNotes';
 
-// ── Routing ───────────────────────────────────────────────────────────────────
-export { setMidiOutput, clearMidiOutput } from './midiRouting';
+export { setMidiOutput } from './midiRouting/setMidiOutput';
+export { clearMidiOutput } from './midiRouting/clearMidiOutput';
 export { getMidiRoutingHandlers } from './getMidiRoutingHandlers';
 
 // ── Pattern Instances ─────────────────────────────────────────────────────────
 export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
 
-// ── Strum ─────────────────────────────────────────────────────────────────────
-export { strumNotes, restoreStrumOriginals } from './strumNotes';
-export type { StrumDirection } from './strumNotes';
+export { strumNotes } from './strumNotes/strumNotes';
+export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
+export type { StrumDirection } from './strumNotes/strumNotes';
 
 // ── Chord Track Transposition ─────────────────────────────────────────────────
 export { transposeForChordTrack } from './transposeForChordTrack';

@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { toggleSidebar } from '../../useCases/togglePanel/panelToggles';
+import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
 
 export const handleToggleSidebar = createHandler<'toggleSidebar'>({
     execute: () => {

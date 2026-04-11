@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { setSamplerParamImmediate, setSamplerParamThrottled } from './samplerParamBridge';
+import { setSamplerParamImmediate } from './samplerParamBridge/setSamplerParamImmediate';
+import { setSamplerParamThrottled } from './samplerParamBridge/setSamplerParamThrottled';
 
 describe('samplerParamBridge', () => {
     beforeEach(() => {

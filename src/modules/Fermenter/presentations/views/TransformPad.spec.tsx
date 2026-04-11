@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TransformPad } from './TransformPad';
 
-// Mock external dependencies
-vi.mock('../../useCases/presetMorph', () => ({
-    bilinearPatch: vi.fn(() => ({ name: 'Morphed' })),
+vi.mock('../../useCases/presetMorph/applyMorphedPatch', () => ({
     applyMorphedPatch: vi.fn(),
 }));
 
-vi.mock('../../useCases/fermenterQueries', () => ({
+vi.mock('../../useCases/presetMorph/bilinearPatch', () => ({
+    bilinearPatch: vi.fn(() => ({ name: 'Morphed' })),
+}));
+
+vi.mock('../../useCases/fermenterQueries/helpers', () => ({
     FERMENTER_PRESETS: [
         { id: 'fermenter-init', name: 'Fermenter — Init', devices: [{ parameterValues: {} }] },
         { id: 'fermenter-supersaw', name: 'Fermenter — Supersaw', devices: [{ parameterValues: {} }] },

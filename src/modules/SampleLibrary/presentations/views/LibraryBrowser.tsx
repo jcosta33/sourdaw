@@ -23,7 +23,8 @@ import {
     toggleSampleFavorite,
     removeLibraryRoot,
 } from '../../stores/libraryStore';
-import { connectFolder, rescanRoot } from '../../useCases/connectFolder';
+import { connectFolder } from '../../useCases/connectFolder/connectFolder';
+import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { requestPermission } from '../../useCases/requestPermission';
 import { SampleRow } from '../components/SampleRow';
 import { LibraryRootCard } from '../components/LibraryRootCard';

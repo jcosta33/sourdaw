@@ -1,10 +1,5 @@
-/**
- * Auto-load levain samples when the engine is ready.
- * Loads VSCO-2-CE samples (CC0) for the given instrument from its manifest.
- * Only loads once per session per instrument.
- */
-
-import { loadInstrumentFromManifest, WEB_LOD } from '../repositories/sampleLoader';
+import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
+import { WEB_LOD } from '../repositories/sampleLoader/helpers';
 import { setSampleLoadProgress } from '../stores/levainStore';
 import { resolveResource } from '@tauri-apps/api/path';
 

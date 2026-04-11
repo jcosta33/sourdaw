@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../repositories/libraryPersistence', () => ({
+vi.mock('../repositories/libraryPersistence/requestPermission', () => ({
     requestPermission: vi.fn().mockResolvedValue(true),
 }));
 
 import { requestPermission } from './requestPermission';
-import { requestPermission as repoRequestPermission } from '../repositories/libraryPersistence';
+import { requestPermission as repoRequestPermission } from '../repositories/libraryPersistence/requestPermission';
 
 describe('requestPermission', () => {
     beforeEach(() => {

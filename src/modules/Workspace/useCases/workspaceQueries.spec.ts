@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { getWorkspaceState } from './workspaceQueries';
+import { getWorkspaceState } from './workspaceQueries/getWorkspaceState';
 import { defaultWorkspaceState } from '../models/WorkspaceState';
 
 describe('getWorkspaceState', () => {

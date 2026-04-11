@@ -1,5 +1,6 @@
 import { getTrackById } from '../../repositories/track/getTrackById';
-import { assignTrackToVCA, removeTrackFromVCA } from '../vcaFader';
+import { assignTrackToVCA } from '../vcaFader/assignTrackToVCA';
+import { removeTrackFromVCA } from '../vcaFader/removeTrackFromVCA';
 
 export function toggleVcaMembership(trackId: string, vcaGroupId: string): void {
     const track = getTrackById(trackId);

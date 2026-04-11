@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { zoomToFit } from '../../useCases/togglePanel/zoomOperations';
+import { zoomToFit } from '../../useCases/togglePanel/zoomOperations/zoomToFit';
 
 export const handleZoomToFit = createHandler<'zoomToFit'>({
     execute: () => {

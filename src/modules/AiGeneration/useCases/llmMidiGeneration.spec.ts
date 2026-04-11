@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { PATTERN_TEMPLATES, filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { PATTERN_TEMPLATES } from '#/modules/AiRuntime/useCases/aiRuntimeQueries/PATTERN_TEMPLATES';
+import { filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries/filterTemplates';
 import { generateMidiViaLlm } from './llmMidiGeneration';
 
 describe('generateMidiViaLlm', () => {

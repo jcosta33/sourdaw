@@ -1,0 +1,88 @@
+import { type LibraryRoot } from '../../models/LibraryTypes';
+import { addLibraryRoot } from '../../stores/libraryStore';
+import { scanBrowserDirectory, scanTauriDirectory } from './helpers';
+
+async function connectFolderBrowser(): Promise<string | null> {
+    // Check for File System Access API support
+    if (!('showDirectoryPicker' in window)) {
+        // Fallback: alert the user
+        return null;
+    }
+
+    try {
+        const handle = await (
+            window as unknown as { showDirectoryPicker: (opts: { mode: string }) => Promise<FileSystemDirectoryHandle> }
+        ).showDirectoryPicker({ mode: 'read' });
+        const id = `lib-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        const root: LibraryRoot = {
+            id,
+            name: handle.name,
+            provider: 'browser',
+            rootRef: handle.name, // We'll persist the handle separately
+            handle,
+            connectedAt: Date.now(),
+            status: 'scanning',
+            fileCount: 0,
+            settings: { recursive: true },
+        };
+
+        addLibraryRoot(root);
+
+        // Start scanning in background
+        scanBrowserDirectory(root);
+
+        return id;
+    } catch {
+        // User cancelled the picker
+        return null;
+    }
+}
+
+async function connectFolderTauri(): Promise<string | null> {
+    try {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const selected = await open({ directory: true, multiple: false, title: 'Connect Sample Folder' });
+        if (!selected || typeof selected !== 'string') {
+            return null;
+        }
+
+        const id = `lib-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const folderName = selected.split('/').pop() ?? selected.split('\\').pop() ?? selected;
+
+        const root: LibraryRoot = {
+            id,
+            name: folderName,
+            provider: 'tauri',
+            rootRef: selected,
+            connectedAt: Date.now(),
+            status: 'scanning',
+            fileCount: 0,
+            settings: { recursive: true },
+        };
+
+        addLibraryRoot(root);
+
+        // Start scanning in background
+        scanTauriDirectory(root);
+
+        return id;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Open a folder picker and connect the selected folder as a library root.
+ * Returns the root ID if successful, null if cancelled.
+ */
+export async function connectFolder(): Promise<string | null> {
+    // Check if we're in Tauri
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+    if (isTauri) {
+        return connectFolderTauri();
+    }
+
+    return connectFolderBrowser();
+}

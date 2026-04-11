@@ -13,7 +13,9 @@ import {
 } from '#/modules/Transport/useCases';
 import { copySelectedClip, pasteClip, removeClip } from '#/modules/Arrangement/useCases';
 import { saveProject } from '#/modules/Project';
-import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel/panelToggles';
+import { toggleMixer } from './togglePanel/panelToggles/toggleMixer';
+import { toggleInspector } from './togglePanel/panelToggles/toggleInspector';
+import { toggleChatPanel } from './togglePanel/panelToggles/toggleChatPanel';
 import { workspaceStore } from '../stores/workspaceStore';
 import { eventBus } from '#/app/registerDependencies';
 
@@ -93,7 +95,7 @@ const actionHandlers: Partial<Record<ShortcutAction, ShortcutHandler>> = {
 
 export const startShortcutEngine = inject({ eventBus })(
     ({ eventBus }) =>
-        function startShortcutEngine(): () => void {
+        (function startShortcutEngine(): () => void {
             const handleGlobalKeyDown = (e: KeyboardEvent) => {
                 if (
                     ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) ||
@@ -127,5 +129,5 @@ export const startShortcutEngine = inject({ eventBus })(
 
             window.addEventListener('keydown', handleGlobalKeyDown);
             return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-        }
+        })
 );

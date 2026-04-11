@@ -18,7 +18,7 @@ vi.mock('#/components/daw/visualizers/DelayTaps', () => ({
     DelayTaps: () => <div data-testid="delay-taps">Delay Taps</div>,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: vi.fn(),
 }));
 

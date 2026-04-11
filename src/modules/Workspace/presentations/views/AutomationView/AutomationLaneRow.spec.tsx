@@ -62,10 +62,19 @@ vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
     workspaceStore: { value: { activeTool: 'pointer' } },
 }));
 
-vi.mock('#/modules/Arrangement/useCases/automationQueries', () => ({
-    interpolateAutomationValue: vi.fn(() => 0.5),
-    getAutomationRegions: vi.fn(() => []),
-}));
+vi.mock(
+    '#/modules/Arrangement/useCases/automationQueries/getAutomationRegions',
+    () => ({
+        getAutomationRegions: vi.fn(() => []),
+    }),
+);
+
+vi.mock(
+    '#/modules/Arrangement/useCases/automationQueries/interpolateAutomationValue',
+    () => ({
+        interpolateAutomationValue: vi.fn(() => 0.5),
+    }),
+);
 
 describe('AutomationLaneRow', () => {
     const defaultProps = {

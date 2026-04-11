@@ -13,7 +13,8 @@ import {
     replaceGrinderPatchLocally,
     type GrinderState,
 } from '../../stores/grinderStore';
-import { loadGrinderPatchWithAudio, setGrinderParamWithAudio } from '../../useCases/grinderParamBridge';
+import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
+import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 import {
     type GrinderAmpModel,

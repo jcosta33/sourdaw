@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { toggleChatPanel } from '../../useCases/togglePanel/panelToggles';
+import { toggleChatPanel } from '../../useCases/togglePanel/panelToggles/toggleChatPanel';
 
 export const handleToggleChatPanel = createHandler<'toggleChatPanel'>({
     execute: () => {

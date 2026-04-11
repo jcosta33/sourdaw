@@ -19,9 +19,12 @@ const sampleAnalysis: MixAnalysis = {
     crestFactor: 12,
 };
 
-vi.mock('./analyzeMix', () => ({
-    analyzeMix: vi.fn(() => sampleAnalysis),
+vi.mock('./analyzeMix/createReferenceAnalysis', () => ({
     createReferenceAnalysis: vi.fn(() => sampleAnalysis),
+}));
+
+vi.mock('./analyzeMix/analyzeMix', () => ({
+    analyzeMix: vi.fn(() => sampleAnalysis),
 }));
 
 import { compareMixes, compareToReference } from './compareMixes';

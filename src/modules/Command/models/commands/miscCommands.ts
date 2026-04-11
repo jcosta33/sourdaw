@@ -1,6 +1,6 @@
 import { type CommandEntry } from '../CommandEntry';
 import { eventBus } from '#/app/registerDependencies';
-import { getSelectedClipId } from '../../useCases/selectionHelpers';
+import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 /**

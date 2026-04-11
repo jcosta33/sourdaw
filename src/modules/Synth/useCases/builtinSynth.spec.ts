@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { defaultSynthParams } from '#/modules/AudioEngine/useCases/audioEngineQueries';
+import { defaultSynthParams } from '#/modules/AudioEngine/useCases/audioEngineQueries/helpers';
 import { getSynthParamsForTrack } from './builtinSynth';
 
 describe('getSynthParamsForTrack', () => {

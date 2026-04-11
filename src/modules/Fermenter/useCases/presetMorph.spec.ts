@@ -4,13 +4,14 @@ vi.mock('../stores/fermenterStore', () => ({
     loadFermenterPatch: vi.fn(),
 }));
 
-vi.mock('./fermenterParamBridge', () => ({
+vi.mock('./fermenterParamBridge/setFermenterParamWithAudio', () => ({
     setFermenterParamWithAudio: vi.fn(),
 }));
 
-import { lerpPatch, bilinearPatch, applyMorphedPatch } from './presetMorph';
+import { lerpPatch, bilinearPatch } from './presetMorph/bilinearPatch';
+import { applyMorphedPatch } from './presetMorph/applyMorphedPatch';
 import { loadFermenterPatch } from '../stores/fermenterStore';
-import { setFermenterParamWithAudio } from './fermenterParamBridge';
+import { setFermenterParamWithAudio } from './fermenterParamBridge/setFermenterParamWithAudio';
 import { type FermenterPatch } from '../models/FermenterPatch';
 
 function patch(name: string, overrides: Partial<FermenterPatch>): FermenterPatch {

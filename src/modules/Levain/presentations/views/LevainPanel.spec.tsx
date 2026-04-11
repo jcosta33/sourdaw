@@ -38,10 +38,16 @@ vi.mock('../../useCases/loadPreset', () => ({
     loadInstrument: vi.fn(),
 }));
 
-vi.mock('../../useCases/levainParamBridge', () => ({
-    sendMicParamToEngine: vi.fn(),
-    setLevainParamWithAudio: vi.fn(),
+vi.mock('../../useCases/levainParamBridge/setMacroWithAudio', () => ({
     setMacroWithAudio: vi.fn(),
+}));
+
+vi.mock('../../useCases/levainParamBridge/setLevainParamWithAudio', () => ({
+    setLevainParamWithAudio: vi.fn(),
+}));
+
+vi.mock('../../useCases/levainParamBridge/sendMicParamToEngine', () => ({
+    sendMicParamToEngine: vi.fn(),
 }));
 
 // Mock UI components and sub-components

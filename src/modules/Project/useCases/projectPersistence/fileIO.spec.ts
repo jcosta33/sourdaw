@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type ProjectData } from '../../models/ProjectData';
-import { importProjectFile } from './fileIO';
+import { importProjectFile } from './fileIO/pickAndImportProjectFile';
 
 describe('fileIO injectables', () => {
     beforeEach(() => {

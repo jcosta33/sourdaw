@@ -1,4 +1,4 @@
-import { pickFiles as pickFilesFromNativeFileDialog } from '../repositories/nativeFileDialog';
+import { pickFiles as pickFilesFromNativeFileDialog } from '../repositories/nativeFileDialog/pickFiles';
 
 /**
  * Public contract for file dialog operations.

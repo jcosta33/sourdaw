@@ -13,8 +13,9 @@ import {
     type FermenterState,
 } from '../../stores/fermenterStore';
 import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
-import { loadFermenterPatchWithAudio, setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge';
-import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries';
+import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
+import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
+import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
 import { MacroStrip } from '../components/MacroStrip';
 import { XYPad } from '../components/XYPad';
 import { Oscilloscope } from '../components/Oscilloscope';

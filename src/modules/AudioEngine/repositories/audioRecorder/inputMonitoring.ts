@@ -1,5 +1,5 @@
 import { audioEngine } from '../createWebAudioEngine';
-import { getSelectedInputId } from '../../useCases/audioDeviceSelection';
+import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
 
 let monitorStream: MediaStream | null = null;
 let monitorSource: MediaStreamAudioSourceNode | null = null;

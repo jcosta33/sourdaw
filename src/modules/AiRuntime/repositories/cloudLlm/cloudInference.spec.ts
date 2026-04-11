@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { generateCloudToolCalls } from './cloudInference';
+import { generateCloudToolCalls } from './cloudInference/generateCloudToolCalls';
 import { type Logger } from '#/helpers/Logger/Logger';
 import * as keyManagement from './keyManagement';
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { MarkerLane } from './MarkerLane';
-import { addMarker } from '../../useCases/marker/markerOperations';
+import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
@@ -20,12 +20,24 @@ vi.mock('../../stores/markerStore', () => ({
     },
 }));
 
-vi.mock('../../useCases/marker/markerOperations', () => ({
-    addMarker: vi.fn(),
-    removeMarker: vi.fn(),
-    renameMarker: vi.fn(),
-    setMarkerColor: vi.fn(),
+vi.mock('../../useCases/marker/markerOperations/moveMarker', () => ({
     moveMarker: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/markerOperations/setMarkerColor', () => ({
+    setMarkerColor: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/markerOperations/renameMarker', () => ({
+    renameMarker: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/markerOperations/removeMarker', () => ({
+    removeMarker: vi.fn(),
+}));
+
+vi.mock('../../useCases/marker/markerOperations/addMarker', () => ({
+    addMarker: vi.fn(),
 }));
 
 vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({

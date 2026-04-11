@@ -21,7 +21,10 @@ import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { automationStore, createAutomationLane } from '#/modules/Automation';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
-import { note, applyPreset, createMidiClip, syncArrangement } from '../demoUtils';
+import { note } from '../demoUtils/note';
+import { applyPreset } from '../demoUtils/applyPreset';
+import { createMidiClip } from '../demoUtils/createMidiClip';
+import { syncArrangement } from '../demoUtils/syncArrangement';
 import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
 
 const TB = 320; // total beats (~2:34 at 125 BPM)

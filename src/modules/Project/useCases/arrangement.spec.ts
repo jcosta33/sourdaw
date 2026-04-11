@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { arrangementStore } from '../stores/arrangementStore';
-import { switchArrangement } from './arrangement';
+import { switchArrangement } from './arrangement/switchArrangement';
 
 describe('switchArrangement', () => {
     beforeEach(() => {

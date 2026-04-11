@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { revertAction } from './revertAction';
+import { revertAction } from './revertAction/revertAction';
 
 describe('revertAction injectables', () => {
     beforeEach(() => {

@@ -1,5 +1,5 @@
 import { type CommandEntry } from '../CommandEntry';
-import { getSelectedClipId } from '../../useCases/selectionHelpers';
+import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
 import { zoomTimeline } from '#/modules/Arrangement/stores';
 import { addMarker } from '#/modules/Arrangement/useCases';
 import {

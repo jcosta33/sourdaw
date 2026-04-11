@@ -3,7 +3,8 @@ import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 import { getTrackAtY } from './getTrackAtY';
-import { hitTestClip, hitTestTrack } from './hitTestClip';
+import { hitTestClip } from './hitTestClip/hitTestClip';
+import { hitTestTrack } from './hitTestClip/hitTestTrack';
 
 describe('hitTestClip', () => {
     beforeEach(() => {

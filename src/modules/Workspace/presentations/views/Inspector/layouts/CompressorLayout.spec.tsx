@@ -18,7 +18,7 @@ vi.mock('#/components/daw/visualizers/CompressorCurve', () => ({
     CompressorCurve: () => <div data-testid="compressor-curve">Compressor Curve</div>,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: vi.fn(),
 }));
 

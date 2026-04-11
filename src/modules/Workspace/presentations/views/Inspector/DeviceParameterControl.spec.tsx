@@ -6,7 +6,7 @@ import type { Device } from '../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetDeviceParameter = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter', () => ({
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
 }));
 

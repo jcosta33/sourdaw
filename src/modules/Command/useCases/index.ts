@@ -23,23 +23,24 @@ export {
 export { executeAppAction } from './executeAppAction';
 export type { ExecuteOptions } from './executeAppAction';
 
-export {
-    clearSolos,
-    addTrack,
-    duplicateTrack,
-    duplicateClip,
-    duplicateClipToNextBar,
-    zoomTracksVertical,
-} from './keyboardShortcutActions/trackShortcuts';
+export { clearSolos } from './keyboardShortcutActions/trackShortcuts/clearSolos';
+export { addTrack } from './keyboardShortcutActions/trackShortcuts/addTrack';
+export { duplicateTrack } from './keyboardShortcutActions/trackShortcuts/duplicateTrack';
+export { duplicateClip } from './keyboardShortcutActions/trackShortcuts/duplicateClip';
+export { duplicateClipToNextBar } from './keyboardShortcutActions/trackShortcuts/duplicateClipToNextBar';
+export { zoomTracksVertical } from './keyboardShortcutActions/trackShortcuts/zoomTracksVertical';
 
 export { clearUndoHistory } from './clearUndoHistory';
 
-export { deleteMacro, renameMacro } from './macro/management';
+export { deleteMacro } from './macro/management/deleteMacro';
+export { renameMacro } from './macro/management/renameMacro';
 
 export { playMacro } from './macro/playback';
 
-export { startMacroRecording, stopMacroRecording, recordAction } from './macro/recording';
-export type { Macro } from './macro/recording';
+export { startMacroRecording } from './macro/recording/startMacroRecording';
+export { stopMacroRecording } from './macro/recording/stopMacroRecording';
+export { recordAction } from './macro/recording/recordAction';
+export type { Macro } from './macro/recording/stopMacroRecording';
 
 export { pushUndoEntry } from './pushUndoEntry';
 

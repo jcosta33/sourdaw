@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleDetachPatternInstance } from './handleDetachPatternInstance';
 
-vi.mock('../../useCases/patternInstance', () => ({
-    createPatternInstance: vi.fn(),
+vi.mock('../../useCases/patternInstance/detachPatternInstance', () => ({
     detachPatternInstance: vi.fn(),
 }));
 
-import { detachPatternInstance } from '../../useCases/patternInstance';
+vi.mock('../../useCases/patternInstance/createPatternInstance', () => ({
+    createPatternInstance: vi.fn(),
+}));
+
+import { detachPatternInstance } from '../../useCases/patternInstance/detachPatternInstance';
 
 describe('handleDetachPatternInstance', () => {
     beforeEach(() => {

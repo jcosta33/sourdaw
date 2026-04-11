@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    zoomToFit,
-    zoomToSelection,
-    cycleAutomationVisibility,
-    onZoomToFit,
-    onZoomToSelection,
-    onScrollToPlayhead,
-} from './zoomOperations';
+import { zoomToFit } from './zoomOperations/zoomToFit';
+import { zoomToSelection } from './zoomOperations/zoomToSelection';
+import { cycleAutomationVisibility } from './zoomOperations/cycleAutomationVisibility';
+import { onZoomToFit } from './zoomOperations/onZoomToFit';
+import { onZoomToSelection } from './zoomOperations/onZoomToSelection';
+import { onScrollToPlayhead } from './zoomOperations/onScrollToPlayhead';
 import * as workspaceRepo from '../../repositories/workspace';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 

@@ -1,5 +1,5 @@
 import { createHandler } from '#/helpers/createHandler';
-import { toggleMixer } from '../../useCases/togglePanel/panelToggles';
+import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
 
 export const handleCloseMixer = createHandler<'closeMixer'>({
     execute: () => {

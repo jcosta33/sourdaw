@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { setTimeSignature } from './setTimeSignature';
-import { getTransportState, updateTransportState } from '../repositories/transport';
+import { getTransportState } from '../repositories/transport/getTransportState';
+import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { defaultTransportState } from '../models/TransportState';
 
 describe('setTimeSignature', () => {

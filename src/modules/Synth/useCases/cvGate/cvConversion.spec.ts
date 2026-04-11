@@ -4,7 +4,9 @@ vi.mock('#/modules/Synth/stores/cvGate', () => ({
     cvGateStore: { value: { voltageStandard: '1v-per-octave' as const } },
 }));
 
-import { midiNoteToCv, velocityToCv, getClockValue } from './cvConversion';
+import { midiNoteToCv } from './cvConversion/midiNoteToCv';
+import { velocityToCv } from './cvConversion/velocityToCv';
+import { getClockValue } from './cvConversion/getClockValue';
 import { cvGateStore } from '#/modules/Synth/stores/cvGate';
 
 describe('cvConversion', () => {

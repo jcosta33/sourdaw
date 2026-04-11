@@ -16,7 +16,8 @@ import {
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
-import { applyVcaGains, applyAutomation } from './scheduling/applyAutomation';
+import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
+import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
 
 let timerId: ReturnType<typeof setTimeout> | null = null;
 let lastTickTime = 0;

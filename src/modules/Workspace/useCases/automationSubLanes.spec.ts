@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import {
-    setAutomationSubLanes,
-    addAutomationSubLane,
-    removeAutomationSubLane,
-    swapAutomationSubLaneParam,
-} from './automationSubLanes';
+import { setAutomationSubLanes } from './automationSubLanes/helpers';
+import { addAutomationSubLane } from './automationSubLanes/addAutomationSubLane';
+import { removeAutomationSubLane } from './automationSubLanes/removeAutomationSubLane';
+import { swapAutomationSubLaneParam } from './automationSubLanes/swapAutomationSubLaneParam';
 import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
 import { defaultWorkspaceState } from '../models/WorkspaceState';
 

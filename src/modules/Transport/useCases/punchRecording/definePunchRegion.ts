@@ -1,5 +1,5 @@
 import { punchRecordingStore, type PunchRegion } from '#/modules/Transport/stores/punchRecordingStore';
-import { getNextPunchId } from '../../repositories/punchRecordingIdCounter';
+import { getNextPunchId } from '../../repositories/punchRecordingIdCounter/getNextPunchId';
 
 export function definePunchRegion(captureId: string, punchInBeat: number, punchOutBeat: number): void {
     const state = punchRecordingStore.value;

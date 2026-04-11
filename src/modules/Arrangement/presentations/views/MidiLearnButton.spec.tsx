@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { MidiLearnButton } from './MidiLearnButton';
-import { startMidiLearn, stopMidiLearn, findMappingForTarget } from '#/modules/MIDI/useCases/midiLearn';
+import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn/startMidiLearn';
+import { stopMidiLearn } from '#/modules/MIDI/useCases/midiLearn/stopMidiLearn';
+import { findMappingForTarget } from '#/modules/MIDI/useCases/midiLearn/findMappingForTarget';
 
 // Track mock state
 let mockMidiState = {
@@ -23,10 +25,16 @@ vi.mock('#/modules/MIDI/stores/midiLearnStore', () => ({
     },
 }));
 
-vi.mock('#/modules/MIDI/useCases/midiLearn', () => ({
-    startMidiLearn: vi.fn(),
-    stopMidiLearn: vi.fn(),
+vi.mock('#/modules/MIDI/useCases/midiLearn/findMappingForTarget', () => ({
     findMappingForTarget: vi.fn(() => null),
+}));
+
+vi.mock('#/modules/MIDI/useCases/midiLearn/stopMidiLearn', () => ({
+    stopMidiLearn: vi.fn(),
+}));
+
+vi.mock('#/modules/MIDI/useCases/midiLearn/startMidiLearn', () => ({
+    startMidiLearn: vi.fn(),
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {

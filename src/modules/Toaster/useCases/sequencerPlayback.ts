@@ -8,7 +8,9 @@ import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { toasterStore } from '../stores/toasterStore';
 import { type Step, type Pattern } from '../models/ToasterKit';
 import { triggerToasterPad } from './triggerPad';
-import { setToasterPadParam, setPadEngineImmediate, getFirstToasterDeviceId } from './toasterParamBridge';
+import { setToasterPadParam } from './toasterParamBridge/setToasterPadParam';
+import { setPadEngineImmediate } from './toasterParamBridge/setPadEngineImmediate';
+import { getFirstToasterDeviceId } from './toasterParamBridge/getFirstToasterDeviceId';
 import { morphPatterns } from './patternMorph';
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 

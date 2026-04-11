@@ -20,13 +20,11 @@ export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
 
-export {
-    setTrackGain,
-    setTrackPan,
-    setTrackColor,
-    setTrackNotes,
-    setInputMonitoring,
-} from './setTrackGainPan';
+export { setTrackGain } from './setTrackGainPan/setTrackGain';
+export { setTrackPan } from './setTrackGainPan/setTrackPan';
+export { setTrackColor } from './setTrackGainPan/setTrackColor';
+export { setTrackNotes } from './setTrackGainPan/setTrackNotes';
+export { setInputMonitoring } from './setTrackGainPan/setInputMonitoring';
 
 // ── Clip ─────────────────────────────────────────────────────────────────────
 
@@ -90,7 +88,7 @@ export { setCompRegion } from './comping/setCompRegion';
 export { resolveClipsWithComping } from './resolveComping';
 export type { ResolvedClip } from './resolveComping';
 
-export { createCompGroup } from './groupComping/compGroupOperations';
+export { createCompGroup } from './groupComping/compGroupOperations/createCompGroup';
 
 // ── Adjustment Layer ──────────────────────────────────────────────────────────
 
@@ -103,69 +101,61 @@ export { addExternalDevice } from './device/addExternalDevice';
 export { bypassDevice } from './device/bypassDevice';
 export { removeDevice } from './device/removeDevice';
 export { reorderDevices } from './device/reorderDevices';
-export { setSend, toggleSendPreFader, removeSend } from './device/sendManagement';
-export { setDeviceParameter, persistDeviceParam } from './device/setDeviceParameter';
+export { setSend } from './device/sendManagement/setSend';
+export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
+export { removeSend } from './device/sendManagement/removeSend';
+export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
+export { persistDeviceParam } from './device/setDeviceParameter/persistDeviceParam';
 
-// ── Freeze / Bounce ───────────────────────────────────────────────────────────
-
-export { freezeTrack, unfreezeTrack } from './freezeBounce/freezeTrack';
+export { freezeTrack } from './freezeBounce/freezeTrack/freezeTrack';
+export { unfreezeTrack } from './freezeBounce/freezeTrack/unfreezeTrack';
 export { bounceSelection } from './freezeBounce/bounceOperations';
 
 export { deleteTime } from './timeOperations/deleteTime';
 export { insertTime, duplicateTimeRange } from './timeOperations/duplicateTimeRange';
 
-// ── Marker ────────────────────────────────────────────────────────────────────
+export { addMarker } from './marker/markerOperations/addMarker';
+export { removeMarker } from './marker/markerOperations/removeMarker';
+export { renameMarker } from './marker/markerOperations/renameMarker';
+export { setMarkerColor } from './marker/markerOperations/setMarkerColor';
+export { moveMarker } from './marker/markerOperations/moveMarker';
+export { addSection } from './marker/sectionOperations/addSection';
+export { removeSection } from './marker/sectionOperations/removeSection';
+export { renameSection } from './marker/sectionOperations/renameSection';
+export { setSectionColor } from './marker/sectionOperations/setSectionColor';
+export { moveSection } from './marker/sectionOperations/moveSection';
+export { resizeSection } from './marker/sectionOperations/resizeSection';
+export { reorderSection } from './marker/sectionOperations/reorderSection';
 
-export { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from './marker/markerOperations';
-export {
-    addSection,
-    removeSection,
-    renameSection,
-    setSectionColor,
-    moveSection,
-    resizeSection,
-    reorderSection,
-} from './marker/sectionOperations';
-
-// ── Mixer Snapshot ────────────────────────────────────────────────────────────
-
-export {
-    mixerSnapshotStore,
-    saveMixerSnapshot,
-    recallMixerSnapshot,
-    restoreMixerChannels,
-    getMixerSnapshots,
-    deleteMixerSnapshot,
-    renameMixerSnapshot,
-} from './mixerSnapshot/operations';
+export { mixerSnapshotStore } from './mixerSnapshot/operations/helpers';
+export { saveMixerSnapshot } from './mixerSnapshot/operations/saveMixerSnapshot';
+export { recallMixerSnapshot } from './mixerSnapshot/operations/recallMixerSnapshot';
+export { restoreMixerChannels } from './mixerSnapshot/operations/restoreMixerChannels';
+export { getMixerSnapshots } from './mixerSnapshot/operations/getMixerSnapshots';
+export { deleteMixerSnapshot } from './mixerSnapshot/operations/deleteMixerSnapshot';
+export { renameMixerSnapshot } from './mixerSnapshot/operations/renameMixerSnapshot';
 
 // ── Preset ────────────────────────────────────────────────────────────────────
 
 export { createTrackFromPreset, loadPresetToTrack } from './preset/presetLoading';
-export {
-    getUserPresets,
-    saveUserPreset,
-    deleteUserPreset,
-    saveCurrentAsPreset,
-} from './preset/presetStorage';
-export type { SaveCurrentAsPresetInput } from './preset/presetStorage';
+export { getUserPresets } from './preset/presetStorage/getUserPresets';
+export { saveUserPreset, saveCurrentAsPreset } from './preset/presetStorage/saveCurrentAsPreset';
+export { deleteUserPreset } from './preset/presetStorage/deleteUserPreset';
+export type { SaveCurrentAsPresetInput } from './preset/presetStorage/saveCurrentAsPreset';
 
-// ── Recording ─────────────────────────────────────────────────────────────────
+export { armTrack } from './recording/armTrack';
+export { startRecording } from './recording/startRecording';
+export { stopRecording } from './recording/stopRecording';
 
-export { armTrack, startRecording, stopRecording } from './recording';
-
-// ── Scratch Pad ───────────────────────────────────────────────────────────────
-
-export { captureArrangementToScratchPad, commitScratchPadToArrangement } from './scratchPad/captureCommit';
-export {
-    addScratchPadSection,
-    removeScratchPadSection,
-    renameScratchPadSection,
-    setScratchPadSectionColor,
-    clearScratchPad,
-    reorderScratchPadSection,
-} from './scratchPad/scratchPadCrud';
-export type { ScratchPadSection } from './scratchPad/scratchPadCrud';
+export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
+export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';
+export { addScratchPadSection } from './scratchPad/scratchPadCrud/addScratchPadSection';
+export { removeScratchPadSection } from './scratchPad/scratchPadCrud/removeScratchPadSection';
+export { renameScratchPadSection } from './scratchPad/scratchPadCrud/renameScratchPadSection';
+export { setScratchPadSectionColor } from './scratchPad/scratchPadCrud/setScratchPadSectionColor';
+export { clearScratchPad } from './scratchPad/scratchPadCrud/clearScratchPad';
+export { reorderScratchPadSection } from './scratchPad/scratchPadCrud/reorderScratchPadSection';
+export type { ScratchPadSection } from './scratchPad/scratchPadCrud/helpers';
 
 // ── Toggle Track State ────────────────────────────────────────────────────────
 
@@ -205,37 +195,29 @@ export { removeFromVca } from './vca/removeFromVca';
 export { setVcaGain } from './vca/setVcaGain';
 export { toggleVcaMembership } from './vca/toggleVcaMembership';
 
-export {
-    createVCAGroup,
-    assignTrackToVCA,
-    removeTrackFromVCA,
-    getAllVCAGroups,
-} from './vcaFader';
-export type { VCAGroup } from './vcaFader';
+export { createVCAGroup } from './vcaFader/createVCAGroup';
+export { assignTrackToVCA } from './vcaFader/assignTrackToVCA';
+export { removeTrackFromVCA } from './vcaFader/removeTrackFromVCA';
+export { getAllVCAGroups } from './vcaFader/getAllVCAGroups';
+export type { VCAGroup } from './vcaFader/helpers';
 
-// ── Warp ──────────────────────────────────────────────────────────────────────
+export { getWarpState } from './warp/helpers';
+export { enableWarp } from './warp/enableWarp';
+export { disableWarp } from './warp/disableWarp';
+export { setStretchMode } from './warp/setStretchMode';
+export { addWarpMarker } from './warp/addWarpMarker';
+export { removeWarpMarker } from './warp/removeWarpMarker';
+export { moveWarpMarker } from './warp/moveWarpMarker';
 
-export {
-    getWarpState,
-    enableWarp,
-    disableWarp,
-    setStretchMode,
-    addWarpMarker,
-    removeWarpMarker,
-    moveWarpMarker,
-} from './warp';
-
-// ── Analysis / Queries ────────────────────────────────────────────────────────
-
-export { detectTempo, detectKey, audioToMidi } from './audioAnalysis';
-export {
-    interpolateAutomationValue,
-    rdpSimplify,
-    getAutomationRegions,
-    generateShapePoints,
-    applyVelocityCurve,
-} from './automationQueries';
-export type { VelocityCurve } from './automationQueries';
+export { detectTempo } from './audioAnalysis/detectTempo';
+export { detectKey } from './audioAnalysis/detectKey';
+export { audioToMidi } from './audioAnalysis/audioToMidi';
+export { interpolateAutomationValue } from './automationQueries/interpolateAutomationValue';
+export { rdpSimplify } from './automationQueries/rdpSimplify';
+export { getAutomationRegions } from './automationQueries/getAutomationRegions';
+export { generateShapePoints } from './automationQueries/generateShapePoints';
+export { applyVelocityCurve } from './automationQueries/applyVelocityCurve';
+export type { VelocityCurve } from './automationQueries/helpers';
 export { getMarkerState } from './timelineQueries';
 export type { MarkerStoreState as TimelineMarkerStoreState } from './timelineQueries';
 export { detectSongStructure, detectAndApplySongStructure } from './songStructureDetection';

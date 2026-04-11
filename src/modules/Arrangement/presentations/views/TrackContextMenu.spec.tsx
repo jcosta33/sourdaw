@@ -20,9 +20,12 @@ vi.mock('../../useCases/renameTrack', () => ({
     renameTrack: vi.fn(),
 }));
 
-vi.mock('../../useCases/freezeBounce/freezeTrack', () => ({
-    freezeTrack: vi.fn(),
+vi.mock('../../useCases/freezeBounce/freezeTrack/unfreezeTrack', () => ({
     unfreezeTrack: vi.fn(),
+}));
+
+vi.mock('../../useCases/freezeBounce/freezeTrack/freezeTrack', () => ({
+    freezeTrack: vi.fn(),
 }));
 
 vi.mock('../../useCases/freezeBounce/bounceOperations', () => ({
@@ -30,7 +33,7 @@ vi.mock('../../useCases/freezeBounce/bounceOperations', () => ({
     bounceToNewTrack: vi.fn(),
 }));
 
-vi.mock('../../useCases/recording', () => ({
+vi.mock('../../useCases/recording/armTrack', () => ({
     armTrack: vi.fn(),
 }));
 
@@ -46,9 +49,12 @@ vi.mock('../../useCases/trackTemplate', () => ({
     saveTrackAsTemplate: vi.fn(),
 }));
 
-vi.mock('../../useCases/setTrackGainPan', () => ({
-    setTrackColor: vi.fn(),
+vi.mock('../../useCases/setTrackGainPan/setInputMonitoring', () => ({
     setInputMonitoring: vi.fn(),
+}));
+
+vi.mock('../../useCases/setTrackGainPan/setTrackColor', () => ({
+    setTrackColor: vi.fn(),
 }));
 
 vi.mock('../../useCases/importMidiFile', () => ({

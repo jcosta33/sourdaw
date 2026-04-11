@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { captureArrangementToScratchPad, commitScratchPadToArrangement } from './captureCommit';
+import { captureArrangementToScratchPad } from './captureCommit/captureArrangementToScratchPad';
+import { commitScratchPadToArrangement } from './captureCommit/commitScratchPadToArrangement';
 
 describe('captureArrangementToScratchPad', () => {
     beforeEach(() => {

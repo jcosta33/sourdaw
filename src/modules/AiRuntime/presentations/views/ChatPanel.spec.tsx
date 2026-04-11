@@ -24,11 +24,11 @@ vi.mock('#/modules/AiRuntime/useCases/sendChatMessage', () => ({
     sendChatMessage: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/useCases/aiPanelActions', () => ({
+vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat', () => ({
     toggleChat: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution', () => ({
+vi.mock('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable', () => ({
     isLlmAvailable: vi.fn(() => true),
 }));
 

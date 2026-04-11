@@ -6,7 +6,7 @@ import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
 
 // Mock external dependencies
-vi.mock('#/modules/AudioEngine/useCases/engineAccess', () => ({
+vi.mock('#/modules/AudioEngine/useCases/engineAccess/getMasterAnalyser', () => ({
     getMasterAnalyser: vi.fn(() => ({
         frequencyBinCount: 128,
         fftSize: 256,

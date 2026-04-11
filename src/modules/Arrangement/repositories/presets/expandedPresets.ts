@@ -3,23 +3,21 @@
  * These are merged into FACTORY_PRESETS at module load time.
  */
 import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
-import {
-    synth,
-    eq,
-    comp,
-    reverb,
-    delay,
-    chorus,
-    phaser,
-    flanger,
-    distortion,
-    tremolo,
-    bitcrusher,
-    filter,
-    limiter,
-    convReverb,
-    AUTHOR,
-} from './presetHelpers';
+import { synth } from './presetHelpers/synth';
+import { eq } from './presetHelpers/eq';
+import { comp } from './presetHelpers/comp';
+import { reverb } from './presetHelpers/reverb';
+import { delay } from './presetHelpers/delay';
+import { chorus } from './presetHelpers/chorus';
+import { phaser } from './presetHelpers/phaser';
+import { flanger } from './presetHelpers/flanger';
+import { distortion } from './presetHelpers/distortion';
+import { tremolo } from './presetHelpers/tremolo';
+import { bitcrusher } from './presetHelpers/bitcrusher';
+import { filter } from './presetHelpers/filter';
+import { limiter } from './presetHelpers/limiter';
+import { convReverb } from './presetHelpers/convReverb';
+import { AUTHOR } from './presetHelpers/helpers';
 
 // ── Effect-Only Presets (audio track chains) ─────────────────────────────
 

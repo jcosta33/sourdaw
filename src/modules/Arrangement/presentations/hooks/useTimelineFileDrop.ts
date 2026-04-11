@@ -1,5 +1,5 @@
 import { type DragEvent, useState } from 'react';
-import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
+import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 import { trackStore } from '../../stores/trackStore';
 import { libraryStore } from '#/modules/SampleLibrary/stores';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';

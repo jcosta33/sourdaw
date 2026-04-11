@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type ProjectContext } from './getProjectContext';
 import { validateActions } from './validateActions';
-import { isDsoBackendAvailable } from './llmOrchestration/backendResolution';
+import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
 import { type IntentResult } from '../models/IntentResult';
 import {
     tryPresetMatch,
@@ -21,11 +21,7 @@ import {
  */
 export const parsePromptToActions = inject({ logger })(
     ({ logger }) =>
-        async function parsePromptToActions(
-    prompt: string,
-    context: ProjectContext,
-    signal?: AbortSignal
-): Promise<IntentResult> {
+        (async function parsePromptToActions(prompt: string, context: ProjectContext, signal?: AbortSignal): Promise<IntentResult> {
     const normalized = prompt.toLowerCase().trim();
 
     // 1. Try preset actions via fuzzy match
@@ -117,5 +113,5 @@ export const parsePromptToActions = inject({ logger })(
     }
 
             return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
-        }
+        })
 );

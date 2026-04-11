@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
-import { hitTestClip } from './hitTestClip';
+import { hitTestClip } from './hitTestClip/hitTestClip';
 
 export type DragState = {
     clipId: string;

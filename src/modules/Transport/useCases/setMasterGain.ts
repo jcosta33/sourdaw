@@ -1,4 +1,5 @@
-import { getTransportState, updateTransportState } from '../repositories/transport';
+import { getTransportState } from '../repositories/transport/getTransportState';
+import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
 
 export function setMasterGain(storeValue: number): void {

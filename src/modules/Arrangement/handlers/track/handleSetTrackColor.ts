@@ -1,6 +1,6 @@
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { createHandler } from '#/helpers/createHandler';
-import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
+import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan/setTrackColor';
 
 export const handleSetTrackColor = createHandler<'setTrackColor'>({
     execute: (action) => {

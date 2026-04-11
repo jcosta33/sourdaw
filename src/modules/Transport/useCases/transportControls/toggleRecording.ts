@@ -1,4 +1,5 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
+import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
 import { getTrackStoreState, updateClip, startRecording, stopRecording } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
