@@ -15,6 +15,7 @@ import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/us
 import { trackStore } from '#/modules/Arrangement/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
+import { type SourceWithFade } from '../playheadScheduler';
 
 const MICRO_FADE_SECONDS = 0.003;
 
@@ -130,7 +131,7 @@ export function scheduleAudioClips(
                 const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
                 const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
                 const fadeGain = getAudioContext().createGain();
-                (source as any).fadeGainNode = fadeGain;
+                (source as SourceWithFade).fadeGainNode = fadeGain;
 
                 const envGainDb = getGainAtBeat(clip.id, iterOffsetBeats);
                 const hasEnvGain = envGainDb !== 0;

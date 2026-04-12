@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
@@ -235,12 +236,10 @@ async function hashBlob(blob: Blob): Promise<string> {
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
+    return bytesToBase64(new Uint8Array(buffer));
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary = atob(base64);
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-    return bytes.buffer;
+    const bytes = base64ToBytes(base64);
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }

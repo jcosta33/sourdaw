@@ -19,7 +19,7 @@ import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
 import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
 import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
 
-type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
+export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
 
 function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioContext): void {
     const now = ctx.currentTime;

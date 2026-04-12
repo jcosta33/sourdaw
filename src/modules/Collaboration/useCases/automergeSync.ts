@@ -8,6 +8,7 @@ import {
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
+import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 import {
     subscribeToCrdtChanges,
     getCrdtDoc,
@@ -175,14 +176,4 @@ export class AutomergeSync {
             this.sendSyncToPeer(peerId);
         }
     }
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
-    return btoa(binary);
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-    const binary = atob(base64);
-    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }

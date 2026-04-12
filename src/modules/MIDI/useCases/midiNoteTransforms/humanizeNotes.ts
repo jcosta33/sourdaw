@@ -1,5 +1,5 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
+import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 /**
  * Adds random timing and velocity variation to notes.
@@ -8,30 +8,16 @@ import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRan
  */
 export function humanizeNotes(clipId: string, timingAmount: number, velocityAmount?: number, seed?: number): number {
     const vAmount = velocityAmount ?? timingAmount;
-    const state = midiStore.value;
-    if (!state) {
-        return 0;
-    }
-
-    const existing = state.notesByClipId[clipId];
-    if (!existing) {
-        return 0;
-    }
-
     const usedSeed = seed ?? generateSeed();
     const rng = createSeededRandom(usedSeed);
 
-    midiStore.set({
-        ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [clipId]: existing.map((n) => ({
-                ...n,
-                startBeat: n.startBeat + (rng() - 0.5) * timingAmount * 0.25,
-                velocity: Math.max(1, Math.min(127, n.velocity + Math.round((rng() - 0.5) * vAmount * 10))),
-            })),
-        },
-    });
+    updateNotesForClip(clipId, (notes) =>
+        notes.map((n) => ({
+            ...n,
+            startBeat: n.startBeat + (rng() - 0.5) * timingAmount * 0.25,
+            velocity: Math.max(1, Math.min(127, n.velocity + Math.round((rng() - 0.5) * vAmount * 10))),
+        }))
+    );
 
     return usedSeed;
 }

@@ -99,10 +99,20 @@ export class Arpeggiator implements MidiProcessor {
         }
 
         const stepLenSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
-        const blockEnd =
-            input.length > 0
-                ? Math.max(...input.map((e) => e.timeSamples)) + 128
-                : transport.ppqPosition * samplesPerBeat(transport) + 128;
+        // Audio-thread: avoid allocation from .map() + spread into Math.max
+        let blockEnd: number;
+        if (input.length > 0) {
+            let maxTime = input[0]!.timeSamples;
+            for (let i = 1; i < input.length; i++) {
+                const t = input[i]!.timeSamples;
+                if (t > maxTime) {
+                    maxTime = t;
+                }
+            }
+            blockEnd = maxTime + 128;
+        } else {
+            blockEnd = transport.ppqPosition * samplesPerBeat(transport) + 128;
+        }
 
         // Initialize lastStepTime if needed
         if (this.lastStepTimeSamples === -Infinity) {
@@ -310,7 +320,11 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private removeHeldNote(channel: number, note: number): void {
-        this.held = this.held.filter((h) => !(h.channel === channel && h.note === note));
+        // Audio-thread: in-place removal avoids allocating a new array
+        const idx = this.held.findIndex((h) => h.channel === channel && h.note === note);
+        if (idx !== -1) {
+            this.held.splice(idx, 1);
+        }
     }
 
     private getEffectivePool(): HeldNote[] {
@@ -428,13 +442,20 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private expireNotes(output: MidiEvent[], now: number): void {
-        const expired = this.activeGenerated.filter((n) => n.offTimeSamples <= now);
-        for (const n of expired) {
-            output.push({
-                timeSamples: n.offTimeSamples,
-                kind: { type: 'noteOff', channel: n.channel, note: n.note },
-            });
+        // Audio-thread: in-place removal avoids two .filter() allocations
+        let writeIdx = 0;
+        for (let i = 0; i < this.activeGenerated.length; i++) {
+            const n = this.activeGenerated[i]!;
+            if (n.offTimeSamples <= now) {
+                output.push({
+                    timeSamples: n.offTimeSamples,
+                    kind: { type: 'noteOff', channel: n.channel, note: n.note },
+                });
+            } else {
+                this.activeGenerated[writeIdx] = n;
+                writeIdx++;
+            }
         }
-        this.activeGenerated = this.activeGenerated.filter((n) => n.offTimeSamples > now);
+        this.activeGenerated.length = writeIdx;
     }
 }

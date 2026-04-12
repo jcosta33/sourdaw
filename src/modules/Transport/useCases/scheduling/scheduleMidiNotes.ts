@@ -23,6 +23,7 @@ import {
 } from '#/modules/Synth/useCases';
 import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
 import type { SynthParams } from '#/modules/AudioEngine/useCases';
+import { type SourceWithFade } from '../playheadScheduler';
 
 // Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible
 // with the drum kit shape scheduleKitNote / getDrumKitByIndex operate on.
@@ -103,7 +104,7 @@ export function scheduleFrozenTrack(
     source.buffer = buffer;
 
     const fadeGain = getAudioContext().createGain();
-    (source as any).fadeGainNode = fadeGain;
+    (source as SourceWithFade).fadeGainNode = fadeGain;
     fadeGain.connect(strip.gainNode);
     source.connect(fadeGain);
 

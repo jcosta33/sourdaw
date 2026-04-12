@@ -13,6 +13,7 @@ export type BuiltinDeviceNode = {
     nodes: AudioNode[];
     inputNode: AudioNode;
     outputNode: AudioNode;
+    bypassed?: boolean;
     /** Controls for native Rust/WASM DSP devices (param updates via MessagePort) */
     nativeDspControls?: {
         setParam: (name: string, value: number) => void;

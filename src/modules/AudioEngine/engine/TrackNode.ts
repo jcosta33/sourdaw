@@ -158,7 +158,7 @@ export class TrackNode {
 
         let prevs: AudioNode[] = [s.gainNode];
         for (const dn of s.deviceNodes) {
-            if ((dn as any)._bypassed) {
+            if (dn.bypassed) {
                 continue;
             }
             if (dn.inputNode.numberOfInputs > 0) {
@@ -455,7 +455,7 @@ export class TrackNode {
         } else if (dn.nativeDspControls) {
             dn.nativeDspControls.setBypass(bypassed);
         } else {
-            (dn as any)._bypassed = bypassed;
+            dn.bypassed = bypassed;
             this.rebuildChain();
         }
     }
