@@ -94,6 +94,8 @@ type AppShellProps = {
     children: ReactNode;
 };
 
+const ALPHA_NOTICE_KEY = 'sourdaw-alpha-notice-dismissed';
+
 let hasShownAlphaNotice = false;
 
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
@@ -171,7 +173,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Show alpha notice when project initializes
     useEffect(() => {
         if (project.initialized && !hasShownAlphaNotice) {
-            const hasDismissed = localStorage.getItem('sourdaw-alpha-notice-dismissed') === 'true';
+            const hasDismissed = localStorage.getItem(ALPHA_NOTICE_KEY) === 'true';
             if (!hasDismissed) {
                 setShowAlphaNotice(true);
             }
@@ -803,7 +805,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     open={showAlphaNotice}
                     onOpenChange={(open) => {
                         if (!open) {
-                            localStorage.setItem('sourdaw-alpha-notice-dismissed', 'true');
+                            localStorage.setItem(ALPHA_NOTICE_KEY, 'true');
                         }
                         setShowAlphaNotice(open);
                     }}
