@@ -304,7 +304,7 @@ export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 export type AppActionType = AppAction['type'];
 
-/** Return shape of `ActionHandler.describe` — exported for `#/helpers/createHandler`. */
+/** Return shape of `ActionHandler.describe` — exported for `#/utils/createHandler`. */
 export type HandlerDescribeResult = {
     label: string;
     inverseAction?: AppAction | null;

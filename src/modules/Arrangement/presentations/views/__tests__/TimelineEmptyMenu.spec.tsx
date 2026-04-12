@@ -49,15 +49,15 @@ vi.mock('../../../useCases/marker/markerOperations/addMarker', () => ({
     addMarker: vi.fn(),
 }));
 
-vi.mock('#/helpers/Notification/notifyUser', () => ({
+vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
-vi.mock('#/helpers/tauriBridge', () => ({
+vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => false),
 }));
 
-vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({
+vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 

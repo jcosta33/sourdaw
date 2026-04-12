@@ -41,7 +41,7 @@ vi.mock('../../../useCases/marker/sectionOperations/addSection', () => ({
     addSection: vi.fn(),
 }));
 
-vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({
+vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 

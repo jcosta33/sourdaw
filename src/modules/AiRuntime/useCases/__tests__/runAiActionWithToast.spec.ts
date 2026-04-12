@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runAiActionWithToast } from '../runAiActionWithToast';
 
-vi.mock('#/helpers/Notification/notifyUser', () => ({
+const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
+    notifyAiChange: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 vi.mock('../notifyAiChange', () => ({
-    notifyAiChange: vi.fn(),
+    notifyAiChange: mocks.notifyAiChange,
 }));
 
 describe('runAiActionWithToast injectable', () => {
@@ -15,9 +20,6 @@ describe('runAiActionWithToast injectable', () => {
     });
 
     it('notifies start, runs action, then notifies success', async () => {
-        const { notifyUser } = await import('#/helpers/Notification/notifyUser');
-        const { notifyAiChange } = await import('../notifyAiChange');
-
         const action = vi.fn().mockResolvedValue(undefined);
         const messages = {
             startMsg: 'Starting',
@@ -28,15 +30,12 @@ describe('runAiActionWithToast injectable', () => {
 
         await runAiActionWithToast(action, messages);
 
-        expect(notifyUser).toHaveBeenCalledWith('Starting');
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Starting');
         expect(action).toHaveBeenCalledTimes(1);
-        expect(notifyAiChange).toHaveBeenCalledWith('Done', ['a']);
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Done', ['a']);
     });
 
     it('notifies error on failure', async () => {
-        const { notifyUser } = await import('#/helpers/Notification/notifyUser');
-        const { notifyAiChange } = await import('../notifyAiChange');
-
         const action = vi.fn().mockRejectedValue(new Error('x'));
         await runAiActionWithToast(action, {
             startMsg: 'Starting',
@@ -45,7 +44,7 @@ describe('runAiActionWithToast injectable', () => {
             failMsg: 'Failed',
         });
 
-        expect(notifyUser).toHaveBeenCalledWith('Failed', 'error');
-        expect(notifyAiChange).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Failed', 'error');
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
     });
 });

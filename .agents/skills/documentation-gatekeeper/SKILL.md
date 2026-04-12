@@ -59,6 +59,7 @@ Skip this for trivial changes. For everything else, before writing the first lin
 - [ ] Relevant skills loaded (check all `description` fields in `.agents/skills/`)
 - [ ] Task file created with Objective and Plan (if scope warrants tracking)
 - [ ] Relevant spec read or written (load `write-spec` if writing)
+- [ ] If adding or moving tests: placement follows `docs/06-testing.md` §3 (`__tests__/` folders); load `.agents/skills/testing-file-layout/SKILL.md` if needed
 - [ ] Relevant audit read (update if stale, create if absent and scope warrants it)
 - [ ] All `[CRITICAL]` open questions in the spec resolved
 - [ ] No unverified assumptions driving design decisions

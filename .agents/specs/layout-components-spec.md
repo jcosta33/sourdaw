@@ -286,7 +286,7 @@ gap: 0.5rem;
 ## Acceptance Criteria
 
 - [ ] All five components (`Stack`, `Row`, `Grid`, `Spacer`, `Divider`) implemented in `src/components/layout/`
-- [ ] Each component has corresponding test file in `src/components/layout/_tests/`
+- [ ] Each component has corresponding test file in `src/components/layout/__tests__/`
 - [ ] TypeScript strictly enforces valid gap/size values (compile error for invalid values)
 - [ ] All components forward refs correctly
 - [ ] Components render with correct Tailwind classes (verified via snapshot or DOM inspection)
@@ -307,7 +307,7 @@ src/components/layout/
 ├── Spacer.tsx
 ├── Divider.tsx
 ├── index.ts        # Barrel export
-└── _tests/
+└── __tests__/
     ├── Stack.spec.tsx
     ├── Row.spec.tsx
     ├── Grid.spec.tsx
@@ -401,7 +401,7 @@ export const Stack = <T extends StackElement = 'div'>({
 ### Testing Pattern
 
 ```tsx
-// _tests/Stack.spec.tsx
+// __tests__/Stack.spec.tsx
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Stack } from '../Stack';

@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     fetch: vi.fn(),
 }));
 
-vi.mock('#/helpers/tauriBridge', () => ({
+vi.mock('#/utils/tauriBridge', () => ({
     isTauri: mocks.isTauri,
     tauriInvoke: mocks.tauriInvoke,
     createChannel: mocks.createChannel,

@@ -1,6 +1,6 @@
 # Testing
 
-This codebase currently has zero TypeScript tests. This document defines how we add them — deliberately, incrementally, and with one consistent shape per layer.
+TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3). This document defines how we add and structure them — deliberately, incrementally, and with one consistent shape per layer.
 
 ---
 
@@ -8,7 +8,7 @@ This codebase currently has zero TypeScript tests. This document defines how we 
 
 - **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
 - **No integration tests. No E2E.** Not yet. Adding cross-module or Playwright-style tests before the unit layer is populated is premature — wire up the skeleton first, then grow outward when we have a real reason to.
-- **One test file per source file.** Co-located: `addTrack.ts` sits next to `addTrack.spec.ts`. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
+- **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `@tauri-apps/api/core` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
 - **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
 
@@ -43,30 +43,47 @@ This codebase currently has zero TypeScript tests. This document defines how we 
 
 ## 3. File layout
 
-Tests live next to the code they test. Shared test utilities live in a `_tests/` folder at the module root.
+Tests live in **`__tests__/`** subfolders **inside** the folder that owns the code under test (same “concept” as the implementation: `useCases`, `repositories`, a presentation `views` segment, etc.).
+
+**Rule:** For `path/to/SourceFile.ts`, the spec is `path/to/__tests__/SourceFile.spec.ts` (same basename). Use `*.spec.tsx` for components.
+
+**Imports:** From `useCases/__tests__/addTrack.spec.ts`, import the subject with a **sibling-relative** path — e.g. `import { addTrack } from '../addTrack';`.
+
+**Module-wide** shared utilities (dummy factories, module-local mocks) live in **`src/modules/<Module>/__tests__/`** at the **module root** and are imported from deeper specs with relative paths (e.g. `../../__tests__/TrackDummy`).
+
+**Cross-module** test utilities (mock `AudioContext`, shared helpers) live in **`src/helpers/__tests__/`**. DI and event **runtime test helpers** (not specs) live in **`src/infra/di/testing/`** and **`src/infra/events/testing/`**.
+
+**Knip** excludes `**/*.spec.{ts,tsx}` from the project graph (`knip.json`) so specs are not analyzed as orphaned modules.
 
 ```text
 src/modules/Arrangement/
-├── _tests/
-│   ├── TrackDummy.ts              # dummy factory
+├── __tests__/
+│   ├── TrackDummy.ts              # module-wide dummy factory
 │   ├── ClipDummy.ts
-│   └── eventBus.mock.ts           # module-local event bus mock (if needed)
+│   └── eventBus.mock.ts           # module-local mock (if needed)
 ├── useCases/
+│   ├── __tests__/
+│   │   ├── addTrack.spec.ts
+│   │   └── removeTrack.spec.ts
 │   ├── addTrack.ts
-│   └── addTrack.spec.ts           # co-located
+│   └── removeTrack.ts
 ├── repositories/
-│   ├── track.ts
-│   └── track.spec.ts
+│   ├── __tests__/
+│   │   └── trackTemplate.spec.ts
+│   └── trackTemplate.ts
 ├── transformers/
-│   ├── automationTransformers.ts
-│   └── automationTransformers.spec.ts
+│   ├── __tests__/
+│   │   └── automationTransformers.spec.ts
+│   └── automationTransformers.ts
 └── presentations/
     └── hooks/
+        ├── __tests__/
+        │   └── useTracks.spec.ts
         ├── useTracks.ts
-        └── useTracks.spec.ts
+        └── useMoveClip.ts
 ```
 
-Cross-module test utilities (mock `AudioContext`, `Container` helpers) live in `src/helpers/_tests/`. DI and event test helpers live in `src/infra/di/testing/` and `src/infra/events/testing/`.
+Nested UI folders follow the same pattern (e.g. `presentations/views/Mixer/__tests__/SendsSection.spec.tsx` next to `Mixer/SendsSection.tsx`).
 
 ---
 
@@ -101,12 +118,13 @@ Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick
 ### Canonical test shape for an injectable
 
 ```typescript
+// src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
 import { describe, it, expect } from 'vitest';
 import { spy } from '#/infra/di/testing/spy';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { Logger } from '#/helpers/Logger/Logger';
-import { TrackRepo } from '../repositories/TrackRepo';
-import { addTrack } from './addTrack';
+import { TrackRepo } from '../../repositories/TrackRepo';
+import { addTrack } from '../addTrack';
 
 describe('addTrack', () => {
     it('should append the track to the repo and emit track.added', () => {
@@ -164,14 +182,14 @@ Subject: `src/modules/Arrangement/useCases/addTrack.ts` — wrapped with `inject
 Use the canonical shape from §5: `spy<T>()` + `injectDependencies()`. No `vi.mock()`, no casts.
 
 ```typescript
-// src/modules/Arrangement/useCases/addTrack.spec.ts
+// src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
 import { describe, it, expect } from 'vitest';
 import { spy } from '#/infra/di/testing/spy';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { Logger } from '#/helpers/Logger/Logger';
-import { TrackRepo } from '../repositories/TrackRepo';
-import { addTrack } from './addTrack';
-import { TrackDummy } from '../_tests/TrackDummy';
+import { TrackRepo } from '../../repositories/TrackRepo';
+import { addTrack } from '../addTrack';
+import { TrackDummy } from '../../__tests__/TrackDummy';
 
 describe('addTrack', () => {
     it('should append the track to the repo and emit track.added', () => {
@@ -223,10 +241,10 @@ Subject: `src/modules/CrdtDocument/repositories/nativeCrdtPersistence.ts` — wr
 Mock `@tauri-apps/api/core` at the module boundary.
 
 ```typescript
-// src/modules/CrdtDocument/repositories/nativeCrdtPersistence.spec.ts
+// src/modules/CrdtDocument/repositories/__tests__/nativeCrdtPersistence.spec.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { nativeCreateProject } from './nativeCrdtPersistence';
+import { nativeCreateProject } from '../nativeCrdtPersistence';
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
@@ -266,10 +284,10 @@ If the repository checks `isTauriAvailable()` and short-circuits when not in Tau
 Web Audio code is built on `AudioContext` and its node types. We provide a mock `AudioContext` factory (see §7.4) and assert on node wiring and parameter calls.
 
 ```typescript
-// src/modules/AudioEngine/repositories/createWebAudioEngine.spec.ts
+// src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
 import { describe, it, expect, vi } from 'vitest';
-import { createMockAudioContext } from '#/helpers/_tests/audioContext.mock';
-import { createWebAudioEngine } from './createWebAudioEngine';
+import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
+import { createWebAudioEngine } from '../createWebAudioEngine';
 
 describe('createWebAudioEngine', () => {
     it('should connect the master gain node through the analyser to the destination', () => {
@@ -288,9 +306,9 @@ describe('createWebAudioEngine', () => {
 For repositories that read/write through a `Store<T>`, swap the backing storage for `MemoryStorage` in the test. Do not mock `Store` itself — the class is small and well-tested in isolation (§6.7).
 
 ```typescript
-// src/modules/Arrangement/repositories/trackTemplate.spec.ts
+// src/modules/Arrangement/repositories/__tests__/trackTemplate.spec.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { loadTrackTemplates, saveTrackTemplates } from './trackTemplate';
+import { loadTrackTemplates, saveTrackTemplates } from '../trackTemplate';
 
 describe('trackTemplate repository', () => {
     beforeEach(() => {
@@ -318,9 +336,9 @@ If the repository is not designed to accept its storage by injection, that is a 
 Subject: `src/modules/Arrangement/transformers/automationTransformers.ts` — pure math.
 
 ```typescript
-// src/modules/Arrangement/transformers/automationTransformers.spec.ts
+// src/modules/Arrangement/transformers/__tests__/automationTransformers.spec.ts
 import { describe, it, expect } from 'vitest';
-import { interpolateAutomationValue, rdpSimplify } from './automationTransformers';
+import { interpolateAutomationValue, rdpSimplify } from '../automationTransformers';
 
 describe('interpolateAutomationValue', () => {
     it('should return the endpoint value when the requested beat equals p2.beat', () => {
@@ -360,11 +378,11 @@ Subject: `src/helpers/Store/Store.ts`.
 Instantiate the real `Store<T>` with `MemoryStorage`. Test the observable contract: `value`, `set`, `subscribe`, `notify`.
 
 ```typescript
-// src/helpers/Store/Store.spec.ts
+// src/helpers/Store/__tests__/Store.spec.ts
 import { describe, it, expect, vi } from 'vitest';
-import { Store } from './Store';
-import { MemoryStorage } from './Storage/MemoryStorage';
-import { loggerMock } from './_tests/logger.mock';
+import { Store } from '../Store';
+import { MemoryStorage } from '../Storage/MemoryStorage';
+import { loggerMock } from './logger.mock';
 
 describe('Store', () => {
     it('should return initialData from value when storage is empty', () => {
@@ -409,7 +427,7 @@ describe('Store', () => {
 Files that wire a domain handler via `eventBus.on(...)`. For integration-style subscriber tests, use `createEventBus()` from `#/infra/events/createEventBus` to create a real bus, wire the subscriber, then emit events and assert on side effects.
 
 ```typescript
-// src/modules/Toaster/useCases/toasterSubscriber.spec.ts
+// src/modules/Toaster/useCases/__tests__/toasterSubscriber.spec.ts
 import { describe, it, expect, vi } from 'vitest';
 import { createEventBus } from '#/infra/events/createEventBus';
 import type { AppEvents } from '#/app/registerDependencies';
@@ -448,14 +466,14 @@ Subject: `src/modules/Arrangement/presentations/hooks/useTracks.ts` — thin wra
 Mock the store. Use `@testing-library/react`'s `renderHook`.
 
 ```typescript
-// src/modules/Arrangement/presentations/hooks/useTracks.spec.ts
+// src/modules/Arrangement/presentations/hooks/__tests__/useTracks.spec.ts
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useTracks } from './useTracks';
-import { trackStore } from '../../stores/trackStore';
-import { TrackDummy } from '../../_tests/TrackDummy';
+import { useTracks } from '../useTracks';
+import { trackStore } from '../../../stores/trackStore';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 
-vi.mock('../../stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         value: null,
         subscribe: vi.fn(() => () => {}),
@@ -488,13 +506,13 @@ describe('useTracks', () => {
 Use `@testing-library/react` from the user's perspective. Mock the use cases the component calls.
 
 ```typescript
-// src/modules/Arrangement/presentations/components/AddTrackButton.spec.tsx
+// src/modules/Arrangement/presentations/components/__tests__/AddTrackButton.spec.tsx
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { AddTrackButton } from './AddTrackButton';
-import { addTrack } from '../../useCases/addTrack';
+import { AddTrackButton } from '../AddTrackButton';
+import { addTrack } from '../../../useCases/addTrack';
 
-vi.mock('../../useCases/addTrack', () => ({ addTrack: vi.fn() }));
+vi.mock('../../../useCases/addTrack', () => ({ addTrack: vi.fn() }));
 
 describe('AddTrackButton', () => {
     it('should render the button label', () => {
@@ -520,10 +538,10 @@ Subject: `src/modules/AudioEngine/engine/TrackNode.ts` — constructs an audio g
 Pass a mock `AudioContext` (see §7.4) via the constructor `deps`. Assert on the node connections and parameter calls — these are the only observable outputs of the class until the audio thread runs.
 
 ```typescript
-// src/modules/AudioEngine/engine/TrackNode.spec.ts
+// src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
 import { describe, it, expect } from 'vitest';
-import { TrackNode } from './TrackNode';
-import { createMockAudioContext } from '#/helpers/_tests/audioContext.mock';
+import { TrackNode } from '../TrackNode';
+import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 
 describe('TrackNode', () => {
     it('should wire gain → preFaderTap → fader → pan → analyser in order', () => {
@@ -555,10 +573,10 @@ describe('TrackNode', () => {
 
 ### 7.1 Dummy factories
 
-Each module owns factories for its domain models in `_tests/`. Factories accept a partial override and return a full, plausible instance.
+Each module owns factories for its domain models in `__tests__/`. Factories accept a partial override and return a full, plausible instance.
 
 ```typescript
-// src/modules/Arrangement/_tests/TrackDummy.ts
+// src/modules/Arrangement/__tests__/TrackDummy.ts
 import type { Track } from '../models/Track';
 
 let counter = 0;
@@ -611,14 +629,14 @@ For injectables, use `injectDependencies()` (§5). It:
 
 Do not hand-manage `Container` in tests when testing `inject()`-wrapped functions — `injectDependencies()` is the single supported path.
 
-If you must test code that resolves a **class token** via `Container.get()` (e.g. infra unit tests), use `Container.clear()` in `afterEach` and `Container.register()` / `Container.set()` as appropriate for that isolated test file — see `src/infra/di/Container.spec.ts`.
+If you must test code that resolves a **class token** via `Container.get()` (e.g. infra unit tests), use `Container.clear()` in `afterEach` and `Container.register()` / `Container.set()` as appropriate for that isolated test file — see `src/infra/di/__tests__/Container.spec.ts`.
 
 ### 7.4 AudioContext mock
 
-Cross-module helper in `src/helpers/_tests/audioContext.mock.ts`. It builds a fake `AudioContext` whose nodes expose spied `connect`/`disconnect` methods and typed `AudioParam` stubs.
+Cross-module helper in `src/helpers/__tests__/audioContext.mock.ts`. It builds a fake `AudioContext` whose nodes expose spied `connect`/`disconnect` methods and typed `AudioParam` stubs.
 
 ```typescript
-// src/helpers/_tests/audioContext.mock.ts
+// src/helpers/__tests__/audioContext.mock.ts
 import { vi } from 'vitest';
 
 const createAudioParam = () => ({

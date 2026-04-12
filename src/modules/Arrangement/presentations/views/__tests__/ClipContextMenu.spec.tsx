@@ -20,7 +20,7 @@ vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
     },
 }));
 
-vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({
+vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 

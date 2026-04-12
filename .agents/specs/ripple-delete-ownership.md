@@ -72,7 +72,7 @@ Toggling ripple editing in the transport bar still enables and disables ripple d
 - [ ] Arrangement owns ripple-delete plan/apply/undo use cases; they are exported from the module root only if an external module needs them
 - [ ] Arrangement handlers use Arrangement-owned ripple-delete use cases via relative imports
 - [ ] A regression test covers importing Workspace through an Arrangement consumer without initialization failure
-- [ ] `pnpm test:run src/modules/Workspace/useCases/rippleEditing.spec.ts` passes
+- [ ] `pnpm test:run src/modules/Workspace/useCases/__tests__/rippleEditing.spec.ts` passes
 - [ ] `pnpm typecheck` passes
 - [ ] `pnpm deps:validate` passes with zero violations
 
@@ -85,7 +85,7 @@ Toggling ripple editing in the transport bar still enables and disables ripple d
 ## Test plan
 
 - [ ] Import an Arrangement consumer and then `#/modules/Workspace` in a regression test; confirm the import resolves.
-- [ ] Run `pnpm test:run src/modules/Workspace/useCases/rippleEditing.spec.ts`
+- [ ] Run `pnpm test:run src/modules/Workspace/useCases/__tests__/rippleEditing.spec.ts`
 - [ ] Run `pnpm typecheck`
 - [ ] Run `pnpm deps:validate`
 

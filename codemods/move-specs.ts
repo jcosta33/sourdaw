@@ -13,14 +13,14 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     return null;
   }
   
-  // Skip if already inside a _tests directory
-  if (filePath.includes('/_tests/') || filePath.includes('\\_tests\\')) {
+  // Skip if already inside a __tests__ directory
+  if (filePath.includes('/__tests__/') || filePath.includes('\\__tests__\\')) {
     return null;
   }
 
   const oldDir = path.dirname(filePath);
   const fileName = path.basename(filePath);
-  const newDir = path.join(oldDir, '_tests');
+  const newDir = path.join(oldDir, '__tests__');
   const newFilePath = path.join(newDir, fileName);
 
   // Prevent data loss by checking if target already exists
@@ -56,10 +56,37 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     }
   });
 
+  // Update relative exports
+  root.find(j.ExportNamedDeclaration).forEach(pathNode => {
+    if (pathNode.node.source && typeof pathNode.node.source.value === 'string' && pathNode.node.source.value.startsWith('.')) {
+      const absoluteImportPath = path.resolve(oldDir, pathNode.node.source.value);
+      let newRelativePath = path.relative(newDir, absoluteImportPath);
+      if (!newRelativePath.startsWith('.')) {
+        newRelativePath = './' + newRelativePath;
+      }
+      newRelativePath = newRelativePath.replace(/\\/g, '/');
+      pathNode.node.source.value = newRelativePath;
+      hasModifications = true;
+    }
+  });
+
+  root.find(j.ExportAllDeclaration).forEach(pathNode => {
+    if (pathNode.node.source && typeof pathNode.node.source.value === 'string' && pathNode.node.source.value.startsWith('.')) {
+      const absoluteImportPath = path.resolve(oldDir, pathNode.node.source.value);
+      let newRelativePath = path.relative(newDir, absoluteImportPath);
+      if (!newRelativePath.startsWith('.')) {
+        newRelativePath = './' + newRelativePath;
+      }
+      newRelativePath = newRelativePath.replace(/\\/g, '/');
+      pathNode.node.source.value = newRelativePath;
+      hasModifications = true;
+    }
+  });
+
   // We also need to check for dynamic imports: import('./foo')
   root.find(j.CallExpression, { callee: { type: 'Import' } }).forEach(pathNode => {
     const arg = pathNode.node.arguments[0];
-    if (arg && arg.type === 'Literal' && typeof arg.value === 'string' && arg.value.startsWith('.')) {
+    if (arg && (arg.type === 'Literal' || arg.type === 'StringLiteral') && typeof arg.value === 'string' && arg.value.startsWith('.')) {
       const absoluteImportPath = path.resolve(oldDir, arg.value);
       let newRelativePath = path.relative(newDir, absoluteImportPath);
       if (!newRelativePath.startsWith('.')) {
@@ -71,18 +98,27 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
     }
   });
 
-  // We also need to check for jest/vitest vi.mock('./foo')
-  root.find(j.CallExpression, { callee: { type: 'MemberExpression', object: { name: 'vi' }, property: { name: 'mock' } } }).forEach(pathNode => {
-    const arg = pathNode.node.arguments[0];
-    if (arg && arg.type === 'Literal' && typeof arg.value === 'string' && arg.value.startsWith('.')) {
-      const absoluteImportPath = path.resolve(oldDir, arg.value);
-      let newRelativePath = path.relative(newDir, absoluteImportPath);
-      if (!newRelativePath.startsWith('.')) {
-        newRelativePath = './' + newRelativePath;
+  // We also need to check for jest/vitest vi.* and jest.* methods that take module paths
+  root.find(j.CallExpression, { callee: { type: 'MemberExpression' } }).forEach(pathNode => {
+    const callee = pathNode.node.callee;
+    if (
+      callee.type === 'MemberExpression' &&
+      callee.object.type === 'Identifier' &&
+      (callee.object.name === 'vi' || callee.object.name === 'jest') &&
+      callee.property.type === 'Identifier' &&
+      ['mock', 'unmock', 'doMock', 'importActual', 'importMock'].includes(callee.property.name)
+    ) {
+      const arg = pathNode.node.arguments[0];
+      if (arg && (arg.type === 'Literal' || arg.type === 'StringLiteral') && typeof arg.value === 'string' && arg.value.startsWith('.')) {
+        const absoluteImportPath = path.resolve(oldDir, arg.value);
+        let newRelativePath = path.relative(newDir, absoluteImportPath);
+        if (!newRelativePath.startsWith('.')) {
+          newRelativePath = './' + newRelativePath;
+        }
+        newRelativePath = newRelativePath.replace(/\\/g, '/');
+        arg.value = newRelativePath;
+        hasModifications = true;
       }
-      newRelativePath = newRelativePath.replace(/\\/g, '/');
-      arg.value = newRelativePath;
-      hasModifications = true;
     }
   });
 

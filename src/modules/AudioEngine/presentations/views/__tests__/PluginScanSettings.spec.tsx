@@ -30,7 +30,7 @@ vi.mock('#/modules/Plugin/useCases', () => ({
     startPluginScan: vi.fn(),
 }));
 
-vi.mock('#/helpers/platformCapabilities', () => ({
+vi.mock('#/utils/platformCapabilities', () => ({
     getPlatformCapabilities: vi.fn(() => ({ hasPluginScanning: true })),
     DISABLED_REASONS: { pluginScanning: 'Plugin scanning requires desktop app' },
 }));
@@ -44,7 +44,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 
 const { useStore } = await import('#/infra/store/useStore');
 const { startPluginScan, addScanPath, removeScanPath } = await import('#/modules/Plugin/useCases');
-const { getPlatformCapabilities } = await import('#/helpers/platformCapabilities');
+const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 
 describe('PluginScanSettings', () => {
     beforeEach(() => {

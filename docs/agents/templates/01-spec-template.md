@@ -88,7 +88,7 @@ How to verify this feature works end-to-end after implementation.
 
 - [ ] Manual step 1 — what to do and what to observe
 - [ ] Manual step 2 — ...
-- [ ] Automated: describe what tests cover this (or what tests should be added)
+- [ ] Automated: describe what tests cover this (or what should be added under the relevant `__tests__/` folder per `docs/06-testing.md` §3)
 
 ---
 

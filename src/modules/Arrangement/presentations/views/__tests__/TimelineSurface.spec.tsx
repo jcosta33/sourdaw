@@ -26,7 +26,7 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     setAutoScroll: vi.fn(),
 }));
 
-vi.mock('#/helpers/DOM/AnimationScheduler', () => ({
+vi.mock('#/utils/DOM/AnimationScheduler', () => ({
     animationScheduler: {
         register: vi.fn(),
         unregister: vi.fn(),

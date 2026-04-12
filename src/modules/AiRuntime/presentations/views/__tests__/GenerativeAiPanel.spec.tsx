@@ -7,7 +7,7 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
 
-vi.mock('#/helpers/tauriBridge', () => ({
+vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => false),
 }));
 

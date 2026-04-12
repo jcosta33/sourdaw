@@ -18,7 +18,7 @@ vi.mock('../../../useCases/voiceToggle/onVoiceToggle', () => ({
     onVoiceToggle: mocks.onVoiceToggle,
 }));
 
-vi.mock('#/helpers/tauriBridge', () => ({
+vi.mock('#/utils/tauriBridge', () => ({
     isTauri: mocks.isTauri,
 }));
 

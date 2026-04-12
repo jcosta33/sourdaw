@@ -21,7 +21,7 @@ vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
     playheadPositionRef: { current: 0 },
 }));
 
-vi.mock('#/helpers/DOM/AnimationScheduler', () => ({
+vi.mock('#/utils/DOM/AnimationScheduler', () => ({
     animationScheduler: {
         register: vi.fn(),
         unregister: vi.fn(),

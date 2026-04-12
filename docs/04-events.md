@@ -224,7 +224,7 @@ The infra provides test helpers in `#/infra/events/testing/`:
 Test event handlers in isolation using `createEventBus()`:
 
 ```typescript
-// Mixer/useCases/trackEventHandlers.spec.ts
+// Mixer/useCases/__tests__/trackEventHandlers.spec.ts
 import { createEventBus } from '#/infra/events/createEventBus';
 
 describe('initMixerSubscribers', () => {
@@ -245,7 +245,7 @@ describe('initMixerSubscribers', () => {
 Test event publishing from use cases using `recordEvents`:
 
 ```typescript
-// Track/useCases/addTrack.spec.ts
+// Track/useCases/__tests__/addTrack.spec.ts
 import { createEventBus } from '#/infra/events/createEventBus';
 import { recordEvents } from '#/infra/events/testing/recordEvents';
 

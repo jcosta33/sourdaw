@@ -16,7 +16,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
     },
 }));
 
-vi.mock('#/helpers/Notification/notifyUser', () => ({
+vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => notifyUser(...args),
 }));
 

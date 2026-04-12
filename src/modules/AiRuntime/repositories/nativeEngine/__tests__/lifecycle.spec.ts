@@ -11,7 +11,7 @@ const { mockLogger } = vi.hoisted(() => ({
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
-vi.mock('#/helpers/tauriBridge', () => ({
+vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => false),
     tauriInvoke: vi.fn(),
 }));
@@ -39,7 +39,7 @@ describe('nativeEngine lifecycle injectables', () => {
     });
 
     it('should stop without invoking native unload when not in Tauri', async () => {
-        const { tauriInvoke } = await import('#/helpers/tauriBridge');
+        const { tauriInvoke } = await import('#/utils/tauriBridge');
         await stopNativeEngine();
         expect(tauriInvoke).not.toHaveBeenCalled();
         expect(mockLogger.info).toHaveBeenCalledWith('[Native AI] Engine stopped');

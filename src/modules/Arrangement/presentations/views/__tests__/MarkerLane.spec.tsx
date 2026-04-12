@@ -40,7 +40,7 @@ vi.mock('../../../useCases/marker/markerOperations/addMarker', () => ({
     addMarker: vi.fn(),
 }));
 
-vi.mock('#/helpers/UI/useContextMenuDismiss', () => ({
+vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 

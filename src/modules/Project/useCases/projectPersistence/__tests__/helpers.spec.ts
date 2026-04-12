@@ -69,7 +69,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { has: vi.fn(() => false) },
 }));
 
-vi.mock('#/helpers/Notification/notifyUser', () => ({
+vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
 

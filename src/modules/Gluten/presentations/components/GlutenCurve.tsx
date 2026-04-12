@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useRef } from 'react';
-import { resolveCanvasColor } from '#/utils/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type GlutenCurveProps = {
     threshold: number;
@@ -68,7 +68,7 @@ export const GlutenCurve = ({
         const pad = 10;
         const plotW = width - pad * 2;
         const plotH = height - pad * 2;
-        const accent = resolveCanvasColor(accentColor ?? 'var(--color-accent-peach)', '#c9a07a');
+        const accent = resolveToken(accentColor ?? 'var(--color-accent-peach)', '#c9a07a');
         const dbToX = (db: number): number => pad + ((db - DB_MIN) / (DB_MAX - DB_MIN)) * plotW;
         const dbToY = (db: number): number => pad + plotH - ((db - DB_MIN) / (DB_MAX - DB_MIN)) * plotH;
 

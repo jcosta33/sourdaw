@@ -14,6 +14,7 @@ Before starting significant implementation work, read the shared process documen
 | `docs/agents/02-file-types.md` | Definitions, required sections, and completion criteria for each type |
 | `docs/agents/03-workflow.md`   | Step-by-step execution flow for agent sessions                        |
 | `docs/agents/04-standards.md`  | Writing quality, citation, certainty, and scope rules                 |
+| `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                   |
 | `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`              |
 
 Working artifacts for this repo live in:

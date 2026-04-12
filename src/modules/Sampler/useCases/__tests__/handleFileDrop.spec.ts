@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     samplerStore: { value: null as any },
 }));
 
-vi.mock('#/helpers/tauriBridge', () => ({
+vi.mock('#/utils/tauriBridge', () => ({
     isTauri: mocks.isTauri,
 }));
 

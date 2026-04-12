@@ -28,7 +28,7 @@ vi.mock('#/modules/Plugin/useCases', () => ({
     createTrackForPlugin: vi.fn(() => ({ id: 'track1' })),
 }));
 
-vi.mock('#/helpers/platformCapabilities', () => ({
+vi.mock('#/utils/platformCapabilities', () => ({
     getPlatformCapabilities: vi.fn(() => ({ hasNativePlugins: true })),
     DISABLED_REASONS: { nativePlugins: 'Native plugins require desktop app' },
 }));
@@ -42,7 +42,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 
 const { useStore } = await import('#/infra/store/useStore');
 const { startPluginScan, loadExternalPlugin } = await import('#/modules/Plugin/useCases');
-const { getPlatformCapabilities } = await import('#/helpers/platformCapabilities');
+const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 
 const mockPlugins = [
     { id: 'p1', name: 'Test VST', vendor: 'TestCorp', category: 'Effect', format: 'vst3', num_parameters: 10 },

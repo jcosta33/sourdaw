@@ -33,7 +33,7 @@ Which kind of testing work is this session? Check one or more — and for each, 
 
 ## Objective
 
-Which files/modules are being worked on in this session, and what the testing goal is. One paragraph maximum. Be specific — not "the Arrangement module" but "write new specs for addTrack.ts and removeTrack.ts; close gaps in existing trackTemplate.spec.ts (missing the empty-storage path)".
+Which files/modules are being worked on in this session, and what the testing goal is. One paragraph maximum. Be specific — not "the Arrangement module" but "write new specs under `useCases/__tests__/` for `addTrack.ts` and `removeTrack.ts`; close gaps in `repositories/__tests__/trackTemplate.spec.ts` (missing the empty-storage path)".
 
 ---
 
@@ -63,7 +63,7 @@ Test utilities that are new to this session. A utility is shared if more than on
 
 | Utility | Location                                    | Purpose |
 | ------- | ------------------------------------------- | ------- |
-|         | `<Module>/_tests/` or `src/helpers/_tests/` |         |
+|         | `<folder>/__tests__/` next to the source (e.g. `useCases/__tests__/`) or `src/helpers/__tests__/` |         |
 
 Examples: dummy factories (`TrackDummy`, `ClipDummy`), EventBus mock, Container reset helper, AudioContext mock extensions, Tauri `invoke` mock helpers.
 
@@ -87,7 +87,7 @@ Be explicit about what you are NOT testing in this session:
 - Do not switch branches unless explicitly instructed
 - Do not modify production code to make it "more testable" without documenting the change in Findings and justifying why the existing shape could not be tested as-is
 - Every test file uses Vitest, `@testing-library/react` for components, `@testing-library/jest-dom` matchers (loaded via `src/setupTests.ts`)
-- One test file per source file, co-located
+- One test file per source file, in **`__tests__/`** under the same folder as the source (`useCases/__tests__/addTrack.spec.ts` for `useCases/addTrack.ts`) — see `docs/06-testing.md` §3
 - One `describe` per exported function, `it` blocks prefixed with `should` / `should not`
 - Mock at the module boundary with `vi.mock(...)` — do not mock internal functions of the file under test
 - Do not mock `DomainEvent` or `AppError` subclasses — construct them for real
@@ -212,7 +212,7 @@ Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing th
 **Architecture**
 
 - Run `pnpm deps:validate` right now. Did your test files introduce any new architectural violations (e.g. a spec importing from another module's internals)?
-- Did you create any `index.ts` files in `_tests/` folders? Don't.
+- Did you create any `index.ts` files in `__tests__/` folders? Don't.
 - Does `pnpm typecheck` pass cleanly?
 
 **Production code changes**

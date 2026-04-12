@@ -1137,7 +1137,7 @@ Example: `Mixer` is often presentation-only if it reads from Arrangement + Routi
 
 ```text
 Arrangement/
-├── _tests/
+├── __tests__/
 ├── models/
 │   ├── Track.ts
 │   ├── Clip.ts
@@ -1150,6 +1150,9 @@ Arrangement/
 │   ├── TrackAddedEvent.ts
 │   └── ClipMovedEvent.ts
 ├── useCases/
+│   ├── __tests__/                    # Vitest: one spec per use case file
+│   │   ├── addTrack.spec.ts
+│   │   └── removeTrack.spec.ts
 │   ├── addTrack.ts
 │   ├── removeTrack.ts
 │   ├── addClip.ts

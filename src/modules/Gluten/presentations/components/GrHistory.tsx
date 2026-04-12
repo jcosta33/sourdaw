@@ -6,7 +6,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
-import { resolveCanvasColor } from '#/utils/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type GrHistoryProps = {
     grDb: number;
@@ -38,7 +38,7 @@ export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHis
         canvas.height = height * dpr;
         ctx.scale(dpr, dpr);
 
-        const accent = resolveCanvasColor(accentColor ?? 'var(--color-accent-peach)', '#c4987b');
+        const accent = resolveToken(accentColor ?? 'var(--color-accent-peach)', '#c4987b');
 
         ctx.clearRect(0, 0, width, height);
 
