@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getStretchRateBetweenMarkers } from '../getStretchRateBetweenMarkers';
 
-import type { WarpMarker } from '#/modules/AudioEngine/stores/audioWarp';
+import type { WarpMarker } from '../../../stores/audioWarp';
 
 function marker(sourceSec: number, targetBeat: number): WarpMarker {
     return { id: 'm', sourceSec, targetBeat, locked: false };

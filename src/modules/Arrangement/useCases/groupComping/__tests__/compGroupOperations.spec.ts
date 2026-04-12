@@ -4,7 +4,7 @@ import { createCompGroup } from '../compGroupOperations/createCompGroup';
 const mockSet = vi.fn();
 let mockValue: any = null;
 
-vi.mock('#/modules/Arrangement/stores/groupComping', () => ({
+vi.mock('../../../stores/groupComping', () => ({
     groupCompingStore: {
         get value() { return mockValue; },
         set: (v: any) => mockSet(v)

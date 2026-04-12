@@ -341,9 +341,6 @@ export type CallbackUndoEntry = UndoEntryBase & {
 
 export type UndoEntry = ActionUndoEntry | CallbackUndoEntry;
 
-let nextUndoId = 1;
-let nextGroupId = 1;
-
 export function createUndoEntry(
     label: string,
     action: AppAction,
@@ -351,7 +348,7 @@ export function createUndoEntry(
     source: UndoSource = 'manual'
 ): ActionUndoEntry {
     return {
-        id: `undo-${nextUndoId++}`,
+        id: `undo-${crypto.randomUUID().slice(0, 8)}`,
         kind: 'action',
         label,
         action,
@@ -368,7 +365,7 @@ export function createCallbackUndoEntry(
     source: UndoSource = 'manual'
 ): CallbackUndoEntry {
     return {
-        id: `undo-${nextUndoId++}`,
+        id: `undo-${crypto.randomUUID().slice(0, 8)}`,
         kind: 'callback',
         label,
         undo: undoFn,
@@ -380,7 +377,7 @@ export function createCallbackUndoEntry(
 
 export function generateGroupId(label: string): { groupId: string; groupLabel: string } {
     return {
-        groupId: `group-${nextGroupId++}`,
+        groupId: `group-${crypto.randomUUID().slice(0, 8)}`,
         groupLabel: label,
     };
 }

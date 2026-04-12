@@ -3,18 +3,19 @@
  * Calls the Tauri backend, updates stores with metadata and waveform.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import type { SampleMeta } from '../models/SamplerTypes';
-import * as bridge from '../repositories/samplerBridge';
+import { getWaveformPeaks, loadSample } from '../repositories/samplerBridge';
 import { samplerStore, setActiveSample, setLoading, setWaveformPeaks } from '../stores/samplerStore';
 
 export async function loadSampleFromPath(filePath: string): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
 
     setLoading(true);
 
     try {
-        const result = await bridge.loadSample(state.instanceId, filePath);
+        const result = await loadSample(state.instanceId, filePath);
 
         const fileName = filePath.split('/').pop() ?? filePath.split('\\').pop() ?? filePath;
         const meta: SampleMeta = {
@@ -34,10 +35,10 @@ export async function loadSampleFromPath(filePath: string): Promise<void> {
 
         // Load waveform peaks for display (level 0 = finest).
         try {
-            const peaks = await bridge.getWaveformPeaks(state.instanceId, 0);
+            const peaks = await getWaveformPeaks(state.instanceId, 0);
             setWaveformPeaks(peaks);
         } catch (err) {
-            console.error('Waveform peak loading failed:', err);
+            logger.warn('Waveform peak loading failed:', err);
         }
 
         setLoading(false);

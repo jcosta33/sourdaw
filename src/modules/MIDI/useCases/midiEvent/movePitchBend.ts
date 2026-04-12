@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '../../stores/midiStore';
 
 /**
  * Move a pitch bend event to a new position and/or value.

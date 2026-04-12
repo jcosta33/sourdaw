@@ -1,4 +1,4 @@
-import { nodeViewStore } from '#/modules/Plugin/stores/nodeView';
+import { nodeViewStore } from '../../stores/nodeView';
 
 export function toggleNodeView(): void {
     const state = nodeViewStore.value;

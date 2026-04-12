@@ -1,4 +1,4 @@
-import { type LatentVector } from '#/modules/AudioEngine/stores/rave';
+import { type LatentVector } from '../../stores/rave';
 
 /**
  * Perform timbre transfer: blend source and target latent vectors.

@@ -1,7 +1,7 @@
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
-import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { stopPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
+import { getTransportState } from '../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { stopPlayheadScheduler } from '../playheadScheduler';
 import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases';
 
 export function stopPlayback(): void {

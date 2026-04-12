@@ -1,8 +1,8 @@
 import { type CommandEntry } from '../CommandEntry';
-import { undo, redo } from '#/modules/Command/useCases/undoRedo';
+import { undo, redo } from '../../useCases/undoRedo';
 import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases';
-import { selectAllClips } from '#/modules/Command/useCases/selectAllClips';
-import { deselectAllClips } from '#/modules/Command/useCases/deselectAllClips';
+import { selectAllClips } from '../../useCases/selectAllClips';
+import { deselectAllClips } from '../../useCases/deselectAllClips';
 
 /** Edit commands — undo, redo, copy, cut, paste, select/deselect all. */
 export const editCommands: CommandEntry[] = [

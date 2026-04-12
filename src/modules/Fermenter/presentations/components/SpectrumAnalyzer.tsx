@@ -34,9 +34,13 @@ export const SpectrumAnalyzer = ({ buffer, width = 240, height = 80 }: SpectrumA
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -78,9 +82,13 @@ export const SpectrumAnalyzer = ({ buffer, width = 240, height = 80 }: SpectrumA
         // Find max for normalization
         let maxMag = 0;
         for (let i = 0; i < numBins; i++) {
-            if (mags[i]! > maxMag) maxMag = mags[i]!;
+            if (mags[i]! > maxMag) {
+                maxMag = mags[i]!;
+            }
         }
-        if (maxMag < 0.0001) maxMag = 1;
+        if (maxMag < 0.0001) {
+            maxMag = 1;
+        }
 
         const barW = width / numBins;
 

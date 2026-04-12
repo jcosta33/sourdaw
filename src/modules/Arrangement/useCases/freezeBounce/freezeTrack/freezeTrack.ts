@@ -22,8 +22,12 @@ export async function freezeTrack(trackId: string): Promise<void> {
         return;
     }
 
-    const startBeat = Math.min(...track.clips.map((c) => c.startBeat));
-    const endBeat = Math.max(...track.clips.map((c) => c.endBeat));
+    let startBeat = Infinity;
+    let endBeat = -Infinity;
+    for (const c of track.clips) {
+        if (c.startBeat < startBeat) { startBeat = c.startBeat; }
+        if (c.endBeat > endBeat) { endBeat = c.endBeat; }
+    }
 
     const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat);
 

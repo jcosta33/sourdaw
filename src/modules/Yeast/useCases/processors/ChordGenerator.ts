@@ -4,7 +4,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 const CHORD_FORMULAS: Record<string, number[]> = {
     major: [0, 4, 7],
@@ -21,20 +21,18 @@ const CHORD_FORMULAS: Record<string, number[]> = {
     '11th': [0, 4, 7, 10, 14, 17],
 };
 
-export class ChordGenerator implements MidiProcessor {
-    readonly id: string;
+export class ChordGenerator extends BaseMidiProcessor {
     readonly name = 'Chord Generator';
 
     private chordType = 'major';
     private voicing: 'close' | 'drop2' | 'drop3' | 'spread' = 'close';
     private strumMs = 0; // 0 = no strum
     private strumDirection: 'up' | 'down' = 'up';
-    private bypassed = false;
     // Track which notes we generated so we can send proper Note Offs
     private generatedMap = new Map<string, number[]>(); // "ch:note" → generated notes
 
     constructor(id?: string) {
-        this.id = id ?? `chord-${Date.now()}`;
+        super(id ?? `chord-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
@@ -63,7 +61,7 @@ export class ChordGenerator implements MidiProcessor {
 
                 for (let i = 0; i < intervals.length; i++) {
                     const note = event.kind.note + intervals[i]!;
-                    if (note < 0 || note > 127) continue;
+                    if (note < 0 || note > 127) {continue;}
                     notes.push(note);
 
                     const offset =
@@ -98,16 +96,6 @@ export class ChordGenerator implements MidiProcessor {
     reset(): void {
         this.generatedMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'chord_type': {

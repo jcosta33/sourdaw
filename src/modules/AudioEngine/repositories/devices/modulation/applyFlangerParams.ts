@@ -1,12 +1,13 @@
 import { type OfflineDeviceNode } from '../types';
 
 export function applyFlangerParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
-    const dryF = dn.nodes[1] as GainNode;
-    const wetF = dn.nodes[2] as GainNode;
-    const delayF = dn.nodes[3] as DelayNode;
-    const lfoF = dn.nodes[4] as OscillatorNode;
-    const lfoGainF = dn.nodes[5] as GainNode;
-    const feedbackF = dn.nodes[6] as GainNode;
+    const nn = dn.namedNodes;
+    const dryF = (nn?.['dry'] ?? dn.nodes[1]) as GainNode;
+    const wetF = (nn?.['wet'] ?? dn.nodes[2]) as GainNode;
+    const delayF = (nn?.['delay'] ?? dn.nodes[3]) as DelayNode;
+    const lfoF = (nn?.['lfo'] ?? dn.nodes[4]) as OscillatorNode;
+    const lfoGainF = (nn?.['lfoGain'] ?? dn.nodes[5]) as GainNode;
+    const feedbackF = (nn?.['feedback'] ?? dn.nodes[6]) as GainNode;
     if (params['flanger-rate'] !== undefined) {
         lfoF.frequency.value = params['flanger-rate'];
     }

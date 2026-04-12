@@ -1,6 +1,6 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import { type TrackLatency, type LatencyReport } from '#/modules/AudioEngine/models/LatencyCompensationTypes';
+import { audioEngine } from '../../../repositories/createWebAudioEngine';
+import { type TrackLatency, type LatencyReport } from '../../../models/LatencyCompensationTypes';
 import { getMaxTrackLatency, getTrackLatency } from './helpers';
 
 export function getLatencyReport(): LatencyReport {

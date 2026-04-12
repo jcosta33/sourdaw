@@ -8,9 +8,9 @@
  * and pattern repetition detection for MIDI clips.
  */
 
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { createSection, type ArrangementSection } from '#/modules/Arrangement/models/Marker';
+import { trackStore } from '../stores/trackStore';
+import { markerStore } from '../stores/markerStore';
+import { createSection, type ArrangementSection } from '../models/Marker';
 
 /** Standard song section names with associated colors */
 const SECTION_PALETTE = [
@@ -69,8 +69,12 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     }
 
     // Find the full range
-    const minBeat = Math.min(...allClips.map((c) => c.startBeat));
-    const maxBeat = Math.max(...allClips.map((c) => c.endBeat));
+    let minBeat = Infinity;
+    let maxBeat = -Infinity;
+    for (const c of allClips) {
+        if (c.startBeat < minBeat) { minBeat = c.startBeat; }
+        if (c.endBeat > maxBeat) { maxBeat = c.endBeat; }
+    }
     const totalBeats = maxBeat - minBeat;
 
     if (totalBeats <= 0) {
@@ -146,15 +150,15 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
         } else if (progress > 0.85 && i === mergedBoundaries.length - 1) {
             sectionInfo = SECTION_PALETTE[5]!; // Outro
             confidence = 0.8;
+        } else if (isHigh && progress > 0.5) {
+            sectionInfo = SECTION_PALETTE[7]!; // Drop
+            confidence = 0.6;
         } else if (isHigh) {
             sectionInfo = SECTION_PALETTE[3]!; // Chorus
             confidence = 0.7;
         } else if (isLow) {
             sectionInfo = SECTION_PALETTE[6]!; // Break
             confidence = 0.65;
-        } else if (isHigh && progress > 0.5) {
-            sectionInfo = SECTION_PALETTE[7]!; // Drop
-            confidence = 0.6;
         } else if (!isHigh && !isLow) {
             // Check if this leads into a high energy section → Pre-Chorus
             if (i + 1 < mergedBoundaries.length) {

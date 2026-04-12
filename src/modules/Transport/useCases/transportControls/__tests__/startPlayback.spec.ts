@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { startPlayback } from '../startPlayback';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
-import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
+import { defaultTransportState } from '../../../models/TransportState';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { resumeEngine } from '#/modules/AudioEngine/useCases';
-import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
-import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
+import { startPlayheadScheduler } from '../../playheadScheduler';
+import { ensureTrackStrips } from '../../ensureTrackStrips';
 
-vi.mock('#/modules/Transport/repositories/transport/getTransportState', () => ({
+vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
-vi.mock('#/modules/Transport/repositories/transport/updateTransportState', () => ({
+vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -21,10 +21,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         resumeEngine: vi.fn(),
     };
 });
-vi.mock('#/modules/Transport/useCases/playheadScheduler', () => ({
+vi.mock('../../playheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
-vi.mock('#/modules/Transport/useCases/ensureTrackStrips', () => ({
+vi.mock('../../ensureTrackStrips', () => ({
     ensureTrackStrips: vi.fn(),
 }));
 

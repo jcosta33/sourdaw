@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setNoteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
+import { setNoteClipboard } from '../../../stores/clipboardStore';
 import { pasteNotes } from '../pasteNotes';
 import { createMidiNote } from '#/modules/MIDI/useCases';
 

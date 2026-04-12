@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '../../../models/Track';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack';
 import { selectTrack } from '../selectTrack';
 
@@ -8,12 +8,12 @@ vi.mock('#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack', () => (
 }));
 
 const mockUpdateTrackState = vi.fn();
-vi.mock('#/modules/Arrangement/repositories/track/updateTrackState', () => ({
+vi.mock('../../../repositories/track/updateTrackState', () => ({
     updateTrackState: (...args: any[]) => mockUpdateTrackState(...args)
 }));
 
 const mockGetTrackById = vi.fn();
-vi.mock('#/modules/Arrangement/repositories/track/getTrackById', () => ({
+vi.mock('../../../repositories/track/getTrackById', () => ({
     getTrackById: (...args: any[]) => mockGetTrackById(...args)
 }));
 

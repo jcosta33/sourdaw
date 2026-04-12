@@ -7,6 +7,8 @@ import {
     receiveSyncMessage,
 } from '@automerge/automerge';
 
+import { logger } from '#/infra/logger/appLogger';
+import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 import {
     subscribeToCrdtChanges,
     getCrdtDoc,
@@ -19,8 +21,9 @@ import {
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
+import { DOC_ID_BRANCHES } from '../models/syncChannelConstants';
+
 const DOC_PREFIX_ROOT = 'root';
-const DOC_BRANCHES = '__branches__';
 
 // Sync state is per-peer per-doc: each document requires its own Automerge SyncState.
 type PerDocSyncStateMap = Map<string, SyncState>;
@@ -101,7 +104,7 @@ export class AutomergeSync {
             const syncMessage = base64ToBytes(syncMessageBase64);
             [newDoc, newSyncState] = receiveSyncMessage(doc, syncState, syncMessage as SyncMessage);
         } catch (error) {
-            console.error('[AutomergeSync] Malformed sync message from peer', peerId, error);
+            logger.warn('[AutomergeSync] Malformed sync message from peer', peerId, error);
             return;
         }
 
@@ -114,7 +117,7 @@ export class AutomergeSync {
 
         // Persist asynchronously — don't block the sync loop.
         persistCrdtProject().catch((error) => {
-            console.error('[AutomergeSync] Failed to persist after receiving sync:', error);
+            logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
         });
     }
 
@@ -131,8 +134,8 @@ export class AutomergeSync {
         this.sendDocSyncToPeer({ peerId, docId: DOC_PREFIX_ROOT });
 
         // Sync branch metadata doc if it exists (session-scoped)
-        if (hasCrdtDoc(DOC_BRANCHES)) {
-            this.sendDocSyncToPeer({ peerId, docId: DOC_BRANCHES });
+        if (hasCrdtDoc(DOC_ID_BRANCHES)) {
+            this.sendDocSyncToPeer({ peerId, docId: DOC_ID_BRANCHES });
         }
 
         // Sync branch content docs
@@ -174,14 +177,4 @@ export class AutomergeSync {
             this.sendSyncToPeer(peerId);
         }
     }
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
-    return btoa(binary);
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-    const binary = atob(base64);
-    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }

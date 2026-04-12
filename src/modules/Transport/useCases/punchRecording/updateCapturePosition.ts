@@ -1,4 +1,4 @@
-import { punchRecordingStore } from '#/modules/Transport/stores/punchRecordingStore';
+import { punchRecordingStore } from '../../stores/punchRecordingStore';
 
 export function updateCapturePosition(captureId: string, currentBeat: number): void {
     const state = punchRecordingStore.value;

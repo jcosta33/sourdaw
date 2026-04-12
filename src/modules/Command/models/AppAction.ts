@@ -85,7 +85,7 @@ export type AppAction =
     | { type: 'toggleInspector'; payload?: undefined }
     | { type: 'toggleChatPanel'; payload?: undefined }
     | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
-    | { type: 'setEditingTool'; payload: { tool: string } }
+    | { type: 'setEditingTool'; payload: { tool: 'select' | 'cut' | 'draw' | 'automation' | 'stretch' } }
     | { type: 'addMarker'; payload: { beat: number; name: string } }
     | { type: 'removeMarker'; payload: { markerId: string } }
     | { type: 'setMarkerColor'; payload: { markerId: string; color: string } }
@@ -250,7 +250,32 @@ export type AppAction =
               }>;
           };
       }
-    | { type: 'addChordEvent'; payload: { beat: number; root: number; quality: string; duration?: number } }
+    | {
+          type: 'addChordEvent';
+          payload: {
+              beat: number;
+              root: number;
+              quality:
+                  | 'major'
+                  | 'minor'
+                  | 'dim'
+                  | 'aug'
+                  | 'sus2'
+                  | 'sus4'
+                  | '7'
+                  | 'maj7'
+                  | 'min7'
+                  | 'dim7'
+                  | 'aug7'
+                  | '6'
+                  | 'min6'
+                  | '9'
+                  | 'add9'
+                  | 'min9'
+                  | '7sus4';
+              duration?: number;
+          };
+      }
     | { type: 'removeChordEvent'; payload: { eventId: string } }
     | { type: 'toggleChordTrack'; payload?: { enabled?: boolean } }
     | { type: 'clearChordTrack'; payload?: undefined }
@@ -296,7 +321,22 @@ export type AppAction =
     | { type: 'loadRaveModel'; payload: { modelId: string } }
     | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
-    | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
+    | {
+          type: 'setWarpAlgorithm';
+          payload: {
+              clipId: string;
+              algorithm:
+                  | 'elastique-pro'
+                  | 'elastique-efficient'
+                  | 'elastique-soloist'
+                  | 'rubber-band-r3'
+                  | 'rubber-band-rt'
+                  | 'complex'
+                  | 'complex-pro'
+                  | 'repitch'
+                  | 'slice';
+          };
+      }
     | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
     | { type: 'restoreDsoSnapshot'; payload: { bundle: DocumentBundle } };
 

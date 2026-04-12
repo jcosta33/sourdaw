@@ -63,11 +63,11 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
 
     // Render loop for the Canvas-based Blob Editor
     useEffect(() => {
-        if (!hasKnead) return;
+        if (!hasKnead) {return;}
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const style = getComputedStyle(document.documentElement);
         const bgCol = `hsl(${style.getPropertyValue('--color-surface-sunken') || '0, 0%, 8%'})`;
@@ -100,7 +100,7 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
                     kneadState.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / kneadState.blobs.length;
 
                 for (const blob of kneadState.blobs) {
-                    if (!blob.pitchCenterCents) continue;
+                    if (!blob.pitchCenterCents) {continue;}
 
                     // Map time to X (zoomed for visibility)
                     const x = blob.startTime * 300;
@@ -126,8 +126,8 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
                         for (let i = 0; i < blob.pitchCurveCents.length; i++) {
                             const px = x + i * step;
                             const py = y - ((blob.pitchCurveCents[i] || 0) / 100) * rowHeight;
-                            if (i === 0) ctx.moveTo(px, py);
-                            else ctx.lineTo(px, py);
+                            if (i === 0) {ctx.moveTo(px, py);}
+                            else {ctx.lineTo(px, py);}
                         }
                         ctx.stroke();
                     }

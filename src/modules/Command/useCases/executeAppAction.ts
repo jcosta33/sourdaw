@@ -30,30 +30,45 @@ import { recordAction } from './macro/recording/recordAction';
 let handlerRegistryCache: Record<string, ActionHandler<any>> | null = null;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mergeHandlers(...sources: Record<string, ActionHandler<any>>[]): Record<string, ActionHandler<any>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registry: Record<string, ActionHandler<any>> = {};
+    for (const source of sources) {
+        for (const key of Object.keys(source)) {
+            if (key in registry) {
+                logger.warn(`[executeAppAction] Duplicate handler for action type: ${key}`);
+            }
+            registry[key] = source[key]!;
+        }
+    }
+    return registry;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getHandlerRegistry(): Record<string, ActionHandler<any>> {
     if (!handlerRegistryCache) {
-        handlerRegistryCache = {
-            ...getArrangementHandlers(),
-            ...getTransportHandlers(),
-            ...getWorkspaceHandlers(),
-            ...getAutomationHandlers(),
-            ...getGenerationHandlers(),
-            ...getAnalysisHandlers(),
-            ...getCollaborationHandlers(),
-            ...getPluginHostHandlers(),
-            ...getAiMidiHandlers(),
-            ...getAiOrganizationHandlers(),
-            ...getChordTrackHandlers(),
-            ...getScratchPadHandlers(),
-            ...getPatternInstanceHandlers(),
-            ...getMidiRoutingHandlers(),
-            ...getMacroHandlers(),
-            ...getUndoTreeHandlers(),
-            ...getSongStructureHandlers(),
-            ...getVersionControlHandlers(),
-            ...getFinalFeatureHandlers(),
-            ...getDsoSnapshotHandlers(),
-        };
+        handlerRegistryCache = mergeHandlers(
+            getArrangementHandlers(),
+            getTransportHandlers(),
+            getWorkspaceHandlers(),
+            getAutomationHandlers(),
+            getGenerationHandlers(),
+            getAnalysisHandlers(),
+            getCollaborationHandlers(),
+            getPluginHostHandlers(),
+            getAiMidiHandlers(),
+            getAiOrganizationHandlers(),
+            getChordTrackHandlers(),
+            getScratchPadHandlers(),
+            getPatternInstanceHandlers(),
+            getMidiRoutingHandlers(),
+            getMacroHandlers(),
+            getUndoTreeHandlers(),
+            getSongStructureHandlers(),
+            getVersionControlHandlers(),
+            getFinalFeatureHandlers(),
+            getDsoSnapshotHandlers(),
+        );
     }
     return handlerRegistryCache;
 }

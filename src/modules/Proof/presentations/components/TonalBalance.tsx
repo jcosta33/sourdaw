@@ -71,9 +71,9 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -133,8 +133,11 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
             }
             const x = freqToX(pt.freq, w);
             const y = dbToY(db - 20, h); // offset to match typical spectrum level
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.save();
         ctx.shadowColor = 'rgba(76,200,200,0.3)';
@@ -152,8 +155,11 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
             const pt = HARMAN_CURVE[i]!;
             const x = freqToX(pt.freq, w);
             const y = dbToY(pt.db - 20 + 3, h);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         for (let i = HARMAN_CURVE.length - 1; i >= 0; i--) {
             const pt = HARMAN_CURVE[i]!;
@@ -172,14 +178,18 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
             let started = false;
             for (let i = 1; i < fftData.length; i++) {
                 const freq = i * binWidth;
-                if (freq < MIN_FREQ || freq > MAX_FREQ) continue;
+                if (freq < MIN_FREQ || freq > MAX_FREQ) {
+                    continue;
+                }
                 const x = freqToX(freq, w);
                 const db = Math.max(MIN_DB, fftData[i]!);
                 const y = dbToY(db, h);
                 if (!started) {
                     ctx.moveTo(x, y);
                     started = true;
-                } else ctx.lineTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
             }
             // Filled area
             if (started) {
@@ -200,14 +210,18 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
             started = false;
             for (let i = 1; i < fftData.length; i++) {
                 const freq = i * binWidth;
-                if (freq < MIN_FREQ || freq > MAX_FREQ) continue;
+                if (freq < MIN_FREQ || freq > MAX_FREQ) {
+                    continue;
+                }
                 const x = freqToX(freq, w);
                 const db = Math.max(MIN_DB, fftData[i]!);
                 const y = dbToY(db, h);
                 if (!started) {
                     ctx.moveTo(x, y);
                     started = true;
-                } else ctx.lineTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
             }
             ctx.save();
             ctx.shadowColor = 'rgba(178,140,255,0.4)';

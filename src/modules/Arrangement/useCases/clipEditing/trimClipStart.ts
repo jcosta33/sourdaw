@@ -1,4 +1,4 @@
-import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { updateClip } from '../../repositories/track/updateClip';
 
 export function trimClipStart(clipId: string, newStartBeat: number): void {
     updateClip(clipId, (c) => {

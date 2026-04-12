@@ -1,6 +1,6 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
+import { markerStore } from '../../stores/markerStore';
 import { automationStore } from '#/modules/Automation';
 
 export function insertTime(atBeat: number, durationBeats: number): void {

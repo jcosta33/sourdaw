@@ -1,4 +1,4 @@
-import { nodeViewStore, getNextConnectionId, type NodeConnection } from '#/modules/Plugin/stores/nodeView';
+import { nodeViewStore, getNextConnectionId, type NodeConnection } from '../../stores/nodeView';
 
 export function connectNodes(fromNodeId: string, fromOutput: number, toNodeId: string, toInput: number): void {
     const state = nodeViewStore.value;

@@ -137,21 +137,27 @@ export const handleKeydown = inject({ eventBus })(
 
             // Cmd+A: select all clips
             if (mod && key === 'a' && !shift) {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 selectAllClips(getAllClipIds);
                 return true;
             }
 
             // Cmd+Shift+A: clear clip selection
             if (mod && shift && key.toLowerCase() === 'a') {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 clearClipSelection();
                 return true;
             }
 
             // Cmd+Shift+D: duplicate track
             if (mod && shift && key.toLowerCase() === 'd') {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 const selectedId = trackStore.value?.selectedTrackId;
                 if (selectedId) {
                     duplicateTrack(selectedId);
@@ -161,7 +167,9 @@ export const handleKeydown = inject({ eventBus })(
 
             // Alt+D: duplicate clip to next bar
             if (alt && key.toLowerCase() === 'd' && !mod) {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 const selectedClipId = workspaceStore.value?.selectedClipId;
                 if (selectedClipId) {
                     duplicateClipToNextBar(selectedClipId);
@@ -171,7 +179,9 @@ export const handleKeydown = inject({ eventBus })(
 
             // Cmd+D: duplicate clip
             if (mod && key.toLowerCase() === 'd' && !shift && !alt) {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 const selectedClipId = workspaceStore.value?.selectedClipId;
                 if (selectedClipId) {
                     duplicateClip(selectedClipId);
@@ -181,41 +191,53 @@ export const handleKeydown = inject({ eventBus })(
 
             // Cmd+Shift+F: zoom to fit
             if (mod && shift && key.toLowerCase() === 'f') {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 zoomToFit();
                 return true;
             }
 
             // Cmd+Shift++: zoom tracks in
             if (mod && shift && (key === '=' || key === '+')) {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 zoomTracksVertical(10);
                 return true;
             }
 
             // Cmd+Shift+-: zoom tracks out
             if (mod && shift && key === '-') {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 zoomTracksVertical(-10);
                 return true;
             }
 
             // V: voice toggle (press)
             if (key === 'v' && !mod && !shift && !alt && !repeat) {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 eventBus.emit('voice.toggle', { active: true });
                 return true;
             }
 
             // Alt+S: clear solos
             if (alt && key.toLowerCase() === 's' && !mod) {
-                if (isInput) return false;
+                if (isInput) {
+                    return false;
+                }
                 clearSolos();
                 return true;
             }
 
             // All remaining shortcuts are blocked in input fields
-            if (isInput) return false;
+            if (isInput) {
+                return false;
+            }
 
             return handleSimpleKeys(key, shift);
         };

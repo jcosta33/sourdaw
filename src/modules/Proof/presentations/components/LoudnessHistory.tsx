@@ -39,9 +39,9 @@ export const LoudnessHistory = ({
         }
 
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -136,8 +136,8 @@ export const LoudnessHistory = ({
                 const x = startX + i * stepX;
                 const lufs = Math.max(MIN_DB, Math.min(MAX_DB, history[i]!));
                 const y = ((lufs - MAX_DB) / (MIN_DB - MAX_DB)) * h;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+                if (i === 0) {ctx.moveTo(x, y);}
+                else {ctx.lineTo(x, y);}
             }
             ctx.save();
             ctx.shadowColor = 'rgba(76,210,210,0.4)';

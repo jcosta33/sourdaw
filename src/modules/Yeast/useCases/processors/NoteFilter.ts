@@ -4,10 +4,9 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
-export class NoteFilter implements MidiProcessor {
-    readonly id: string;
+export class NoteFilter extends BaseMidiProcessor {
     readonly name = 'Note Filter';
 
     private noteMin = 0;
@@ -16,12 +15,11 @@ export class NoteFilter implements MidiProcessor {
     private velMax = 127;
     private allowedPitchClasses = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]); // all by default
     private invert = false;
-    private bypassed = false;
     // Track filtered Note Ons to suppress matching Note Offs
     private filteredNotes = new Set<string>();
 
     constructor(id?: string) {
-        this.id = id ?? `filter-${Date.now()}`;
+        super(id ?? `filter-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -29,7 +27,7 @@ export class NoteFilter implements MidiProcessor {
             if (event.kind.type === 'noteOn') {
                 const key = `${event.kind.channel}:${event.kind.note}`;
                 let passes = this.passesFilter(event.kind.note, event.kind.velocity);
-                if (this.invert) passes = !passes;
+                if (this.invert) {passes = !passes;}
 
                 if (passes) {
                     output.push(event);
@@ -51,25 +49,15 @@ export class NoteFilter implements MidiProcessor {
     }
 
     private passesFilter(note: number, velocity: number): boolean {
-        if (note < this.noteMin || note > this.noteMax) return false;
-        if (velocity < this.velMin || velocity > this.velMax) return false;
-        if (!this.allowedPitchClasses.has(note % 12)) return false;
+        if (note < this.noteMin || note > this.noteMax) {return false;}
+        if (velocity < this.velMin || velocity > this.velMax) {return false;}
+        if (!this.allowedPitchClasses.has(note % 12)) {return false;}
         return true;
     }
 
     reset(): void {
         this.filteredNotes.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'note_min':

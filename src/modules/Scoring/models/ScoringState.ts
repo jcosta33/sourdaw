@@ -17,7 +17,7 @@ export type TunerState = {
     a4Reference: number;
 };
 
-export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+export { NOTE_NAMES } from '#/utils/noteNames';
 
 export const DEFAULT_TUNER_STATE: TunerState = {
     frequency: 0,

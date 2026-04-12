@@ -4,7 +4,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -22,23 +22,22 @@ const SCALE_PATTERNS: Record<string, number[]> = {
     diminished: [0, 2, 3, 5, 6, 8, 9, 11],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
+const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
 type RemapMode = 'nearest' | 'up' | 'down';
 
-export class ScaleQuantizer implements MidiProcessor {
-    readonly id: string;
+export class ScaleQuantizer extends BaseMidiProcessor {
     readonly name = 'Scale Quantizer';
 
     private root = 0; // 0-11 (C=0)
     private scaleName = 'major';
     private remapMode: RemapMode = 'nearest';
     private transpose = 0; // diatonic degrees
-    private bypassed = false;
     // Track note mapping for proper Note Off
-    private noteMap = new Map<string, number>(); // "ch:inNote" → outNote
+    private noteMap = new Map<number, number>(); // ch*128+inNote → outNote
 
     constructor(id?: string) {
-        this.id = id ?? `scale-${Date.now()}`;
+        super(id ?? `scale-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -52,13 +51,13 @@ export class ScaleQuantizer implements MidiProcessor {
                 }
                 note = Math.max(0, Math.min(127, note));
 
-                this.noteMap.set(`${event.kind.channel}:${event.kind.note}`, note);
+                this.noteMap.set(event.kind.channel * 128 + event.kind.note, note);
                 output.push({
                     timeSamples: event.timeSamples,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                 });
             } else if (event.kind.type === 'noteOff') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = event.kind.channel * 128 + event.kind.note;
                 const mappedNote = this.noteMap.get(key) ?? event.kind.note;
                 this.noteMap.delete(key);
                 output.push({
@@ -73,7 +72,7 @@ export class ScaleQuantizer implements MidiProcessor {
 
     private quantizeToScale(note: number, pattern: number[]): number {
         const pc = (((note - this.root) % 12) + 12) % 12;
-        if (pattern.includes(pc)) return note;
+        if (pattern.includes(pc)) {return note;}
 
         switch (this.remapMode) {
             case 'nearest': {
@@ -91,13 +90,13 @@ export class ScaleQuantizer implements MidiProcessor {
             }
             case 'up': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes((((pc + offset) % 12) + 12) % 12)) return note + offset;
+                    if (pattern.includes((((pc + offset) % 12) + 12) % 12)) {return note + offset;}
                 }
                 return note;
             }
             case 'down': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes((((pc - offset) % 12) + 12) % 12)) return note - offset;
+                    if (pattern.includes((((pc - offset) % 12) + 12) % 12)) {return note - offset;}
                 }
                 return note;
             }
@@ -108,7 +107,7 @@ export class ScaleQuantizer implements MidiProcessor {
         const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
         const degreeIdx = pattern.indexOf(pc);
-        if (degreeIdx === -1) return note; // not in scale, pass through
+        if (degreeIdx === -1) {return note;} // not in scale, pass through
 
         const newDegreeIdx = degreeIdx + degrees;
         const newOctaveOffset = Math.floor(newDegreeIdx / pattern.length);
@@ -119,24 +118,13 @@ export class ScaleQuantizer implements MidiProcessor {
     reset(): void {
         this.noteMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'root':
                 this.root = Math.round(value) % 12;
                 break;
             case 'scale': {
-                const names = Object.keys(SCALE_PATTERNS);
-                this.scaleName = names[Math.round(value)] ?? 'major';
+                this.scaleName = SCALE_NAMES[Math.round(value)] ?? 'major';
                 break;
             }
             case 'remap_mode':

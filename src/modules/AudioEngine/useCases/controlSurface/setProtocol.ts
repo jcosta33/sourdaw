@@ -1,4 +1,4 @@
-import { controlSurfaceStore, type ControlSurfaceProtocol } from '#/modules/AudioEngine/stores/controlSurface';
+import { controlSurfaceStore, type ControlSurfaceProtocol } from '../../stores/controlSurface';
 
 export function setProtocol(protocol: ControlSurfaceProtocol | null): void {
     const state = controlSurfaceStore.value;

@@ -75,63 +75,28 @@ export const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => Offline
 
 // ── Parameter application dispatch ───────────────────────────────────────
 
+const PARAM_APPLIERS: Record<string, (dn: OfflineDeviceNode, params: Record<string, number>) => void> = {
+    'builtin-eq': applyEqParams,
+    'builtin-compressor': applyCompressorParams,
+    'builtin-sidechain-compressor': applySidechainCompressorParams,
+    'builtin-limiter': applyLimiterParams,
+    'builtin-reverb': applyReverbParams,
+    'builtin-delay': applyDelayParams,
+    'builtin-convolution-reverb': applyConvolutionReverbParams,
+    'builtin-gain': applyGainParams,
+    'builtin-filter': applyFilterParams,
+    'builtin-distortion': applyDistortionParams,
+    'builtin-bitcrusher': applyBitcrusherParams,
+    'builtin-deesser': applyDeEsserParams,
+    // builtin-lufs-meter intentionally omitted — pass-through analyser, no audio params
+    'builtin-chorus': applyChorusParams,
+    'builtin-phaser': applyPhaserParams,
+    'builtin-flanger': applyFlangerParams,
+    'builtin-tremolo': applyTremoloParams,
+    'builtin-autopan': applyAutoPanParams,
+    'builtin-stereo-widener': applyStereoWidenerParams,
+};
+
 export function applyParams(dn: OfflineDeviceNode, deviceType: string, params: Record<string, number>): void {
-    switch (deviceType) {
-        case 'builtin-eq':
-            applyEqParams(dn, params);
-            break;
-        case 'builtin-compressor':
-            applyCompressorParams(dn, params);
-            break;
-        case 'builtin-sidechain-compressor':
-            applySidechainCompressorParams(dn, params);
-            break;
-        case 'builtin-limiter':
-            applyLimiterParams(dn, params);
-            break;
-        case 'builtin-reverb':
-            applyReverbParams(dn, params);
-            break;
-        case 'builtin-delay':
-            applyDelayParams(dn, params);
-            break;
-        case 'builtin-convolution-reverb':
-            applyConvolutionReverbParams(dn, params);
-            break;
-        case 'builtin-gain':
-            applyGainParams(dn, params);
-            break;
-        case 'builtin-filter':
-            applyFilterParams(dn, params);
-            break;
-        case 'builtin-distortion':
-            applyDistortionParams(dn, params);
-            break;
-        case 'builtin-bitcrusher':
-            applyBitcrusherParams(dn, params);
-            break;
-        case 'builtin-deesser':
-            applyDeEsserParams(dn, params);
-            break;
-        case 'builtin-lufs-meter':
-            break; // pass-through analyser, no audio params
-        case 'builtin-chorus':
-            applyChorusParams(dn, params);
-            break;
-        case 'builtin-phaser':
-            applyPhaserParams(dn, params);
-            break;
-        case 'builtin-flanger':
-            applyFlangerParams(dn, params);
-            break;
-        case 'builtin-tremolo':
-            applyTremoloParams(dn, params);
-            break;
-        case 'builtin-autopan':
-            applyAutoPanParams(dn, params);
-            break;
-        case 'builtin-stereo-widener':
-            applyStereoWidenerParams(dn, params);
-            break;
-    }
+    PARAM_APPLIERS[deviceType]?.(dn, params);
 }

@@ -9,7 +9,7 @@ import { setMetronomeVolume } from '../setMetronomeVolume';
 vi.mock('#/modules/Transport/repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
-vi.mock('#/modules/Transport/repositories/transport/updateTransportState', () => ({
+vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
 

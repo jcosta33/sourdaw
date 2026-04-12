@@ -8,8 +8,8 @@ function isNativePlatform(): boolean {
 export function getTemplates(): ProjectTemplate[] {
     const native = isNativePlatform();
     return templates.filter((t) => {
-        if (t.platform === 'native' && !native) return false;
-        if (t.platform === 'web' && native) return false;
+        if (t.platform === 'native' && !native) {return false;}
+        if (t.platform === 'web' && native) {return false;}
         return true;
     });
 }

@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '../../stores/trackStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { automationStore } from '#/modules/Automation';

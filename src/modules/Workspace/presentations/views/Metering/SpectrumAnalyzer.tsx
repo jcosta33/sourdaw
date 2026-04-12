@@ -34,12 +34,32 @@ export const SpectrumAnalyzer = ({
         }
 
         let rafId = 0;
+        // Reused across frames — reallocated only if frequencyBinCount changes.
+        let freqData: Float32Array<ArrayBuffer> | null = null;
+
+        // Pre-generate noise texture once into an offscreen canvas.
+        const noiseCanvas = document.createElement('canvas');
+        noiseCanvas.width = width;
+        noiseCanvas.height = height;
+        const noiseCtx = noiseCanvas.getContext('2d');
+        if (noiseCtx) {
+            noiseCtx.globalAlpha = 0.03;
+            for (let nx = 0; nx < width; nx += 3) {
+                for (let ny = 0; ny < height; ny += 3) {
+                    const v = Math.random() * 255;
+                    noiseCtx.fillStyle = `rgb(${v},${v},${v})`;
+                    noiseCtx.fillRect(nx, ny, 2, 2);
+                }
+            }
+        }
 
         const draw = (): void => {
             const analyser = trackId ? (getTrackAnalyser(trackId) ?? getMasterAnalyser()) : getMasterAnalyser();
 
             const fftSize = analyser.frequencyBinCount;
-            const freqData = new Float32Array(fftSize);
+            if (!freqData || freqData.length !== fftSize) {
+                freqData = new Float32Array(fftSize);
+            }
             analyser.getFloatFrequencyData(freqData);
 
             const sampleRate = getAudioSampleRate();
@@ -51,16 +71,8 @@ export const SpectrumAnalyzer = ({
             ctx.beginPath();
             ctx.roundRect(0, 0, width, height, 4);
             ctx.fill();
-            // Subtle noise overlay
-            ctx.globalAlpha = 0.03;
-            for (let nx = 0; nx < width; nx += 3) {
-                for (let ny = 0; ny < height; ny += 3) {
-                    const v = Math.random() * 255;
-                    ctx.fillStyle = `rgb(${v},${v},${v})`;
-                    ctx.fillRect(nx, ny, 2, 2);
-                }
-            }
-            ctx.globalAlpha = 1;
+            // Cached noise overlay
+            ctx.drawImage(noiseCanvas, 0, 0);
 
             // Grid lines (frequency) — subtle dashed
             ctx.strokeStyle = 'rgba(255,255,255,0.04)';

@@ -8,7 +8,7 @@ import { findWasmDescriptor } from './wasmDeviceRegistry';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { logger } from '#/infra/logger/appLogger';
 
-export interface TrackNodeDeps {
+export type TrackNodeDeps = {
     context: AudioContext;
     masterGainNode: GainNode;
     getBusGainNode: (busId: string) => GainNode | undefined;
@@ -16,7 +16,7 @@ export interface TrackNodeDeps {
     getSendsForTrack: (trackId: string) => SendNode[];
     pendingFaustParams: Map<string, Map<string, number>>;
     pendingDevicePromises: Set<Promise<any>>;
-}
+};
 
 export class TrackNode {
     public strip: TrackChannelStrip;
@@ -158,7 +158,7 @@ export class TrackNode {
 
         let prevs: AudioNode[] = [s.gainNode];
         for (const dn of s.deviceNodes) {
-            if ((dn as any)._bypassed) {
+            if (dn.bypassed) {
                 continue;
             }
             if (dn.inputNode.numberOfInputs > 0) {
@@ -302,6 +302,7 @@ export class TrackNode {
                     nodes: factoryNode.nodes,
                     inputNode: factoryNode.inputNode,
                     outputNode: factoryNode.outputNode,
+                    dispose: factoryNode.dispose,
                 };
             } else {
                 const descriptor = findWasmDescriptor(deviceType);
@@ -334,6 +335,9 @@ export class TrackNode {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
             return;
+        }
+        if (dn.dispose) {
+            dn.dispose();
         }
         if (dn.fermenterControls) {
             dn.fermenterControls.destroy();
@@ -455,7 +459,7 @@ export class TrackNode {
         } else if (dn.nativeDspControls) {
             dn.nativeDspControls.setBypass(bypassed);
         } else {
-            (dn as any)._bypassed = bypassed;
+            dn.bypassed = bypassed;
             this.rebuildChain();
         }
     }
@@ -468,6 +472,9 @@ export class TrackNode {
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
         for (const dn of this.strip.deviceNodes) {
+            if (dn.dispose) {
+                dn.dispose();
+            }
             if (dn.fermenterControls) {
                 dn.fermenterControls.destroy();
             }

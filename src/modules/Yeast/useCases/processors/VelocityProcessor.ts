@@ -3,12 +3,11 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 type VelCurve = 'linear' | 'soft' | 'hard' | 'sCurve';
 
-export class VelocityProcessor implements MidiProcessor {
-    readonly id: string;
+export class VelocityProcessor extends BaseMidiProcessor {
     readonly name = 'Velocity';
 
     private mode: 'passthrough' | 'fixed' | 'compress' | 'expand' | 'curve' | 'random' = 'passthrough';
@@ -17,11 +16,10 @@ export class VelocityProcessor implements MidiProcessor {
     private curve: VelCurve = 'linear';
     private randomMin = 40;
     private randomMax = 120;
-    private bypassed = false;
     private rngState = 0xbeef;
 
     constructor(id?: string) {
-        this.id = id ?? `vel-${Date.now()}`;
+        super(id ?? `vel-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -83,15 +81,6 @@ export class VelocityProcessor implements MidiProcessor {
     }
 
     reset(): void {}
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
 
     setParam(name: string, value: number): void {
         switch (name) {

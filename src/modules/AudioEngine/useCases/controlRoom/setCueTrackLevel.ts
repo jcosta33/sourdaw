@@ -1,4 +1,4 @@
-import { controlRoomStore } from '#/modules/AudioEngine/stores/controlRoom';
+import { controlRoomStore } from '../../stores/controlRoom';
 
 export function setCueTrackLevel(cueId: string, trackId: string, level: number): void {
     const state = controlRoomStore.value;

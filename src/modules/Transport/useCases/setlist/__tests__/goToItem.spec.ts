@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { goToItem } from '../goToItem';
-import { setlistStore } from '#/modules/Transport/stores/setlistStore';
-import { type SetlistItem, type SetlistState } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore } from '../../../stores/setlistStore';
+import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;
 };
 
-vi.mock('#/modules/Transport/stores/setlistStore', () => {
+vi.mock('../../../stores/setlistStore', () => {
     const setlistStore: {
         value: SetlistState | null;
         set: ReturnType<typeof vi.fn>;

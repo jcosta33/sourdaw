@@ -1,4 +1,4 @@
-import { groupCompingStore, getNextRegionId, type GroupCompRegion } from '#/modules/Arrangement/stores/groupComping';
+import { groupCompingStore, getNextRegionId, type GroupCompRegion } from '../../../stores/groupComping';
 
 export function swipeGroupComp(grpId: string, takeSetIdVal: string, startBeat: number, endBeat: number): void {
     const state = groupCompingStore.value;

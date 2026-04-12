@@ -6,7 +6,7 @@ import { bridges } from './helpers';
 export function syncEqBands(deviceId: string): void {
     const patch = getProofState(deviceId).patch;
     const bridge = bridges.get(deviceId);
-    if (!bridge) return;
+    if (!bridge) {return;}
     for (let i = 0; i < patch.eqBands.length; i++) {
         const band = patch.eqBands[i]!;
         bridge.setParam(`eq_band${i}_freq`, band.freq);
@@ -22,7 +22,7 @@ export function syncEqBands(deviceId: string): void {
 export function syncDynBands(deviceId: string): void {
     const patch = getProofState(deviceId).patch;
     const bridge = bridges.get(deviceId);
-    if (!bridge) return;
+    if (!bridge) {return;}
     for (let i = 0; i < 3; i++) {
         bridge.setParam(`dyn_xover${i}`, patch.dynCrossoverFreqs[i]!);
     }
@@ -43,7 +43,7 @@ export function syncDynBands(deviceId: string): void {
 export function syncImager(deviceId: string): void {
     const patch = getProofState(deviceId).patch;
     const bridge = bridges.get(deviceId);
-    if (!bridge) return;
+    if (!bridge) {return;}
     for (let i = 0; i < 4; i++) {
         bridge.setParam(`img_width${i}`, patch.imgBandWidth[i]!);
     }
@@ -55,7 +55,7 @@ export function syncImager(deviceId: string): void {
 export function syncExciter(deviceId: string): void {
     const patch = getProofState(deviceId).patch;
     const bridge = bridges.get(deviceId);
-    if (!bridge) return;
+    if (!bridge) {return;}
     for (let i = 0; i < patch.excBands.length; i++) {
         const band = patch.excBands[i]!;
         bridge.setParam(`exc_band${i}_type`, band.type);
@@ -69,7 +69,7 @@ export function syncExciter(deviceId: string): void {
 export function syncFullPatch(deviceId: string): void {
     const patch = getProofState(deviceId).patch;
     const bridge = bridges.get(deviceId);
-    if (!bridge) return;
+    if (!bridge) {return;}
 
     bridge.setParam('input_gain', patch.inputGain);
     bridge.setParam('output_gain', patch.outputGain);

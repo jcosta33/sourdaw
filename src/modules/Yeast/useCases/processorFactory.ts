@@ -53,8 +53,6 @@ export const PROCESSOR_TYPES: Array<{ type: ProcessorType; name: string; descrip
     { type: 'ccGenerator', name: 'CC Generator', description: 'Generate CC messages from LFO shapes', level: 4 },
     // Phase 6 — Lab
     { type: 'chordMemory', name: 'Chord Memory', description: 'One-finger chord recall (Cthulhu-style)', level: 2 },
-    { type: 'ccGenerator', name: 'CC Generator', description: 'Generate CC messages from LFO shapes', level: 4 },
-    // Phase 6 — Lab
     { type: 'euclidean', name: 'Euclidean', description: 'Distribute hits evenly across steps', level: 5 },
     { type: 'markov', name: 'Markov Chain', description: 'Probabilistic note selection with memory', level: 5 },
     { type: 'mutation', name: 'Mutation', description: 'Slowly drift parameters for evolving patterns', level: 5 },

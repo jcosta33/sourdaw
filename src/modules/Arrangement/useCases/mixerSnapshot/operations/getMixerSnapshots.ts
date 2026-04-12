@@ -1,4 +1,4 @@
-import { type MixerSnapshot } from '#/modules/Arrangement/models/MixerSnapshotTypes';
+import { type MixerSnapshot } from '../../../models/MixerSnapshotTypes';
 import { mixerSnapshotStore } from './helpers';
 
 /**

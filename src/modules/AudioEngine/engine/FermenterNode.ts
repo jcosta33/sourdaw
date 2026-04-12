@@ -22,9 +22,9 @@ async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) return cachedWasmBytes;
+    if (cachedWasmBytes) {return cachedWasmBytes;}
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Failed to fetch Fermenter WASM: ${response.status}`);
+    if (!response.ok) {throw new Error(`Failed to fetch Fermenter WASM: ${response.status}`);}
     cachedWasmBytes = await response.arrayBuffer();
     return cachedWasmBytes;
 }
@@ -77,7 +77,7 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
             }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
-            if (settled) return;
+            if (settled) {return;}
             if (e.data.type === 'ready') {
                 settled = true;
                 clearTimeout(timeout);

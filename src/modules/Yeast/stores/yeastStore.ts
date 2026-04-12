@@ -12,6 +12,7 @@
  *   - internal sync and registration helpers used by the use cases
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { MidiRack } from '../useCases/MidiRack';
 import { type ProcessorType } from '../useCases/processorFactory';
@@ -51,8 +52,12 @@ let _workletNodePromise: Promise<YeastWorkletNodeResult | null> | null = null;
  * Returns null if the worklet fails to initialize (triggers main-thread fallback).
  */
 export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<YeastWorkletNodeResult | null> {
-    if (_workletNode) return _workletNode;
-    if (_workletNodePromise) return _workletNodePromise;
+    if (_workletNode) {
+        return _workletNode;
+    }
+    if (_workletNodePromise) {
+        return _workletNodePromise;
+    }
 
     _workletNodePromise = createYeastWorkletNode(ctx)
         .then((node) => {
@@ -64,7 +69,7 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
             return node;
         })
         .catch((err) => {
-            console.warn('[Yeast] Worklet init failed, using main-thread fallback:', err);
+            logger.warn('[Yeast] Worklet init failed, using main-thread fallback:', err);
             _workletNodePromise = null;
             return null;
         });
@@ -111,7 +116,9 @@ export function unregisterProcessorType(id: string): void {
 export function syncStoreFromRack(): void {
     const rack = getYeastRack();
     const state = yeastStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const names = rack.getProcessorNames();
     yeastStore.set({
@@ -126,13 +133,29 @@ export function syncStoreFromRack(): void {
 }
 
 function inferType(name: string): ProcessorType {
-    if (name.includes('Arp')) return 'arpeggiator';
-    if (name.includes('Chord')) return 'chord';
-    if (name.includes('Scale')) return 'scale';
-    if (name.includes('Repeat')) return 'repeater';
-    if (name.includes('Veloc')) return 'velocity';
-    if (name.includes('Human')) return 'humanizer';
-    if (name.includes('Filter')) return 'filter';
-    if (name.includes('Trans')) return 'transposer';
+    if (name.includes('Arp')) {
+        return 'arpeggiator';
+    }
+    if (name.includes('Chord')) {
+        return 'chord';
+    }
+    if (name.includes('Scale')) {
+        return 'scale';
+    }
+    if (name.includes('Repeat')) {
+        return 'repeater';
+    }
+    if (name.includes('Veloc')) {
+        return 'velocity';
+    }
+    if (name.includes('Human')) {
+        return 'humanizer';
+    }
+    if (name.includes('Filter')) {
+        return 'filter';
+    }
+    if (name.includes('Trans')) {
+        return 'transposer';
+    }
     return 'arpeggiator';
 }

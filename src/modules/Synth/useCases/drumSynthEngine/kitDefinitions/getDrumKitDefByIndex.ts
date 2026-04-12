@@ -1,4 +1,4 @@
-import { type DrumKitDef } from '#/modules/Synth/models/DrumSynthTypes';
+import { type DrumKitDef } from '../../../models/DrumSynthTypes';
 
 export const KIT_808_DEF: DrumKitDef = {
     id: 'kit-808',

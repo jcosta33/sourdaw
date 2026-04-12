@@ -1,4 +1,4 @@
-import { punchRecordingStore, type PunchRegion } from '#/modules/Transport/stores/punchRecordingStore';
+import { punchRecordingStore, type PunchRegion } from '../../stores/punchRecordingStore';
 import { getNextPunchId } from '../../repositories/punchRecordingIdCounter/getNextPunchId';
 
 export function definePunchRegion(captureId: string, punchInBeat: number, punchOutBeat: number): void {

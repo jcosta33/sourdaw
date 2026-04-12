@@ -13,18 +13,15 @@ export type ArrangementSection = {
     color: string;
 };
 
-let nextMarkerId = 1;
-let nextSectionId = 1;
-
 export const createMarker = (beat: number, name: string): Marker => ({
-    id: `marker-${nextMarkerId++}`,
+    id: `marker-${crypto.randomUUID().slice(0, 8)}`,
     beat,
     name,
     color: 'oklch(0.40 0.07 200)',
 });
 
 export const createSection = (startBeat: number, endBeat: number, name: string): ArrangementSection => ({
-    id: `section-${nextSectionId++}`,
+    id: `section-${crypto.randomUUID().slice(0, 8)}`,
     startBeat,
     endBeat,
     name,

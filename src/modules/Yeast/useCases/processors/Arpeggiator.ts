@@ -13,7 +13,8 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type MidiProcessor, type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
 import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,8 +36,7 @@ type OctaveDirection = 'up' | 'down' | 'upDown';
 
 // ── Arpeggiator ──────────────────────────────────────────────────────────────
 
-export class Arpeggiator implements MidiProcessor {
-    readonly id: string;
+export class Arpeggiator extends BaseMidiProcessor {
     readonly name = 'Arpeggiator';
 
     // Parameters
@@ -51,8 +51,6 @@ export class Arpeggiator implements MidiProcessor {
     private latchEnabled = false;
     private restartMode: RestartMode = 'restartOnNote';
     private pattern: ArpStep[] = createDefaultPattern(8);
-    private bypassed = false;
-
     // State
     private held: HeldNote[] = [];
     private latched: HeldNote[] = [];
@@ -64,7 +62,7 @@ export class Arpeggiator implements MidiProcessor {
     private rngState = 0xdead;
 
     constructor(id?: string) {
-        this.id = id ?? `arp-${Date.now()}`;
+        super(id ?? `arp-${Date.now()}`);
     }
 
     // ── MidiProcessor interface ──────────────────────────────────────────
@@ -94,13 +92,25 @@ export class Arpeggiator implements MidiProcessor {
         }
 
         // Advance arp steps within the current block time range
-        if (!transport.isPlaying) return;
+        if (!transport.isPlaying) {
+            return;
+        }
 
         const stepLenSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
-        const blockEnd =
-            input.length > 0
-                ? Math.max(...input.map((e) => e.timeSamples)) + 128
-                : transport.ppqPosition * samplesPerBeat(transport) + 128;
+        // Audio-thread: avoid allocation from .map() + spread into Math.max
+        let blockEnd: number;
+        if (input.length > 0) {
+            let maxTime = input[0]!.timeSamples;
+            for (let i = 1; i < input.length; i++) {
+                const t = input[i]!.timeSamples;
+                if (t > maxTime) {
+                    maxTime = t;
+                }
+            }
+            blockEnd = maxTime + 128;
+        } else {
+            blockEnd = transport.ppqPosition * samplesPerBeat(transport) + 128;
+        }
 
         // Initialize lastStepTime if needed
         if (this.lastStepTimeSamples === -Infinity) {
@@ -227,16 +237,6 @@ export class Arpeggiator implements MidiProcessor {
         this.scheduled.clear();
     }
 
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     /** Set the custom arp pattern (for pattern mode). */
     setPattern(steps: ArpStep[]): void {
         this.pattern = steps;
@@ -294,19 +294,27 @@ export class Arpeggiator implements MidiProcessor {
 
     private addHeldNote(channel: number, note: number, velocity: number): void {
         // Avoid duplicates
-        if (this.held.some((h) => h.channel === channel && h.note === note)) return;
+        if (this.held.some((h) => h.channel === channel && h.note === note)) {
+            return;
+        }
 
         this.pressCounter++;
         const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter };
         this.held.push(hn);
 
         if (this.latchEnabled) {
+            // Audio-thread note: shallow copy of small held-notes array (typically <12 items).
+            // Low-impact allocation — pre-allocated ring buffer not warranted for this size.
             this.latched = [...this.held];
         }
     }
 
     private removeHeldNote(channel: number, note: number): void {
-        this.held = this.held.filter((h) => !(h.channel === channel && h.note === note));
+        // Audio-thread: in-place removal avoids allocating a new array
+        const idx = this.held.findIndex((h) => h.channel === channel && h.note === note);
+        if (idx !== -1) {
+            this.held.splice(idx, 1);
+        }
     }
 
     private getEffectivePool(): HeldNote[] {
@@ -317,18 +325,20 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private expandOctaves(pool: HeldNote[]): HeldNote[] {
-        if (this.octaveRange <= 1) return pool;
+        if (this.octaveRange <= 1) {
+            return pool;
+        }
 
         const expanded: HeldNote[] = [];
         const octaves: number[] = [];
 
         if (this.octaveDirection === 'up') {
-            for (let o = 0; o < this.octaveRange; o++) octaves.push(o);
+            for (let o = 0; o < this.octaveRange; o++) {octaves.push(o);}
         } else if (this.octaveDirection === 'down') {
-            for (let o = 0; o > -this.octaveRange; o--) octaves.push(o);
+            for (let o = 0; o > -this.octaveRange; o--) {octaves.push(o);}
         } else {
-            for (let o = 0; o < this.octaveRange; o++) octaves.push(o);
-            for (let o = this.octaveRange - 2; o > 0; o--) octaves.push(o);
+            for (let o = 0; o < this.octaveRange; o++) {octaves.push(o);}
+            for (let o = this.octaveRange - 2; o > 0; o--) {octaves.push(o);}
         }
 
         for (const oct of octaves) {
@@ -344,7 +354,9 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private selectStepNotes(pool: HeldNote[]): HeldNote[] {
-        if (pool.length === 0) return [];
+        if (pool.length === 0) {
+            return [];
+        }
 
         // Sort pool by pitch for Up/Down modes, by press order for Order mode
         const byPitch = [...pool].sort((a, b) => a.note - b.note);
@@ -380,14 +392,18 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private reflectedIndex(step: number, len: number): number {
-        if (len <= 1) return 0;
+        if (len <= 1) {
+            return 0;
+        }
         const cycle = (len - 1) * 2;
         const pos = step % cycle;
         return pos < len ? pos : cycle - pos;
     }
 
     private advanceStep(poolSize: number): void {
-        if (poolSize === 0) return;
+        if (poolSize === 0) {
+            return;
+        }
         this.stepIndex++;
     }
 
@@ -416,13 +432,20 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private expireNotes(output: MidiEvent[], now: number): void {
-        const expired = this.activeGenerated.filter((n) => n.offTimeSamples <= now);
-        for (const n of expired) {
-            output.push({
-                timeSamples: n.offTimeSamples,
-                kind: { type: 'noteOff', channel: n.channel, note: n.note },
-            });
+        // Audio-thread: in-place removal avoids two .filter() allocations
+        let writeIdx = 0;
+        for (let i = 0; i < this.activeGenerated.length; i++) {
+            const n = this.activeGenerated[i]!;
+            if (n.offTimeSamples <= now) {
+                output.push({
+                    timeSamples: n.offTimeSamples,
+                    kind: { type: 'noteOff', channel: n.channel, note: n.note },
+                });
+            } else {
+                this.activeGenerated[writeIdx] = n;
+                writeIdx++;
+            }
         }
-        this.activeGenerated = this.activeGenerated.filter((n) => n.offTimeSamples > now);
+        this.activeGenerated.length = writeIdx;
     }
 }

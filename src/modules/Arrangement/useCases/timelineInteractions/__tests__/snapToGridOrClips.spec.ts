@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { snapToGridOrClips } from '../snapToGridOrClips';
 
 let mockTrackValue: any = null;
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: { get value() { return mockTrackValue; } }
 }));
 

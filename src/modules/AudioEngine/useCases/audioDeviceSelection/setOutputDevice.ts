@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
+import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { audioDeviceStore } from './helpers';
 
 export const setOutputDevice = inject({ logger })(

@@ -1,11 +1,18 @@
 import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { audioToMidi as runAudioToMidiConversion } from '#/modules/Arrangement/useCases';
 
 export const handleAudioToMidiAiMidi = createHandler<'audioToMidi'>({
     execute: async (a) => {
-        await runAudioToMidiConversion(a.payload.clipId);
-        logger.info(`[Analysis] Audio-to-MIDI mapped for clip ${a.payload.clipId}`);
+        try {
+            await runAudioToMidiConversion(a.payload.clipId);
+            logger.info(`[Analysis] Audio-to-MIDI mapped for clip ${a.payload.clipId}`);
+        } catch (error) {
+            logger.warn(`[Audio AI] Audio-to-MIDI conversion failed: ${String(error)}`);
+            notifyUser(`Audio-to-MIDI conversion failed: ${String(error)}`, 'error');
+            throw error;
+        }
     },
     describe: () => ({ label: 'Convert audio to MIDI' }),
     undoable: true,

@@ -28,24 +28,32 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
         }
 
         let rafId = 0;
+        // Reused across frames — reallocated only if frequencyBinCount changes.
+        let data: Float32Array<ArrayBuffer> | null = null;
+        let left: Float32Array<ArrayBuffer> | null = null;
+        let right: Float32Array<ArrayBuffer> | null = null;
 
         const draw = (): void => {
             const analyser = getMasterAnalyser();
-            const data = new Float32Array(analyser.frequencyBinCount);
+            const binCount = analyser.frequencyBinCount;
+            if (!data || data.length !== binCount) {
+                data = new Float32Array(binCount);
+                const halfLen = Math.floor(binCount / 2);
+                left = new Float32Array(halfLen);
+                right = new Float32Array(halfLen);
+            }
             analyser.getFloatTimeDomainData(data);
 
             // Split into pseudo L/R (AnalyserNode is mono sum — for true stereo,
             // the engine would need a ChannelSplitter. Here we approximate by
             // treating odd/even samples as L/R, which works for interleaved sources)
             const halfLen = Math.floor(data.length / 2);
-            const left = new Float32Array(halfLen);
-            const right = new Float32Array(halfLen);
             for (let i = 0; i < halfLen; i++) {
-                left[i] = data[i * 2]!;
-                right[i] = data[i * 2 + 1]!;
+                left![i] = data[i * 2]!;
+                right![i] = data[i * 2 + 1]!;
             }
 
-            const correlation = meterRef.current.update(left, right);
+            const correlation = meterRef.current.update(left!, right!);
 
             // Draw
             ctx.clearRect(0, 0, width, height);

@@ -1,11 +1,11 @@
 import { createEventBus } from '#/infra/events/createEventBus';
 import { logger } from '#/infra/logger/appLogger';
 
-import { type TrackAddedPayload } from '#/modules/Arrangement/events/TrackAddedEvent';
-import { type TrackRemovedPayload } from '#/modules/Arrangement/events/TrackRemovedEvent';
-import { type AudioDeviceLoadedPayload } from '#/modules/AudioEngine/events/AudioDeviceLoadedEvent';
+import { type TrackAddedPayload, type TrackRemovedPayload } from '#/modules/Arrangement/events';
+import { type AudioDeviceLoadedPayload } from '#/modules/AudioEngine/events';
 import {
     type ShowDevicePanelPayload,
+    type ShowDevicePanelGenericPayload,
     type VoidPayload,
     type NotifyPayload,
     type ZoomToSelectionPayload,
@@ -15,7 +15,7 @@ import {
     type MidiNoteOnPayload,
     type MidiNoteOffPayload,
     type MidiPedalCcPayload,
-} from '#/modules/Workspace/events/WorkspaceEvents';
+} from '#/modules/Workspace/events';
 
 export type AppEvents = {
     // Domain events
@@ -23,7 +23,10 @@ export type AppEvents = {
     'track.removed': TrackRemovedPayload;
     'audioDevice.loaded': AudioDeviceLoadedPayload;
 
-    // Panel toggles
+    // Panel toggles (generic — prefer this over per-device events)
+    'panel.showDevice': ShowDevicePanelGenericPayload;
+
+    // Panel toggles (per-device — deprecated, use 'panel.showDevice' instead)
     'panel.showFermenter': ShowDevicePanelPayload;
     'panel.showToaster': ShowDevicePanelPayload;
     'panel.showLevain': ShowDevicePanelPayload;

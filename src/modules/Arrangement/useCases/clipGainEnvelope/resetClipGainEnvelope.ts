@@ -1,4 +1,4 @@
-import { gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
 
 export function resetClipGainEnvelope(clipId: string): void {
     gainEnvelopeStore.set(clipId, {

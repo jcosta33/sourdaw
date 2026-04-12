@@ -52,7 +52,7 @@ export async function requestMicPermission(): Promise<boolean> {
                 autoGainControl: false,
             },
         });
-        for (const t of stream.getTracks()) t.stop();
+        for (const t of stream.getTracks()) {t.stop();}
         audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: true });
         return true;
     } catch {
@@ -196,7 +196,7 @@ function cleanupNodes(): void {
         sourceNode = null;
     }
     if (mediaStream) {
-        for (const t of mediaStream.getTracks()) t.stop();
+        for (const t of mediaStream.getTracks()) {t.stop();}
         mediaStream = null;
     }
 }

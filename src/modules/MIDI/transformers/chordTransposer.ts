@@ -6,8 +6,8 @@
  * - Non-chord tones shift by the root difference (chromatic offset)
  */
 
-import { type ChordType, CHORD_TYPES } from '#/modules/MIDI/models/ChordTypes';
-import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
+import { type ChordType, CHORD_TYPES } from '../models/ChordTypes';
+import { type ChordEvent } from '../models/ChordEvent';
 
 export function transposeNoteToChord(
     pitch: number,

@@ -49,8 +49,8 @@ vi.mock('#/modules/AiRuntime/models/midiPatternLibrary', () => ({
             },
         ];
         return templates.filter((t) => {
-            if (filters.category && t.category !== filters.category) return false;
-            if (filters.query && !t.name.includes(filters.query)) return false;
+            if (filters.category && t.category !== filters.category) {return false;}
+            if (filters.query && !t.name.includes(filters.query)) {return false;}
             return true;
         });
     }),

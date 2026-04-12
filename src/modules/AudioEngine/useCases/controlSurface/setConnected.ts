@@ -1,4 +1,4 @@
-import { controlSurfaceStore } from '#/modules/AudioEngine/stores/controlSurface';
+import { controlSurfaceStore } from '../../stores/controlSurface';
 
 export function setConnected(connected: boolean): void {
     const state = controlSurfaceStore.value;

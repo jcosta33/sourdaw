@@ -1,8 +1,9 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { updateTrack } from '../repositories/track/updateTrack';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { type Clip } from '#/modules/Arrangement/stores/trackStore';
+import { type Clip } from '../stores/trackStore';
 
+// TODO: _minSilenceBeats is accepted but not yet implemented — silent gaps shorter than this value should be merged with adjacent sound regions
 export function stripSilence(clipId: string, thresholdDb: number = -40, _minSilenceBeats: number = 0.5): void {
     const state = getTrackState();
     if (!state) {

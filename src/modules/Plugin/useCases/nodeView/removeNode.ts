@@ -1,4 +1,4 @@
-import { nodeViewStore } from '#/modules/Plugin/stores/nodeView';
+import { nodeViewStore } from '../../stores/nodeView';
 
 /** Removes a node and all its connected edges. */
 export function removeNode(id: string): void {

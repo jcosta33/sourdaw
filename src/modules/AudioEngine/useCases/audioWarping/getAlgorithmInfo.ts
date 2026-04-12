@@ -1,4 +1,4 @@
-import { type WarpAlgorithm } from '#/modules/AudioEngine/stores/audioWarp';
+import { type WarpAlgorithm } from '../../stores/audioWarp';
 
 /**
  * Get the algorithm quality characteristics.

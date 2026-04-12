@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '../../stores/automationStore';
 import { rdpSimplify } from '#/modules/Arrangement/useCases';
 
 export const thinAutomationPointsDependencies = {

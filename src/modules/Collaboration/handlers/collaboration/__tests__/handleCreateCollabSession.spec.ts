@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleCreateCollabSession } from '../handleCreateCollabSession';
 
-vi.mock('#/modules/Collaboration/useCases/collaboration/sessionManagement', () => ({
+vi.mock('../../../useCases/collaboration/sessionManagement', () => ({
     createSession: vi.fn(),
     joinSession: vi.fn(),
     leaveSession: vi.fn(),
 }));
 
-import { createSession } from '#/modules/Collaboration/useCases/collaboration/sessionManagement';
+import { createSession } from '../../../useCases/collaboration/sessionManagement';
 
 describe('collaborationHandlers', () => {
     beforeEach(() => {

@@ -1,4 +1,4 @@
-import { adjustmentLayerStore } from '#/modules/Arrangement/stores/adjustmentLayer';
+import { adjustmentLayerStore } from '../../stores/adjustmentLayer';
 
 export function removeAdjustmentRegion(layerIdVal: string, regionIdVal: string): void {
     const state = adjustmentLayerStore.value;

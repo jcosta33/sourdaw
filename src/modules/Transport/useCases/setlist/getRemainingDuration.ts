@@ -1,4 +1,4 @@
-import { setlistStore } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore } from '../../stores/setlistStore';
 
 export function getRemainingDuration(): number {
     const state = setlistStore.value;

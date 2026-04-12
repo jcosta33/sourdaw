@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type SetlistState } from '#/modules/Transport/stores/setlistStore';
+import { type SetlistState } from '../../../stores/setlistStore';
 import { setCountIn } from '../setCountIn';
 
 const mockSetlistStore = vi.hoisted(() => ({
@@ -7,7 +7,7 @@ const mockSetlistStore = vi.hoisted(() => ({
     set: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/stores/setlistStore', () => ({
+vi.mock('../../../stores/setlistStore', () => ({
     setlistStore: mockSetlistStore,
 }));
 

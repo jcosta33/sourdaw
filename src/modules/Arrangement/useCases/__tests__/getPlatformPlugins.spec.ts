@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { type PluginDescriptor } from '#/modules/Arrangement/models/DeviceParameter';
+import { type PluginDescriptor } from '../../models/DeviceParameter';
 import { getPlatformPlugins } from '../getPlatformPlugins';
 import { getPlatformPlugins as repoGetPlatformPlugins } from '../../repositories/getPlatformPlugins';
 

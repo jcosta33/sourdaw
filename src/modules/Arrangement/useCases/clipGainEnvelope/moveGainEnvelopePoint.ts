@@ -1,4 +1,4 @@
-import { gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
 
 export function moveGainEnvelopePoint(clipId: string, pointId: string, beatOffset: number, gainDb: number): void {
     const env = gainEnvelopeStore.get(clipId);

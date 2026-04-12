@@ -1,4 +1,6 @@
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { getTransportState } from '../../repositories/transport/getTransportState';
+import { pausePlayback } from './pausePlayback';
+import { startPlayback } from './startPlayback';
 
 export function togglePlayback(): void {
     const state = getTransportState();
@@ -7,9 +9,8 @@ export function togglePlayback(): void {
     }
 
     if (state.isPlaying) {
-        // Dynamic import to avoid circular dependency
-        import('./pausePlayback').then(({ pausePlayback }) => pausePlayback());
+        pausePlayback();
     } else {
-        import('./startPlayback').then(({ startPlayback }) => startPlayback());
+        startPlayback();
     }
 }

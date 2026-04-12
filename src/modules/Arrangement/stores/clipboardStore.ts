@@ -2,7 +2,8 @@
  * In-memory clipboard state for clip and note copy/paste operations.
  */
 
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { createStore } from '#/infra/store/createStore';
+import { type Clip } from '../models/Track';
 import { type MidiNote } from '../models/MidiNoteViewTypes';
 
 export type ClipboardEntry = {
@@ -15,13 +16,30 @@ export type NoteClipboardEntry = {
     notes: MidiNote[];
 };
 
-export let clipClipboard: ClipboardEntry[] = [];
-export let noteClipboard: NoteClipboardEntry | null = null;
+export type ClipboardState = {
+    clipClipboard: ClipboardEntry[];
+    noteClipboard: NoteClipboardEntry | null;
+};
+
+export const clipboardStore = createStore<ClipboardState>({
+    initialData: {
+        clipClipboard: [],
+        noteClipboard: null,
+    },
+});
 
 export function setClipClipboard(entries: ClipboardEntry[]): void {
-    clipClipboard = entries;
+    const current = clipboardStore.value;
+    clipboardStore.set({
+        clipClipboard: entries,
+        noteClipboard: current?.noteClipboard ?? null,
+    });
 }
 
 export function setNoteClipboard(entry: NoteClipboardEntry | null): void {
-    noteClipboard = entry;
+    const current = clipboardStore.value;
+    clipboardStore.set({
+        clipClipboard: current?.clipClipboard ?? [],
+        noteClipboard: entry,
+    });
 }

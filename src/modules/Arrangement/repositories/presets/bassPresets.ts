@@ -1,4 +1,4 @@
-import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type SoundPreset } from '../../models/SoundPreset';
 import { synth } from './presetHelpers/synth';
 import { comp } from './presetHelpers/comp';
 import { delay } from './presetHelpers/delay';

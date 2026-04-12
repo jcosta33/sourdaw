@@ -15,5 +15,16 @@ export function createTremolo(ctx: BaseAudioContext): OfflineDeviceNode {
     lfo.connect(lfoDepth);
     lfoDepth.connect(tremGain.gain as unknown as AudioNode);
     lfo.start(0);
-    return { inputNode: input, outputNode: tremGain, nodes: [input, tremGain, lfo, lfoDepth] };
+    return {
+        inputNode: input,
+        outputNode: tremGain,
+        nodes: [input, tremGain, lfo, lfoDepth],
+        namedNodes: { input, tremGain, lfo, lfoDepth },
+        dispose() {
+            lfo.stop();
+            for (const n of [input, tremGain, lfo, lfoDepth]) {
+                n.disconnect();
+            }
+        },
+    };
 }

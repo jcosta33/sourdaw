@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type ArticulationType } from '../../models/LevainPatch';
 import type { SampleLodConfig } from './helpers';
 import { fetchAndDecode } from './helpers';
@@ -139,7 +140,7 @@ export async function loadInstrumentFromManifest(
             sampleIdMap.set(zone.file, nextSampleId);
             nextSampleId++;
         } catch (err) {
-            console.warn(`[Levain] Failed to load sample ${zone.file}:`, err);
+            logger.warn(`[Levain] Failed to load sample ${zone.file}:`, err);
             // DO NOT abort the whole instrument if one file 404s or is bad.
         } finally {
             loaded++;

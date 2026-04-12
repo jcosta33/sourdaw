@@ -1,7 +1,7 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateTrack } from '../../repositories/track/updateTrack';
 import { setNotesForClip } from '#/modules/MIDI/useCases';
-import { type Clip } from '#/modules/Arrangement/stores/trackStore';
+import { type Clip } from '../../stores/trackStore';
 
 export function createAlternativeClips(
     originalClipId: string,

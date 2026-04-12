@@ -1,5 +1,5 @@
-import { updateTrackState } from '#/modules/Arrangement/repositories/track/updateTrackState';
-import { getTrackById } from '#/modules/Arrangement/repositories/track/getTrackById';
+import { updateTrackState } from '../../repositories/track/updateTrackState';
+import { getTrackById } from '../../repositories/track/getTrackById';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
 
 export function selectTrack(trackId: string | null): void {

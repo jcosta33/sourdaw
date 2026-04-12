@@ -1,1 +1,1 @@
-// no public stores
+export { defaultToasterState, toasterStore } from './toasterStore';

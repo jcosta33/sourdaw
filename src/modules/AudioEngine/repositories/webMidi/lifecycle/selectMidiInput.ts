@@ -1,18 +1,19 @@
-import { midiAccess, tauriMode, setState } from '../state';
+import { getMidiAccess, getTauriMode, setState } from '../state';
 import { attachInput, selectMidiInputTauri } from './helpers';
 
 export function selectMidiInput(deviceId: string): void {
-    if (tauriMode) {
+    if (getTauriMode()) {
         selectMidiInputTauri(Number(deviceId));
         setState({ selectedInputId: deviceId });
         return;
     }
 
-    if (!midiAccess) {
+    const access = getMidiAccess();
+    if (!access) {
         return;
     }
 
-    const input = midiAccess.inputs.get(deviceId);
+    const input = access.inputs.get(deviceId);
     if (!input) {
         return;
     }

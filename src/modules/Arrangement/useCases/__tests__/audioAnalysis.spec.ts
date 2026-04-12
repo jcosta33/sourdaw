@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { addTrack } from '../addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { addClip } from '../clip/addClip';
 import { audioToMidi } from '../audioAnalysis/audioToMidi';
 import { detectKey } from '../audioAnalysis/detectKey';
 import * as helpers from '../audioAnalysis/helpers';
@@ -19,7 +19,7 @@ vi.mock('../addTrack', () => ({
     addTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
+vi.mock('../clip/addClip', () => ({
     addClip: vi.fn(),
 }));
 

@@ -30,7 +30,7 @@ vi.mock('#/modules/MIDI/stores/midiStore', () => ({
         set: vi.fn(),
     },
 }));
-vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
+vi.mock('../../stores/takeLaneStore', () => ({
     takeLaneStore: {
         value: { lanes: [] },
         set: vi.fn(),

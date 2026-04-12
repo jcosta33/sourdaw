@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ResizeHandle } from '../ResizeHandle';
 
 // Mock external dependencies
-vi.mock('#/modules/Arrangement/useCases/toggleTrackState/setTrackHeight', () => ({
+vi.mock('../../../../useCases/toggleTrackState/setTrackHeight', () => ({
     setTrackHeight: vi.fn(),
 }));
 

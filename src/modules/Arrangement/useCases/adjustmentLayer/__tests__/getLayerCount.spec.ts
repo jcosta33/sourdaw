@@ -4,7 +4,7 @@ import { getLayerCount } from '../getLayerCount';
 const mockSet = vi.fn();
 let mockValue: any = null;
 
-vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
+vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
         get value() { return mockValue; },
         set: (v: any) => mockSet(v)

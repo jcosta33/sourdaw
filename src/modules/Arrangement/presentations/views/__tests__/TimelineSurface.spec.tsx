@@ -80,7 +80,7 @@ vi.mock('#/modules/Automation/stores/automationStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         value: { tracks: [], selectedTrackId: null },
         subscribe: vi.fn(() => vi.fn()),
@@ -88,7 +88,7 @@ vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
+vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
         value: { lanes: [] },
         subscribe: vi.fn(() => vi.fn()),
@@ -124,7 +124,7 @@ vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
+vi.mock('../../../stores/markerStore', () => ({
     markerStore: {
         value: { markers: [] },
         subscribe: vi.fn(() => vi.fn()),

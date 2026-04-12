@@ -1,4 +1,4 @@
-import { type MidiEffect } from '#/modules/Plugin/models/MidiEffectTypes';
+import { type MidiEffect } from '../../../models/MidiEffectTypes';
 
 export function createNoteQuantizer(gridBeats = 0.25, strength = 1.0): MidiEffect {
     return {

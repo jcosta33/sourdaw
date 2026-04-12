@@ -1,4 +1,4 @@
-import { getVcaGroupsState, setVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
+import { getVcaGroupsState, setVcaGroupsState } from '../../stores/vcaGroupStore';
 
 export const setVcaGainDependencies = {
     getVcaGroupsState,

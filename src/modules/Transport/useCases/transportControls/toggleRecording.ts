@@ -1,5 +1,5 @@
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
-import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
+import { getTransportState } from '../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { getTrackStoreState, updateClip, startRecording, stopRecording } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
@@ -9,7 +9,7 @@ import {
     startAudioRecording,
     stopAudioRecording,
 } from '#/modules/AudioEngine/useCases';
-import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
+import { ensureTrackStrips } from '../ensureTrackStrips';
 import { startPlayback } from './startPlayback';
 
 let activeRecordingClipIds: string[] = [];

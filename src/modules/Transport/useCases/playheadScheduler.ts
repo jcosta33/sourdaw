@@ -19,6 +19,27 @@ import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
 import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
 import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
 
+export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
+
+function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioContext): void {
+    const now = ctx.currentTime;
+    for (const src of sources as SourceWithFade[]) {
+        try {
+            if (src.fadeGainNode) {
+                src.fadeGainNode.gain.cancelScheduledValues(now);
+                src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, now);
+                src.fadeGainNode.gain.linearRampToValueAtTime(0, now + 0.005);
+                src.stop(now + 0.005);
+            } else {
+                src.stop(now + 0.005);
+            }
+        } catch {
+            /* already stopped */
+        }
+    }
+    sources.length = 0;
+}
+
 let timerId: ReturnType<typeof setTimeout> | null = null;
 let lastTickTime = 0;
 let accumulatedPosition = 0;
@@ -90,22 +111,7 @@ export function startPlayheadScheduler(): void {
             lastScheduledBeat = newPosition - 0.0001;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            const nowLoop = ctx.currentTime;
-            for (const src of activeAudioSources as any[]) {
-                try {
-                    if (src.fadeGainNode) {
-                        src.fadeGainNode.gain.cancelScheduledValues(nowLoop);
-                        src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, nowLoop);
-                        src.fadeGainNode.gain.linearRampToValueAtTime(0, nowLoop + 0.005);
-                        src.stop(nowLoop + 0.005);
-                    } else {
-                        src.stop(nowLoop + 0.005);
-                    }
-                } catch {
-                    /* already stopped */
-                }
-            }
-            activeAudioSources.length = 0;
+            stopActiveSources(activeAudioSources, ctx);
             scheduledAudioClips.clear();
             scheduledFrozenTracks.clear();
         }
@@ -128,22 +134,7 @@ export function startPlayheadScheduler(): void {
             lastScheduledBeat = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            const nowJump = ctx.currentTime;
-            for (const src of activeAudioSources as any[]) {
-                try {
-                    if (src.fadeGainNode) {
-                        src.fadeGainNode.gain.cancelScheduledValues(nowJump);
-                        src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, nowJump);
-                        src.fadeGainNode.gain.linearRampToValueAtTime(0, nowJump + 0.005);
-                        src.stop(nowJump + 0.005);
-                    } else {
-                        src.stop(nowJump + 0.005);
-                    }
-                } catch {
-                    /* already stopped */
-                }
-            }
-            activeAudioSources.length = 0;
+            stopActiveSources(activeAudioSources, ctx);
             scheduledAudioClips.clear();
             scheduledFrozenTracks.clear();
         }
@@ -252,21 +243,6 @@ export function stopPlayheadScheduler(): void {
     scheduledAudioClips.clear();
     scheduledFrozenTracks.clear();
     const ctx = getAudioContext();
-    const now = ctx.currentTime;
-    for (const src of activeAudioSources as any[]) {
-        try {
-            if (src.fadeGainNode) {
-                src.fadeGainNode.gain.cancelScheduledValues(now);
-                src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, now);
-                src.fadeGainNode.gain.linearRampToValueAtTime(0, now + 0.005);
-                src.stop(now + 0.005);
-            } else {
-                src.stop(now + 0.005);
-            }
-        } catch {
-            /* already stopped */
-        }
-    }
-    activeAudioSources.length = 0;
+    stopActiveSources(activeAudioSources, ctx);
     stopAllScheduled();
 }

@@ -25,12 +25,14 @@ function runCanvas2DFrame(
     frameRef: { current: number }
 ): void {
     const ctx = canvas.getContext('2d');
-    if (ctx === null) return;
+    if (ctx === null) {
+        return;
+    }
 
     const { width, height } = canvas;
     ctx.clearRect(0, 0, width, height);
 
-    for (let i = 0; i < NUM_STRINGS; i += 1) states[i]!.amplitude *= DECAY;
+    for (let i = 0; i < NUM_STRINGS; i += 1) {states[i]!.amplitude *= DECAY;}
     for (const [midi, velocity] of activeNotes) {
         const key = midi - 21;
         if (key >= 0 && key < NUM_STRINGS) {
@@ -68,8 +70,11 @@ function runCanvas2DFrame(
         for (let x = 0; x <= width; x += 2) {
             const t = x / width;
             const y = y0 + Math.sin(t * s.frequency * Math.PI * 2 + phaseAdv) * amp * (1 - t * 0.4);
-            if (x === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (x === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.stroke();
     }
@@ -94,15 +99,21 @@ export const StringVibrationView = ({ activeNotes, className }: StringVibrationV
     useEffect(() => {
         const container = containerRef.current;
         const canvas = canvasRef.current;
-        if (container === null || canvas === null) return;
+        if (container === null || canvas === null) {
+            return;
+        }
 
         // Match canvas internal resolution to its CSS layout size.
         const observer = new ResizeObserver((entries) => {
             const { width, height } = entries[0]!.contentRect;
             const w = Math.round(width * devicePixelRatio);
             const h = Math.round(height * devicePixelRatio);
-            if (canvas.width !== w) canvas.width = w;
-            if (canvas.height !== h) canvas.height = h;
+            if (canvas.width !== w) {
+                canvas.width = w;
+            }
+            if (canvas.height !== h) {
+                canvas.height = h;
+            }
         });
         observer.observe(container);
 
@@ -111,7 +122,9 @@ export const StringVibrationView = ({ activeNotes, className }: StringVibrationV
         let cancelled = false;
 
         const render = (): void => {
-            if (cancelled) return;
+            if (cancelled) {
+                return;
+            }
             runCanvas2DFrame(canvas, notesRef.current, states, fRef);
             requestAnimationFrame(render);
         };

@@ -318,13 +318,13 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                         while (loopOffset < clipDuration) {
                             for (const note of clip.midiNotes) {
-                                if (drawnNotes >= MAX_NOTES_PER_CLIP) break;
+                                if (drawnNotes >= MAX_NOTES_PER_CLIP) {break;}
 
                                 // note.startBeat is absolute (timeline position).
                                 // Convert to clip-relative, then add loop offset.
                                 const noteRelative = note.startBeat - clip.startBeat;
                                 const relBeat = noteRelative + loopOffset;
-                                if (relBeat < 0 || relBeat >= clipDuration) continue;
+                                if (relBeat < 0 || relBeat >= clipDuration) {continue;}
 
                                 const nx1 = beatToX(clip.startBeat + relBeat);
                                 const nx2 = beatToX(clip.startBeat + relBeat + Math.max(note.duration, 0.125));
@@ -342,9 +342,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 );
                                 drawnNotes++;
                             }
-                            if (drawnNotes >= MAX_NOTES_PER_CLIP) break;
+                            if (drawnNotes >= MAX_NOTES_PER_CLIP) {break;}
                             loopOffset += loopLen;
-                            if (!clip.loopEnabled || loopLen <= 0) break;
+                            if (!clip.loopEnabled || loopLen <= 0) {break;}
                         }
                     }
 

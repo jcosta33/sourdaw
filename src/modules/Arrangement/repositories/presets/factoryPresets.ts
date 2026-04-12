@@ -8,7 +8,7 @@
  * To add a new preset, add it to the appropriate category file under ./presets/.
  */
 
-import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type SoundPreset } from '../../models/SoundPreset';
 
 // ── Category sub-modules ───────────────────────────────────────────────────
 import { bassPresets } from './bassPresets';
@@ -25,7 +25,7 @@ import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases';
 
 // ── Drum Kit presets ────────────────────────────────────────────────────────
 // Small enough to stay inline here (< 60 lines).
-import { type DevicePreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type DevicePreset } from '../../models/SoundPreset';
 import { comp } from './presetHelpers/comp';
 import { eq } from './presetHelpers/eq';
 import { reverb } from './presetHelpers/reverb';

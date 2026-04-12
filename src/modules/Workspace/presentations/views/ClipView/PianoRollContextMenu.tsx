@@ -3,6 +3,7 @@
  * quantize, transpose, humanize, strum, AI, and groove operations.
  */
 import { type ReactElement, useRef } from 'react';
+import { logger } from '#/infra/logger/appLogger';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
@@ -72,7 +73,7 @@ export const PianoRollContextMenu = ({
                 }
             }
         } catch {
-            console.error('AI Generation requires native backend');
+            logger.warn('AI Generation requires native backend');
         }
     };
 
@@ -143,10 +144,10 @@ export const PianoRollContextMenu = ({
                             pushUndoEntry(
                                 `Quantize notes (${g === 1 ? '1/1' : g === 0.5 ? '1/2' : g === 0.25 ? '1/4' : '1/8'})`,
                                 () => {
-                                    for (const n of before) moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                                    for (const n of before) {moveMidiNote(clipId, n.id, n.pitch, n.startBeat);}
                                 },
                                 () => {
-                                    for (const n of after) moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                                    for (const n of after) {moveMidiNote(clipId, n.id, n.pitch, n.startBeat);}
                                 }
                             );
                         })}
@@ -336,10 +337,10 @@ export const PianoRollContextMenu = ({
                             `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
                             () => {
                                 for (const n of deletedNotes)
-                                    addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
+                                    {addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);}
                             },
                             () => {
-                                for (const n of deletedNotes) removeMidiNote(clipId, n.id);
+                                for (const n of deletedNotes) {removeMidiNote(clipId, n.id);}
                             }
                         );
                     }

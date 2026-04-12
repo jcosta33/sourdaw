@@ -1,7 +1,7 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { type Clip } from '#/modules/Arrangement/stores/trackStore';
-import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateTrack } from '../../repositories/track/updateTrack';
+import { type Clip } from '../../stores/trackStore';
+import { getNextClipId } from '../../repositories/clipIdCounter';
 
 export function addClip(
     input: {

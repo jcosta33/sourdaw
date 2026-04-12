@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type PunchRecordingState } from '#/modules/Transport/stores/punchRecordingStore';
+import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { stopBackgroundCapture } from '../stopBackgroundCapture';
 
 const mockPunchRecordingStore = vi.hoisted(() => ({
@@ -7,7 +7,7 @@ const mockPunchRecordingStore = vi.hoisted(() => ({
     set: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/stores/punchRecordingStore', () => ({
+vi.mock('../../../stores/punchRecordingStore', () => ({
     punchRecordingStore: mockPunchRecordingStore,
 }));
 

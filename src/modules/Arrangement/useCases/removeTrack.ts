@@ -5,7 +5,7 @@ import { getTrackById } from '../repositories/track/getTrackById';
 import { eventBus } from '#/app/registerDependencies';
 import { automationStore } from '#/modules/Automation';
 import { midiStore } from '#/modules/MIDI/stores';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { takeLaneStore } from '../stores/takeLaneStore';
 
 export const removeTrack = inject({ eventBus })(({ eventBus }) =>
     function removeTrack(trackId: string): void {

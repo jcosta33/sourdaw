@@ -1,6 +1,6 @@
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
+import { updateTrack } from '../../repositories/track/updateTrack';
 import { setTrackMute as engineSetTrackMute } from '#/modules/AudioEngine/useCases';
-import { applySoloLogic } from '#/modules/Arrangement/services/applySoloLogic';
+import { applySoloLogic } from '../../services/applySoloLogic';
 
 export function muteTrack(trackId: string, muted: boolean): void {
     updateTrack(trackId, (t) => ({ ...t, muted }));

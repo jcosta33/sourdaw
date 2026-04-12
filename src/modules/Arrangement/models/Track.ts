@@ -1,3 +1,5 @@
+import { TRACK_COLOR_PALETTE } from './colorPalette';
+
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 export type InputMonitoring = 'auto' | 'on' | 'off';
@@ -94,21 +96,6 @@ export type Send = {
     level: number;
     preFader: boolean;
 };
-
-const TRACK_COLOR_PALETTE = [
-    'oklch(0.40 0.08 250)', // deep steel blue
-    'oklch(0.38 0.09 20)', // deep coral
-    'oklch(0.40 0.08 150)', // deep sage green
-    'oklch(0.40 0.08 70)', // deep amber
-    'oklch(0.38 0.08 300)', // deep plum
-    'oklch(0.38 0.08 340)', // deep rose
-    'oklch(0.40 0.07 200)', // deep teal
-    'oklch(0.39 0.08 45)', // deep terracotta
-    'oklch(0.40 0.07 170)', // deep mint
-    'oklch(0.38 0.08 270)', // deep indigo
-    'oklch(0.39 0.07 110)', // deep olive
-    'oklch(0.38 0.09 0)', // deep brick
-] as const;
 
 let trackColorCounter = 0;
 

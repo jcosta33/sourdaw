@@ -8,7 +8,7 @@ import { setSamplerParamThrottled } from './samplerParamBridge/setSamplerParamTh
 
 export function updateVoiceStack(updates: Partial<VoiceStackParams>): void {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
 
     setVoiceStack(updates);
 

@@ -53,27 +53,28 @@ export function loadGlutenPatch(deviceId: string, patch: GlutenPatch): void {
     glutenStore.set({ ...instances, [deviceId]: { ...state, patch } });
 }
 
-export function updateGlutenMeters(
-    deviceId: string,
-    grDb: number,
-    inputDb: number,
-    outputDb: number,
-    crest?: number,
-    phaseCorr?: number,
-    latency?: number
-): void {
+export type GlutenMeterValues = {
+    grDb: number;
+    inputDb: number;
+    outputDb: number;
+    crest?: number;
+    phaseCorr?: number;
+    latency?: number;
+};
+
+export function updateGlutenMeters(deviceId: string, meters: GlutenMeterValues): void {
     const instances = glutenStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_GLUTEN_STATE, patch: { ...DEFAULT_PATCH } };
     glutenStore.set({
         ...instances,
         [deviceId]: {
             ...state,
-            grDb,
-            inputDb,
-            outputDb,
-            crest: crest ?? state.crest,
-            phaseCorr: phaseCorr ?? state.phaseCorr,
-            latency: latency ?? state.latency,
+            grDb: meters.grDb,
+            inputDb: meters.inputDb,
+            outputDb: meters.outputDb,
+            crest: meters.crest ?? state.crest,
+            phaseCorr: meters.phaseCorr ?? state.phaseCorr,
+            latency: meters.latency ?? state.latency,
         },
     });
 }

@@ -4,7 +4,7 @@ import {
     NODE_COLORS,
     type ProcessingNodeType,
     type ProcessingNode,
-} from '#/modules/Plugin/stores/nodeView';
+} from '../../stores/nodeView';
 
 export function addNode(
     type: ProcessingNodeType,

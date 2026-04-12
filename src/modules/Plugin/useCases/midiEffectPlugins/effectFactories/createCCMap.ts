@@ -1,4 +1,4 @@
-import { type MidiEffect } from '#/modules/Plugin/models/MidiEffectTypes';
+import { type MidiEffect } from '../../../models/MidiEffectTypes';
 
 /** Placeholder — CC mapping operates on CC events, not notes. */
 export function createCCMap(inputCC: number, outputCC: number, _invert = false): MidiEffect {

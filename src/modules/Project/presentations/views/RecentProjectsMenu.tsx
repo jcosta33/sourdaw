@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
 import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
 import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
-import { type TemplateCategory } from '#/modules/Project/models/ProjectTemplateTypes';
+import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { newProject } from '../../useCases/projectPersistence/newProject';
 import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';

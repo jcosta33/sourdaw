@@ -1,4 +1,4 @@
-import { extensionStore, type ExtensionManifest, type InstalledExtension } from '#/modules/Extension/stores/extension';
+import { extensionStore, type ExtensionManifest, type InstalledExtension } from '../../stores/extension';
 
 export function installExtension(manifest: ExtensionManifest): void {
     const state = extensionStore.value;

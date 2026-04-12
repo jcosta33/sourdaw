@@ -1,4 +1,4 @@
-import { setlistStore } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore } from '../../stores/setlistStore';
 
 export function toggleAutoAdvance(): void {
     const state = setlistStore.value;

@@ -1,1 +1,1 @@
-// no public stores
+export { fermenterStore } from './fermenterStore';

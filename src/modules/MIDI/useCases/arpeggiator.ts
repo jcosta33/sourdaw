@@ -1,5 +1,5 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { type MidiNote } from '#/modules/MIDI/models/MidiNote';
+import { midiStore } from '../stores/midiStore';
+import { type MidiNote } from '../models/MidiNote';
 
 export type ArpPattern = 'up' | 'down' | 'updown' | 'downup' | 'random';
 export type ArpRate = 4 | 8 | 16 | 32;
@@ -72,8 +72,13 @@ export function arpeggiate(
         return;
     }
 
-    const minBeat = Math.min(...notes.map((n) => n.startBeat));
-    const maxBeat = Math.max(...notes.map((n) => n.startBeat + n.duration));
+    let minBeat = Infinity;
+    let maxBeat = -Infinity;
+    for (const n of notes) {
+        if (n.startBeat < minBeat) { minBeat = n.startBeat; }
+        const end = n.startBeat + n.duration;
+        if (end > maxBeat) { maxBeat = end; }
+    }
 
     const stepSize = 4 / rate;
     const gateDuration = stepSize * (gatePercent / 100);

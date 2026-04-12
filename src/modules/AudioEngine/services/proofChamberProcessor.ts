@@ -29,7 +29,7 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) return;
+                    if (this._ready) {return;}
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
@@ -55,7 +55,7 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
 
     _passthrough(input, output) {
         for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-            if (input[ch] && output[ch]) output[ch].set(input[ch]);
+            if (input[ch] && output[ch]) {output[ch].set(input[ch]);}
         }
     }
 
@@ -64,11 +64,11 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         const output = outputs[0];
 
         if (!this._ready || this._bypassed || this._faulted) {
-            if (input && output) this._passthrough(input, output);
+            if (input && output) {this._passthrough(input, output);}
             return true;
         }
 
-        if (!input || input.length < 2 || !output || output.length < 2) return true;
+        if (!input || input.length < 2 || !output || output.length < 2) {return true;}
 
         const frames = input[0].length;
 

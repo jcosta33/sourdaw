@@ -4,7 +4,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -14,6 +14,7 @@ const SCALE_PATTERNS: Record<string, number[]> = {
     pentatonic: [0, 2, 4, 7, 9],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
+const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
 type HarmonyVoice = {
     degrees: number;
@@ -22,8 +23,7 @@ type HarmonyVoice = {
     enabled: boolean;
 };
 
-export class Harmonizer implements MidiProcessor {
-    readonly id: string;
+export class Harmonizer extends BaseMidiProcessor {
     readonly name = 'Harmonizer';
 
     private root = 0;
@@ -33,12 +33,11 @@ export class Harmonizer implements MidiProcessor {
         { degrees: 4, velocityOffset: -15, timeOffsetSamples: 0, enabled: false }, // 5th
         { degrees: -1, velocityOffset: -20, timeOffsetSamples: 0, enabled: false }, // below
     ];
-    private bypassed = false;
     // Track generated harmony notes for proper Note Off
     private generatedMap = new Map<string, number[]>(); // "ch:note" → generated harmony notes
 
     constructor(id?: string) {
-        this.id = id ?? `harmonizer-${Date.now()}`;
+        super(id ?? `harmonizer-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -53,10 +52,14 @@ export class Harmonizer implements MidiProcessor {
                 const harmonyNotes: number[] = [];
 
                 for (const voice of this.voices) {
-                    if (!voice.enabled) continue;
+                    if (!voice.enabled) {
+                        continue;
+                    }
 
                     const harmonyNote = this.diatonicTranspose(event.kind.note, voice.degrees, pattern);
-                    if (harmonyNote < 0 || harmonyNote > 127) continue;
+                    if (harmonyNote < 0 || harmonyNote > 127) {
+                        continue;
+                    }
 
                     harmonyNotes.push(harmonyNote);
                     const vel = Math.max(1, Math.min(127, event.kind.velocity + voice.velocityOffset));
@@ -108,52 +111,59 @@ export class Harmonizer implements MidiProcessor {
     reset(): void {
         this.generatedMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'root':
                 this.root = Math.round(value) % 12;
                 break;
             case 'scale': {
-                const names = Object.keys(SCALE_PATTERNS);
-                this.scaleName = names[Math.round(value)] ?? 'major';
+                this.scaleName = SCALE_NAMES[Math.round(value)] ?? 'major';
                 break;
             }
             case 'voice0_degrees':
-                if (this.voices[0]) this.voices[0].degrees = Math.round(value);
+                if (this.voices[0]) {
+                    this.voices[0].degrees = Math.round(value);
+                }
                 break;
             case 'voice1_degrees':
-                if (this.voices[1]) this.voices[1].degrees = Math.round(value);
+                if (this.voices[1]) {
+                    this.voices[1].degrees = Math.round(value);
+                }
                 break;
             case 'voice2_degrees':
-                if (this.voices[2]) this.voices[2].degrees = Math.round(value);
+                if (this.voices[2]) {
+                    this.voices[2].degrees = Math.round(value);
+                }
                 break;
             case 'voice0_enabled':
-                if (this.voices[0]) this.voices[0].enabled = value > 0.5;
+                if (this.voices[0]) {
+                    this.voices[0].enabled = value > 0.5;
+                }
                 break;
             case 'voice1_enabled':
-                if (this.voices[1]) this.voices[1].enabled = value > 0.5;
+                if (this.voices[1]) {
+                    this.voices[1].enabled = value > 0.5;
+                }
                 break;
             case 'voice2_enabled':
-                if (this.voices[2]) this.voices[2].enabled = value > 0.5;
+                if (this.voices[2]) {
+                    this.voices[2].enabled = value > 0.5;
+                }
                 break;
             case 'voice0_vel_offset':
-                if (this.voices[0]) this.voices[0].velocityOffset = Math.round(value);
+                if (this.voices[0]) {
+                    this.voices[0].velocityOffset = Math.round(value);
+                }
                 break;
             case 'voice1_vel_offset':
-                if (this.voices[1]) this.voices[1].velocityOffset = Math.round(value);
+                if (this.voices[1]) {
+                    this.voices[1].velocityOffset = Math.round(value);
+                }
                 break;
             case 'voice2_vel_offset':
-                if (this.voices[2]) this.voices[2].velocityOffset = Math.round(value);
+                if (this.voices[2]) {
+                    this.voices[2].velocityOffset = Math.round(value);
+                }
                 break;
         }
     }

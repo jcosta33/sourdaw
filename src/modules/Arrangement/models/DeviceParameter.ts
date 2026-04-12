@@ -154,10 +154,10 @@ export function getPluginById(pluginId: string): PluginDescriptor | undefined {
  */
 export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean {
     const descriptor = BUILTIN_PLUGINS.find((p) => p.id === deviceType);
-    if (!descriptor) return true; // unknown devices pass through (e.g. external plugins)
+    if (!descriptor) {return true;} // unknown devices pass through (e.g. external plugins)
     const platform = descriptor.platform ?? 'both';
-    if (platform === 'both') return true;
+    if (platform === 'both') {return true;}
     const isNativeRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (isNativeRuntime) return true; // native can run both web and native plugins
+    if (isNativeRuntime) {return true;} // native can run both web and native plugins
     return platform === 'web'; // web can only run web plugins
 }

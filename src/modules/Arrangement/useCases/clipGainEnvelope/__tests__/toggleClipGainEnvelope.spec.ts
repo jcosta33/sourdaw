@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { type ClipGainEnvelope, gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { type ClipGainEnvelope, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
 import { toggleClipGainEnvelope } from '../toggleClipGainEnvelope';
 import { getClipGainEnvelope } from '../getClipGainEnvelope';
 

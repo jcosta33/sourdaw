@@ -15,7 +15,7 @@ import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { automationStore, addAutomationPoint, addAutomationLane } from '#/modules/Automation';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '../../stores/trackStore';
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 
@@ -139,9 +139,9 @@ export const tryPaintSubLane = (x: number, y: number, autoDragRef: AutoDragRef):
 
 export const paintAutoDragPoint = (x: number, y: number, scrollY: number, autoDragRef: AutoDragRef): void => {
     const ref = autoDragRef.current;
-    if (!ref) return;
+    if (!ref) {return;}
     const view = timelineViewStore.value;
-    if (!view) return;
+    if (!view) {return;}
     const beat = x / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
     const contentY = getContentY(y, scrollY);
     const trackHit = resolveTrackAtY(contentY);

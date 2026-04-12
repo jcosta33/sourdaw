@@ -4,12 +4,13 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { useStore } from '#/infra/store/useStore';
+import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { selectClip, setWorkspaceMode } from '#/modules/Workspace/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
-import { trackStore } from '../../stores/trackStore';
+import { trackStore, defaultTrackState } from '../../stores/trackStore';
 import { detectTempo, detectKey } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
@@ -28,6 +29,7 @@ import { exportMidiClip } from '../../useCases/exportMidiClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { stripSilence } from '../../useCases/stripSilence';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+import { CLIP_COLOR_OPTIONS } from '../../models/colorPalette';
 
 type ClipContextMenuProps = {
     x: number;
@@ -37,30 +39,21 @@ type ClipContextMenuProps = {
     onClose: () => void;
 };
 
-const CLIP_COLOR_OPTIONS = [
-    '',
-    'oklch(0.40 0.08 250)',
-    'oklch(0.38 0.09 20)',
-    'oklch(0.40 0.08 150)',
-    'oklch(0.40 0.08 70)',
-    'oklch(0.38 0.08 300)',
-    'oklch(0.38 0.08 340)',
-    'oklch(0.40 0.07 200)',
-    'oklch(0.39 0.08 45)',
-] as const;
-
 export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContextMenuProps): ReactElement => {
     const menuRef = useRef<HTMLDivElement>(null);
     useContextMenuDismiss(menuRef, onClose);
 
-    const clip = trackStore.value?.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
+    const trackState = useStore(trackStore, defaultTrackState);
+    const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
+
+    const clip = trackState.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
     const [isRenaming, setIsRenaming] = useState(false);
     const [newName, setNewName] = useState(clip?.name ?? '');
     const isMidi = clip?.type === 'midi';
     const isAudio = clip?.type === 'audio';
     const isLocked = clip?.locked ?? false;
     const isMuted = clip?.muted ?? false;
-    const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
+    const selectedIds = workspaceState.selectedClipIds ?? [];
     const multiSelected = selectedIds.length > 1 && selectedIds.includes(clipId);
 
     const act = (fn: () => void) => () => {

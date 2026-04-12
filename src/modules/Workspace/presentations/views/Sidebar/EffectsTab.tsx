@@ -84,8 +84,8 @@ export const EffectsTab = ({
         : fxPresets;
 
     const handleFxPresetClick = (preset: SoundPreset) => {
-        if (selectedTrackId) loadPresetToTrack(selectedTrackId, preset);
-        else createTrackFromPreset(preset);
+        if (selectedTrackId) {loadPresetToTrack(selectedTrackId, preset);}
+        else {createTrackFromPreset(preset);}
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();
@@ -270,11 +270,11 @@ export const EffectsTab = ({
                             {filteredEffects.map((plugin) => {
                                 const card = renderPremiumCard(plugin.id);
                                 if (card)
-                                    return (
+                                    {return (
                                         <div key={plugin.id} className="mb-1 mt-1.5 px-0.5 drop-shadow-sm">
                                             {card}
                                         </div>
-                                    );
+                                    );}
                                 return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                             })}
                         </div>
@@ -357,8 +357,8 @@ export const EffectsTab = ({
         const sortedItems = [...items].sort((a, b) => {
             const aIsPremium = !!renderPremiumCard(a.id);
             const bIsPremium = !!renderPremiumCard(b.id);
-            if (aIsPremium && !bIsPremium) return -1;
-            if (!aIsPremium && bIsPremium) return 1;
+            if (aIsPremium && !bIsPremium) {return -1;}
+            if (!aIsPremium && bIsPremium) {return 1;}
             return a.name.localeCompare(b.name);
         });
 
@@ -368,11 +368,11 @@ export const EffectsTab = ({
                 {sortedItems.map((plugin) => {
                     const card = renderPremiumCard(plugin.id);
                     if (card)
-                        return (
+                        {return (
                             <div key={plugin.id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
                                 {card}
                             </div>
-                        );
+                        );}
                     return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                 })}
             </div>

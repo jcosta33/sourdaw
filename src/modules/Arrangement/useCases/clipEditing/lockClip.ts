@@ -1,4 +1,4 @@
-import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { updateClip } from '../../repositories/track/updateClip';
 
 export function lockClip(clipId: string, locked: boolean): void {
     updateClip(clipId, (c) => ({ ...c, locked }));

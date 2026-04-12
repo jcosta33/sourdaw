@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '../../models/Track';
 import { resolveClipsWithComping } from '../resolveComping';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
-vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
+vi.mock('../../stores/takeLaneStore', () => ({
     takeLaneStore: {
         value: null,
         set: vi.fn(),

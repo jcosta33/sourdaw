@@ -1,4 +1,4 @@
-import { controlRoomStore } from '#/modules/AudioEngine/stores/controlRoom';
+import { controlRoomStore } from '../../stores/controlRoom';
 
 export function switchMonitor(monitorId: string): void {
     const state = controlRoomStore.value;

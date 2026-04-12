@@ -10,65 +10,91 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { ScheduledEventQueue } from '../../models/MidiProcessor';
 
 const MAX_STATES = 12; // max pitch classes or held notes
 
-export class MarkovChain implements MidiProcessor {
-    readonly id: string;
+export class MarkovChain extends BaseMidiProcessor {
     readonly name = 'Markov';
 
-    // Transition matrix: probs[from][to] — each row sums to 1.0
-    private probs: number[][] = [];
+    // Transition matrix: probs[from][to] — pre-allocated at MAX_STATES × MAX_STATES.
+    // Only the first `stateCount` rows/cols are active. Reused across chord changes
+    // to avoid allocating a new number[][] on the audio thread.
+    private readonly probs: number[][];
     private stateCount = 0;
     private currentState = 0;
     private rate: RateValue = { type: 'straight', denom: 8 };
     private gate = 0.7;
     private velocity = 100;
-    private bypassed = false;
     private rngState = 0xabcd;
     private lastStepTime = -Infinity;
     private scheduled = new ScheduledEventQueue();
 
-    // Map states to MIDI notes (from held notes or scale degrees)
-    private stateToNote: number[] = [];
+    // Map states to MIDI notes (from held notes or scale degrees).
+    // Pre-allocated at MAX_STATES; `stateNoteCount` tracks the active length.
+    private readonly stateToNote: number[] = new Array<number>(MAX_STATES).fill(0);
+    private stateNoteCount = 0;
     private held: number[] = [];
 
     constructor(id?: string) {
-        this.id = id ?? `markov-${Date.now()}`;
-        this.initDefaultMatrix(7); // default: 7 notes (one octave scale)
+        super(id ?? `markov-${Date.now()}`);
+        // Pre-allocate the full MAX_STATES × MAX_STATES matrix once
+        this.probs = [];
+        for (let i = 0; i < MAX_STATES; i++) {
+            const row = new Array<number>(MAX_STATES).fill(0);
+            this.probs.push(row);
+        }
+        this.fillDefaultMatrix(7); // default: 7 notes (one octave scale)
     }
 
-    private initDefaultMatrix(size: number): void {
+    /** Fill the pre-allocated matrix with default transition probabilities for `size` states. */
+    private fillDefaultMatrix(size: number): void {
         this.stateCount = Math.min(size, MAX_STATES);
-        this.probs = [];
         for (let i = 0; i < this.stateCount; i++) {
-            const row: number[] = [];
+            const row = this.probs[i]!;
+            let sum = 0;
             for (let j = 0; j < this.stateCount; j++) {
                 // Default: favor adjacent states, some probability for jumps
                 const dist = Math.min(Math.abs(i - j), this.stateCount - Math.abs(i - j));
-                row.push(dist === 0 ? 0.05 : dist === 1 ? 0.35 : dist === 2 ? 0.15 : 0.05);
+                const val = dist === 0 ? 0.05 : dist === 1 ? 0.35 : dist === 2 ? 0.15 : 0.05;
+                row[j] = val;
+                sum += val;
             }
-            // Normalize
-            const sum = row.reduce((a, b) => a + b, 0);
-            this.probs.push(row.map((v) => v / sum));
+            // Normalize row in-place
+            if (sum > 0) {
+                for (let j = 0; j < this.stateCount; j++) {
+                    row[j] = row[j]! / sum;
+                }
+            }
+            // Zero out unused columns
+            for (let j = this.stateCount; j < MAX_STATES; j++) {
+                row[j] = 0;
+            }
+        }
+        // Zero out unused rows
+        for (let i = this.stateCount; i < MAX_STATES; i++) {
+            const row = this.probs[i]!;
+            for (let j = 0; j < MAX_STATES; j++) {
+                row[j] = 0;
+            }
         }
     }
 
     private sampleNext(): number {
-        if (this.stateCount === 0) return 0;
+        if (this.stateCount === 0) {return 0;}
         const row = this.probs[this.currentState % this.stateCount];
-        if (!row) return 0;
+        if (!row) {return 0;}
 
         this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
-        let r = this.rngState / 0x7fffffff;
+        const r = this.rngState / 0x7fffffff;
         let cumulative = 0;
 
-        for (let i = 0; i < row.length; i++) {
+        for (let i = 0; i < this.stateCount; i++) {
             cumulative += row[i]!;
-            if (r <= cumulative) return i;
+            if (r <= cumulative) {return i;}
         }
-        return row.length - 1;
+        return this.stateCount - 1;
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
@@ -78,28 +104,36 @@ export class MarkovChain implements MidiProcessor {
                 if (!this.held.includes(event.kind.note)) {
                     this.held.push(event.kind.note);
                     this.held.sort((a, b) => a - b);
-                    this.stateToNote = [...this.held];
+                    // Copy held notes into pre-allocated stateToNote buffer (no allocation)
+                    this.stateNoteCount = Math.min(this.held.length, MAX_STATES);
+                    for (let k = 0; k < this.stateNoteCount; k++) {
+                        this.stateToNote[k] = this.held[k]!;
+                    }
                     if (this.stateCount !== this.held.length) {
-                        this.initDefaultMatrix(this.held.length);
+                        this.fillDefaultMatrix(this.held.length);
                     }
                 }
             } else if (event.kind.type === 'noteOff') {
+                // Audio-thread: in-place removal avoids allocating a new array
                 const offNote = event.kind.note;
-                this.held = this.held.filter((n) => n !== offNote);
+                const idx = this.held.indexOf(offNote);
+                if (idx !== -1) {
+                    this.held.splice(idx, 1);
+                }
                 // Don't update stateToNote on release (keep generating from last chord)
             } else {
                 output.push(event);
             }
         }
 
-        if (!transport.isPlaying || this.stateToNote.length === 0) return;
+        if (!transport.isPlaying || this.stateNoteCount === 0) {return;}
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
         const now = input.length > 0 ? input[0]!.timeSamples : 0;
         const blockEnd = now + 128;
 
-        if (this.lastStepTime === -Infinity) this.lastStepTime = now;
+        if (this.lastStepTime === -Infinity) {this.lastStepTime = now;}
 
         let safety = 0;
         while (this.lastStepTime + stepLen <= blockEnd && safety < 64) {
@@ -108,7 +142,7 @@ export class MarkovChain implements MidiProcessor {
 
             // Sample next state via Markov transition
             this.currentState = this.sampleNext();
-            const note = this.stateToNote[this.currentState % this.stateToNote.length]!;
+            const note = this.stateToNote[this.currentState % this.stateNoteCount]!;
 
             output.push({
                 timeSamples: stepTime,
@@ -123,26 +157,16 @@ export class MarkovChain implements MidiProcessor {
         }
 
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) output.push(e);
+        for (const e of drained) {output.push(e);}
     }
 
     reset(): void {
         this.currentState = 0;
         this.lastStepTime = -Infinity;
         this.held = [];
-        this.stateToNote = [];
+        this.stateNoteCount = 0;
         this.scheduled.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'rate_denom':
@@ -161,18 +185,23 @@ export class MarkovChain implements MidiProcessor {
     setTransition(from: number, to: number, prob: number): void {
         if (from < this.stateCount && to < this.stateCount && this.probs[from]) {
             this.probs[from]![to] = Math.max(0, prob);
-            // Re-normalize row
+            // Re-normalize active portion of row
             const row = this.probs[from]!;
-            const sum = row.reduce((a, b) => a + b, 0);
+            let sum = 0;
+            for (let i = 0; i < this.stateCount; i++) {sum += row[i]!;}
             if (sum > 0) {
-                for (let i = 0; i < row.length; i++) row[i] = row[i]! / sum;
+                for (let i = 0; i < this.stateCount; i++) {row[i] = row[i]! / sum;}
             }
         }
     }
 
-    /** Get the transition matrix for UI display. */
+    /** Get the active portion of the transition matrix for UI display. */
     getMatrix(): number[][] {
-        return this.probs.map((r) => [...r]);
+        const result: number[][] = [];
+        for (let i = 0; i < this.stateCount; i++) {
+            result.push(this.probs[i]!.slice(0, this.stateCount));
+        }
+        return result;
     }
     getCurrentState(): number {
         return this.currentState;

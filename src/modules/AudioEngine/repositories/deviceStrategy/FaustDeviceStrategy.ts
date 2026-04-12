@@ -2,6 +2,7 @@ import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 import { type OfflineDeviceNode } from '../devices/types';
 import { type Device } from '../../models/TrackViewTypes';
 import { createFaustDevice } from '../faustDeviceFactory';
+import { logger } from '#/infra/logger/appLogger';
 
 export class FaustDeviceStrategy implements AudioDeviceStrategy {
     constructor(
@@ -17,7 +18,7 @@ export class FaustDeviceStrategy implements AudioDeviceStrategy {
                 // We'll pass the ID directly.
                 this.faustNode.setParamValue(name, value);
             } catch (e) {
-                console.warn(`[Faust] Failed to set param ${name} to ${value}:`, e);
+                logger.warn(`[Faust] Failed to set param ${name} to ${value}:`, e);
             }
         }
     }

@@ -1,4 +1,4 @@
-import { type DevicePreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type DevicePreset } from '../../../models/SoundPreset';
 
 export const reverb = (
     name: string,

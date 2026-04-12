@@ -28,7 +28,11 @@ export async function importMidiFile(file: File): Promise<void> {
 
     const tracksWithClips = parsedTracks.map((parsedTrack) => {
         const track = createTrack({ name: parsedTrack.name, kind: 'midi' });
-        const maxBeat = Math.max(...parsedTrack.notes.map((note) => note.startBeat + note.duration), 4);
+        let maxBeat = 4;
+        for (const note of parsedTrack.notes) {
+            const v = note.startBeat + note.duration;
+            if (v > maxBeat) { maxBeat = v; }
+        }
         const endBeat = Math.ceil(maxBeat / 4) * 4;
         const clip: Clip = {
             id: getNextClipId(),

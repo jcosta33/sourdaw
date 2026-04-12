@@ -12,7 +12,7 @@ const {
     mockGetTrackAtY: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores/timelineViewStore', () => ({
+vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: { get value() { return mockTimelineViewValue.value; } }
 }));
 

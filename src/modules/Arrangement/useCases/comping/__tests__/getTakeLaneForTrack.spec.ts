@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createTakeLane } from '#/modules/Arrangement/models/TakeLane';
+import { createTakeLane } from '../../../models/TakeLane';
 import { getTakeLaneForTrack } from '../getTakeLaneForTrack';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 
-vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
+vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
         value: null,
         set: vi.fn(),

@@ -1,4 +1,5 @@
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
+import { NOTE_NAMES } from '#/utils/noteNames';
 import { getBufferForClip } from './helpers';
 
 // ── Key Detection (Krumhansl-Schmuckler algorithm) ──────────────────────
@@ -10,8 +11,6 @@ import { getBufferForClip } from './helpers';
  */
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
-
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 function pearsonCorrelation(x: number[], y: number[]): number {
     const n = x.length;

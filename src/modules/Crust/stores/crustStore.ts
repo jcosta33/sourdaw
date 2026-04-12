@@ -32,11 +32,13 @@ const INITIAL_METERS: CrustMeterState = {
     truepeakExceeded: false,
 };
 
+export const defaultCrustState: CrustState = {
+    patch: DEFAULT_CRUST_PATCH,
+    ...INITIAL_METERS,
+};
+
 export const crustStore = createStore<CrustState>({
-    initialData: {
-        patch: DEFAULT_CRUST_PATCH,
-        ...INITIAL_METERS,
-    },
+    initialData: defaultCrustState,
 });
 
 export function setCrustParam<K extends keyof CrustPatch>(key: K, value: CrustPatch[K]): void {

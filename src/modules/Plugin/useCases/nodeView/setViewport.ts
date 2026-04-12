@@ -1,4 +1,4 @@
-import { nodeViewStore } from '#/modules/Plugin/stores/nodeView';
+import { nodeViewStore } from '../../stores/nodeView';
 
 export function setViewport(panX: number, panY: number, zoom: number): void {
     const state = nodeViewStore.value;

@@ -52,11 +52,15 @@ export function registerPrefixLayout(prefix: string, component: DeviceLayoutComp
 export function resolveDeviceLayout(deviceType: string): DeviceLayoutComponent | null {
     // 1. Exact match
     const exact = EXACT_LAYOUTS.get(deviceType);
-    if (exact) return exact;
+    if (exact) {
+        return exact;
+    }
 
     // 2. Prefix match (first match wins)
     for (const { prefix, component } of PREFIX_LAYOUTS) {
-        if (deviceType.startsWith(prefix)) return component;
+        if (deviceType.startsWith(prefix)) {
+            return component;
+        }
     }
 
     return null;

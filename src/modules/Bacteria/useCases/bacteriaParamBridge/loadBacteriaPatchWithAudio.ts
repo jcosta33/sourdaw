@@ -27,7 +27,7 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
             loadBacteriaPatch(deviceId, patch);
 
             const ref = findDeviceRef(deviceId);
-            if (!ref) return;
+            if (!ref) {return;}
 
             const globalParams: Array<[string, unknown]> = [
         ['mix', patch.mix],

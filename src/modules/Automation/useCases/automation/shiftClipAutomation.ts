@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '../../stores/automationStore';
 
 export function shiftClipAutomation(clipId: string, beatDelta: number): void {
     const state = automationStore.value;

@@ -49,9 +49,9 @@ export const EnvelopeSection = ({
             release: `${prefix}Release`,
         };
         const key = map[paramId];
-        if (!key) return;
-        if (isAmp) onAmpChange(key as 'ampAttack' | 'ampDecay' | 'ampSustain' | 'ampRelease', value);
-        else onFilterChange(key as 'filterAttack' | 'filterDecay' | 'filterSustain' | 'filterRelease', value);
+        if (!key) {return;}
+        if (isAmp) {onAmpChange(key as 'ampAttack' | 'ampDecay' | 'ampSustain' | 'ampRelease', value);}
+        else {onFilterChange(key as 'filterAttack' | 'filterDecay' | 'filterSustain' | 'filterRelease', value);}
     };
 
     return (

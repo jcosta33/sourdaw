@@ -1,10 +1,10 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateClip } from '../../repositories/track/updateClip';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     computeNormalizationScale,
     type NormalizationMode,
-} from '#/modules/Arrangement/transformers/clipDspTransformers';
+} from '../../transformers/clipDspTransformers';
 
 export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', targetDb?: number): void {
     const state = getTrackState();

@@ -1,4 +1,4 @@
-import { adjustmentLayerStore } from '#/modules/Arrangement/stores/adjustmentLayer';
+import { adjustmentLayerStore } from '../../stores/adjustmentLayer';
 
 export function setLayerMix(id: string, mix: number): void {
     const state = adjustmentLayerStore.value;

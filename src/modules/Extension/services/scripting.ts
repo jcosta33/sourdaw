@@ -11,7 +11,7 @@
  * See `.agents/audits/webdaw-codebase-audit.md` → **Findings → Extension scripting (frozen)**.
  */
 
-import { extensionStore } from '#/modules/Extension/stores/extension';
+import { extensionStore } from '../stores/extension';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 /**

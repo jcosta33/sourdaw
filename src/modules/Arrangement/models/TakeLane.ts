@@ -20,11 +20,8 @@ export type CompRegion = {
     takeId: string;
 };
 
-let nextTakeId = 1;
-let nextLaneId = 1;
-
 export const createTake = (clipId: string, name: string, startBeat: number, endBeat: number): Take => ({
-    id: `take-${nextTakeId++}`,
+    id: `take-${crypto.randomUUID().slice(0, 8)}`,
     clipId,
     name,
     startBeat,
@@ -33,7 +30,7 @@ export const createTake = (clipId: string, name: string, startBeat: number, endB
 });
 
 export const createTakeLane = (trackId: string): TakeLane => ({
-    id: `take-lane-${nextLaneId++}`,
+    id: `take-lane-${crypto.randomUUID().slice(0, 8)}`,
     trackId,
     takes: [],
     activeCompRegions: [],

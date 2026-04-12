@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type LevainPatch } from '../../models/LevainPatch';
 import { levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
@@ -66,7 +67,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             return;
         }
         deps.autoLoadLevainSamples(activePort, instrumentId).catch((err) => {
-            console.warn('[LevainBridge] Sample load failed:', err);
+            logger.warn('[LevainBridge] Sample load failed:', err);
         });
     }
 

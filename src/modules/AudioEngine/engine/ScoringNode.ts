@@ -6,8 +6,7 @@
 
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 import { telemetryAllocator, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
-
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+import { NOTE_NAMES } from '#/utils/noteNames';
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
 
@@ -125,7 +124,7 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
                 cancelAnimationFrame(telemetryRafId);
                 telemetryRafId = null;
             }
-            if (!slot) return;
+            if (!slot) {return;}
             const view = slot.view;
             const poll = () => {
                 const active = view[SCORING_IDX.active] !== 0;

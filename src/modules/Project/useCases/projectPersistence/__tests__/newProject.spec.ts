@@ -7,7 +7,7 @@ import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/use
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { removeProjectJson } from '#/modules/Project/repositories/project/storageOperations';
+import { removeProjectJson } from '../../../repositories/project/storageOperations';
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
@@ -54,7 +54,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Project/repositories/project/storageOperations', () => ({
+vi.mock('../../../repositories/project/storageOperations', () => ({
     removeProjectJson: vi.fn(),
 }));
 

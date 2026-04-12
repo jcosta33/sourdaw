@@ -1,4 +1,4 @@
-import { controlRoomStore } from '#/modules/AudioEngine/stores/controlRoom';
+import { controlRoomStore } from '../../stores/controlRoom';
 
 /**
  * Get the effective monitoring volume, accounting for dim, mute, and calibration offset.

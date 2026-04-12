@@ -1,4 +1,4 @@
-import { controlSurfaceStore, getNextOscEndpointId } from '#/modules/AudioEngine/stores/controlSurface';
+import { controlSurfaceStore, getNextOscEndpointId } from '../../stores/controlSurface';
 
 export function addOscEndpoint(host: string, sendPort: number, receivePort: number): void {
     const state = controlSurfaceStore.value;

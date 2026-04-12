@@ -82,8 +82,8 @@ export function loadToasterKitPreset(kit: ToasterKit): void {
         const engineIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
         controls.setPadParam(i, 'engine_type', engineIdx);
 
-        if (pad.engineType === 'hihat-open') controls.setPadParam(i, 'open', 1);
-        if (pad.engineType === 'hihat-closed') controls.setPadParam(i, 'open', 0);
+        if (pad.engineType === 'hihat-open') {controls.setPadParam(i, 'open', 1);}
+        if (pad.engineType === 'hihat-closed') {controls.setPadParam(i, 'open', 0);}
 
         controls.setPadParam(i, 'volume', pad.volume);
         controls.setPadParam(i, 'pan', pad.pan);

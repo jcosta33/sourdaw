@@ -1,6 +1,6 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { type GrooveTemplate } from '#/modules/AiGeneration/models/GrooveTemplate';
+import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 
 /** Local type matching Track module's MidiNote shape, avoids cross-module model import. */
 type MidiNote = {

@@ -15,12 +15,16 @@ import type {
 } from '../models/SamplerTypes';
 
 export async function createSamplerInstance(instanceId: string, sampleRate: number): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('create_sampler', { instanceId, sampleRate });
 }
 
 export async function destroySamplerInstance(instanceId: string): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('destroy_sampler', { instanceId });
 }
 
@@ -30,22 +34,30 @@ export async function loadSample(instanceId: string, filePath: string): Promise<
 }
 
 export async function samplerNoteOn(instanceId: string, note: number, velocity: number): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('sampler_note_on', { instanceId, note, velocity });
 }
 
 export async function samplerNoteOff(instanceId: string, note: number): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('sampler_note_off', { instanceId, note });
 }
 
 export async function setSamplerParam(instanceId: string, param: string, value: number): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('set_sampler_param', { instanceId, param, value });
 }
 
 export async function setSamplerMode(instanceId: string, mode: SamplerMode): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('set_sampler_mode', { instanceId, mode });
 }
 
@@ -77,7 +89,9 @@ export async function getSamplerMetering(instanceId: string): Promise<MeteringRe
 }
 
 export async function samplerAllSoundOff(instanceId: string): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('sampler_all_sound_off', { instanceId });
 }
 
@@ -97,11 +111,15 @@ export async function armRecording(
     targetPad: number,
     maxDurationSecs: number
 ): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('arm_recording', { instanceId, threshold, targetPad, maxDurationSecs });
 }
 
 export async function stopRecording(instanceId: string): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+        return;
+    }
     await tauriInvoke('stop_recording', { instanceId });
 }

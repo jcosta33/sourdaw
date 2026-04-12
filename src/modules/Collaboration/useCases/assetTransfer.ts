@@ -1,4 +1,7 @@
+import { logger } from '#/infra/logger/appLogger';
+import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
+import { DOC_ID_ASSET } from '../models/syncChannelConstants';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
 const CHUNK_SIZE = 256 * 1024; // 256 KiB
@@ -77,14 +80,14 @@ export class AssetTransfer {
 
         this.peerManager.broadcastCrdtSync({
             type: 'crdt-sync',
-            docId: '__asset__',
+            docId: DOC_ID_ASSET,
             data: JSON.stringify(msg),
         });
     }
 
     /** Handle an incoming asset-related message. */
     async handleMessage(peerId: PeerId, message: PeerMessage): Promise<void> {
-        if (message.type !== 'crdt-sync' || message.docId !== '__asset__') {
+        if (message.type !== 'crdt-sync' || message.docId !== DOC_ID_ASSET) {
             return;
         }
 
@@ -99,7 +102,7 @@ export class AssetTransfer {
                 this.handleChunk(data.hash, data.index, data.data);
             }
         } catch (error) {
-            console.error('[AssetTransfer] Failed to handle message:', error);
+            logger.warn('[AssetTransfer] Failed to handle message:', error);
         }
     }
 
@@ -124,7 +127,7 @@ export class AssetTransfer {
             peerId,
             message: {
                 type: 'crdt-sync',
-                docId: '__asset__',
+                docId: DOC_ID_ASSET,
                 data: JSON.stringify({ type: 'asset.manifest', manifest } satisfies AssetControlMessage),
             },
         });
@@ -143,7 +146,7 @@ export class AssetTransfer {
                 peerId,
                 message: {
                     type: 'crdt-sync',
-                    docId: '__asset__',
+                    docId: DOC_ID_ASSET,
                     data: JSON.stringify({
                         type: 'asset.chunk',
                         hash,
@@ -215,7 +218,7 @@ export class AssetTransfer {
         const actualHash = await hashBlob(blob);
         if (actualHash !== hash) {
             this.incomingTransfers.delete(hash);
-            console.error(`[AssetTransfer] Integrity check failed for ${hash}: received ${actualHash}`);
+            logger.warn(`[AssetTransfer] Integrity check failed for ${hash}: received ${actualHash}`);
             return;
         }
 
@@ -234,12 +237,10 @@ async function hashBlob(blob: Blob): Promise<string> {
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
+    return bytesToBase64(new Uint8Array(buffer));
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary = atob(base64);
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-    return bytes.buffer;
+    const bytes = base64ToBytes(base64);
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }

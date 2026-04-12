@@ -10,12 +10,13 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { ScheduledEventQueue } from '../../models/MidiProcessor';
 
 /** Bjorklund's algorithm — distribute `hits` across `steps` as evenly as possible. */
 function bjorklund(hits: number, steps: number): boolean[] {
-    if (hits >= steps) return new Array(steps).fill(true);
-    if (hits <= 0) return new Array(steps).fill(false);
+    if (hits >= steps) {return new Array(steps).fill(true);}
+    if (hits <= 0) {return new Array(steps).fill(false);}
 
     let pattern: boolean[][] = [];
     for (let i = 0; i < steps; i++) {
@@ -49,8 +50,7 @@ function bjorklund(hits: number, steps: number): boolean[] {
     return out;
 }
 
-export class EuclideanGenerator implements MidiProcessor {
-    readonly id: string;
+export class EuclideanGenerator extends BaseMidiProcessor {
     readonly name = 'Euclidean';
 
     private hits = 5;
@@ -60,14 +60,13 @@ export class EuclideanGenerator implements MidiProcessor {
     private gate = 0.5;
     private note = 60; // C4
     private velocity = 100;
-    private bypassed = false;
     private pattern: boolean[] = [];
     private stepIndex = 0;
     private lastStepTime = -Infinity;
     private scheduled = new ScheduledEventQueue();
 
     constructor(id?: string) {
-        this.id = id ?? `euclid-${Date.now()}`;
+        super(id ?? `euclid-${Date.now()}`);
         this.rebuildPattern();
     }
 
@@ -86,7 +85,7 @@ export class EuclideanGenerator implements MidiProcessor {
             output.push(event);
         }
 
-        if (!transport.isPlaying) return;
+        if (!transport.isPlaying) {return;}
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
@@ -119,7 +118,7 @@ export class EuclideanGenerator implements MidiProcessor {
 
         // Drain scheduled Note Offs
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) output.push(e);
+        for (const e of drained) {output.push(e);}
     }
 
     reset(): void {
@@ -127,16 +126,6 @@ export class EuclideanGenerator implements MidiProcessor {
         this.lastStepTime = -Infinity;
         this.scheduled.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'hits':

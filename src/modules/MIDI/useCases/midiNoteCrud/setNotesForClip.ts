@@ -1,5 +1,5 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { type MidiNote } from '#/modules/MIDI/models/MidiNote';
+import { midiStore } from '../../stores/midiStore';
+import { type MidiNote } from '../../models/MidiNote';
 
 export function setNotesForClip(clipId: string, notes: MidiNote[]): void {
     const state = midiStore.value;

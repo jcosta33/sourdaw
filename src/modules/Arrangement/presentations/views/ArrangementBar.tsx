@@ -16,20 +16,12 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { cn } from '#/utils/Styles/cn';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
+import { SECTION_COLORS } from '../../models/colorPalette';
 
 type ArrangementBarProps = {
     pixelsPerBeat: number;
     scrollX: number;
 };
-
-const SECTION_COLORS = [
-    'oklch(0.38 0.08 260)',
-    'oklch(0.38 0.08 150)',
-    'oklch(0.38 0.08 30)',
-    'oklch(0.38 0.08 330)',
-    'oklch(0.38 0.08 200)',
-    'oklch(0.38 0.08 80)',
-];
 
 type ContextMenuState =
     | { kind: 'none' }
@@ -104,17 +96,8 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         e.stopPropagation();
 
         // Detect which part was clicked: edge (resize) or body (move)
-        const parentRect = e.currentTarget.parentElement!.getBoundingClientRect();
-        const localX = e.clientX - parentRect.left;
-        const sectionLeftPx = section.startBeat * pixelsPerBeat - scrollX;
-        const sectionRightPx = section.endBeat * pixelsPerBeat - scrollX;
-
-        let mode: DragMode = 'move';
-        if (Math.abs(localX - sectionLeftPx) <= EDGE_ZONE) {
-            mode = 'resize-left';
-        } else if (Math.abs(localX - sectionRightPx) <= EDGE_ZONE) {
-            mode = 'resize-right';
-        }
+        const edge = detectEdge(e, section);
+        const mode: DragMode = edge === 'left' ? 'resize-left' : edge === 'right' ? 'resize-right' : 'move';
 
         const startX = e.clientX;
         const origStart = section.startBeat;
@@ -252,7 +235,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
     };
 
     const getSectionColor = (section: ArrangementSection, index: number): string => {
-        if (section.color && section.color !== 'oklch(0.35 0.07 260)') {
+        if (section.color) {
             return section.color;
         }
         return SECTION_COLORS[index % SECTION_COLORS.length]!;

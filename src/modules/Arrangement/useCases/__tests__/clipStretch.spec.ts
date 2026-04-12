@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { setClipStretchMode } from '../clipStretch/setClipStretchMode';
-import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { updateClip } from '../../repositories/track/updateClip';
 
-vi.mock('#/modules/Arrangement/repositories/track/updateClip', () => ({
+vi.mock('../../repositories/track/updateClip', () => ({
     updateClip: vi.fn(),
 }));
 

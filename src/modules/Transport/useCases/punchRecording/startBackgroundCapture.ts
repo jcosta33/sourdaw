@@ -1,4 +1,4 @@
-import { punchRecordingStore, type BackgroundCapture } from '#/modules/Transport/stores/punchRecordingStore';
+import { punchRecordingStore, type BackgroundCapture } from '../../stores/punchRecordingStore';
 import { getNextCaptureId } from '../../repositories/punchRecordingIdCounter/getNextCaptureId';
 
 export function startBackgroundCapture(trackId: string, startBeat: number): void {

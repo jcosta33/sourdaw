@@ -18,12 +18,13 @@ import {
     type IFaustCompiler,
     type IFaustMonoWebAudioNode,
 } from '@grame/faustwasm';
-import { createFaustError } from '#/modules/Plugin/errors/FaustError';
+import { createFaustError } from '../../errors/FaustError';
+import { logger } from '#/infra/logger/appLogger';
 import { isAppError } from '#/infra/errors/isAppError';
 import { registerWAMPlugin } from '../wamPluginHost/hostOperations/registerWAMPlugin';
 import { type WAMDescriptor } from '../wamPluginHost/hostOperations/helpers';
 import { registerPluginLoader } from '../../services/pluginLoaderRegistry';
-import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/models/FaustEngineTypes';
+import { type FaustModule, type FaustParamDescriptor } from '../../models/FaustEngineTypes';
 
 // Module registry (raw Map singleton)
 const modules = new Map<string, FaustModule>();
@@ -61,7 +62,7 @@ async function getCompiler(): Promise<IFaustCompiler> {
             } catch (error) {
                 const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
                 compilerError = msg;
-                console.error(`[Faust] Compiler initialization failed: ${msg}`);
+                logger.warn(`[Faust] Compiler initialization failed: ${msg}`);
                 // Re-throw so callers know compilation is impossible
                 throw createFaustError(`Faust compiler unavailable: ${msg}`);
             }
@@ -117,7 +118,7 @@ export function registerFaustDSP(
 export async function compileFaustDSP(moduleId: string): Promise<boolean> {
     const mod = modules.get(moduleId);
     if (!mod) {
-        console.error(`[Faust] Module "${moduleId}" not registered. Available: ${[...modules.keys()].join(', ')}`);
+        logger.warn(`[Faust] Module "${moduleId}" not registered. Available: ${[...modules.keys()].join(', ')}`);
         return false;
     }
     if (mod.compiled && mod.generator) {
@@ -138,7 +139,7 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
             const processorName = mod.name.replaceAll(/\s+/g, '_');
             const result = await generator.compile(compiler, processorName, mod.dspCode, '-I libraries/');
             if (!result) {
-                console.error(`[Faust] Compilation returned null for "${mod.name}". DSP code may have syntax errors.`);
+                logger.warn(`[Faust] Compilation returned null for "${mod.name}". DSP code may have syntax errors.`);
                 return false;
             }
             mod.generator = generator;
@@ -147,7 +148,7 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
             return true;
         } catch (error) {
             const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
-            console.error(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
+            logger.warn(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
             return false;
         } finally {
             compilationPromises.delete(moduleId);
@@ -179,7 +180,7 @@ export async function createFaustNode(
     const mod = modules.get(moduleId);
     if (!mod?.generator || !mod.compiled) {
         const reason = compilerError ? `Compiler unavailable: ${compilerError}` : 'Module not compiled';
-        console.error(`[Faust] Cannot create node for "${moduleId}": ${reason}`);
+        logger.warn(`[Faust] Cannot create node for "${moduleId}": ${reason}`);
         return null;
     }
 
@@ -212,7 +213,7 @@ export async function createFaustNode(
         const node = await mod.generator.createNode(context);
 
         // Registration successful (or was already done)
-        if (!existingReg) resolveReg!();
+        if (!existingReg) {resolveReg!();}
 
         return node;
     } catch (error) {
@@ -226,20 +227,20 @@ export async function createFaustNode(
         if (msg.includes('already registered')) {
             // Signal that registration is "done" (even if it failed with "already registered")
             // so other waiters can try to create their nodes.
-            if (!existingReg) resolveReg!();
+            if (!existingReg) {resolveReg!();}
 
             // Try one more time — if it was just a race, it might succeed now.
             try {
                 return await mod.generator.createNode(context);
             } catch (retryError) {
-                console.error(`[Faust] Node creation retry failed for "${mod.name}": ${retryError}`);
+                logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
             }
         } else {
             // Real error, allow other waiters to fail too if they want
-            if (!existingReg) resolveReg!();
+            if (!existingReg) {resolveReg!();}
         }
 
-        console.error(`[Faust] Node creation failed for "${mod.name}": ${msg}`);
+        logger.warn(`[Faust] Node creation failed for "${mod.name}": ${msg}`);
         return null;
     }
 }

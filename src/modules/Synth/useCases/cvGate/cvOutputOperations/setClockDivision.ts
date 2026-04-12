@@ -1,4 +1,4 @@
-import { cvGateStore } from '#/modules/Synth/stores/cvGate';
+import { cvGateStore } from '../../../stores/cvGate';
 
 export function setClockDivision(division: number): void {
     const state = cvGateStore.value;

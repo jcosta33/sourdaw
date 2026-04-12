@@ -1,10 +1,11 @@
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
-import { type MidiInputInfo } from '#/modules/AudioEngine/models/WebMidiTypes';
+import { logger } from '#/infra/logger/appLogger';
+import { type MidiInputInfo } from '../../../models/WebMidiTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import {
-    midiAccess,
-    activeInput,
+    getMidiAccess,
+    getActiveInput,
     setState,
     getState,
     setMidiAccess,
@@ -18,10 +19,11 @@ import { attachInput, selectMidiInputTauri } from './helpers';
 type TauriMidiDevice = { index: number; name: string };
 
 function enumerateInputs(): MidiInputInfo[] {
-    if (!midiAccess) {
+    const access = getMidiAccess();
+    if (!access) {
         return [];
     }
-    const entries = Array.from(midiAccess.inputs.values());
+    const entries = Array.from(access.inputs.values());
     return entries.map((input) => ({
         id: input.id,
         name: input.name ?? 'Unknown Device',
@@ -34,14 +36,16 @@ function onStateChange(): void {
     const state = getState();
     const selectedStillExists = inputs.some((i) => i.id === state.selectedInputId);
 
-    if (!selectedStillExists && activeInput) {
-        activeInput.onmidimessage = null;
+    const currentInput = getActiveInput();
+    if (!selectedStillExists && currentInput) {
+        currentInput.onmidimessage = null;
         setActiveInput(null);
     }
 
-    if (!selectedStillExists && inputs.length > 0 && midiAccess) {
+    const currentAccess = getMidiAccess();
+    if (!selectedStillExists && inputs.length > 0 && currentAccess) {
         const first = inputs[0]!;
-        const input = midiAccess.inputs.get(first.id);
+        const input = currentAccess.inputs.get(first.id);
         if (input) {
             attachInput(input);
             setState({ inputs, selectedInputId: first.id });
@@ -85,7 +89,7 @@ export async function initWebMidi(): Promise<boolean> {
     }
 
     if (!state.isSupported) {
-        console.warn('[MIDI] MIDI not supported');
+        logger.warn('[MIDI] MIDI not supported');
         return false;
     }
 
@@ -112,7 +116,7 @@ export async function initWebMidi(): Promise<boolean> {
 
             return true;
         } catch (error) {
-            console.warn('[MIDI] Web MIDI failed, trying Tauri fallback:', error);
+            logger.warn('[MIDI] Web MIDI failed, trying Tauri fallback:', error);
         }
     }
 
@@ -139,7 +143,7 @@ export async function initWebMidi(): Promise<boolean> {
 
             return true;
         } catch (error) {
-            console.error('[MIDI] Tauri MIDI init failed:', error);
+            logger.warn('[MIDI] Tauri MIDI init failed:', error);
             setState({ isSupported: false });
             return false;
         }

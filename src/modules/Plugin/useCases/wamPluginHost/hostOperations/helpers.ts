@@ -1,4 +1,4 @@
-import { type WAMDescriptor, type WAMInstance } from '#/modules/Plugin/models/WamPluginHostTypes';
+import { type WAMDescriptor, type WAMInstance } from '../../../models/WamPluginHostTypes';
 export type { WAMDescriptor, WAMInstance };
 
 // In-memory registries (raw Map singletons — not Store<T>)

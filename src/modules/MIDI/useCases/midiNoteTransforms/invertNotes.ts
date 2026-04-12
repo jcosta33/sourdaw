@@ -1,29 +1,22 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 export function invertNotes(clipId: string): void {
-    const state = midiStore.value;
-    if (!state) {
-        return;
-    }
+    updateNotesForClip(clipId, (notes) => {
+        if (notes.length < 2) {
+            return notes;
+        }
 
-    const existing = state.notesByClipId[clipId];
-    if (!existing || existing.length < 2) {
-        return;
-    }
+        let minPitch = Infinity;
+        let maxPitch = -Infinity;
+        for (const n of notes) {
+            if (n.pitch < minPitch) { minPitch = n.pitch; }
+            if (n.pitch > maxPitch) { maxPitch = n.pitch; }
+        }
+        const axis = minPitch + maxPitch;
 
-    const pitches = existing.map((n) => n.pitch);
-    const minPitch = Math.min(...pitches);
-    const maxPitch = Math.max(...pitches);
-    const axis = minPitch + maxPitch;
-
-    midiStore.set({
-        ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [clipId]: existing.map((n) => ({
-                ...n,
-                pitch: Math.max(0, Math.min(127, axis - n.pitch)),
-            })),
-        },
+        return notes.map((n) => ({
+            ...n,
+            pitch: Math.max(0, Math.min(127, axis - n.pitch)),
+        }));
     });
 }

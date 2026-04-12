@@ -1,1 +1,1 @@
-export { updateBacteriaMeters } from './bacteriaStore';
+export { bacteriaStore, updateBacteriaMeters } from './bacteriaStore';

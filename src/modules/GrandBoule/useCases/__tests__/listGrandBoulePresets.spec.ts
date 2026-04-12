@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createNeutralPresetParameters } from '#/modules/GrandBoule/models/GrandBoulePreset';
+import { createNeutralPresetParameters } from '../../models/GrandBoulePreset';
 import { listGrandBoulePresets } from '../listGrandBoulePresets';
 import { listBuiltinGrandBoulePresets } from '../../repositories/grandBoulePresetCatalog';
 

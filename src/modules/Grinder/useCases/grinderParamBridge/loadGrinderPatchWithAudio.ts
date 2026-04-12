@@ -115,7 +115,7 @@ function createSendNumericParamToDevice(
     persistDeviceParamFn: PersistDeviceParamFn
 ) {
     return function sendNumericParamToDevice(ref: DeviceRef, key: string, value: number): void {
-        if (!Number.isFinite(value)) return;
+        if (!Number.isFinite(value)) {return;}
         updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
         persistDeviceParamFn(ref.deviceId, key, value);
     };
@@ -166,11 +166,11 @@ export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(
             loadGrinderPatch(deviceId, migratedPatch);
 
             const ref = findDeviceRef(deviceId);
-            if (!ref) return;
+            if (!ref) {return;}
 
             for (const key of AUDIO_SYNC_KEYS) {
                 const value = toAudioValue(key, migratedPatch[key]);
-                if (value === null || !Number.isFinite(value)) continue;
+                if (value === null || !Number.isFinite(value)) {continue;}
                 updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
                 persistDeviceParamFn(ref.deviceId, key, value);
             }

@@ -1,4 +1,4 @@
-import { type MidiEffect, SCALES } from '#/modules/Plugin/models/MidiEffectTypes';
+import { type MidiEffect, SCALES } from '../../models/MidiEffectTypes';
 
 export function createScaleFilter(root = 0, scaleName = 'major'): MidiEffect {
     const scaleNotes = SCALES[scaleName] ?? SCALES.major!;

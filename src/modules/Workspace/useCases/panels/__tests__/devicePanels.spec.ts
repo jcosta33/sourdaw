@@ -14,6 +14,8 @@ import { showCrumbsPanel } from '../devicePanels/showCrumbsPanel';
 import { showGrandBoulePanel } from '../devicePanels/showGrandBoulePanel';
 import { showAutomationPanel } from '../devicePanels/showAutomationPanel';
 import { showDevicePanelForType } from '../devicePanels/showDevicePanelForType';
+import { showDevicePanel } from '../devicePanels/showDevicePanel';
+import { onShowDevicePanel } from '../devicePanels/onShowDevicePanel';
 import { onPanelShowFermenter } from '../devicePanels/onPanelShowFermenter';
 import { onPanelShowToaster } from '../devicePanels/onPanelShowToaster';
 import { onPanelShowLevain } from '../devicePanels/onPanelShowLevain';
@@ -28,7 +30,7 @@ import { onPanelShowCrust } from '../devicePanels/onPanelShowCrust';
 import { onPanelShowCrumbs } from '../devicePanels/onPanelShowCrumbs';
 import { onPanelShowGrandBoule } from '../devicePanels/onPanelShowGrandBoule';
 import { onPanelShowAutomation } from '../devicePanels/onPanelShowAutomation';
-import { type ShowDevicePanelPayload } from '#/modules/Workspace/events/WorkspaceEvents';
+import { type ShowDevicePanelPayload, type ShowDevicePanelGenericPayload } from '../../../events/WorkspaceEvents';
 
 const mocks = vi.hoisted(() => ({ mockEventBus: {
         emit: vi.fn().mockResolvedValue(undefined),
@@ -95,6 +97,7 @@ describe('devicePanels', () => {
     it('should emit mapped panel event for known device types', () => {
         showDevicePanelForType('fermenter', 'd1');
 
+        expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showDevice', { deviceType: 'fermenter', deviceId: 'd1' });
         expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showFermenter', { deviceId: 'd1' });
     });
 
@@ -120,5 +123,34 @@ describe('devicePanels', () => {
         const handler = vi.fn();
         expect(onPanelShowAutomation(handler)).toBe(unsubscribe);
         expect(mocks.mockEventBus.on).toHaveBeenCalledWith('panel.showAutomation', handler);
+    });
+
+    // ── Generic pair ─────────────────────────────────────────────────────────
+
+    it('should emit panel.showDevice with deviceType and deviceId', () => {
+        showDevicePanel('fermenter', 'dev-1');
+
+        expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showDevice', {
+            deviceType: 'fermenter',
+            deviceId: 'dev-1',
+        });
+    });
+
+    it('should emit panel.showDevice with null deviceId', () => {
+        showDevicePanel('automation', null);
+
+        expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showDevice', {
+            deviceType: 'automation',
+            deviceId: null,
+        });
+    });
+
+    it('should subscribe to panel.showDevice', () => {
+        const unsubscribe = vi.fn();
+        mocks.mockEventBus.on.mockReturnValue(unsubscribe);
+
+        const handler = vi.fn() as (payload: ShowDevicePanelGenericPayload) => void;
+        expect(onShowDevicePanel(handler)).toBe(unsubscribe);
+        expect(mocks.mockEventBus.on).toHaveBeenCalledWith('panel.showDevice', handler);
     });
 });

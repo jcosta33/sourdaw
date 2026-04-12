@@ -4,7 +4,7 @@ import { toasterStore } from '../stores/toasterStore';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { TOASTER_ENGINE_MAP } from '../useCases/loadToasterKit';
-import type { BuiltinDeviceNode } from '#/modules/AudioEngine/models/AudioEngineState';
+type DeviceNodeRef = { deviceId: string; toasterControls?: { setParam: (n: string, v: number) => void; setPadParam: (pad: number, n: string, v: number) => void } };
 
 export const initToasterSubscribers = inject({ eventBus, logger })(({ eventBus, logger }) =>
     function initToasterSubscribers(): () => void {
@@ -30,7 +30,7 @@ export const initToasterSubscribers = inject({ eventBus, logger })(({ eventBus, 
                 }
             }
 
-            const dn = foundStrip?.deviceNodes.find((d: BuiltinDeviceNode) => d.deviceId === deviceId);
+            const dn = foundStrip?.deviceNodes.find((d: DeviceNodeRef) => d.deviceId === deviceId);
             const tControls = dn?.toasterControls;
 
             if (!tControls) {

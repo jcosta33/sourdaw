@@ -17,20 +17,7 @@ import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { addTrack } from '../../useCases/addTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-
-// ── Marker color presets ──────────────────────────────────────────────
-
-const MARKER_COLOR_PRESETS = [
-    'oklch(0.40 0.07 200)',
-    'oklch(0.40 0.08 150)',
-    'oklch(0.40 0.08 70)',
-    'oklch(0.38 0.08 340)',
-    'oklch(0.38 0.08 270)',
-    'oklch(0.38 0.09 20)',
-    'oklch(0.40 0.08 250)',
-    'oklch(0.39 0.08 45)',
-    'oklch(0.38 0.08 300)',
-];
+import { MARKER_COLOR_PRESETS } from '../../models/colorPalette';
 
 // ── Nearby marker color sub-menu ────────────────────────────────────
 

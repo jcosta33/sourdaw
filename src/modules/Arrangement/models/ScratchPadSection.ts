@@ -16,8 +16,6 @@ export type ScratchPadSection = {
     order: number;
 };
 
-let nextScratchId = 1;
-
 export const createScratchPadSection = (
     startBeat: number,
     endBeat: number,
@@ -25,7 +23,7 @@ export const createScratchPadSection = (
     color: string,
     order: number
 ): ScratchPadSection => ({
-    id: `scratch-${nextScratchId++}`,
+    id: `scratch-${crypto.randomUUID().slice(0, 8)}`,
     startBeat,
     endBeat,
     name,

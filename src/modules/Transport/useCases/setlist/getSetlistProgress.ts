@@ -1,4 +1,4 @@
-import { setlistStore } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore } from '../../stores/setlistStore';
 
 export function getSetlistProgress(): { current: number; total: number; percent: number } {
     const state = setlistStore.value;

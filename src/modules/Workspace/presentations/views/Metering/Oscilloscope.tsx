@@ -34,26 +34,39 @@ export const Oscilloscope = ({
         }
 
         let rafId = 0;
+        // Reused across frames — reallocated only if frequencyBinCount changes.
+        let data: Float32Array<ArrayBuffer> | null = null;
+
+        // Pre-generate noise texture once into an offscreen canvas.
+        const noiseCanvas = document.createElement('canvas');
+        noiseCanvas.width = width;
+        noiseCanvas.height = height;
+        const noiseCtx = noiseCanvas.getContext('2d');
+        if (noiseCtx) {
+            noiseCtx.globalAlpha = 0.025;
+            for (let nx = 0; nx < width; nx += 3) {
+                for (let ny = 0; ny < height; ny += 3) {
+                    const v = Math.random() * 255;
+                    noiseCtx.fillStyle = `rgb(${v},${v},${v})`;
+                    noiseCtx.fillRect(nx, ny, 2, 2);
+                }
+            }
+        }
 
         const draw = (): void => {
             const analyser = trackId ? (getTrackAnalyser(trackId) ?? getMasterAnalyser()) : getMasterAnalyser();
 
             const bufferLength = analyser.frequencyBinCount;
-            const data = new Float32Array(bufferLength);
+            if (!data || data.length !== bufferLength) {
+                data = new Float32Array(bufferLength);
+            }
             analyser.getFloatTimeDomainData(data);
 
             // Background — deep black with subtle noise texture
             ctx.fillStyle = '#050508';
             ctx.fillRect(0, 0, width, height);
-            ctx.globalAlpha = 0.025;
-            for (let nx = 0; nx < width; nx += 3) {
-                for (let ny = 0; ny < height; ny += 3) {
-                    const v = Math.random() * 255;
-                    ctx.fillStyle = `rgb(${v},${v},${v})`;
-                    ctx.fillRect(nx, ny, 2, 2);
-                }
-            }
-            ctx.globalAlpha = 1;
+            // Cached noise overlay
+            ctx.drawImage(noiseCanvas, 0, 0);
 
             // Grid lines — subtle dashed
             ctx.setLineDash([2, 4]);

@@ -12,21 +12,12 @@ import { moveMarker } from '../../useCases/marker/markerOperations/moveMarker';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
+import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/colorPalette';
 
 type MarkerLaneProps = {
     pixelsPerBeat: number;
     scrollX: number;
 };
-
-const MARKER_COLORS = [
-    'oklch(0.40 0.07 200)', // deep teal
-    'oklch(0.40 0.08 150)', // deep sage
-    'oklch(0.40 0.08 70)', // deep amber
-    'oklch(0.38 0.08 340)', // deep rose
-    'oklch(0.38 0.08 270)', // deep indigo
-    'oklch(0.38 0.09 20)', // deep coral
-    'oklch(0.40 0.08 250)', // deep blue
-];
 
 type ContextMenuState =
     | { kind: 'none' }

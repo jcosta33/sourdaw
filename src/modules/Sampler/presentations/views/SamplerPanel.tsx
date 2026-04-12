@@ -5,6 +5,7 @@
  */
 
 import { type ReactElement, useEffect, useState } from 'react';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { Circle, Cpu, Volume2 } from 'lucide-react';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -66,11 +67,11 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     // Create / destroy sampler engine instance on mount/unmount.
     useEffect(() => {
         initSamplerEngine(deviceId, 44100).catch((err) => {
-            console.error('Failed to create sampler instance:', err);
+            logger.warn('Failed to create sampler instance:', err);
         });
         return () => {
             teardownSamplerEngine(deviceId).catch((err) => {
-                console.error('Failed to destroy sampler instance:', err);
+                logger.warn('Failed to destroy sampler instance:', err);
             });
         };
     }, [deviceId]);
@@ -316,8 +317,8 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             }}
                             onFilterChange={(cutoff, resonance) => {
                                 setFilterParams(cutoff, resonance);
-                                if (cutoff !== undefined) handleParamChange('filterCutoff', cutoff);
-                                if (resonance !== undefined) handleParamChange('filterResonance', resonance);
+                                if (cutoff !== undefined) {handleParamChange('filterCutoff', cutoff);}
+                                if (resonance !== undefined) {handleParamChange('filterResonance', resonance);}
                             }}
                             onGainChange={(gain) => {
                                 setMasterGain(gain);

@@ -39,7 +39,7 @@ function createFlushParam(
         const compositeKey = `${deviceId}:${key}`;
         pendingUpdates.delete(compositeKey);
         const value = latestValues.get(compositeKey);
-        if (value === undefined) return;
+        if (value === undefined) {return;}
         latestValues.delete(compositeKey);
         updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
         persistDeviceParamFn(ref.deviceId, key, value);
@@ -103,7 +103,7 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)(
             }
 
             const ref = findDeviceRef(deviceId);
-            if (!ref) return;
+            if (!ref) {return;}
 
             const compositeKey = `${deviceId}:${key}`;
             latestValues.set(compositeKey, value);

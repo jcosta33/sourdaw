@@ -1,5 +1,5 @@
-import * as bridge from '../../repositories/samplerBridge';
+import { destroySamplerInstance } from '../../repositories/samplerBridge';
 
 export async function teardownSamplerEngine(instanceId: string): Promise<void> {
-    await bridge.destroySamplerInstance(instanceId);
+    await destroySamplerInstance(instanceId);
 }

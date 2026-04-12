@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createNeutralPresetParameters } from '#/modules/GrandBoule/models/GrandBoulePreset';
-import { createDefaultGrandBouleConfig } from '#/modules/GrandBoule/models/GrandBouleConfig';
-import { createDefaultMidiCalibration } from '#/modules/GrandBoule/models/GrandBouleMidiCalibration';
-import { createDefaultMorphState } from '#/modules/GrandBoule/models/GrandBouleMorphState';
-import { type GrandBouleState } from '#/modules/GrandBoule/stores/grandBouleStore';
+import { createNeutralPresetParameters } from '../../models/GrandBoulePreset';
+import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
+import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibration';
+import { createDefaultMorphState } from '../../models/GrandBouleMorphState';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { loadGrandBoulePreset } from '../loadGrandBoulePreset';
 import { findBuiltinGrandBoulePreset } from '../../repositories/findBuiltinGrandBoulePreset';
 
@@ -12,7 +12,7 @@ const gbStoreCell = vi.hoisted(() => ({
     set: vi.fn(),
 }));
 
-vi.mock('#/modules/GrandBoule/stores/grandBouleStore', () => ({
+vi.mock('../../stores/grandBouleStore', () => ({
     grandBouleStore: gbStoreCell,
 }));
 

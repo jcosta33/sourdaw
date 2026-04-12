@@ -4,7 +4,7 @@
  */
 
 import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 type GrooveTemplate = {
     name: string;
@@ -27,18 +27,16 @@ const GROOVE_TEMPLATES: GrooveTemplate[] = [
     { name: 'Push', offsets: [-0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0] },
 ];
 
-export class GrooveModule implements MidiProcessor {
-    readonly id: string;
+export class GrooveModule extends BaseMidiProcessor {
     readonly name = 'Groove';
 
     private templateIndex = 0;
     private amount = 0.5; // 0–1 blend
     private subdivision = 16; // quantize grid (16 = 16th notes)
-    private bypassed = false;
     private noteMap = new Map<string, number>(); // track timing offset for Note Off
 
     constructor(id?: string) {
-        this.id = id ?? `groove-${Date.now()}`;
+        super(id ?? `groove-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
@@ -79,16 +77,6 @@ export class GrooveModule implements MidiProcessor {
     reset(): void {
         this.noteMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'template':

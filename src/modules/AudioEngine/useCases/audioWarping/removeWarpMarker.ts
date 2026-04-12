@@ -1,4 +1,4 @@
-import { audioWarpStore } from '#/modules/AudioEngine/stores/audioWarp';
+import { audioWarpStore } from '../../stores/audioWarp';
 
 export function removeWarpMarker(clipId: string, markerId: string): void {
     const state = audioWarpStore.value;

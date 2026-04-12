@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -53,8 +54,8 @@ export const CollaborationPanel = (): ReactElement | null => {
 
     useEffect(() => {
         return () => {
-            if (copiedInviteTimerRef.current !== null) clearTimeout(copiedInviteTimerRef.current);
-            if (copiedAnswerTimerRef.current !== null) clearTimeout(copiedAnswerTimerRef.current);
+            if (copiedInviteTimerRef.current !== null) {clearTimeout(copiedInviteTimerRef.current);}
+            if (copiedAnswerTimerRef.current !== null) {clearTimeout(copiedAnswerTimerRef.current);}
         };
     }, []);
 
@@ -73,7 +74,7 @@ export const CollaborationPanel = (): ReactElement | null => {
             setInviteString(invite);
             setShowQr(false);
         } catch (error) {
-            console.error('Failed to generate invite:', error);
+            logger.warn('Failed to generate invite:', error);
         } finally {
             setIsGeneratingInvite(false);
         }
@@ -91,7 +92,7 @@ export const CollaborationPanel = (): ReactElement | null => {
             await acceptAnswer(answerString.trim());
             setAnswerString('');
         } catch (error) {
-            console.error('Failed to accept answer:', error);
+            logger.warn('Failed to accept answer:', error);
         }
     };
 
@@ -102,7 +103,7 @@ export const CollaborationPanel = (): ReactElement | null => {
             setJoinAnswer(answer);
             setJoinInvite('');
         } catch (error) {
-            console.error('Failed to join session:', error);
+            logger.warn('Failed to join session:', error);
         } finally {
             setIsJoining(false);
         }
@@ -111,7 +112,7 @@ export const CollaborationPanel = (): ReactElement | null => {
     const handleCopyInvite = () => {
         navigator.clipboard.writeText(inviteString);
         setCopiedInvite(true);
-        if (copiedInviteTimerRef.current !== null) clearTimeout(copiedInviteTimerRef.current);
+        if (copiedInviteTimerRef.current !== null) {clearTimeout(copiedInviteTimerRef.current);}
         copiedInviteTimerRef.current = setTimeout(() => {
             setCopiedInvite(false);
             copiedInviteTimerRef.current = null;
@@ -121,7 +122,7 @@ export const CollaborationPanel = (): ReactElement | null => {
     const handleCopyAnswer = () => {
         navigator.clipboard.writeText(joinAnswer);
         setCopiedAnswer(true);
-        if (copiedAnswerTimerRef.current !== null) clearTimeout(copiedAnswerTimerRef.current);
+        if (copiedAnswerTimerRef.current !== null) {clearTimeout(copiedAnswerTimerRef.current);}
         copiedAnswerTimerRef.current = setTimeout(() => {
             setCopiedAnswer(false);
             copiedAnswerTimerRef.current = null;

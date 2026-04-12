@@ -1,5 +1,5 @@
-import { getTrackById } from '#/modules/Arrangement/repositories/track/getTrackById';
-import { getVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
+import { getTrackById } from '../../repositories/track/getTrackById';
+import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 
 export function getEffectiveGain(trackId: string, trackGain: number): number {
     const track = getTrackById(trackId);

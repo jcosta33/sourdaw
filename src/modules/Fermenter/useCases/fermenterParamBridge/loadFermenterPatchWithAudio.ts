@@ -25,7 +25,7 @@ export function loadFermenterPatchWithAudio(deviceId: string, patch: FermenterPa
     loadFermenterPatch(deviceId, patch);
 
     const ref = findDeviceRef(deviceId);
-    if (!ref) return;
+    if (!ref) {return;}
 
     for (const [key, value] of Object.entries(patch)) {
         if (typeof value === 'number') {

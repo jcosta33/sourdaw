@@ -84,7 +84,7 @@ function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: 
 }
 
 function renderLoop(): void {
-    if (!running || !instance || !controlInts || !leftRing || !rightRing || !memory) return;
+    if (!running || !instance || !controlInts || !leftRing || !rightRing || !memory) {return;}
 
     // Render as many blocks as needed to stay TARGET_AHEAD of the consumer,
     // using a bounded loop instead of recursion to avoid stack overflow.
@@ -128,7 +128,7 @@ function renderLoop(): void {
 }
 
 function dispatch(msg: Record<string, unknown>): void {
-    if (!instance) return;
+    if (!instance) {return;}
     switch (msg.type) {
         case 'noteOn':
             instance.note_on(msg.midiNote as number, msg.velocity as number);

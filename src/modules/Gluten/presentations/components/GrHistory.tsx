@@ -29,9 +29,9 @@ export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHis
         posRef.current++;
 
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -94,8 +94,8 @@ export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHis
             const gr = history[idx] ?? 0;
             const barH = Math.min(height, Math.max(0, (-gr / DB_RANGE) * height));
             const x = i * colW;
-            if (i === 0) ctx.moveTo(x, barH);
-            else ctx.lineTo(x, barH);
+            if (i === 0) {ctx.moveTo(x, barH);}
+            else {ctx.lineTo(x, barH);}
         }
         ctx.save();
         ctx.shadowColor = accent;

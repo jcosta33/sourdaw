@@ -1,4 +1,4 @@
-import { audioWarpStore, DEFAULT_WARP_SETTINGS } from '#/modules/AudioEngine/stores/audioWarp';
+import { audioWarpStore, DEFAULT_WARP_SETTINGS } from '../../stores/audioWarp';
 
 export function setPitchShift(clipId: string, semitones: number): void {
     const state = audioWarpStore.value;

@@ -1,4 +1,4 @@
-import { cvGateStore, getNextOutputId, VOLTAGE_RANGES, type CvOutputChannel } from '#/modules/Synth/stores/cvGate';
+import { cvGateStore, getNextOutputId, VOLTAGE_RANGES, type CvOutputChannel } from '../../../stores/cvGate';
 
 export function addCvOutput(name: string, outputChannel: number, type: CvOutputChannel['type']): void {
     const state = cvGateStore.value;

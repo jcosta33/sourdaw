@@ -10,10 +10,10 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { ScheduledEventQueue } from '../../models/MidiProcessor';
 
-export class NoteRepeater implements MidiProcessor {
-    readonly id: string;
+export class NoteRepeater extends BaseMidiProcessor {
     readonly name = 'Note Repeater';
 
     private repeatCount = 3;
@@ -21,11 +21,10 @@ export class NoteRepeater implements MidiProcessor {
     private decay = 0.7; // velocity decay per repeat
     private gate = 0.5; // note length as fraction of interval
     private pitchStep = 0; // semitones per repeat
-    private bypassed = false;
     private scheduled = new ScheduledEventQueue();
 
     constructor(id?: string) {
-        this.id = id ?? `repeater-${Date.now()}`;
+        super(id ?? `repeater-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
@@ -71,16 +70,6 @@ export class NoteRepeater implements MidiProcessor {
     reset(): void {
         this.scheduled.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'repeat_count':

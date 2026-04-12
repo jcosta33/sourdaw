@@ -1,5 +1,5 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { createAutomationLane } from '#/modules/Automation/models/Automation';
+import { automationStore } from '../../stores/automationStore';
+import { createAutomationLane } from '../../models/Automation';
 
 export function duplicateClipAutomation(sourceClipId: string, newClipId: string): void {
     const state = automationStore.value;

@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '../../stores/automationStore';
 import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
 
 export function getAutomationValueAtBeat(laneId: string, beat: number): number | null {
@@ -12,15 +12,29 @@ export function getAutomationValueAtBeat(laneId: string, beat: number): number |
         return null;
     }
 
-    const before = lane.points.filter((p) => p.beat <= beat);
-    const after = lane.points.filter((p) => p.beat > beat);
+    const points = lane.points;
 
-    if (before.length === 0) {
-        return lane.points[0]!.value;
-    }
-    if (after.length === 0) {
-        return before[before.length - 1]!.value;
+    // Points are kept sorted by beat. Use binary search to find the last point
+    // with beat <= target — avoids two O(n) filter() allocations per tick.
+    let lo = 0;
+    let hi = points.length - 1;
+    let beforeIdx = -1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >>> 1;
+        if (points[mid]!.beat <= beat) {
+            beforeIdx = mid;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
     }
 
-    return interpolateAutomationValue(before[before.length - 1]!, after[0]!, beat);
+    if (beforeIdx === -1) {
+        return points[0]!.value;
+    }
+    if (beforeIdx === points.length - 1) {
+        return points[beforeIdx]!.value;
+    }
+
+    return interpolateAutomationValue(points[beforeIdx]!, points[beforeIdx + 1]!, beat);
 }

@@ -45,5 +45,9 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
         inputNode: splitter,
         outputNode: merger,
         nodes: [splitter, dry, wet, ...filters, lfo, lfoGain, feedback, dry, wet],
+        namedNodes: {
+            splitter, dry, wet, lfo, lfoGain, feedback, merger,
+            filter0: filters[0]!, filter1: filters[1]!, filter2: filters[2]!, filter3: filters[3]!,
+        },
     };
 }

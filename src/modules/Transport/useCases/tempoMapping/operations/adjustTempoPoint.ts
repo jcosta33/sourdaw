@@ -1,4 +1,4 @@
-import { type TempoMapPoint } from '#/modules/Transport/models/TempoMappingTypes';
+import { type TempoMapPoint } from '../../../models/TempoMappingTypes';
 
 /**
  * Manually adjust a tempo map point.

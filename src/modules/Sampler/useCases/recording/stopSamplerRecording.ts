@@ -3,6 +3,6 @@ import { samplerStore } from '../../stores/samplerStore';
 
 export async function stopSamplerRecording(): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
     await stopRecording(state.instanceId);
 }

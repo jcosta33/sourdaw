@@ -1,9 +1,6 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 
-type GestureEvent = UIEvent & {
-    readonly scale: number;
-    readonly rotation: number;
-};
+import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
@@ -362,17 +359,17 @@ export const TimelineSurface = (): ReactElement => {
             <PresenceOverlay
                 beatToX={(beat) => {
                     const view = timelineViewStore.value;
-                    if (!view) return 0;
+                    if (!view) {return 0;}
                     return (beat - view.scrollX / view.pixelsPerBeat) * view.pixelsPerBeat;
                 }}
                 trackIdToY={(trackId) => {
                     const model = buildTimelineRenderModel();
                     const view = timelineViewStore.value;
-                    if (!model || !view) return null;
+                    if (!model || !view) {return null;}
                     const scrollY = view.scrollY ?? 0;
                     let y = 0;
                     for (const track of model.tracks) {
-                        if (track.id === trackId) return y - scrollY;
+                        if (track.id === trackId) {return y - scrollY;}
                         y += track.height;
                     }
                     return null;

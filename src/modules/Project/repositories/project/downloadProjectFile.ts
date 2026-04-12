@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type ProjectData } from '../../models/ProjectData';
 import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
 import { isTauri } from '#/utils/tauriBridge';
@@ -48,7 +49,7 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
             if (error instanceof Error && error.name === 'AbortError') {
                 return;
             }
-            console.warn('showSaveFilePicker failed, falling back to anchor download:', error);
+            logger.warn('showSaveFilePicker failed, falling back to anchor download:', error);
         }
     }
 

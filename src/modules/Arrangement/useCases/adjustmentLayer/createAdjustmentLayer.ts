@@ -5,7 +5,7 @@ import {
     LAYER_COLORS,
     type AdjustmentEffectType,
     type AdjustmentLayer,
-} from '#/modules/Arrangement/stores/adjustmentLayer';
+} from '../../stores/adjustmentLayer';
 
 export function createAdjustmentLayer(
     name: string,

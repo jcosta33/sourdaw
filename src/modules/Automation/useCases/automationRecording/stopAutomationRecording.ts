@@ -6,7 +6,7 @@ import {
     findLaneId,
     clearPointsInRange,
     flushPendingPoints,
-} from '#/modules/Automation/stores/automationRecordingState';
+} from '../../stores/automationRecordingState';
 
 export function stopAutomationRecording(): void {
     const tracks = getAllTracks();

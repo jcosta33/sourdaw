@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '../../stores/automationStore';
 
 export function removeAutomationPoint(laneId: string, beat: number): void {
     const state = automationStore.value;

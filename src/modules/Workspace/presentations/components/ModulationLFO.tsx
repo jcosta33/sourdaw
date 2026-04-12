@@ -41,9 +41,9 @@ export const ModulationLFO = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -88,8 +88,8 @@ export const ModulationLFO = ({
                 const phase = normalizedX * cyclesVisible + phaseOffset;
                 const val = lfoValue(phase, shape);
                 const y = centerY - val * amplitude;
-                if (i === 0) ctx.moveTo(i, y);
-                else ctx.lineTo(i, y);
+                if (i === 0) {ctx.moveTo(i, y);}
+                else {ctx.lineTo(i, y);}
             }
             ctx.strokeStyle = accentMint;
             ctx.lineWidth = 1.5;

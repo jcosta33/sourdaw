@@ -1,5 +1,5 @@
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { getTrackById } from '#/modules/Arrangement/repositories/track/getTrackById';
+import { updateTrack } from '../../repositories/track/updateTrack';
+import { getTrackById } from '../../repositories/track/getTrackById';
 import { setTrackMute as engineSetTrackMute } from '#/modules/AudioEngine/useCases';
 
 export function disableTrack(trackId: string, disabled: boolean): void {

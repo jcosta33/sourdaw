@@ -1,4 +1,4 @@
-import { BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
+import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
 
 /**
  * Returns the plugin list for the current platform.

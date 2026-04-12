@@ -1,10 +1,10 @@
 
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
-import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
-import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
+import { getTransportState } from '../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { resumeEngine } from '#/modules/AudioEngine/useCases';
-import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
-import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
+import { startPlayheadScheduler } from '../playheadScheduler';
+import { ensureTrackStrips } from '../ensureTrackStrips';
 
 export function startPlayback(): void {
     const state = getTransportState();

@@ -4,6 +4,7 @@
  * Each DSO type maps to specific use case calls. Validation is performed
  * before execution. Human-readable summaries are generated for the action history.
  */
+import { logger } from '#/infra/logger/appLogger';
 import { type Dso } from '../../models/DsoTypes';
 import {
     addClip,
@@ -23,8 +24,9 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { humanizeNotes } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
-// Local type aliases — duplicated from AiGeneration algorithm files to avoid
-// a circular module dependency (AiGeneration already imports from AiRuntime).
+// Synced from AiGeneration — keep in sync manually until circular dep is resolved.
+// These must match the VALID_* sets in generationHandlerHelpers.ts, which are the
+// runtime validation gates. Values not in those sets are silently rejected.
 type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
 type ScaleType =
     | 'major'
@@ -319,11 +321,11 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
     const mockTracks: { id: string; name: string }[] = [];
 
     const findTrackId = (nameOrId: string): string | null => {
-        if (state.tracks.some((t) => t.id === nameOrId)) return nameOrId;
-        if (mockTracks.some((t) => t.id === nameOrId)) return nameOrId;
+        if (state.tracks.some((t) => t.id === nameOrId)) {return nameOrId;}
+        if (mockTracks.some((t) => t.id === nameOrId)) {return nameOrId;}
 
         let match = bestMatch(nameOrId, state.tracks, (t) => t.name);
-        if (!match) match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;
+        if (!match) {match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;}
         return match?.id ?? null;
     };
 
@@ -915,7 +917,7 @@ export async function executeDsos(dsos: Dso[]): Promise<string[]> {
             await executeSingleDso(dso);
             summaries.push(describeDso(dso));
         } catch (error) {
-            console.warn(`Failed to execute DSO ${dso.op}:`, error);
+            logger.warn(`Failed to execute DSO ${dso.op}:`, error);
         }
     }
 

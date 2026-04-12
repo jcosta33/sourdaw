@@ -1,4 +1,4 @@
-import { audioWarpStore, type WarpAlgorithm } from '#/modules/AudioEngine/stores/audioWarp';
+import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';
 
 export function setDefaultAlgorithm(algorithm: WarpAlgorithm): void {
     const state = audioWarpStore.value;

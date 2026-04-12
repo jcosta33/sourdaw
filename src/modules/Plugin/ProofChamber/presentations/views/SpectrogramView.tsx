@@ -6,9 +6,9 @@ export const SpectrogramView = ({ isMocking = false }: { isMocking?: boolean }):
     // MVP Real-time GPU-style scroll simulation
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         let animationId: number;
         let time = 0;

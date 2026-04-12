@@ -123,7 +123,10 @@ export function summarizeFeatures(audioBufferId: string, options?: AnalysisOptio
     const n = frames.length;
 
     const avgRms = frames.reduce((sum, f) => sum + f.rms, 0) / n;
-    const peakRms = Math.max(...frames.map((f) => f.rms));
+    let peakRms = -Infinity;
+    for (const f of frames) {
+        if (f.rms > peakRms) { peakRms = f.rms; }
+    }
     const avgSpectralCentroid = frames.reduce((sum, f) => sum + f.spectralCentroid, 0) / n;
     const avgSpectralFlatness = frames.reduce((sum, f) => sum + f.spectralFlatness, 0) / n;
     const avgZcr = frames.reduce((sum, f) => sum + f.zcr, 0) / n;

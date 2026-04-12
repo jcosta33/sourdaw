@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '../../stores/trackStore';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -8,7 +8,7 @@ import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 
-vi.mock('#/modules/Arrangement/stores/trackStore', async (importOriginal) => {
+vi.mock('../../stores/trackStore', async (importOriginal) => {
     const actual = await importOriginal<any>();
     return { ...actual, trackStore: { value: null, set: vi.fn() } };
 });

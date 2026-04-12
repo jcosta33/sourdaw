@@ -1,6 +1,6 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
+import { type Clip } from '../../models/Track';
 import { shiftClipAutomation } from '#/modules/Automation';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 

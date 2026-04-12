@@ -7,12 +7,12 @@ vi.mock('../hitTestClip/hitTestClip', () => ({
 }));
 
 let mockTimelineViewValue: any = null;
-vi.mock('#/modules/Arrangement/stores/timelineViewStore', () => ({
+vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: { get value() { return mockTimelineViewValue; } }
 }));
 
 let mockTrackValue: any = null;
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: { get value() { return mockTrackValue; } }
 }));
 

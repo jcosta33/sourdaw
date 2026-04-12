@@ -4,7 +4,8 @@
  * for smooth 60fps cursor rendering.
  */
 
-import * as bridge from '../repositories/samplerBridge';
+import { logger } from '#/infra/logger/appLogger';
+import { getSamplerPosition } from '../repositories/samplerBridge';
 import { samplerStore } from '../stores/samplerStore';
 
 type PositionListener = (frame: number) => void;
@@ -20,20 +21,20 @@ const listeners = new Set<PositionListener>();
 const POLL_INTERVAL_MS = 33; // ~30Hz
 
 function startPolling(): void {
-    if (pollTimer !== null) return;
+    if (pollTimer !== null) {return;}
 
     pollTimestamp = performance.now();
 
     pollTimer = setInterval(async () => {
         const state = samplerStore.value;
-        if (!state?.instanceId) return;
+        if (!state?.instanceId) {return;}
 
         try {
             prevPolledFrame = lastPolledFrame;
-            lastPolledFrame = await bridge.getSamplerPosition(state.instanceId);
+            lastPolledFrame = await getSamplerPosition(state.instanceId);
             pollTimestamp = performance.now();
         } catch (err) {
-            console.error('Sampler position poll failed:', err);
+            logger.warn('Sampler position poll failed:', err);
         }
     }, POLL_INTERVAL_MS);
 

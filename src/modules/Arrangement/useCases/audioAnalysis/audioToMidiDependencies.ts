@@ -1,6 +1,6 @@
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { addTrack } from '../addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { addClip } from '../clip/addClip';
 
 export const audioToMidiDependencies = {
     addTrack,

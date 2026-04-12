@@ -324,7 +324,7 @@ export const audioBufferCache = {
         // Pass 1: serialize buffers already in the in-memory cache
         for (const id of ids) {
             const buf = cache.get(id);
-            if (!buf) continue;
+            if (!buf) {continue;}
             result[id] = {
                 sampleRate: buf.sampleRate,
                 numberOfChannels: buf.numberOfChannels,
@@ -351,7 +351,7 @@ export const audioBufferCache = {
                         req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
                         req.onerror = () => reject(req.error);
                     });
-                    if (!data || (data.channelData[0]?.length ?? 0) === 0) continue;
+                    if (!data || (data.channelData[0]?.length ?? 0) === 0) {continue;}
                     result[id] = {
                         sampleRate: data.sampleRate,
                         numberOfChannels: data.numberOfChannels,
@@ -371,11 +371,11 @@ export const audioBufferCache = {
      * Buffers whose ID already exists in the cache are skipped. */
     async importBuffers(buffers: Record<string, ExportedAudioBuffer>, context: BaseAudioContext): Promise<void> {
         for (const [id, data] of Object.entries(buffers)) {
-            if (cache.has(id)) continue;
+            if (cache.has(id)) {continue;}
             try {
                 const channels = data.channelData.map(base64ToFloat32);
                 const length = channels[0]?.length ?? 0;
-                if (length === 0) continue;
+                if (length === 0) {continue;}
                 const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
                 for (let ch = 0; ch < data.numberOfChannels; ch++) {
                     buffer.getChannelData(ch).set(channels[ch]!);

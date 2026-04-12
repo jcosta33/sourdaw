@@ -46,8 +46,8 @@ export type GrandBouleState = {
     activeVoices: number;
 };
 
-export const grandBouleStore = createStore<GrandBouleState>({
-    initialData: {
+export function createDefaultGrandBouleState(): GrandBouleState {
+    return {
         config: createDefaultGrandBouleConfig(),
         parameters: createNeutralPresetParameters(),
         pedals: {
@@ -61,5 +61,12 @@ export const grandBouleStore = createStore<GrandBouleState>({
         temperament: 0,
         engineReady: false,
         activeVoices: 0,
-    },
+    };
+}
+
+/** @deprecated Use createDefaultGrandBouleState() for fresh instances */
+export const defaultGrandBouleState: GrandBouleState = createDefaultGrandBouleState();
+
+export const grandBouleStore = createStore<GrandBouleState>({
+    initialData: createDefaultGrandBouleState(),
 });

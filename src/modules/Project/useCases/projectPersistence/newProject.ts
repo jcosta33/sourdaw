@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -21,7 +22,7 @@ export function newProject(name = 'Untitled Project'): void {
 
     // 1. Initialize CRDT Document structure so subsequent .set() calls persist
     createCrdtProject(name).catch((error) => {
-        console.error('[newProject] Failed to initialize CRDT structure:', error);
+        logger.warn('[newProject] Failed to initialize CRDT structure:', error);
     });
 
     resetModuleStoresToDefault();

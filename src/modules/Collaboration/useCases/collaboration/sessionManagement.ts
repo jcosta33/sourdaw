@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type PeerId, type PeerMessage, type SignalingMessage, PEER_COLORS } from '../../models/CollaborationTypes';
 import { createCollaborationError } from '../../errors/CollaborationError';
 import { transportStore } from '#/modules/Transport/stores';
@@ -22,8 +23,8 @@ import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AutomergeSync } from '../automergeSync';
 import { AssetTransfer } from '../assetTransfer';
 import { PermissionManager } from '../permissions';
+import { DOC_ID_ASSET, DOC_ID_BRANCHES } from '../../models/syncChannelConstants';
 
-const DOC_BRANCHES = '__branches__';
 const MAIN_BRANCH_ID = 'main';
 
 type LocalBranchRecord = {
@@ -95,11 +96,11 @@ const startBranchSync = (isHost: boolean): void => {
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
-        removeCrdtDoc(DOC_BRANCHES);
-        createCrdtDoc(DOC_BRANCHES);
+        removeCrdtDoc(DOC_ID_BRANCHES);
+        createCrdtDoc(DOC_ID_BRANCHES);
         const currentBranches = branchStore.value?.branches ?? [];
         mutateCrdtDoc({
-            id: DOC_BRANCHES,
+            id: DOC_ID_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
                 doc['branches'] = currentBranches;
             },
@@ -112,11 +113,11 @@ const startBranchSync = (isHost: boolean): void => {
         if (isProjectingBranches || !state) {
             return;
         }
-        if (!hasCrdtDoc(DOC_BRANCHES)) {
+        if (!hasCrdtDoc(DOC_ID_BRANCHES)) {
             return;
         }
         mutateCrdtDoc({
-            id: DOC_BRANCHES,
+            id: DOC_ID_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
                 doc['branches'] = state.branches;
             },
@@ -125,7 +126,7 @@ const startBranchSync = (isHost: boolean): void => {
 
     // Project incoming __branches__ doc changes back into branchStore.
     unsubscribeAutomergeChanges = subscribeToCrdtChanges(() => {
-        const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_BRANCHES);
+        const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_ID_BRANCHES);
         if (!doc?.branches) {
             return;
         }
@@ -165,7 +166,7 @@ const stopBranchSync = (): void => {
         unsubscribeAutomergeChanges = null;
     }
 
-    removeCrdtDoc(DOC_BRANCHES);
+    removeCrdtDoc(DOC_ID_BRANCHES);
 
     if (branchStoreSnapshot) {
         isProjectingBranches = true;
@@ -179,7 +180,7 @@ const stopBranchSync = (): void => {
 
     // Persist without the __branches__ doc so IDB stays clean.
     persistCrdtProject().catch((error) => {
-        console.error('[Collaboration] Failed to persist after branch sync cleanup:', error);
+        logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
     });
 };
 
@@ -474,7 +475,7 @@ async function resolveAssetForClips(hash: string): Promise<void> {
                 const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
                 audioBufferCache.set(clip.audioBufferId, audioBuffer);
             } catch {
-                console.error('[Collaboration] Failed to decode asset for clip', clip.id);
+                logger.warn('[Collaboration] Failed to decode asset for clip', clip.id);
             }
         }
     }
@@ -592,7 +593,7 @@ type HandlePeerMessageInput = { peerId: PeerId; message: PeerMessage };
 const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void => {
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
-        if (message.docId === '__asset__') {
+        if (message.docId === DOC_ID_ASSET) {
             assetTransfer?.handleMessage(peerId, message);
         } else if (message.docId === '__permissions__') {
             permissionManager?.handleMessage(peerId, message);
@@ -716,17 +717,14 @@ const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void =
 // The 'z:' prefix lets joiners detect and decompress transparently,
 // so old uncompressed invites continue to work during any transition.
 
-async function compressInvite(json: string): Promise<string> {
-    const bytes = new TextEncoder().encode(json);
-    const stream = new CompressionStream('deflate-raw');
-    const writer = stream.writable.getWriter();
-    writer.write(bytes);
-    writer.close();
+async function readAllChunks(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
     const chunks: Uint8Array[] = [];
-    const reader = stream.readable.getReader();
+    const reader = stream.getReader();
     for (;;) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+            break;
+        }
         chunks.push(value!);
     }
     const total = chunks.reduce((n, c) => n + c.length, 0);
@@ -736,6 +734,16 @@ async function compressInvite(json: string): Promise<string> {
         result.set(chunk, offset);
         offset += chunk.length;
     }
+    return result;
+}
+
+async function compressInvite(json: string): Promise<string> {
+    const bytes = new TextEncoder().encode(json);
+    const stream = new CompressionStream('deflate-raw');
+    const writer = stream.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    const result = await readAllChunks(stream.readable);
     const binary = Array.from(result, (b) => String.fromCharCode(b)).join('');
     return 'z:' + btoa(binary);
 }
@@ -751,19 +759,6 @@ async function decompressInvite(raw: string): Promise<string> {
     const writer = stream.writable.getWriter();
     writer.write(bytes);
     writer.close();
-    const chunks: Uint8Array[] = [];
-    const reader = stream.readable.getReader();
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value!);
-    }
-    const total = chunks.reduce((n, c) => n + c.length, 0);
-    const result = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-    }
+    const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
 }

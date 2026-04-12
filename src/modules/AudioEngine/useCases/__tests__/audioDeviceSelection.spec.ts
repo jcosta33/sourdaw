@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getAudioDevices } from '../audioDeviceSelection/getAudioDevices';
 import { setOutputDevice } from '../audioDeviceSelection/setOutputDevice';
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
+import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { logger } from '#/infra/logger/appLogger';
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -12,7 +12,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
+vi.mock('../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
         context: {
             setSinkId: vi.fn().mockResolvedValue(undefined),

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
+import { renameTrack } from '../../../../useCases/renameTrack';
 import { InlineTrackName } from '../InlineTrackName';
 
 // Mock external dependencies
-vi.mock('#/modules/Arrangement/useCases/renameTrack', () => ({
+vi.mock('../../../../useCases/renameTrack', () => ({
     renameTrack: vi.fn(),
 }));
 

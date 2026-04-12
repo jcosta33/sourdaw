@@ -1,4 +1,4 @@
-import { controlSurfaceStore } from '#/modules/AudioEngine/stores/controlSurface';
+import { controlSurfaceStore } from '../../stores/controlSurface';
 
 export function mcuSetFader(faderIndex: number, position: number): void {
     const state = controlSurfaceStore.value;

@@ -1,4 +1,4 @@
-import { groupCompingStore, getNextGroupId, type CompGroupEntry } from '#/modules/Arrangement/stores/groupComping';
+import { groupCompingStore, getNextGroupId, type CompGroupEntry } from '../../../stores/groupComping';
 
 export function createCompGroup(name: string, trackIds: string[]): void {
     const state = groupCompingStore.value;

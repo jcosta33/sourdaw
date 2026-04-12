@@ -4,7 +4,7 @@ import { getSelectedClipIds } from '../../useCases/selectionHelpers/getSelectedC
 import { getSelectedTrackId } from '../../useCases/selectionHelpers/getSelectedTrackId';
 import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { executeAppAction } from '../../useCases/executeAppAction';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 
 /** Clip commands — rename, split, normalize, reverse, glue, loop, consolidate. */

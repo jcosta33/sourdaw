@@ -85,9 +85,7 @@ export const parsePromptToActions = inject({ logger })(
                     _jsonEditApplied: true,
                     _jsonEditSummaries: result.summaries,
                 };
-            }
-
-            if (!result.success) {
+            } else {
                 logger.warn(`[AI] DSO editor failed: ${result.error ?? 'unknown'}`);
                 return {
                     actions: [],

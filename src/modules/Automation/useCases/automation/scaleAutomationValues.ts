@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '../../stores/automationStore';
 
 export function scaleAutomationValues(laneId: string, factor: number, anchor = 0): void {
     const state = automationStore.value;

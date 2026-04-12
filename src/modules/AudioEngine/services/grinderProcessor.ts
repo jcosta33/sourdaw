@@ -70,7 +70,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) return;
+                    if (this._ready) {return;}
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
@@ -95,8 +95,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _passthrough(input, output) {
         const leftIn = input[0];
         const rightIn = input[1] ?? leftIn;
-        if (output[0] && leftIn) output[0].set(leftIn);
-        if (output[1] && rightIn) output[1].set(rightIn);
+        if (output[0] && leftIn) {output[0].set(leftIn);}
+        if (output[1] && rightIn) {output[1].set(rightIn);}
     }
 
     process(inputs, outputs) {
@@ -104,7 +104,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         const output = outputs[0];
 
         if (!this._ready || this._faulted) {
-            if (input && output) this._passthrough(input, output);
+            if (input && output) {this._passthrough(input, output);}
             return true;
         }
         if (!input || input.length < 1 || !output || output.length < 1) {

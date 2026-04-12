@@ -1,4 +1,4 @@
-import { pushStore } from '#/modules/Plugin/stores/push';
+import { pushStore } from '../../stores/push';
 
 export function connectPush(model: 'push2' | 'push3'): void {
     const state = pushStore.value;

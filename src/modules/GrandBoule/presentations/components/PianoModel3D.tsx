@@ -22,7 +22,9 @@ const isBlackKey = (midi: number): boolean => BLACK_KEY_CLASSES.has(midi % 12);
 const NUM_WHITE_KEYS = (() => {
     let count = 0;
     for (let i = 0; i < NUM_KEYS; i += 1) {
-        if (!isBlackKey(LOWEST_MIDI + i)) count += 1;
+        if (!isBlackKey(LOWEST_MIDI + i)) {
+            count += 1;
+        }
     }
     return count;
 })();
@@ -85,7 +87,9 @@ void main() {
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | null {
     const s = gl.createShader(type);
-    if (s === null) return null;
+    if (s === null) {
+        return null;
+    }
     gl.shaderSource(s, src);
     gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
@@ -98,9 +102,13 @@ function compileShader(gl: WebGL2RenderingContext, type: number, src: string): W
 function buildProgram(gl: WebGL2RenderingContext): WebGLProgram | null {
     const vs = compileShader(gl, gl.VERTEX_SHADER, VERT_SRC);
     const fs = compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC);
-    if (vs === null || fs === null) return null;
+    if (vs === null || fs === null) {
+        return null;
+    }
     const prog = gl.createProgram();
-    if (prog === null) return null;
+    if (prog === null) {
+        return null;
+    }
     gl.attachShader(prog, vs);
     gl.attachShader(prog, fs);
     gl.linkProgram(prog);
@@ -181,10 +189,14 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
     const whiteW = (bodyW * 0.88) / NUM_WHITE_KEYS;
 
     // Outside key area vertically?
-    if (canvasY < keyAreaY || canvasY > keyAreaY + keyAreaH) return null;
+    if (canvasY < keyAreaY || canvasY > keyAreaY + keyAreaH) {
+        return null;
+    }
 
     const relX = canvasX - strX;
-    if (relX < 0 || relX > whiteW * NUM_WHITE_KEYS) return null;
+    if (relX < 0 || relX > whiteW * NUM_WHITE_KEYS) {
+        return null;
+    }
 
     const blackKeyH = keyAreaH * 0.62;
     const inBlackRegion = canvasY < keyAreaY + blackKeyH;
@@ -197,7 +209,9 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
             if (isBlackKey(midi)) {
                 const bkW = whiteW * 0.65;
                 const bkx = (whiteIdx - 0.5) * whiteW + (whiteW - bkW) * 0.5;
-                if (relX >= bkx && relX <= bkx + bkW) return midi;
+                if (relX >= bkx && relX <= bkx + bkW) {
+                    return midi;
+                }
             } else {
                 whiteIdx += 1;
             }
@@ -210,7 +224,9 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
     for (let i = 0; i < NUM_KEYS; i += 1) {
         const midi = LOWEST_MIDI + i;
         if (!isBlackKey(midi)) {
-            if (count === whiteIdx) return midi;
+            if (count === whiteIdx) {
+                return midi;
+            }
             count += 1;
         }
     }
@@ -244,13 +260,19 @@ export const PianoModel3D = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (canvas === null) return;
+        if (canvas === null) {
+            return;
+        }
 
         const gl = canvas.getContext('webgl2', { alpha: false, antialias: true });
-        if (gl === null) return;
+        if (gl === null) {
+            return;
+        }
 
         const prog = buildProgram(gl);
-        if (prog === null) return;
+        if (prog === null) {
+            return;
+        }
 
         gl.useProgram(prog);
         const aPos = gl.getAttribLocation(prog, 'a_pos');
@@ -274,7 +296,9 @@ export const PianoModel3D = ({
         let cancelled = false;
 
         const render = (): void => {
-            if (cancelled) return;
+            if (cancelled) {
+                return;
+            }
 
             const W = canvas.width;
             const H = canvas.height;
@@ -312,7 +336,9 @@ export const PianoModel3D = ({
                     a.stringVib = Math.max(a.stringVib, vel * 0.8);
                 }
                 a.stringVib *= a.damperLift > 0.3 ? 0.998 : 0.96;
-                if (a.stringVib < 0.005) a.stringVib = 0;
+                if (a.stringVib < 0.005) {
+                    a.stringVib = 0;
+                }
             }
             prevNotesRef.current = activeNotes;
 
@@ -372,7 +398,9 @@ export const PianoModel3D = ({
                 const cg = DAMPER_COLOR[1] + (DAMPER_LIFTED[1] - DAMPER_COLOR[1]) * a.damperLift;
                 const cb = DAMPER_COLOR[2] + (DAMPER_LIFTED[2] - DAMPER_COLOR[2]) * a.damperLift;
                 pushQuad(buf, dx, damperY - lift, dw, damperH, cr, cg, cb, 0.85);
-                if (!black) whiteIdx += 1;
+                if (!black) {
+                    whiteIdx += 1;
+                }
             }
 
             // --- Hammer rail ---
@@ -391,7 +419,9 @@ export const PianoModel3D = ({
                 const hg = GOLD_DIM[1] + (AMBER[1] - GOLD_DIM[1]) * intensity;
                 const hb = GOLD_DIM[2] + (AMBER[2] - GOLD_DIM[2]) * intensity;
                 pushQuad(buf, hx, hammerY - throw_, hw, hamperHSmall(hammerH), hr, hg, hb, 0.9);
-                if (!black) whiteIdx += 1;
+                if (!black) {
+                    whiteIdx += 1;
+                }
             }
 
             // --- Keys (white then black, so black draws on top) ---
@@ -400,7 +430,9 @@ export const PianoModel3D = ({
             // White keys
             for (let i = 0; i < NUM_KEYS; i += 1) {
                 const midi = LOWEST_MIDI + i;
-                if (isBlackKey(midi)) continue;
+                if (isBlackKey(midi)) {
+                    continue;
+                }
                 const a = anims[i]!;
                 const kx = keyX + whiteIdx * whiteW;
                 const depress = a.keyDepress * 3;
@@ -464,7 +496,9 @@ export const PianoModel3D = ({
 
     const canvasToPixel = (clientX: number, clientY: number): [number, number] => {
         const canvas = canvasRef.current;
-        if (canvas === null) return [0, 0];
+        if (canvas === null) {
+            return [0, 0];
+        }
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
@@ -472,9 +506,13 @@ export const PianoModel3D = ({
     };
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-        if (onNoteOn === undefined) return;
+        if (onNoteOn === undefined) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (canvas === null) return;
+        if (canvas === null) {
+            return;
+        }
         (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
         const [px, py] = canvasToPixel(e.clientX, e.clientY);
         const midi = hitTestKey(px, py, canvas.width, canvas.height);
@@ -485,7 +523,9 @@ export const PianoModel3D = ({
     };
 
     const handlePointerUp = (_e: React.PointerEvent<HTMLCanvasElement>): void => {
-        if (onNoteOff === undefined) return;
+        if (onNoteOff === undefined) {
+            return;
+        }
         const note = pressedNoteRef.current;
         if (note !== null) {
             onNoteOff(note);

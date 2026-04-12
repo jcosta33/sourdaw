@@ -5,11 +5,11 @@ import { TimelineEmptyMenu } from '../TimelineEmptyMenu';
 import { addTrack } from '../../../useCases/addTrack';
 
 // Mock external dependencies
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: { value: { tracks: [] } },
 }));
 
-vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
+vi.mock('../../../stores/markerStore', () => ({
     markerStore: { value: { markers: [] } },
 }));
 

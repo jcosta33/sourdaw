@@ -5,10 +5,14 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases';
 
-export let lastMetronomeBeat = -1;
+let _lastMetronomeBeat = -1;
+
+export function getLastMetronomeBeat(): number {
+    return _lastMetronomeBeat;
+}
 
 export function resetMetronomeBeat(position: number): void {
-    lastMetronomeBeat = Math.floor(position) - 1;
+    _lastMetronomeBeat = Math.floor(position) - 1;
 }
 
 export const scheduleMetronomeDependencies = {
@@ -36,10 +40,10 @@ export function scheduleMetronome(
     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
 
     for (let beat = startBeatInt; beat <= endBeatInt; beat++) {
-        if (beat <= lastMetronomeBeat) {
+        if (beat <= _lastMetronomeBeat) {
             continue;
         }
-        lastMetronomeBeat = beat;
+        _lastMetronomeBeat = beat;
 
         const beatTempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], beat, transport.tempo);
         const beatOffset = beat - accumulatedPosition;

@@ -3,7 +3,7 @@ import { setVcaGain } from '../setVcaGain';
 
 const mockGetVcaGroupsState = vi.fn();
 const mockSetVcaGroupsState = vi.fn();
-vi.mock('#/modules/Arrangement/stores/vcaGroupStore', () => ({
+vi.mock('../../../stores/vcaGroupStore', () => ({
     getVcaGroupsState: () => mockGetVcaGroupsState(),
     setVcaGroupsState: (...args: any[]) => mockSetVcaGroupsState(...args)
 }));

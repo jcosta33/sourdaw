@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
@@ -22,7 +23,7 @@ export async function loadProject(): Promise<boolean> {
             await createCrdtProject('Untitled Project');
         }
     } catch (error) {
-        console.error('[loadProject] CRDT load failed, creating new project:', error);
+        logger.warn('[loadProject] CRDT load failed, creating new project:', error);
         await createCrdtProject('Untitled Project');
     }
 

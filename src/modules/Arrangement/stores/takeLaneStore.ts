@@ -3,7 +3,7 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 const DOC_PREFIX_ROOT = 'root';
 
-import { type TakeLane } from '#/modules/Arrangement/models/TakeLane';
+import { type TakeLane } from '../models/TakeLane';
 
 export type TakeLaneStoreState = {
     lanes: TakeLane[];

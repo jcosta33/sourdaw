@@ -125,7 +125,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
     const playSample = async (sample: (typeof rootSamples)[number]): Promise<void> => {
         const root = roots.find((r) => r.id === sample.libraryRootId);
-        if (!root?.handle) return;
+        if (!root?.handle) {return;}
         try {
             const pathParts = sample.relativePath.split('/');
             const fileName = pathParts.pop()!;

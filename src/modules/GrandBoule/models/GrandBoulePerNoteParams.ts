@@ -7,6 +7,8 @@
  * `perNote.{key}.{param}`.
  */
 
+import { NOTE_NAMES } from '#/utils/noteNames';
+
 /** Descriptor for a single per-note parameter (metadata for UI). */
 export type PerNoteParamDescriptor = {
     readonly key: keyof GrandBoulePerNoteValues;
@@ -75,7 +77,6 @@ export const keyToMidiNote = (key: number): number => key + 20;
  */
 export const keyToNoteName = (key: number): string => {
     const midiNote = keyToMidiNote(key);
-    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
     const name = NOTE_NAMES[midiNote % 12];
     const octave = Math.floor(midiNote / 12) - 1;
     return `${name}${octave}`;

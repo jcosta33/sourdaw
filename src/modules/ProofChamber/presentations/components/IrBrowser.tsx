@@ -6,6 +6,7 @@
  */
 import { type ReactElement, useState, useRef, useEffect, type DragEvent } from 'react';
 import { Upload } from 'lucide-react';
+import { logger } from '#/infra/logger/appLogger';
 
 type IrBrowserProps = {
     onIrLoaded: (data: Float32Array, channels: number, sampleRate: number) => void;
@@ -70,7 +71,7 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
             }
             setWaveform(preview);
         } catch (err) {
-            console.warn('[ProofChamber] Failed to decode IR:', err);
+            logger.warn('[ProofChamber] Failed to decode IR:', err);
         }
     };
 

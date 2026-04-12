@@ -14,7 +14,7 @@ vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         value: { tracks: [] },
     },

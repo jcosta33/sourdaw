@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { type UndoEntry, isActionEntry } from '../useCases/commandQueries';
+import { recordToTree } from '../useCases/undoTree/recordToTree';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
@@ -59,7 +60,5 @@ export function pushUndo(entry: UndoEntry): void {
     });
 
     // Mirror into branching undo tree when enabled
-    import('../useCases/undoTree/recordToTree').then(({ recordToTree }) => {
-        recordToTree(entry);
-    });
+    recordToTree(entry);
 }

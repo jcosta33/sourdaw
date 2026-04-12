@@ -69,6 +69,8 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
 
         let rafId = 0;
         columnRef.current = 0;
+        // Reused across frames — reallocated only if frequencyBinCount changes.
+        let freqData: Float32Array<ArrayBuffer> | null = null;
 
         // Clear — deep black
         ctx.fillStyle = '#050508';
@@ -78,7 +80,9 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
             const analyser = trackId ? (getTrackAnalyser(trackId) ?? getMasterAnalyser()) : getMasterAnalyser();
 
             const fftSize = analyser.frequencyBinCount;
-            const freqData = new Float32Array(fftSize);
+            if (!freqData || freqData.length !== fftSize) {
+                freqData = new Float32Array(fftSize);
+            }
             analyser.getFloatFrequencyData(freqData);
 
             const col = columnRef.current % width;

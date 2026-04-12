@@ -29,17 +29,19 @@ export type LevainState = {
     currentArticulationDisplay: string;
 };
 
+export const defaultLevainState: LevainState = {
+    patch: createDefaultPatch('violin-1'),
+    uiLevel: 1,
+    engineReady: false,
+    sampleLoadProgress: null,
+    activeVoices: 0,
+    peakL: 0,
+    peakR: 0,
+    currentArticulationDisplay: 'Long',
+};
+
 export const levainStore = createStore<LevainState>({
-    initialData: {
-        patch: createDefaultPatch('violin-1'),
-        uiLevel: 1,
-        engineReady: false,
-        sampleLoadProgress: null,
-        activeVoices: 0,
-        peakL: 0,
-        peakR: 0,
-        currentArticulationDisplay: 'Long',
-    },
+    initialData: defaultLevainState,
 });
 
 // ---------------------------------------------------------------------------
