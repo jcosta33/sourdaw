@@ -4,7 +4,7 @@ import { hitTestClip } from '../hitTestClip/hitTestClip';
 import { hitTestTrack } from '../hitTestClip/hitTestTrack';
 
 let mockTimelineViewValue: any = null;
-vi.mock('#/modules/Arrangement/stores/timelineViewStore', () => ({
+vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: { get value() { return mockTimelineViewValue; } }
 }));
 
