@@ -1,4 +1,5 @@
 import type { WasmDecodedAudio } from './helpers';
+import { logger } from '#/infra/logger/appLogger';
 
 type WasmDecoded = {
     readonly sample_rate: number;
@@ -37,7 +38,7 @@ async function loadWasmModule(): Promise<WasmModule | null> {
                 await mod.default();
                 return mod;
             } catch (err) {
-                console.warn('[wasmDecoding] failed to load WASM decoder module:', err);
+                logger.warn('[wasmDecoding] failed to load WASM decoder module:', err);
                 return null;
             }
         })();
@@ -70,7 +71,7 @@ export async function decodeAudioBytesWasm(bytes: ArrayBuffer): Promise<WasmDeco
         decoded = null;
         return { interleaved, sampleRate, channels, totalFrames };
     } catch (err) {
-        console.warn('[wasmDecoding] decode failed:', err);
+        logger.warn('[wasmDecoding] decode failed:', err);
         decoded?.free();
         return null;
     }

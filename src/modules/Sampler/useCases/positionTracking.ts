@@ -4,6 +4,7 @@
  * for smooth 60fps cursor rendering.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import { getSamplerPosition } from '../repositories/samplerBridge';
 import { samplerStore } from '../stores/samplerStore';
 
@@ -33,7 +34,7 @@ function startPolling(): void {
             lastPolledFrame = await getSamplerPosition(state.instanceId);
             pollTimestamp = performance.now();
         } catch (err) {
-            console.error('Sampler position poll failed:', err);
+            logger.warn('Sampler position poll failed:', err);
         }
     }, POLL_INTERVAL_MS);
 

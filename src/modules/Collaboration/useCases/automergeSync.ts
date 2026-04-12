@@ -7,6 +7,7 @@ import {
     receiveSyncMessage,
 } from '@automerge/automerge';
 
+import { logger } from '#/infra/logger/appLogger';
 import {
     subscribeToCrdtChanges,
     getCrdtDoc,
@@ -101,7 +102,7 @@ export class AutomergeSync {
             const syncMessage = base64ToBytes(syncMessageBase64);
             [newDoc, newSyncState] = receiveSyncMessage(doc, syncState, syncMessage as SyncMessage);
         } catch (error) {
-            console.error('[AutomergeSync] Malformed sync message from peer', peerId, error);
+            logger.warn('[AutomergeSync] Malformed sync message from peer', peerId, error);
             return;
         }
 
@@ -114,7 +115,7 @@ export class AutomergeSync {
 
         // Persist asynchronously — don't block the sync loop.
         persistCrdtProject().catch((error) => {
-            console.error('[AutomergeSync] Failed to persist after receiving sync:', error);
+            logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
         });
     }
 

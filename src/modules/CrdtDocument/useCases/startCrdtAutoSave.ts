@@ -10,6 +10,7 @@
  * function when the project is closed / replaced.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import { automergeRepository } from '../repositories/automergeRepository';
 import { persistCrdtProject } from './crdtProjectLifecycle';
 
@@ -25,7 +26,7 @@ export function startCrdtAutoSave(): () => void {
         timer = setTimeout(() => {
             timer = null;
             persistCrdtProject().catch((error) => {
-                console.warn('[CrdtAutoSave] Incremental persist failed:', error);
+                logger.warn('[CrdtAutoSave] Incremental persist failed:', error);
             });
         }, DEBOUNCE_MS);
     };

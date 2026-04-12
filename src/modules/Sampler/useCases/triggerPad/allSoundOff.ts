@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { samplerAllSoundOff } from '../../repositories/samplerBridge';
 import { samplerStore } from '../../stores/samplerStore';
 
@@ -8,6 +9,6 @@ export async function allSoundOff(): Promise<void> {
     try {
         await samplerAllSoundOff(state.instanceId);
     } catch (err) {
-        console.error('All sound off failed:', err);
+        logger.warn('All sound off failed:', err);
     }
 }

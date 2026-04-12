@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
@@ -99,7 +100,7 @@ export class AssetTransfer {
                 this.handleChunk(data.hash, data.index, data.data);
             }
         } catch (error) {
-            console.error('[AssetTransfer] Failed to handle message:', error);
+            logger.warn('[AssetTransfer] Failed to handle message:', error);
         }
     }
 
@@ -215,7 +216,7 @@ export class AssetTransfer {
         const actualHash = await hashBlob(blob);
         if (actualHash !== hash) {
             this.incomingTransfers.delete(hash);
-            console.error(`[AssetTransfer] Integrity check failed for ${hash}: received ${actualHash}`);
+            logger.warn(`[AssetTransfer] Integrity check failed for ${hash}: received ${actualHash}`);
             return;
         }
 

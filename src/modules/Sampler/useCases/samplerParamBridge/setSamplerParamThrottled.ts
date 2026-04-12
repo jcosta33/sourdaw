@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { setSamplerParam } from '../../repositories/samplerBridge';
 
 const pending = new Map<string, number>();
@@ -9,7 +10,7 @@ function flushSamplerParam(cacheKey: string, instanceId: string): void {
     if (!entry) return;
     latest.delete(cacheKey);
     setSamplerParam(instanceId, entry.param, entry.value).catch((err) => {
-        console.error('Failed to set sampler param:', err);
+        logger.warn('Failed to set sampler param:', err);
     });
 }
 

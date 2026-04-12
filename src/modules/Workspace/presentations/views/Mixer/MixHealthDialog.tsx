@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { logger } from '#/infra/logger/appLogger';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
@@ -33,7 +34,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                         setReport(reportRef.current);
                     });
                 } catch (error) {
-                    console.error(error);
+                    logger.warn('Mix health analysis failed:', error);
                     setReport('Error generating mix health report. Make sure Cloud AI is connected.');
                 } finally {
                     setIsAnalyzing(false);
@@ -71,7 +72,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                 }
             );
         } catch (error) {
-            console.error(error);
+            logger.warn('ELI5 generation failed:', error);
             reportRef.current += '\n[Error generating ELI5 explanation]';
             setReport(reportRef.current);
         } finally {

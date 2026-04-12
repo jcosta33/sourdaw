@@ -12,6 +12,8 @@
  *   telemetryAllocator.releaseSlot(slot.byteOffset); // on device removal
  */
 
+import { logger } from '#/infra/logger/appLogger';
+
 /** Scalars reserved per plugin slot — sized for the largest telemetry set (Proof: 25 fields). */
 export const FLOATS_PER_SLOT = 32;
 
@@ -114,7 +116,7 @@ class TelemetryAllocator {
         const sab = this.ensureInit();
         const slotIndex = this.freeSlots.pop();
         if (slotIndex === undefined) {
-            console.warn('[TelemetryAllocator] No free telemetry slots (max 64 active plugins)');
+            logger.warn('[TelemetryAllocator] No free telemetry slots (max 64 active plugins)');
             return null;
         }
         const byteOffset = slotIndex * BYTES_PER_SLOT;

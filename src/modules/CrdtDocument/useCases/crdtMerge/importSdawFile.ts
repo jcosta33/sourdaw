@@ -1,4 +1,5 @@
 import * as Automerge from '@automerge/automerge';
+import { logger } from '#/infra/logger/appLogger';
 import { type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { projectCrdtToStores } from '../projection/projectProjection';
@@ -74,7 +75,7 @@ export async function importSdawFile(file: File): Promise<MergeResult | null> {
         await persistCrdtProject();
         return result;
     } catch (error) {
-        console.error('[CrdtMerge] Failed to import .sdaw file:', error);
+        logger.warn('[CrdtMerge] Failed to import .sdaw file:', error);
         return null;
     }
 }

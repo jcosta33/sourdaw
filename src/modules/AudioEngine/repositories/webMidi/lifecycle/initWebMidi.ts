@@ -1,4 +1,5 @@
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { logger } from '#/infra/logger/appLogger';
 import { type MidiInputInfo } from '#/modules/AudioEngine/models/WebMidiTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 
@@ -85,7 +86,7 @@ export async function initWebMidi(): Promise<boolean> {
     }
 
     if (!state.isSupported) {
-        console.warn('[MIDI] MIDI not supported');
+        logger.warn('[MIDI] MIDI not supported');
         return false;
     }
 
@@ -112,7 +113,7 @@ export async function initWebMidi(): Promise<boolean> {
 
             return true;
         } catch (error) {
-            console.warn('[MIDI] Web MIDI failed, trying Tauri fallback:', error);
+            logger.warn('[MIDI] Web MIDI failed, trying Tauri fallback:', error);
         }
     }
 
@@ -139,7 +140,7 @@ export async function initWebMidi(): Promise<boolean> {
 
             return true;
         } catch (error) {
-            console.error('[MIDI] Tauri MIDI init failed:', error);
+            logger.warn('[MIDI] Tauri MIDI init failed:', error);
             setState({ isSupported: false });
             return false;
         }

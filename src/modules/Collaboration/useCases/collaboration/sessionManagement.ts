@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type PeerId, type PeerMessage, type SignalingMessage, PEER_COLORS } from '../../models/CollaborationTypes';
 import { createCollaborationError } from '../../errors/CollaborationError';
 import { transportStore } from '#/modules/Transport/stores';
@@ -179,7 +180,7 @@ const stopBranchSync = (): void => {
 
     // Persist without the __branches__ doc so IDB stays clean.
     persistCrdtProject().catch((error) => {
-        console.error('[Collaboration] Failed to persist after branch sync cleanup:', error);
+        logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
     });
 };
 
@@ -474,7 +475,7 @@ async function resolveAssetForClips(hash: string): Promise<void> {
                 const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
                 audioBufferCache.set(clip.audioBufferId, audioBuffer);
             } catch {
-                console.error('[Collaboration] Failed to decode asset for clip', clip.id);
+                logger.warn('[Collaboration] Failed to decode asset for clip', clip.id);
             }
         }
     }

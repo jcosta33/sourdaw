@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -36,7 +37,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
             await forkProjectBranch(newBranchName.trim());
             setNewBranchName('');
         } catch (error) {
-            console.error('Failed to create branch:', error);
+            logger.warn('Failed to create branch:', error);
         }
         setCreating(false);
     };
@@ -48,7 +49,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
         try {
             switchBranch(branchId);
         } catch (error) {
-            console.error('Failed to switch branch:', error);
+            logger.warn('Failed to switch branch:', error);
         }
     };
 
@@ -56,7 +57,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
         try {
             await mergeBranch(sourceBranchId);
         } catch (error) {
-            console.error('Failed to merge branch:', error);
+            logger.warn('Failed to merge branch:', error);
         }
     };
 
@@ -64,7 +65,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
         try {
             deleteBranch(branchId);
         } catch (error) {
-            console.error('Failed to delete branch:', error);
+            logger.warn('Failed to delete branch:', error);
         }
     };
 

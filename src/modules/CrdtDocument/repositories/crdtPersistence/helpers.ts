@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+
 export const DB_NAME = 'sourdaw-crdt-docs';
 export const DB_VERSION = 1;
 export const STORE_NAME = 'documents';
@@ -30,7 +32,7 @@ export const openDatabase = (): Promise<IDBDatabase | null> => {
         };
 
         request.onerror = () => {
-            console.error('[CrdtPersistence] Failed to open IndexedDB:', request.error);
+            logger.warn('[CrdtPersistence] Failed to open IndexedDB:', request.error);
             resolve(null);
         };
     });

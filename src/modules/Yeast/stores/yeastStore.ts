@@ -12,6 +12,7 @@
  *   - internal sync and registration helpers used by the use cases
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { MidiRack } from '../useCases/MidiRack';
 import { type ProcessorType } from '../useCases/processorFactory';
@@ -68,7 +69,7 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
             return node;
         })
         .catch((err) => {
-            console.warn('[Yeast] Worklet init failed, using main-thread fallback:', err);
+            logger.warn('[Yeast] Worklet init failed, using main-thread fallback:', err);
             _workletNodePromise = null;
             return null;
         });

@@ -3,6 +3,7 @@
  * Updates both the store and the backend engine.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import type { SamplerMode } from '../models/SamplerTypes';
 import { setSamplerMode } from '../repositories/samplerBridge';
 import { samplerStore, setMode } from '../stores/samplerStore';
@@ -15,6 +16,6 @@ export async function switchSamplerMode(mode: SamplerMode): Promise<void> {
     try {
         await setSamplerMode(state.instanceId, mode);
     } catch (err) {
-        console.error('Failed to set sampler mode:', err);
+        logger.warn('Failed to set sampler mode:', err);
     }
 }

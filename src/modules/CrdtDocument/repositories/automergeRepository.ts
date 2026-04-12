@@ -1,4 +1,5 @@
 import * as Automerge from '@automerge/automerge';
+import { logger } from '#/infra/logger/appLogger';
 
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
@@ -227,7 +228,7 @@ class AutomergeRepository {
             rootId = response.rootId;
         } catch (err) {
             // Worker unavailable — fall back to synchronous parsing on main thread.
-            console.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', err);
+            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', err);
             return this._loadAllSync(bundle);
         }
 
@@ -271,7 +272,7 @@ class AutomergeRepository {
             if (doc) {
                 this.docs.set(docId, Automerge.loadIncremental(doc, bytes) as Automerge.Doc<AnyDoc>);
             } else {
-                console.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
+                logger.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
             }
         }
 
@@ -310,7 +311,7 @@ class AutomergeRepository {
             mergedDocIds = response.mergedDocIds;
             newDocIds = response.newDocIds;
         } catch (err) {
-            console.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', err);
+            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', err);
             return this._mergeBundleSync(bundle);
         }
 
@@ -376,7 +377,7 @@ class AutomergeRepository {
             try {
                 listener();
             } catch (error) {
-                console.error('[AutomergeRepository] Listener error:', error);
+                logger.warn('[AutomergeRepository] Listener error:', error);
             }
         }
     }

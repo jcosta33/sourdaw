@@ -6,6 +6,7 @@
  * `inject(midiMessageHandlerDependencies)` for test overrides and lazy resolution.
  */
 import { inject } from '#/infra/di/inject';
+import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { eventBus } from '#/app/registerDependencies';
 import { getTrackStoreState, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
@@ -246,7 +247,7 @@ export const handleNoteOn = inject({
         }
 
         if (!targetTrackId) {
-            console.warn('[MIDI] No target track set — select a MIDI track first');
+            logger.warn('[MIDI] No target track set — select a MIDI track first');
             return;
         }
 

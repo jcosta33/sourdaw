@@ -4,6 +4,7 @@
  * Each DSO type maps to specific use case calls. Validation is performed
  * before execution. Human-readable summaries are generated for the action history.
  */
+import { logger } from '#/infra/logger/appLogger';
 import { type Dso } from '../../models/DsoTypes';
 import {
     addClip,
@@ -915,7 +916,7 @@ export async function executeDsos(dsos: Dso[]): Promise<string[]> {
             await executeSingleDso(dso);
             summaries.push(describeDso(dso));
         } catch (error) {
-            console.warn(`Failed to execute DSO ${dso.op}:`, error);
+            logger.warn(`Failed to execute DSO ${dso.op}:`, error);
         }
     }
 

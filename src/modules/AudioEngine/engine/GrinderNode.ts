@@ -4,6 +4,7 @@
 
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { logger } from '#/infra/logger/appLogger';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -100,7 +101,7 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                     clearTimeout(timeout);
                     reject(new Error(e.data.message));
                 } else {
-                    console.error('GrinderNode runtime fault (WASM panic — processor faulted):', e.data.message);
+                    logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', e.data.message);
                 }
             }
         };

@@ -3,6 +3,7 @@
  * quantize, transpose, humanize, strum, AI, and groove operations.
  */
 import { type ReactElement, useRef } from 'react';
+import { logger } from '#/infra/logger/appLogger';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
@@ -72,7 +73,7 @@ export const PianoRollContextMenu = ({
                 }
             }
         } catch {
-            console.error('AI Generation requires native backend');
+            logger.warn('AI Generation requires native backend');
         }
     };
 

@@ -1,6 +1,7 @@
 import { type WAMInstance } from '#/modules/Plugin/models/WamPluginHostTypes';
 import { findPluginLoader } from '../../../services/pluginLoaderRegistry';
 import { instances, registry } from './helpers';
+import { logger } from '#/infra/logger/appLogger';
 
 export async function loadWAMPlugin(
     pluginId: string,
@@ -9,7 +10,7 @@ export async function loadWAMPlugin(
 ): Promise<WAMInstance | null> {
     const descriptor = registry.get(pluginId);
     if (!descriptor) {
-        console.warn(`WAM plugin ${pluginId} not found in registry`);
+        logger.warn(`WAM plugin ${pluginId} not found in registry`);
         return null;
     }
 
@@ -21,7 +22,7 @@ export async function loadWAMPlugin(
         if (customNode) {
             node = customNode;
         } else {
-            console.warn(`[WAM] Custom loader returned null for ${pluginId}, using passthrough`);
+            logger.warn(`[WAM] Custom loader returned null for ${pluginId}, using passthrough`);
             node = context.createGain();
         }
     } else if (descriptor.isHighEnd) {
@@ -31,7 +32,7 @@ export async function loadWAMPlugin(
                 numberOfOutputs: 1,
             });
         } catch (e) {
-            console.warn(`[WAM] HighEndPluginProcessor not registered for ${pluginId}`, e);
+            logger.warn(`[WAM] HighEndPluginProcessor not registered for ${pluginId}`, e);
             node = context.createGain();
         }
     } else {

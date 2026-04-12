@@ -1,4 +1,5 @@
 import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { logger } from '#/infra/logger/appLogger';
 
 /**
  * Handles the raw Float32Array crossing from the AudioWorklet to Rust and back.
@@ -21,7 +22,7 @@ export async function processAudioIPC(instanceId: string, audioData: Float32Arra
         // Reconstitute back from Rust
         return new Float32Array(responseArray.buffer);
     } catch (error) {
-        console.error('Audio IPC failed', error);
+        logger.warn('Audio IPC failed', error);
         return audioData;
     }
 }

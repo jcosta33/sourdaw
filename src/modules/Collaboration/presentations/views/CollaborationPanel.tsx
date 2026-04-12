@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -73,7 +74,7 @@ export const CollaborationPanel = (): ReactElement | null => {
             setInviteString(invite);
             setShowQr(false);
         } catch (error) {
-            console.error('Failed to generate invite:', error);
+            logger.warn('Failed to generate invite:', error);
         } finally {
             setIsGeneratingInvite(false);
         }
@@ -91,7 +92,7 @@ export const CollaborationPanel = (): ReactElement | null => {
             await acceptAnswer(answerString.trim());
             setAnswerString('');
         } catch (error) {
-            console.error('Failed to accept answer:', error);
+            logger.warn('Failed to accept answer:', error);
         }
     };
 
@@ -102,7 +103,7 @@ export const CollaborationPanel = (): ReactElement | null => {
             setJoinAnswer(answer);
             setJoinInvite('');
         } catch (error) {
-            console.error('Failed to join session:', error);
+            logger.warn('Failed to join session:', error);
         } finally {
             setIsJoining(false);
         }

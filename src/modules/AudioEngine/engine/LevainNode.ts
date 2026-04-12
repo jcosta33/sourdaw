@@ -8,6 +8,7 @@
 
 import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
 import { autoLoadLevainSamples } from '#/modules/Levain/useCases';
+import { logger } from '#/infra/logger/appLogger';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -97,7 +98,7 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
                     clearTimeout(timeout);
                     reject(new Error(e.data.message));
                 } else {
-                    console.error('LevainNode runtime fault (WASM panic — processor faulted):', e.data.message);
+                    logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', e.data.message);
                 }
             }
         };
@@ -112,7 +113,7 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
     readyPromise
         .then(() => {
             autoLoadLevainSamples(node.port).catch((err) => {
-                console.warn('[LevainNode] Sample loading failed:', err);
+                logger.warn('[LevainNode] Sample loading failed:', err);
             });
         })
         .catch(() => {

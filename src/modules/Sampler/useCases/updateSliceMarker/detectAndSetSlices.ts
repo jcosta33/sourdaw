@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import type { OnsetAlgorithm, SliceMarker } from '../../models/SamplerTypes';
 import { detectOnsets } from '../../repositories/samplerBridge';
 import { samplerStore } from '../../stores/samplerStore';
@@ -18,6 +19,6 @@ export async function detectAndSetSlices(algorithm: OnsetAlgorithm = 'superflux'
 
         setMarkers(markers, true);
     } catch (err) {
-        console.error('Onset detection failed:', err);
+        logger.warn('Onset detection failed:', err);
     }
 }
