@@ -1,4 +1,4 @@
-import { setlistStore, type SetlistItem } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore, type SetlistItem } from '../../stores/setlistStore';
 
 export function updateSetlistItem(id: string, updates: Partial<Omit<SetlistItem, 'id'>>): void {
     const state = setlistStore.value;

@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '../../stores/midiStore';
 import type { GrooveTemplate } from './helpers';
 
 /**

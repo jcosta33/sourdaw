@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildDeviceChain } from '../buildDeviceChain';
-import { type Device } from '#/modules/AudioEngine/models/TrackViewTypes';
+import { type Device } from '../../models/TrackViewTypes';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },

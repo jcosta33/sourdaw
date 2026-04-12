@@ -1,4 +1,4 @@
-import { setlistStore } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore } from '../../stores/setlistStore';
 
 export function renameSetlist(name: string): void {
     const state = setlistStore.value;

@@ -1,1 +1,1 @@
-// no public stores
+export { defaultGrandBouleState, grandBouleStore } from './grandBouleStore';

@@ -1,4 +1,4 @@
-import { controlSurfaceStore } from '#/modules/AudioEngine/stores/controlSurface';
+import { controlSurfaceStore } from '../../stores/controlSurface';
 
 /**
  * Process an incoming OSC message and return the mapped action + value.

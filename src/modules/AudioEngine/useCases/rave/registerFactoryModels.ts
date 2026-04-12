@@ -1,4 +1,4 @@
-import { raveStore, FACTORY_MODELS } from '#/modules/AudioEngine/stores/rave';
+import { raveStore, FACTORY_MODELS } from '../../stores/rave';
 
 export function registerFactoryModels(): void {
     const state = raveStore.value;

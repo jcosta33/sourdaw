@@ -1,4 +1,4 @@
-import { controlRoomStore } from '#/modules/AudioEngine/stores/controlRoom';
+import { controlRoomStore } from '../../stores/controlRoom';
 
 export function toggleMono(): void {
     const state = controlRoomStore.value;

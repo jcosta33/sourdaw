@@ -1,5 +1,5 @@
 import { chordTrackStore } from '#/modules/Arrangement/stores';
-import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
+import { type ChordEvent } from '../../models/ChordEvent';
 
 export function updateChordEvent(
     eventId: string,

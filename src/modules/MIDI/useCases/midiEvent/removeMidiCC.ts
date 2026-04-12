@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '../../stores/midiStore';
 
 export function removeMidiCC(clipId: string, ccId: string): void {
     const state = midiStore.value;

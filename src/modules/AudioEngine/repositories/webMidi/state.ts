@@ -3,7 +3,7 @@
  * Singleton module — shared across all split files via imports.
  */
 import { isTauri } from '#/utils/tauriBridge';
-import { type WebMidiState, type MidiLearnState, type ActiveNoteData } from '#/modules/AudioEngine/models/WebMidiTypes';
+import { type WebMidiState, type MidiLearnState, type ActiveNoteData } from '../../models/WebMidiTypes';
 
 type Subscriber = () => void;
 

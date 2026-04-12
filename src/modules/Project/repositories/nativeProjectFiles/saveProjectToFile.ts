@@ -1,4 +1,4 @@
-import { type ProjectData } from '#/modules/Project/models/ProjectData';
+import { type ProjectData } from '../../models/ProjectData';
 import { tauriInvoke } from './helpers';
 
 /**

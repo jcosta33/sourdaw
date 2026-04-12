@@ -1,4 +1,4 @@
-import { pushStore, PAD_MODE_COLORS, type PushPadMode } from '#/modules/Plugin/stores/push';
+import { pushStore, PAD_MODE_COLORS, type PushPadMode } from '../../stores/push';
 
 /**
  * Switch pad mode and update all pad colors atomically.

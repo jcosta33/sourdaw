@@ -32,13 +32,15 @@ export type KneadStoreState = {
     analysisProgress: number;
 };
 
+export const defaultKneadState: KneadStoreState = {
+    activeTrackId: null,
+    tracks: {},
+    isAnalyzing: false,
+    analysisProgress: 0,
+};
+
 export const kneadStore = createStore<KneadStoreState>({
-    initialData: {
-        activeTrackId: null,
-        tracks: {},
-        isAnalyzing: false,
-        analysisProgress: 0,
-    },
+    initialData: defaultKneadState,
 });
 
 export function setActiveKneadTrack(trackId: string | null): void {

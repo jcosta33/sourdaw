@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type ExtensionMarketplaceState } from '#/modules/Extension/stores/extension';
+import { type ExtensionMarketplaceState } from '../../../stores/extension';
 import { runEditorScript } from '../runEditorScript';
 
 const mocks = vi.hoisted(() => ({
@@ -8,12 +8,12 @@ const mocks = vi.hoisted(() => ({
     createDawApi: vi.fn(() => ({})),
 }));
 
-vi.mock('#/modules/Extension/stores/extension', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Extension/stores/extension')>();
+vi.mock('../../../stores/extension', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/extension')>();
     return { ...actual, extensionStore: mocks.extensionStore };
 });
 
-vi.mock('#/modules/Extension/services/scripting', () => ({
+vi.mock('../../../services/scripting', () => ({
     appendLog: mocks.appendLog,
     createDawApi: mocks.createDawApi,
 }));

@@ -1,4 +1,4 @@
-import { controlRoomStore, getNextCueId, type CueMix } from '#/modules/AudioEngine/stores/controlRoom';
+import { controlRoomStore, getNextCueId, type CueMix } from '../../stores/controlRoom';
 
 export function createCueMix(name: string): void {
     const state = controlRoomStore.value;

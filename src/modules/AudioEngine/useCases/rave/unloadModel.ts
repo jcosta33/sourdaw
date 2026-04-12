@@ -1,4 +1,4 @@
-import { raveStore } from '#/modules/AudioEngine/stores/rave';
+import { raveStore } from '../../stores/rave';
 
 export function unloadModel(modelId: string): void {
     const state = raveStore.value;

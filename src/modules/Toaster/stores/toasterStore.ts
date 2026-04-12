@@ -24,17 +24,19 @@ export type ToasterState = {
     morph: MorphState;
 };
 
+export const defaultToasterState: ToasterState = {
+    kit: createDefaultKit(),
+    selectedPadIndex: 0,
+    isPlaying: false,
+    currentStep: 0,
+    uiLevel: 1,
+    engineReady: false,
+    activeVoices: 0,
+    morph: { enabled: false, targetPatternId: null, position: 0 },
+};
+
 export const toasterStore = createStore<ToasterState>({
-    initialData: {
-        kit: createDefaultKit(),
-        selectedPadIndex: 0,
-        isPlaying: false,
-        currentStep: 0,
-        uiLevel: 1,
-        engineReady: false,
-        activeVoices: 0,
-        morph: { enabled: false, targetPatternId: null, position: 0 },
-    },
+    initialData: defaultToasterState,
 });
 
 export function selectPad(index: number): void {

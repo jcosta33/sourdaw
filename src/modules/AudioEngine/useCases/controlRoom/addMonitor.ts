@@ -1,4 +1,4 @@
-import { controlRoomStore, getNextMonitorId, type MonitorOutput } from '#/modules/AudioEngine/stores/controlRoom';
+import { controlRoomStore, getNextMonitorId, type MonitorOutput } from '../../stores/controlRoom';
 
 export function addMonitor(name: string): void {
     const state = controlRoomStore.value;

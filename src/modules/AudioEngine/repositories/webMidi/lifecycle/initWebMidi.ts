@@ -1,6 +1,6 @@
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import { logger } from '#/infra/logger/appLogger';
-import { type MidiInputInfo } from '#/modules/AudioEngine/models/WebMidiTypes';
+import { type MidiInputInfo } from '../../../models/WebMidiTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import {

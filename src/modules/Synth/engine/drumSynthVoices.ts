@@ -12,7 +12,7 @@
  * 808 Conga:  Sine with moderate pitch sweep
  */
 
-import { type DrumVoiceType } from '#/modules/Synth/models/DrumSynthTypes';
+import { type DrumVoiceType } from '../models/DrumSynthTypes';
 
 function createNoiseBuffer(ctx: BaseAudioContext, durationSec: number): AudioBuffer {
     const length = Math.ceil(ctx.sampleRate * durationSec);

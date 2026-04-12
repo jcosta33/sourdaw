@@ -7,7 +7,7 @@
  */
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
+import { audioEngine } from '../createWebAudioEngine';
 import { eventBus } from '#/app/registerDependencies';
 import { getTrackStoreState, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
@@ -36,7 +36,7 @@ import {
     MIDI_CHANNEL_PRESSURE,
     MPE_SLIDE_CC,
     type ActiveNoteData,
-} from '#/modules/AudioEngine/models/WebMidiTypes';
+} from '../../models/WebMidiTypes';
 import { activeNotes, channelToNote, mpeEnabled, targetTrackId } from './state';
 
 const midiMessageHandlerDependencies = {

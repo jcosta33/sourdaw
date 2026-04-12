@@ -1,4 +1,4 @@
-import { extensionStore } from '#/modules/Extension/stores/extension';
+import { extensionStore } from '../../stores/extension';
 
 export function uninstallExtension(extensionId: string): void {
     const state = extensionStore.value;

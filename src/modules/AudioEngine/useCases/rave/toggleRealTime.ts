@@ -1,4 +1,4 @@
-import { raveStore } from '#/modules/AudioEngine/stores/rave';
+import { raveStore } from '../../stores/rave';
 
 export function toggleRealTime(): void {
     const state = raveStore.value;

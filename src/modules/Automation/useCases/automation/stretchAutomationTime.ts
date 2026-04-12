@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '../../stores/automationStore';
 
 export function stretchAutomationTime(laneId: string, factor: number, anchorBeat = 0): void {
     const state = automationStore.value;

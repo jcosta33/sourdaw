@@ -1,4 +1,4 @@
-import { loopStationStore, type LoopLayer } from '#/modules/Transport/stores/loopStationStore';
+import { loopStationStore, type LoopLayer } from '../../stores/loopStationStore';
 import { getNextLayerId } from '../../repositories/loopStationIdCounter/getNextLayerId';
 
 export function toggleRecord(slotId: string): void {

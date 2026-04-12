@@ -1,5 +1,5 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type AutomationPoint } from '#/modules/Automation/models/Automation';
+import { automationStore } from '../../stores/automationStore';
+import { type AutomationPoint } from '../../models/Automation';
 
 export function batchAddAutomationPoints(laneId: string, points: AutomationPoint[]): void {
     const state = automationStore.value;

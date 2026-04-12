@@ -1,4 +1,4 @@
-import { controlSurfaceStore, type McuState } from '#/modules/AudioEngine/stores/controlSurface';
+import { controlSurfaceStore, type McuState } from '../../stores/controlSurface';
 
 export function mcuSetMode(mode: McuState['mode']): void {
     const state = controlSurfaceStore.value;

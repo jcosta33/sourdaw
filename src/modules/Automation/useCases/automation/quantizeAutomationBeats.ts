@@ -1,5 +1,5 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type AutomationPoint } from '#/modules/Automation/models/Automation';
+import { automationStore } from '../../stores/automationStore';
+import { type AutomationPoint } from '../../models/Automation';
 
 export function quantizeAutomationBeats(laneId: string, gridSize: number): void {
     const state = automationStore.value;

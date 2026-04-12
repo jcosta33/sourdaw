@@ -1,4 +1,4 @@
-import { loopStationStore } from '#/modules/Transport/stores/loopStationStore';
+import { loopStationStore } from '../../stores/loopStationStore';
 
 export function setFixedLoopLength(beats: number): void {
     const state = loopStationStore.value;

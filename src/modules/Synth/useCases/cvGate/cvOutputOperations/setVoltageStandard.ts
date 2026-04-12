@@ -1,6 +1,6 @@
-import { cvGateStore } from '#/modules/Synth/stores/cvGate';
+import { cvGateStore } from '../../../stores/cvGate';
 
-export function setVoltageStandard(standard: import('#/modules/Synth/stores/cvGate').VoltageStandard): void {
+export function setVoltageStandard(standard: import('../../../stores/cvGate').VoltageStandard): void {
     const state = cvGateStore.value;
     if (!state) {
         return;

@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { setlistStore } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore } from '../../stores/setlistStore';
 import { eventBus } from '#/app/registerDependencies';
 
 /**

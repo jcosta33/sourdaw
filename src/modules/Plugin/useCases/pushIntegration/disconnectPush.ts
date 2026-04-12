@@ -1,4 +1,4 @@
-import { pushStore } from '#/modules/Plugin/stores/push';
+import { pushStore } from '../../stores/push';
 
 export function disconnectPush(): void {
     const state = pushStore.value;

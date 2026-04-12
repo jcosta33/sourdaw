@@ -28,7 +28,7 @@ import { onPanelShowCrust } from '../devicePanels/onPanelShowCrust';
 import { onPanelShowCrumbs } from '../devicePanels/onPanelShowCrumbs';
 import { onPanelShowGrandBoule } from '../devicePanels/onPanelShowGrandBoule';
 import { onPanelShowAutomation } from '../devicePanels/onPanelShowAutomation';
-import { type ShowDevicePanelPayload } from '#/modules/Workspace/events/WorkspaceEvents';
+import { type ShowDevicePanelPayload } from '../../../events/WorkspaceEvents';
 
 const mocks = vi.hoisted(() => ({ mockEventBus: {
         emit: vi.fn().mockResolvedValue(undefined),

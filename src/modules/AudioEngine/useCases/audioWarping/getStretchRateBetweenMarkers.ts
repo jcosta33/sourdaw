@@ -1,4 +1,4 @@
-import { type WarpMarker } from '#/modules/AudioEngine/stores/audioWarp';
+import { type WarpMarker } from '../../stores/audioWarp';
 
 /**
  * Calculate effective playback rate between two warp markers.

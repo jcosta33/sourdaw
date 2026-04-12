@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { automationStore } from '../../stores/automationStore';
 import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
 
 export function getAutomationValueAtBeat(laneId: string, beat: number): number | null {

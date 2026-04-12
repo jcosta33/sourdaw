@@ -1,5 +1,5 @@
 import { getTrackById } from '#/modules/Arrangement/useCases';
-import { type AutomationPoint } from '#/modules/Automation/models/Automation';
+import { type AutomationPoint } from '../../models/Automation';
 import {
     RECORDING_MODES,
     activeRecording,
@@ -8,7 +8,7 @@ import {
     makeKey,
     findLaneId,
     clearPointsInRange,
-} from '#/modules/Automation/stores/automationRecordingState';
+} from '../../stores/automationRecordingState';
 
 export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
     const track = getTrackById(trackId);

@@ -1,4 +1,4 @@
-import { cvGateStore } from '#/modules/Synth/stores/cvGate';
+import { cvGateStore } from '../../../stores/cvGate';
 
 export function setCvValue(outputIdVal: string, value: number): void {
     const state = cvGateStore.value;

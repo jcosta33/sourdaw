@@ -7,7 +7,7 @@
 
 import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { type MentorCategory, type MentorLesson } from '#/modules/AiRuntime/models/MusicMentorTypes';
+import { type MentorCategory, type MentorLesson } from '../../models/MusicMentorTypes';
 
 let lessonCounter = 0;
 

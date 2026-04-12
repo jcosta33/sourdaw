@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type ExtensionManifest, type ExtensionMarketplaceState, type InstalledExtension } from '#/modules/Extension/stores/extension';
+import { type ExtensionManifest, type ExtensionMarketplaceState, type InstalledExtension } from '../../../stores/extension';
 import { uninstallExtension } from '../uninstallExtension';
 
 const mocks = vi.hoisted(() => ({
     extensionStore: { value: null as any, set: vi.fn() },
 }));
 
-vi.mock('#/modules/Extension/stores/extension', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Extension/stores/extension')>();
+vi.mock('../../../stores/extension', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/extension')>();
     return { ...actual, extensionStore: mocks.extensionStore };
 });
 

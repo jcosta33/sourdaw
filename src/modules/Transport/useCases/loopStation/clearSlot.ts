@@ -1,4 +1,4 @@
-import { loopStationStore } from '#/modules/Transport/stores/loopStationStore';
+import { loopStationStore } from '../../stores/loopStationStore';
 
 export function clearSlot(slotId: string): void {
     const state = loopStationStore.value;

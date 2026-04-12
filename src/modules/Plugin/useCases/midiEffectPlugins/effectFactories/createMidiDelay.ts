@@ -1,4 +1,4 @@
-import { type MidiEffect } from '#/modules/Plugin/models/MidiEffectTypes';
+import { type MidiEffect } from '../../../models/MidiEffectTypes';
 
 export function createMidiDelay(delayBeats = 0.25, repeats = 3, decay = 0.7): MidiEffect {
     return {

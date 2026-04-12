@@ -18,13 +18,13 @@ import {
     type IFaustCompiler,
     type IFaustMonoWebAudioNode,
 } from '@grame/faustwasm';
-import { createFaustError } from '#/modules/Plugin/errors/FaustError';
+import { createFaustError } from '../../errors/FaustError';
 import { logger } from '#/infra/logger/appLogger';
 import { isAppError } from '#/infra/errors/isAppError';
 import { registerWAMPlugin } from '../wamPluginHost/hostOperations/registerWAMPlugin';
 import { type WAMDescriptor } from '../wamPluginHost/hostOperations/helpers';
 import { registerPluginLoader } from '../../services/pluginLoaderRegistry';
-import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/models/FaustEngineTypes';
+import { type FaustModule, type FaustParamDescriptor } from '../../models/FaustEngineTypes';
 
 // Module registry (raw Map singleton)
 const modules = new Map<string, FaustModule>();

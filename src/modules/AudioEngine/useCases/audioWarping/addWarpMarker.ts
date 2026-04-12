@@ -3,7 +3,7 @@ import {
     DEFAULT_WARP_SETTINGS,
     getNextWarpMarkerId,
     type WarpMarker,
-} from '#/modules/AudioEngine/stores/audioWarp';
+} from '../../stores/audioWarp';
 
 export function addWarpMarker(clipId: string, sourceSec: number, targetBeat: number): void {
     const state = audioWarpStore.value;

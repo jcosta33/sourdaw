@@ -1,5 +1,5 @@
-import { type DrumKitDef, type DrumVoiceDef } from '#/modules/Synth/models/DrumSynthTypes';
-import { scheduleDrumVoice } from '#/modules/Synth/engine/drumSynthVoices';
+import { type DrumKitDef, type DrumVoiceDef } from '../../../models/DrumSynthTypes';
+import { scheduleDrumVoice } from '../../../engine/drumSynthVoices';
 
 export function findVoiceByNote(kit: DrumKitDef, midiNote: number): DrumVoiceDef | null {
     return kit.voices.find((v) => v.midiNote === midiNote) ?? null;

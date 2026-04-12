@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type LoopStationState } from '#/modules/Transport/stores/loopStationStore';
+import { type LoopStationState } from '../../../stores/loopStationStore';
 import { triggerScene } from '../triggerScene';
-import { loopStationStore } from '#/modules/Transport/stores/loopStationStore';
+import { loopStationStore } from '../../../stores/loopStationStore';
 
-vi.mock('#/modules/Transport/stores/loopStationStore', () => ({
+vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
 }));
 

@@ -1,4 +1,4 @@
-import { updateNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/updateNotesForClip';
+import { updateNotesForClip } from './updateNotesForClip';
 
 export function resizeMidiNote(clipId: string, noteId: string, newStartBeat?: number, newDuration?: number): void {
     updateNotesForClip(clipId, (notes) =>

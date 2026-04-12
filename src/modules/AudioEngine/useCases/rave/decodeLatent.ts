@@ -1,4 +1,4 @@
-import { type LatentVector } from '#/modules/AudioEngine/stores/rave';
+import { type LatentVector } from '../../stores/rave';
 
 /**
  * Decode latent vectors back to audio samples.

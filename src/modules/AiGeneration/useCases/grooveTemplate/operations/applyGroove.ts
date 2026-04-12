@@ -1,6 +1,6 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { type GrooveTemplate } from '#/modules/AiGeneration/models/GrooveTemplate';
+import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 
 export function applyGroove(clipId: string, template: GrooveTemplate, amount = 1.0): void {
     function findClip(id: string) {

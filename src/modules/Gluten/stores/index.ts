@@ -1,1 +1,1 @@
-export { updateGlutenMeters, type GlutenMeterValues } from './glutenStore';
+export { glutenStore, updateGlutenMeters, type GlutenMeterValues } from './glutenStore';

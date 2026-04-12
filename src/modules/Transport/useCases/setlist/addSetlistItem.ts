@@ -1,4 +1,4 @@
-import { setlistStore, type SetlistItem } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore, type SetlistItem } from '../../stores/setlistStore';
 import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '../../repositories/setlistItemIdCounter';
 
 export function addSetlistItem(name: string, estimatedDuration: number = 180): void {

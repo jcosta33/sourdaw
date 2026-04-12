@@ -1,6 +1,6 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import { type TrackLatency } from '#/modules/AudioEngine/models/LatencyCompensationTypes';
+import { audioEngine } from '../../../repositories/createWebAudioEngine';
+import { type TrackLatency } from '../../../models/LatencyCompensationTypes';
 export const WORKLET_BLOCK_SIZE = 128;
 
 export const deviceLatencyMap: Record<string, number> = {

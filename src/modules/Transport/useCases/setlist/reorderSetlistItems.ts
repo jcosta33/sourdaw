@@ -1,4 +1,4 @@
-import { setlistStore } from '#/modules/Transport/stores/setlistStore';
+import { setlistStore } from '../../stores/setlistStore';
 
 export function reorderSetlistItems(fromIndex: number, toIndex: number): void {
     const state = setlistStore.value;

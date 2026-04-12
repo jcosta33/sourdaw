@@ -1,4 +1,4 @@
-import { audioWarpStore } from '#/modules/AudioEngine/stores/audioWarp';
+import { audioWarpStore } from '../../stores/audioWarp';
 
 export function moveWarpMarker(clipId: string, markerId: string, targetBeat: number): void {
     const state = audioWarpStore.value;

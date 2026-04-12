@@ -1,4 +1,4 @@
-import { pushStore } from '#/modules/Plugin/stores/push';
+import { pushStore } from '../../stores/push';
 
 /**
  * Handle a pad press event from the Push hardware.

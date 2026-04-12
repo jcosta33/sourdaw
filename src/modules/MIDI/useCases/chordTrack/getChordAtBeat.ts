@@ -1,5 +1,5 @@
 import { chordTrackStore } from '#/modules/Arrangement/stores';
-import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
+import { type ChordEvent } from '../../models/ChordEvent';
 
 /** Returns the active chord event at the given beat, or null if none. */
 export function getChordAtBeat(beat: number): ChordEvent | null {

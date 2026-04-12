@@ -1,4 +1,4 @@
-import { updateNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/updateNotesForClip';
+import { updateNotesForClip } from './updateNotesForClip';
 
 export function setNoteProbability(clipId: string, noteId: string, probability: number): void {
     updateNotesForClip(clipId, (notes) =>

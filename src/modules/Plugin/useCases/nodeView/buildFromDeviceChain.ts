@@ -5,7 +5,7 @@ import {
     NODE_COLORS,
     type ProcessingNode,
     type NodeConnection,
-} from '#/modules/Plugin/stores/nodeView';
+} from '../../stores/nodeView';
 
 /**
  * Build a node graph from a track's linear device chain.

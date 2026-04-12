@@ -1,4 +1,4 @@
-import { type WAMInstance } from '#/modules/Plugin/models/WamPluginHostTypes';
+import { type WAMInstance } from '../../../models/WamPluginHostTypes';
 import { findPluginLoader } from '../../../services/pluginLoaderRegistry';
 import { instances, registry } from './helpers';
 import { logger } from '#/infra/logger/appLogger';

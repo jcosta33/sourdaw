@@ -1,5 +1,5 @@
 import { type CommandEntry } from '../CommandEntry';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { executeAppAction } from '../../useCases/executeAppAction';
 import { automationStore } from '#/modules/Automation';
 
 /** Automation commands — scale, invert, thin automation points. */

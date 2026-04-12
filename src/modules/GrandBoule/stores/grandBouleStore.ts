@@ -46,20 +46,22 @@ export type GrandBouleState = {
     activeVoices: number;
 };
 
-export const grandBouleStore = createStore<GrandBouleState>({
-    initialData: {
-        config: createDefaultGrandBouleConfig(),
-        parameters: createNeutralPresetParameters(),
-        pedals: {
-            sustain: 0,
-            unaCorda: false,
-            sostenuto: false,
-        },
-        midiCalibration: createDefaultMidiCalibration(),
-        perNoteOverrides: new Map(),
-        morph: createDefaultMorphState(),
-        temperament: 0,
-        engineReady: false,
-        activeVoices: 0,
+export const defaultGrandBouleState: GrandBouleState = {
+    config: createDefaultGrandBouleConfig(),
+    parameters: createNeutralPresetParameters(),
+    pedals: {
+        sustain: 0,
+        unaCorda: false,
+        sostenuto: false,
     },
+    midiCalibration: createDefaultMidiCalibration(),
+    perNoteOverrides: new Map(),
+    morph: createDefaultMorphState(),
+    temperament: 0,
+    engineReady: false,
+    activeVoices: 0,
+};
+
+export const grandBouleStore = createStore<GrandBouleState>({
+    initialData: defaultGrandBouleState,
 });

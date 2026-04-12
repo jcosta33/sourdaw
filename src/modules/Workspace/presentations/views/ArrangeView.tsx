@@ -23,10 +23,10 @@ import {
 import { useTracks } from '../hooks/useTracks';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport/stores';
-import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { setTrackListWidth } from '../../useCases/togglePanel/panelToggles/setTrackListWidth';
 import { closeScratchPad } from '../../useCases/togglePanel/panelToggles/closeScratchPad';
-import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
+import { ResizeHandle } from '../components/ResizeHandle';
 import { Piano, Upload, Headphones } from 'lucide-react';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';

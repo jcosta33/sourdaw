@@ -1,4 +1,4 @@
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { getTransportState } from '../../repositories/transport/getTransportState';
 import { pausePlayback } from './pausePlayback';
 import { startPlayback } from './startPlayback';
 

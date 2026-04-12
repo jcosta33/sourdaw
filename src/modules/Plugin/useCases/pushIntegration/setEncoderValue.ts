@@ -1,4 +1,4 @@
-import { pushStore } from '#/modules/Plugin/stores/push';
+import { pushStore } from '../../stores/push';
 
 export function setEncoderValue(encoderIndex: number, value: number): void {
     const state = pushStore.value;

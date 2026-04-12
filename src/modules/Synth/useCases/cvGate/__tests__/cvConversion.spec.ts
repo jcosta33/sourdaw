@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('#/modules/Synth/stores/cvGate', () => ({
+vi.mock('../../../stores/cvGate', () => ({
     cvGateStore: { value: { voltageStandard: '1v-per-octave' as const } },
 }));
 
 import { midiNoteToCv } from '../cvConversion/midiNoteToCv';
 import { velocityToCv } from '../cvConversion/velocityToCv';
 import { getClockValue } from '../cvConversion/getClockValue';
-import { cvGateStore } from '#/modules/Synth/stores/cvGate';
+import { cvGateStore } from '../../../stores/cvGate';
 
 describe('cvConversion', () => {
     it('midiNoteToCv uses 1V/oct when voltage standard is 1v-per-octave (C0=0V)', () => {

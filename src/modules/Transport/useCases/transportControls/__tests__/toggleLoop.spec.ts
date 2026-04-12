@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toggleLoop } from '../toggleLoop';
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
-import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { defaultTransportState } from '../../../models/TransportState';
 
-vi.mock('#/modules/Transport/repositories/transport/getTransportState', () => ({
+vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
-vi.mock('#/modules/Transport/repositories/transport/updateTransportState', () => ({
+vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
 

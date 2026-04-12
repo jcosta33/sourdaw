@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { setMixAnalysisStoreValue } from '../setMixAnalysisStoreValue';
-import { mixAnalysisStore } from '#/modules/AiRuntime/stores/mixAnalysisStore';
+import { mixAnalysisStore } from '../../../stores/mixAnalysisStore';
 
 describe('setMixAnalysisStoreValue', () => {
     beforeEach(() => {

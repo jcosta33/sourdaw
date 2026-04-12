@@ -11,7 +11,7 @@ import {
     toggleAutomationPanel,
 } from '#/modules/Workspace/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { executeAppAction } from '../../useCases/executeAppAction';
 
 /** View commands — zoom, panels, workspace modes, tools, markers. */
 export const viewCommands: CommandEntry[] = [

@@ -14,8 +14,8 @@ import { createExportError } from '../errors/ExportError';
 import { audioBufferCache } from '../stores/audioBufferCache';
 import { buildDeviceChain } from './buildDeviceChain';
 import { type Track } from '#/modules/Arrangement/models/Track';
-import { beatToSeconds } from '#/modules/AudioEngine/services/beatConversion';
-import { resolveDrumKit } from '#/modules/AudioEngine/services/deviceResolution';
+import { beatToSeconds } from '../services/beatConversion';
+import { resolveDrumKit } from '../services/deviceResolution';
 import { scheduleTrackAutomation } from '../repositories/offlineScheduler/automationScheduling';
 
 type OfflineRenderDeps = {

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { togglePlayback } from '../togglePlayback';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { defaultTransportState } from '../../../models/TransportState';
 import { pausePlayback } from '../pausePlayback';
 import { startPlayback } from '../startPlayback';
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
+import { getTransportState } from '../../../repositories/transport/getTransportState';
 
 vi.mock('../pausePlayback', () => ({
     pausePlayback: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock('../pausePlayback', () => ({
 vi.mock('../startPlayback', () => ({
     startPlayback: vi.fn(),
 }));
-vi.mock('#/modules/Transport/repositories/transport/getTransportState', () => ({
+vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
 

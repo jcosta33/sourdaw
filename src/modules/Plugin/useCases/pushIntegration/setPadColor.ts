@@ -1,4 +1,4 @@
-import { pushStore, type PushPadColor } from '#/modules/Plugin/stores/push';
+import { pushStore, type PushPadColor } from '../../stores/push';
 
 export function setPadColor(padIndex: number, color: PushPadColor): void {
     const state = pushStore.value;

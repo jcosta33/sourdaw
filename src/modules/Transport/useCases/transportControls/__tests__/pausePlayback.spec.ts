@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { pausePlayback } from '../pausePlayback';
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
-import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
-import { stopPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
+import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { defaultTransportState } from '../../../models/TransportState';
+import { stopPlayheadScheduler } from '../../playheadScheduler';
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
 import { resetMidiState } from '#/modules/AudioEngine/useCases/webMidiInput/resetMidiState';
 
-vi.mock('#/modules/Transport/useCases/playheadScheduler', () => ({
+vi.mock('../../playheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({
@@ -16,10 +16,10 @@ vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({
 vi.mock('#/modules/AudioEngine/useCases/webMidiInput/resetMidiState', () => ({
     resetMidiState: vi.fn(),
 }));
-vi.mock('#/modules/Transport/repositories/transport/getTransportState', () => ({
+vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
-vi.mock('#/modules/Transport/repositories/transport/updateTransportState', () => ({
+vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
 

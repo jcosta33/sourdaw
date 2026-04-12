@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
-import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
-import { type TempoMapPoint, type TempoMapResult } from '#/modules/Transport/models/TempoMappingTypes';
+import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { type TempoMapPoint, type TempoMapResult } from '../../../models/TempoMappingTypes';
 
 function createEmptyResult(): TempoMapResult {
     return {

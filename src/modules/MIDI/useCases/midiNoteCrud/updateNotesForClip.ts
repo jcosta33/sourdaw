@@ -1,5 +1,5 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { type MidiNote } from '#/modules/MIDI/models/MidiNote';
+import { midiStore } from '../../stores/midiStore';
+import { type MidiNote } from '../../models/MidiNote';
 
 /**
  * Read-modify-write helper for a single clip's note array.

@@ -1,4 +1,4 @@
-import { audioWarpStore, DEFAULT_WARP_SETTINGS } from '#/modules/AudioEngine/stores/audioWarp';
+import { audioWarpStore, DEFAULT_WARP_SETTINGS } from '../../stores/audioWarp';
 
 export function enableWarping(clipId: string): void {
     const state = audioWarpStore.value;

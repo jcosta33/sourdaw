@@ -1,1 +1,1 @@
-export { updateTunerTelemetry } from './scoringStore';
+export { scoringStore, updateTunerTelemetry } from './scoringStore';

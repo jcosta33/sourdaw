@@ -3,9 +3,9 @@
  * This state is internal to the recording subsystem — not reusable elsewhere.
  */
 
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { batchAddAutomationPoints } from '#/modules/Automation/useCases/automation/batchAddAutomationPoints';
-import { type AutomationPoint } from '#/modules/Automation/models/Automation';
+import { automationStore } from './automationStore';
+import { batchAddAutomationPoints } from '../useCases/automation/batchAddAutomationPoints';
+import { type AutomationPoint } from '../models/Automation';
 // Automation-local enum (AGENTS.md §95 — model isolation). Mirrors Arrangement's AutomationMode.
 type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 

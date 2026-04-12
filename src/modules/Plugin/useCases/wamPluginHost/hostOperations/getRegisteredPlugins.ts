@@ -1,4 +1,4 @@
-import { type WAMDescriptor } from '#/modules/Plugin/models/WamPluginHostTypes';
+import { type WAMDescriptor } from '../../../models/WamPluginHostTypes';
 import { registry } from './helpers';
 
 export function getRegisteredPlugins(): WAMDescriptor[] {
