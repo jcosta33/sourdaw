@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { Loader2 } from 'lucide-react';
 import { levainStore, type LevainState } from '#/modules/Levain/stores';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '../../../models/Track';
 
 type Props = {
     track: Track;

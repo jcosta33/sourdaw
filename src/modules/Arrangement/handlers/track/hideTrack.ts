@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { hideTrack } from '#/modules/Arrangement/useCases/toggleTrackState/hideTrack';
+import { hideTrack } from '../../useCases/toggleTrackState/hideTrack';
 
 export const handleHideTrack = createHandler<'hideTrack'>({
     execute: (action) => {

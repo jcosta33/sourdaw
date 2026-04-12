@@ -11,10 +11,8 @@ export type WarpState = {
     originalTempo: number | null;
 };
 
-let nextWarpMarkerId = 1;
-
 export const createWarpMarker = (originalBeat: number, warpedBeat: number): WarpMarker => ({
-    id: `warp-${nextWarpMarkerId++}`,
+    id: `warp-${crypto.randomUUID().slice(0, 8)}`,
     originalBeat,
     warpedBeat,
 });

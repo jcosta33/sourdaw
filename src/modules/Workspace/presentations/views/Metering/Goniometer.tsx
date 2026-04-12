@@ -30,10 +30,14 @@ export const Goniometer = ({
         }
 
         let rafId = 0;
+        // Reused across frames — reallocated only if frequencyBinCount changes.
+        let data: Float32Array<ArrayBuffer> | null = null;
 
         const draw = (): void => {
             const analyser = getMasterAnalyser();
-            const data = new Float32Array(analyser.frequencyBinCount);
+            if (!data || data.length !== analyser.frequencyBinCount) {
+                data = new Float32Array(analyser.frequencyBinCount);
+            }
             analyser.getFloatTimeDomainData(data);
 
             // Phosphor decay: fade previous frame

@@ -25,39 +25,81 @@ export function evaluateFollowActions(
     let jumpToPosition: number | null = null;
     let shouldStop = false;
 
+    // NOTE(§55.2): If multiple clips on different tracks trigger follow actions
+    // in the same tick, the last track's clip wins (last-writer-wins). This is
+    // intentional for now — changing the semantics requires understanding the
+    // full implications of conflicting follow actions across tracks.
     for (const track of tracks) {
         for (const clip of track.clips as Clip[]) {
             if (clip.followAction && !clip.loopEnabled && prevPosition < clip.endBeat && nextPosition >= clip.endBeat) {
                 if (clip.followAction === 'stop') {
                     shouldStop = true;
                 } else if (clip.followAction === 'play_next') {
-                    const nextClips = track.clips.filter((c) => c.startBeat >= clip.endBeat && c.id !== clip.id);
-                    nextClips.sort((a, b) => a.startBeat - b.startBeat);
-                    if (nextClips[0]) {
-                        jumpToPosition = nextClips[0].startBeat;
+                    // Single-pass: find the clip with the smallest startBeat >= clip.endBeat
+                    let nearest: Clip | null = null;
+                    for (const c of track.clips as Clip[]) {
+                        if (c.id !== clip.id && c.startBeat >= clip.endBeat) {
+                            if (nearest === null || c.startBeat < nearest.startBeat) {
+                                nearest = c;
+                            }
+                        }
+                    }
+                    if (nearest) {
+                        jumpToPosition = nearest.startBeat;
                     }
                 } else if (clip.followAction === 'play_previous') {
-                    const prevClips = track.clips.filter((c) => c.endBeat <= clip.startBeat && c.id !== clip.id);
-                    prevClips.sort((a, b) => a.startBeat - b.startBeat);
-                    if (prevClips[prevClips.length - 1]) {
-                        jumpToPosition = prevClips[prevClips.length - 1]!.startBeat;
+                    // Single-pass: find the clip with the largest startBeat where endBeat <= clip.startBeat
+                    let nearest: Clip | null = null;
+                    for (const c of track.clips as Clip[]) {
+                        if (c.id !== clip.id && c.endBeat <= clip.startBeat) {
+                            if (nearest === null || c.startBeat > nearest.startBeat) {
+                                nearest = c;
+                            }
+                        }
+                    }
+                    if (nearest) {
+                        jumpToPosition = nearest.startBeat;
                     }
                 } else if (clip.followAction === 'play_first') {
-                    const firstClip = [...track.clips].sort((a, b) => a.startBeat - b.startBeat)[0];
-                    if (firstClip) {
-                        jumpToPosition = firstClip.startBeat;
+                    // Single-pass: find the clip with the smallest startBeat
+                    let first: Clip | null = null;
+                    for (const c of track.clips as Clip[]) {
+                        if (first === null || c.startBeat < first.startBeat) {
+                            first = c;
+                        }
+                    }
+                    if (first) {
+                        jumpToPosition = first.startBeat;
                     }
                 } else if (clip.followAction === 'play_last') {
-                    const lastClip = [...track.clips].sort((a, b) => b.startBeat - a.startBeat)[0];
-                    if (lastClip) {
-                        jumpToPosition = lastClip.startBeat;
+                    // Single-pass: find the clip with the largest startBeat
+                    let last: Clip | null = null;
+                    for (const c of track.clips as Clip[]) {
+                        if (last === null || c.startBeat > last.startBeat) {
+                            last = c;
+                        }
+                    }
+                    if (last) {
+                        jumpToPosition = last.startBeat;
                     }
                 } else if (clip.followAction === 'play_random') {
-                    const otherClips = track.clips.filter((c) => c.id !== clip.id);
-                    if (otherClips.length > 0) {
-                        const randomClip = otherClips[Math.floor(Math.random() * otherClips.length)];
-                        if (randomClip) {
-                            jumpToPosition = randomClip.startBeat;
+                    // Two-pass without allocation: count eligible clips, then pick the Nth
+                    let count = 0;
+                    for (const c of track.clips as Clip[]) {
+                        if (c.id !== clip.id) {
+                            count++;
+                        }
+                    }
+                    if (count > 0) {
+                        let target = Math.floor(Math.random() * count);
+                        for (const c of track.clips as Clip[]) {
+                            if (c.id !== clip.id) {
+                                if (target === 0) {
+                                    jumpToPosition = c.startBeat;
+                                    break;
+                                }
+                                target--;
+                            }
                         }
                     }
                 }

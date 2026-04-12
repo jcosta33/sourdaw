@@ -1,4 +1,4 @@
-import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type SoundPreset } from '../../models/SoundPreset';
 import { synth } from './presetHelpers/synth';
 import { reverb } from './presetHelpers/reverb';
 import { chorus } from './presetHelpers/chorus';

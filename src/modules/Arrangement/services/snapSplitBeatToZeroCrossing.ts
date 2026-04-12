@@ -1,7 +1,7 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { findNearestZeroCrossing } from '#/modules/Arrangement/transformers/clipDspTransformers';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { findNearestZeroCrossing } from '../transformers/clipDspTransformers';
+import { type Clip } from '../models/Track';
 
 /**
  * Given a clip and a proposed split beat, snaps the split position

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { getAudioDevices } from '#/modules/AudioEngine/useCases';
-import { setTrackInput } from '#/modules/Arrangement/useCases/setTrackInput';
+import { setTrackInput } from '../../../../useCases/setTrackInput';
 import { InputSelector } from '../InputSelector';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -12,7 +12,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Arrangement/useCases/setTrackInput', () => ({
+vi.mock('../../../../useCases/setTrackInput', () => ({
     setTrackInput: vi.fn(),
 }));
 

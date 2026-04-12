@@ -38,8 +38,12 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const rippleResult = rippleDeleteClips({ trackId, clipIds: [a.payload.clipId] });
         if (!rippleResult) {
             removeClip(a.payload.clipId);
+            cleanupMidiData(a.payload.clipId);
+            return;
         }
-        cleanupMidiData(a.payload.clipId);
+        for (const removed of rippleResult.removedClips) {
+            cleanupMidiData(removed.id);
+        }
     },
     describe: (a) => {
         const state = getTrackStoreState();

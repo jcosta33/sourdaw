@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { setTrackHeight } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackHeight';
+import { setTrackHeight } from '../../useCases/toggleTrackState/setTrackHeight';
 
 export const handleSetTrackHeight = createHandler<'setTrackHeight'>({
     execute: (action) => {

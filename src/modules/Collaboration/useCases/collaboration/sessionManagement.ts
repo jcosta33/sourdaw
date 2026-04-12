@@ -717,14 +717,9 @@ const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void =
 // The 'z:' prefix lets joiners detect and decompress transparently,
 // so old uncompressed invites continue to work during any transition.
 
-async function compressInvite(json: string): Promise<string> {
-    const bytes = new TextEncoder().encode(json);
-    const stream = new CompressionStream('deflate-raw');
-    const writer = stream.writable.getWriter();
-    writer.write(bytes);
-    writer.close();
+async function readAllChunks(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
     const chunks: Uint8Array[] = [];
-    const reader = stream.readable.getReader();
+    const reader = stream.getReader();
     for (;;) {
         const { done, value } = await reader.read();
         if (done) {
@@ -739,6 +734,16 @@ async function compressInvite(json: string): Promise<string> {
         result.set(chunk, offset);
         offset += chunk.length;
     }
+    return result;
+}
+
+async function compressInvite(json: string): Promise<string> {
+    const bytes = new TextEncoder().encode(json);
+    const stream = new CompressionStream('deflate-raw');
+    const writer = stream.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    const result = await readAllChunks(stream.readable);
     const binary = Array.from(result, (b) => String.fromCharCode(b)).join('');
     return 'z:' + btoa(binary);
 }
@@ -754,21 +759,6 @@ async function decompressInvite(raw: string): Promise<string> {
     const writer = stream.writable.getWriter();
     writer.write(bytes);
     writer.close();
-    const chunks: Uint8Array[] = [];
-    const reader = stream.readable.getReader();
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-            break;
-        }
-        chunks.push(value!);
-    }
-    const total = chunks.reduce((n, c) => n + c.length, 0);
-    const result = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-    }
+    const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
 }

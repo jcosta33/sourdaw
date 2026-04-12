@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { groupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/groupTracks';
+import { groupTracks } from '../../useCases/toggleTrackState/groupTracks';
 
 export const handleGroupTracks = createHandler<'groupTracks'>({
     execute: (action) => {

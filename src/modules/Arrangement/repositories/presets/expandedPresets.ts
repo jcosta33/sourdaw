@@ -2,7 +2,7 @@
  * Expanded factory presets — additional 100+ presets for effects and instruments.
  * These are merged into FACTORY_PRESETS at module load time.
  */
-import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type SoundPreset } from '../../models/SoundPreset';
 import { synth } from './presetHelpers/synth';
 import { eq } from './presetHelpers/eq';
 import { comp } from './presetHelpers/comp';

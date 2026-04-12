@@ -2,7 +2,7 @@
  * In-memory clipboard state for clip and note copy/paste operations.
  */
 
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '../models/Track';
 import { type MidiNote } from '../models/MidiNoteViewTypes';
 
 export type ClipboardEntry = {
