@@ -78,7 +78,7 @@ vi.mock('#/modules/Workspace/stores/preferencesStore', () => ({
     preferencesStore: {},
 }));
 
-vi.mock('#/modules/Arrangement/stores/timelineViewStore', () => ({
+vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {},
     setScrollY: vi.fn(),
 }));

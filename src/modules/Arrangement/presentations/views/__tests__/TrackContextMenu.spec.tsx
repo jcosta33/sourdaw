@@ -12,7 +12,7 @@ vi.mock('../../../useCases/toggleTrackState/toggleSoloSafe', () => ({
     toggleSoloSafe: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
+vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: vi.fn(),
 }));
 

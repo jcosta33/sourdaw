@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getVcaGroups } from '../getVcaGroups';
 
 const mockGetVcaGroupsState = vi.fn();
-vi.mock('#/modules/Arrangement/stores/vcaGroupStore', () => ({
+vi.mock('../../../stores/vcaGroupStore', () => ({
     getVcaGroupsState: () => mockGetVcaGroupsState()
 }));
 

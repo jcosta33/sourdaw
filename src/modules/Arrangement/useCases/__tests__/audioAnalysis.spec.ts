@@ -19,7 +19,7 @@ vi.mock('../addTrack', () => ({
     addTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
+vi.mock('../clip/addClip', () => ({
     addClip: vi.fn(),
 }));
 

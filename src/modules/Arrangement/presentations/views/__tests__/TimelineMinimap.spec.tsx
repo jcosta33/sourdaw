@@ -8,7 +8,7 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: { 
         value: { tracks: [], selectedTrackId: null },
         subscribe: vi.fn(() => vi.fn()),

@@ -8,7 +8,7 @@ vi.mock('../../../stores/vcaGroupStore', () => ({
 }));
 
 const mockGetTrackById = vi.fn();
-vi.mock('#/modules/Arrangement/repositories/track/getTrackById', () => ({
+vi.mock('../../../repositories/track/getTrackById', () => ({
     getTrackById: (...args: any[]) => mockGetTrackById(...args)
 }));
 
