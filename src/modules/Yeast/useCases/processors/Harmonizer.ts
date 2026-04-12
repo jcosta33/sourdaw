@@ -14,6 +14,7 @@ const SCALE_PATTERNS: Record<string, number[]> = {
     pentatonic: [0, 2, 4, 7, 9],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
+const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
 type HarmonyVoice = {
     degrees: number;
@@ -128,8 +129,7 @@ export class Harmonizer implements MidiProcessor {
                 this.root = Math.round(value) % 12;
                 break;
             case 'scale': {
-                const names = Object.keys(SCALE_PATTERNS);
-                this.scaleName = names[Math.round(value)] ?? 'major';
+                this.scaleName = SCALE_NAMES[Math.round(value)] ?? 'major';
                 break;
             }
             case 'voice0_degrees':

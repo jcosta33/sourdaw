@@ -1,21 +1,7 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { updateNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/updateNotesForClip';
 
 export function moveMidiNote(clipId: string, noteId: string, newPitch: number, newStartBeat: number): void {
-    const state = midiStore.value;
-    if (!state) {
-        return;
-    }
-
-    const existing = state.notesByClipId[clipId];
-    if (!existing) {
-        return;
-    }
-
-    midiStore.set({
-        ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [clipId]: existing.map((n) => (n.id === noteId ? { ...n, pitch: newPitch, startBeat: newStartBeat } : n)),
-        },
-    });
+    updateNotesForClip(clipId, (notes) =>
+        notes.map((n) => (n.id === noteId ? { ...n, pitch: newPitch, startBeat: newStartBeat } : n))
+    );
 }

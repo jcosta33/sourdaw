@@ -22,6 +22,7 @@ const SCALE_PATTERNS: Record<string, number[]> = {
     diminished: [0, 2, 3, 5, 6, 8, 9, 11],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
+const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
 type RemapMode = 'nearest' | 'up' | 'down';
 
@@ -135,8 +136,7 @@ export class ScaleQuantizer implements MidiProcessor {
                 this.root = Math.round(value) % 12;
                 break;
             case 'scale': {
-                const names = Object.keys(SCALE_PATTERNS);
-                this.scaleName = names[Math.round(value)] ?? 'major';
+                this.scaleName = SCALE_NAMES[Math.round(value)] ?? 'major';
                 break;
             }
             case 'remap_mode':

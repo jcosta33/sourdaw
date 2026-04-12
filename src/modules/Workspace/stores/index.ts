@@ -3,4 +3,4 @@
 
 export { preferencesStore } from './preferencesStore';
 
-export { workspaceStore } from './workspaceStore';
+export { workspaceStore, defaultWorkspaceState } from './workspaceStore';

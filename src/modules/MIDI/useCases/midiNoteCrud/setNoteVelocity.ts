@@ -1,23 +1,7 @@
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { updateNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/updateNotesForClip';
 
 export function setNoteVelocity(clipId: string, noteId: string, velocity: number): void {
-    const state = midiStore.value;
-    if (!state) {
-        return;
-    }
-
-    const existing = state.notesByClipId[clipId];
-    if (!existing) {
-        return;
-    }
-
-    midiStore.set({
-        ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [clipId]: existing.map((n) =>
-                n.id === noteId ? { ...n, velocity: Math.max(0, Math.min(127, velocity)) } : n
-            ),
-        },
-    });
+    updateNotesForClip(clipId, (notes) =>
+        notes.map((n) => (n.id === noteId ? { ...n, velocity: Math.max(0, Math.min(127, velocity)) } : n))
+    );
 }

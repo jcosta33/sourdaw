@@ -16,20 +16,12 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { cn } from '#/utils/Styles/cn';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
+import { SECTION_COLORS } from '../../models/colorPalette';
 
 type ArrangementBarProps = {
     pixelsPerBeat: number;
     scrollX: number;
 };
-
-const SECTION_COLORS = [
-    'oklch(0.38 0.08 260)',
-    'oklch(0.38 0.08 150)',
-    'oklch(0.38 0.08 30)',
-    'oklch(0.38 0.08 330)',
-    'oklch(0.38 0.08 200)',
-    'oklch(0.38 0.08 80)',
-];
 
 type ContextMenuState =
     | { kind: 'none' }
