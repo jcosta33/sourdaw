@@ -87,14 +87,14 @@ export class MarkovChain extends BaseMidiProcessor {
         if (!row) {return 0;}
 
         this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
-        let r = this.rngState / 0x7fffffff;
+        const r = this.rngState / 0x7fffffff;
         let cumulative = 0;
 
-        for (let i = 0; i < row.length; i++) {
+        for (let i = 0; i < this.stateCount; i++) {
             cumulative += row[i]!;
             if (r <= cumulative) {return i;}
         }
-        return row.length - 1;
+        return this.stateCount - 1;
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
@@ -185,11 +185,12 @@ export class MarkovChain extends BaseMidiProcessor {
     setTransition(from: number, to: number, prob: number): void {
         if (from < this.stateCount && to < this.stateCount && this.probs[from]) {
             this.probs[from]![to] = Math.max(0, prob);
-            // Re-normalize row
+            // Re-normalize active portion of row
             const row = this.probs[from]!;
-            const sum = row.reduce((a, b) => a + b, 0);
+            let sum = 0;
+            for (let i = 0; i < this.stateCount; i++) {sum += row[i]!;}
             if (sum > 0) {
-                for (let i = 0; i < row.length; i++) {row[i] = row[i]! / sum;}
+                for (let i = 0; i < this.stateCount; i++) {row[i] = row[i]! / sum;}
             }
         }
     }
