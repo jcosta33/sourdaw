@@ -302,6 +302,7 @@ export class TrackNode {
                     nodes: factoryNode.nodes,
                     inputNode: factoryNode.inputNode,
                     outputNode: factoryNode.outputNode,
+                    dispose: factoryNode.dispose,
                 };
             } else {
                 const descriptor = findWasmDescriptor(deviceType);
@@ -334,6 +335,9 @@ export class TrackNode {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
             return;
+        }
+        if (dn.dispose) {
+            dn.dispose();
         }
         if (dn.fermenterControls) {
             dn.fermenterControls.destroy();
@@ -468,6 +472,9 @@ export class TrackNode {
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
         for (const dn of this.strip.deviceNodes) {
+            if (dn.dispose) {
+                dn.dispose();
+            }
             if (dn.fermenterControls) {
                 dn.fermenterControls.destroy();
             }

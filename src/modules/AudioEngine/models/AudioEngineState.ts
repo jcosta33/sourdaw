@@ -14,6 +14,8 @@ export type BuiltinDeviceNode = {
     inputNode: AudioNode;
     outputNode: AudioNode;
     bypassed?: boolean;
+    /** Stop oscillators and release resources when the device is removed. */
+    dispose?: () => void;
     /** Controls for native Rust/WASM DSP devices (param updates via MessagePort) */
     nativeDspControls?: {
         setParam: (name: string, value: number) => void;

@@ -38,8 +38,12 @@ export function planRippleDelete({ trackId, clipIds }: PlanRippleDeleteInput): P
         return null;
     }
 
-    const deleteStart = Math.min(...removedClips.map((clip) => clip.startBeat));
-    const deleteEnd = Math.max(...removedClips.map((clip) => clip.endBeat));
+    let deleteStart = Infinity;
+    let deleteEnd = -Infinity;
+    for (const clip of removedClips) {
+        if (clip.startBeat < deleteStart) { deleteStart = clip.startBeat; }
+        if (clip.endBeat > deleteEnd) { deleteEnd = clip.endBeat; }
+    }
     const gap = deleteEnd - deleteStart;
     const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
     const shiftedClips: RippleDeleteShift[] = [];

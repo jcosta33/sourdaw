@@ -20,7 +20,10 @@ export function pasteClip(): void {
     }
 
     const playheadBeat = playheadPositionRef.current;
-    const minStartBeat = Math.min(...clipClipboard.map((e) => e.clip.startBeat));
+    let minStartBeat = Infinity;
+    for (const e of clipClipboard) {
+        if (e.clip.startBeat < minStartBeat) { minStartBeat = e.clip.startBeat; }
+    }
     const offset = playheadBeat - minStartBeat;
 
     for (const entry of clipClipboard) {

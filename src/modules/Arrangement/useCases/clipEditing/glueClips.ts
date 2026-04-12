@@ -16,8 +16,12 @@ export function glueClips(clipIds: string[]): void {
     if (clips.length < 2) {
         return;
     }
-    const startBeat = Math.min(...clips.map((c) => c.startBeat));
-    const endBeat = Math.max(...clips.map((c) => c.endBeat));
+    let startBeat = Infinity;
+    let endBeat = -Infinity;
+    for (const c of clips) {
+        if (c.startBeat < startBeat) { startBeat = c.startBeat; }
+        if (c.endBeat > endBeat) { endBeat = c.endBeat; }
+    }
     const glued: Clip = {
         id: getNextClipId(),
         trackId: firstTrack.id,

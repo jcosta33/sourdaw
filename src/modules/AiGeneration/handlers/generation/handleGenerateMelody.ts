@@ -1,38 +1,21 @@
-import { createHandler } from '#/utils/createHandler';
-import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { applyMelodyToTrack } from '../../useCases/generateMelody/applyToTrack';
 import { type ScaleType } from '../../useCases/generateMelody/algorithm';
-import { getPlayheadBeat, resolveOrCreateMidiTrack, VALID_MELODY_STYLES, VALID_SCALES } from './generationHandlerHelpers';
+import { VALID_MELODY_STYLES, VALID_SCALES } from './generationHandlerHelpers';
+import { createGenerationHandler } from './createGenerationHandler';
 
-export const handleGenerateMelody = createHandler<'generateMelody'>({
-    execute: (a) => {
-        const style = VALID_MELODY_STYLES.has(a.payload.style)
-            ? (a.payload.style as 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient')
-            : 'simple';
-
-        const scale: ScaleType = VALID_SCALES.has(a.payload.scale ?? '') ? (a.payload.scale as ScaleType) : 'major';
-
-        const key = typeof a.payload.key === 'number' ? Math.max(0, Math.min(11, a.payload.key)) : 0;
-
-        const trackId = resolveOrCreateMidiTrack(a.payload.trackId, `Melody (${style})`, {
-            getTrackStoreState,
-            addTrack,
-        });
-        if (!trackId) {
-            return;
-        }
+export const handleGenerateMelody = createGenerationHandler<'generateMelody'>({
+    validStyles: VALID_MELODY_STYLES,
+    defaultStyle: 'simple',
+    labelSuffix: 'melody',
+    trackNamePrefix: 'Melody',
+    applyToTrack: (trackId, action, style, playheadBeat) => {
+        const scale: ScaleType = VALID_SCALES.has(action.payload.scale ?? '') ? (action.payload.scale as ScaleType) : 'major';
+        const key = typeof action.payload.key === 'number' ? Math.max(0, Math.min(11, action.payload.key)) : 0;
 
         applyMelodyToTrack(
             trackId,
-            {
-                style,
-                key,
-                scale,
-                bars: a.payload.bars,
-            },
-            getPlayheadBeat()
+            { style: style as 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient', key, scale, bars: action.payload.bars },
+            playheadBeat
         );
     },
-    describe: (a) => ({ label: `Generate ${a.payload.style} melody` }),
-    undoable: true,
 });

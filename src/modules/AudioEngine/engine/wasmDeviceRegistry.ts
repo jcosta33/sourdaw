@@ -247,15 +247,14 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     result.setParam(name, value);
                 }
                 result.onMeterData((data) => {
-                    updateGlutenMeters(
-                        deviceId,
-                        data.grDb,
-                        data.inputDb,
-                        data.outputDb,
-                        data.crest,
-                        data.phaseCorr,
-                        data.latency
-                    );
+                    updateGlutenMeters(deviceId, {
+                        grDb: data.grDb,
+                        inputDb: data.inputDb,
+                        outputDb: data.outputDb,
+                        crest: data.crest,
+                        phaseCorr: data.phaseCorr,
+                        latency: data.latency,
+                    });
                 });
                 onLoaded({
                     deviceId,
@@ -326,19 +325,18 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     result.setParam(name, value);
                 }
                 result.onMeterData((data) => {
-                    updateGrinderMeters(
-                        deviceId,
-                        data.inputDb,
-                        data.preampDb,
-                        data.powerAmpDb,
-                        data.outputDb,
-                        data.gateOpen,
-                        data.gateEnvelopeDb,
-                        data.sagVoltage,
-                        data.latency,
-                        data.neuralCpuPercent,
-                        data.neuralWarmupProgress
-                    );
+                    updateGrinderMeters(deviceId, {
+                        inputDb: data.inputDb,
+                        preampDb: data.preampDb,
+                        powerAmpDb: data.powerAmpDb,
+                        outputDb: data.outputDb,
+                        gateOpen: data.gateOpen,
+                        gateEnvelopeDb: data.gateEnvelopeDb,
+                        sagVoltage: data.sagVoltage,
+                        latency: data.latency,
+                        neuralCpuPercent: data.neuralCpuPercent,
+                        neuralWarmupProgress: data.neuralWarmupProgress,
+                    });
                 });
                 if (pendingBypass) {
                     result.setBypass(true);

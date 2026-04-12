@@ -69,8 +69,12 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     }
 
     // Find the full range
-    const minBeat = Math.min(...allClips.map((c) => c.startBeat));
-    const maxBeat = Math.max(...allClips.map((c) => c.endBeat));
+    let minBeat = Infinity;
+    let maxBeat = -Infinity;
+    for (const c of allClips) {
+        if (c.startBeat < minBeat) { minBeat = c.startBeat; }
+        if (c.endBeat > maxBeat) { maxBeat = c.endBeat; }
+    }
     const totalBeats = maxBeat - minBeat;
 
     if (totalBeats <= 0) {

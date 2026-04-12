@@ -1,1 +1,1 @@
-export { updateGrinderMeters } from './grinderStore';
+export { updateGrinderMeters, type GrinderMeterValues } from './grinderStore';

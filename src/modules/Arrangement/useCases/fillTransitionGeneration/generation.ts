@@ -77,29 +77,38 @@ export function generateDrumFill(
     return { notes, durationBeats, style: 'drum-fill', confidence: 0.85 };
 }
 
+function generateLinearPitchRun(
+    atBeat: number,
+    durationBeats: number,
+    startPitch: number,
+    endPitch: number,
+    velStart: number,
+    velEnd: number,
+    steps: number = Math.floor(durationBeats * 4)
+): GeneratedFill['notes'] {
+    const notes: GeneratedFill['notes'] = [];
+
+    for (let i = 0; i < steps; i++) {
+        const progress = i / steps;
+
+        notes.push({
+            pitch: Math.round(startPitch + (endPitch - startPitch) * progress),
+            startBeat: atBeat + (i * durationBeats) / steps,
+            duration: durationBeats / steps,
+            velocity: Math.min(127, Math.round(velStart + (velEnd - velStart) * progress)),
+        });
+    }
+
+    return notes;
+}
+
 export function generateRiser(
     atBeat: number,
     durationBeats: number = 4,
     startPitch: number = 60,
     endPitch: number = 84
 ): GeneratedFill {
-    const notes: GeneratedFill['notes'] = [];
-    const steps = Math.floor(durationBeats * 4);
-    const pitchRange = endPitch - startPitch;
-
-    for (let i = 0; i < steps; i++) {
-        const progress = i / steps;
-        const pitch = Math.round(startPitch + pitchRange * progress);
-        const velocity = Math.min(127, Math.round(60 + 67 * progress));
-
-        notes.push({
-            pitch,
-            startBeat: atBeat + (i * durationBeats) / steps,
-            duration: durationBeats / steps,
-            velocity,
-        });
-    }
-
+    const notes = generateLinearPitchRun(atBeat, durationBeats, startPitch, endPitch, 60, 127);
     return { notes, durationBeats, style: 'riser', confidence: 0.75 };
 }
 
@@ -109,23 +118,7 @@ export function generateSweepDown(
     startPitch: number = 84,
     endPitch: number = 36
 ): GeneratedFill {
-    const notes: GeneratedFill['notes'] = [];
-    const steps = Math.floor(durationBeats * 4);
-    const pitchRange = startPitch - endPitch;
-
-    for (let i = 0; i < steps; i++) {
-        const progress = i / steps;
-        const pitch = Math.round(startPitch - pitchRange * progress);
-        const velocity = Math.min(127, Math.round(100 - 40 * progress));
-
-        notes.push({
-            pitch,
-            startBeat: atBeat + (i * durationBeats) / steps,
-            duration: durationBeats / steps,
-            velocity,
-        });
-    }
-
+    const notes = generateLinearPitchRun(atBeat, durationBeats, startPitch, endPitch, 100, 60);
     return { notes, durationBeats, style: 'sweep-down', confidence: 0.7 };
 }
 

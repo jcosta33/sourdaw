@@ -16,7 +16,10 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
 
     const existing = midiState.notesByClipId[clipId] ?? [];
 
-    const minStart = Math.min(...noteClipboard.notes.map((n) => n.startBeat));
+    let minStart = Infinity;
+    for (const n of noteClipboard.notes) {
+        if (n.startBeat < minStart) { minStart = n.startBeat; }
+    }
 
     const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) =>
         createMidiNote(n.pitch, n.startBeat - minStart + beatOffset, n.duration, n.velocity)

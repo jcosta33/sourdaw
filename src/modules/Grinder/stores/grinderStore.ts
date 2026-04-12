@@ -60,35 +60,36 @@ export function replaceGrinderPatchLocally(deviceId: string, patch: GrinderPatch
     grinderStore.set({ ...instances, [deviceId]: { ...state, patch: migrateGrinderPatch(patch) } });
 }
 
-export function updateGrinderMeters(
-    deviceId: string,
-    inputDb: number,
-    preampDb: number,
-    powerAmpDb: number,
-    outputDb: number,
-    gateOpen?: number,
-    gateEnvelopeDb?: number,
-    sagVoltage?: number,
-    latency?: number,
-    neuralCpuPercent?: number,
-    neuralWarmupProgress?: number
-): void {
+export type GrinderMeterValues = {
+    inputDb: number;
+    preampDb: number;
+    powerAmpDb: number;
+    outputDb: number;
+    gateOpen?: number;
+    gateEnvelopeDb?: number;
+    sagVoltage?: number;
+    latency?: number;
+    neuralCpuPercent?: number;
+    neuralWarmupProgress?: number;
+};
+
+export function updateGrinderMeters(deviceId: string, meters: GrinderMeterValues): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_GRINDER_STATE, patch: { ...DEFAULT_PATCH } };
     grinderStore.set({
         ...instances,
         [deviceId]: {
             ...state,
-            inputDb,
-            preampDb,
-            powerAmpDb,
-            outputDb,
-            gateOpen: gateOpen ?? state.gateOpen,
-            gateEnvelopeDb: gateEnvelopeDb ?? state.gateEnvelopeDb,
-            sagVoltage: sagVoltage ?? state.sagVoltage,
-            latency: latency ?? state.latency,
-            neuralCpuPercent: neuralCpuPercent ?? state.neuralCpuPercent,
-            neuralWarmupProgress: neuralWarmupProgress ?? state.neuralWarmupProgress,
+            inputDb: meters.inputDb,
+            preampDb: meters.preampDb,
+            powerAmpDb: meters.powerAmpDb,
+            outputDb: meters.outputDb,
+            gateOpen: meters.gateOpen ?? state.gateOpen,
+            gateEnvelopeDb: meters.gateEnvelopeDb ?? state.gateEnvelopeDb,
+            sagVoltage: meters.sagVoltage ?? state.sagVoltage,
+            latency: meters.latency ?? state.latency,
+            neuralCpuPercent: meters.neuralCpuPercent ?? state.neuralCpuPercent,
+            neuralWarmupProgress: meters.neuralWarmupProgress ?? state.neuralWarmupProgress,
         },
     });
 }
