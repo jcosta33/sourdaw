@@ -325,8 +325,21 @@ export async function scheduleMidiNotes(
                                     (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
                                 );
                                 if (dn?.toasterControls) {
-                                    const children = tracks.filter((t) => t.parentId === toasterParentTrack!.id);
-                                    let pad = children.findIndex((t) => t.id === track.id);
+                                    // Single-pass: find this track's index among siblings
+                                    // instead of allocating a filtered array per note.
+                                    let pad = -1;
+                                    {
+                                        let childIdx = 0;
+                                        for (const t of tracks) {
+                                            if (t.parentId === toasterParentTrack!.id) {
+                                                if (t.id === track.id) {
+                                                    pad = childIdx;
+                                                    break;
+                                                }
+                                                childIdx++;
+                                            }
+                                        }
+                                    }
                                     let pitchNote = pitch;
 
                                     if (pad === -1) {

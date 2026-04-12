@@ -30,14 +30,14 @@ export function evaluateFollowActions(
     // intentional for now — changing the semantics requires understanding the
     // full implications of conflicting follow actions across tracks.
     for (const track of tracks) {
-        for (const clip of track.clips as Clip[]) {
+        for (const clip of track.clips) {
             if (clip.followAction && !clip.loopEnabled && prevPosition < clip.endBeat && nextPosition >= clip.endBeat) {
                 if (clip.followAction === 'stop') {
                     shouldStop = true;
                 } else if (clip.followAction === 'play_next') {
                     // Single-pass: find the clip with the smallest startBeat >= clip.endBeat
                     let nearest: Clip | null = null;
-                    for (const c of track.clips as Clip[]) {
+                    for (const c of track.clips) {
                         if (c.id !== clip.id && c.startBeat >= clip.endBeat) {
                             if (nearest === null || c.startBeat < nearest.startBeat) {
                                 nearest = c;
@@ -50,7 +50,7 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_previous') {
                     // Single-pass: find the clip with the largest startBeat where endBeat <= clip.startBeat
                     let nearest: Clip | null = null;
-                    for (const c of track.clips as Clip[]) {
+                    for (const c of track.clips) {
                         if (c.id !== clip.id && c.endBeat <= clip.startBeat) {
                             if (nearest === null || c.startBeat > nearest.startBeat) {
                                 nearest = c;
@@ -63,7 +63,7 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_first') {
                     // Single-pass: find the clip with the smallest startBeat
                     let first: Clip | null = null;
-                    for (const c of track.clips as Clip[]) {
+                    for (const c of track.clips) {
                         if (first === null || c.startBeat < first.startBeat) {
                             first = c;
                         }
@@ -74,7 +74,7 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_last') {
                     // Single-pass: find the clip with the largest startBeat
                     let last: Clip | null = null;
-                    for (const c of track.clips as Clip[]) {
+                    for (const c of track.clips) {
                         if (last === null || c.startBeat > last.startBeat) {
                             last = c;
                         }
@@ -85,14 +85,14 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_random') {
                     // Two-pass without allocation: count eligible clips, then pick the Nth
                     let count = 0;
-                    for (const c of track.clips as Clip[]) {
+                    for (const c of track.clips) {
                         if (c.id !== clip.id) {
                             count++;
                         }
                     }
                     if (count > 0) {
                         let target = Math.floor(Math.random() * count);
-                        for (const c of track.clips as Clip[]) {
+                        for (const c of track.clips) {
                             if (c.id !== clip.id) {
                                 if (target === 0) {
                                     jumpToPosition = c.startBeat;

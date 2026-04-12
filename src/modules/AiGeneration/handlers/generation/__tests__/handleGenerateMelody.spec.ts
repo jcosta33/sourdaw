@@ -16,6 +16,9 @@ vi.mock('../generationHandlerHelpers', () => ({
     resolveOrCreateMidiTrack: mocks.resolveOrCreateMidiTrack,
     VALID_MELODY_STYLES: new Set(['simple', 'arpeggiated']),
     VALID_SCALES: new Set(['major', 'minor']),
+    VALID_DRUM_STYLES: new Set(['rock', 'house']),
+    VALID_CHORD_STYLES: new Set(['pop', 'jazz', 'classical', 'edm', 'blues', 'rnb', 'folk', 'cinematic']),
+    VALID_VOICINGS: new Set(['close', 'open', 'spread', 'power']),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {

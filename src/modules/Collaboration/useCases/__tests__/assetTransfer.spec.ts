@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssetTransfer } from '../assetTransfer';
+import { DOC_ID_ASSET } from '../../models/syncChannelConstants';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
 
 function makePeerManager(): PeerConnectionManager {
@@ -36,7 +37,7 @@ describe('AssetTransfer', () => {
         transfer.requestAsset('sha256:abc');
         expect(peer.broadcastCrdtSync).toHaveBeenCalledWith(
             expect.objectContaining({
-                docId: '__asset__',
+                docId: DOC_ID_ASSET,
                 data: expect.stringContaining('asset.request'),
             })
         );

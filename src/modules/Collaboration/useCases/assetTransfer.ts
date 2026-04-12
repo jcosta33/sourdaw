@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
+import { DOC_ID_ASSET } from '../models/syncChannelConstants';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
 const CHUNK_SIZE = 256 * 1024; // 256 KiB
@@ -79,14 +80,14 @@ export class AssetTransfer {
 
         this.peerManager.broadcastCrdtSync({
             type: 'crdt-sync',
-            docId: '__asset__',
+            docId: DOC_ID_ASSET,
             data: JSON.stringify(msg),
         });
     }
 
     /** Handle an incoming asset-related message. */
     async handleMessage(peerId: PeerId, message: PeerMessage): Promise<void> {
-        if (message.type !== 'crdt-sync' || message.docId !== '__asset__') {
+        if (message.type !== 'crdt-sync' || message.docId !== DOC_ID_ASSET) {
             return;
         }
 
@@ -126,7 +127,7 @@ export class AssetTransfer {
             peerId,
             message: {
                 type: 'crdt-sync',
-                docId: '__asset__',
+                docId: DOC_ID_ASSET,
                 data: JSON.stringify({ type: 'asset.manifest', manifest } satisfies AssetControlMessage),
             },
         });
@@ -145,7 +146,7 @@ export class AssetTransfer {
                 peerId,
                 message: {
                     type: 'crdt-sync',
-                    docId: '__asset__',
+                    docId: DOC_ID_ASSET,
                     data: JSON.stringify({
                         type: 'asset.chunk',
                         hash,

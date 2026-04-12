@@ -12,7 +12,7 @@ import {
     projectStore,
     saveProject,
 } from '#/modules/Project';
-import { registerBuiltinPlugins, registerBuiltinFaustDSP, registerProModulationEffects } from '#/modules/Plugin/useCases';
+import { registerProModulationEffects } from '#/modules/Plugin/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
@@ -54,8 +54,8 @@ export const useAppInitialization = (): void => {
                     );
                     verifyAudioBufferReferences();
                     initWebMidi();
-                    registerBuiltinPlugins();
-                    registerBuiltinFaustDSP();
+                    // registerBuiltinPlugins and registerBuiltinFaustDSP are called
+                    // inside initializeAudioEngine — no need to call again here.
                     registerProModulationEffects();
                     registerProSynthInstruments();
                     if (projectLoaded.current) {

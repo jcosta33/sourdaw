@@ -21,8 +21,9 @@ import {
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
+import { DOC_ID_BRANCHES } from '../models/syncChannelConstants';
+
 const DOC_PREFIX_ROOT = 'root';
-const DOC_BRANCHES = '__branches__';
 
 // Sync state is per-peer per-doc: each document requires its own Automerge SyncState.
 type PerDocSyncStateMap = Map<string, SyncState>;
@@ -133,8 +134,8 @@ export class AutomergeSync {
         this.sendDocSyncToPeer({ peerId, docId: DOC_PREFIX_ROOT });
 
         // Sync branch metadata doc if it exists (session-scoped)
-        if (hasCrdtDoc(DOC_BRANCHES)) {
-            this.sendDocSyncToPeer({ peerId, docId: DOC_BRANCHES });
+        if (hasCrdtDoc(DOC_ID_BRANCHES)) {
+            this.sendDocSyncToPeer({ peerId, docId: DOC_ID_BRANCHES });
         }
 
         // Sync branch content docs
