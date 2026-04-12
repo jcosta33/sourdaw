@@ -11,7 +11,7 @@ vi.mock('../../../services/applySoloLogic', () => ({
 }));
 
 const mockUpdateTrack = vi.fn();
-vi.mock('#/modules/Arrangement/repositories/track/updateTrack', () => ({
+vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: (...args: any[]) => mockUpdateTrack(...args)
 }));
 

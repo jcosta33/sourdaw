@@ -8,7 +8,7 @@ import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 
-vi.mock('#/modules/Arrangement/stores/trackStore', async (importOriginal) => {
+vi.mock('../../stores/trackStore', async (importOriginal) => {
     const actual = await importOriginal<any>();
     return { ...actual, trackStore: { value: null, set: vi.fn() } };
 });

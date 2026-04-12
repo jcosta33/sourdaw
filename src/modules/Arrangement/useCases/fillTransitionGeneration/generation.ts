@@ -2,8 +2,8 @@
  * AI Fill & Transition Generation — drum fills, risers, sweeps, and transitions.
  */
 
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { type GeneratedFill } from '#/modules/Arrangement/models/FillTransitionTypes';
+import { markerStore } from '../../stores/markerStore';
+import { type GeneratedFill } from '../../models/FillTransitionTypes';
 
 /** Standard GM drum map pitches */
 const DRUM_MAP = {

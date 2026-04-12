@@ -10,7 +10,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores/clipboardStore', () => ({
+vi.mock('../../../stores/clipboardStore', () => ({
     setNoteClipboard: vi.fn(),
 }));
 
