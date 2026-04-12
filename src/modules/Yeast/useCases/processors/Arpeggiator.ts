@@ -13,7 +13,8 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type MidiProcessor, type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
 import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,8 +36,7 @@ type OctaveDirection = 'up' | 'down' | 'upDown';
 
 // ── Arpeggiator ──────────────────────────────────────────────────────────────
 
-export class Arpeggiator implements MidiProcessor {
-    readonly id: string;
+export class Arpeggiator extends BaseMidiProcessor {
     readonly name = 'Arpeggiator';
 
     // Parameters
@@ -51,8 +51,6 @@ export class Arpeggiator implements MidiProcessor {
     private latchEnabled = false;
     private restartMode: RestartMode = 'restartOnNote';
     private pattern: ArpStep[] = createDefaultPattern(8);
-    private bypassed = false;
-
     // State
     private held: HeldNote[] = [];
     private latched: HeldNote[] = [];
@@ -64,7 +62,7 @@ export class Arpeggiator implements MidiProcessor {
     private rngState = 0xdead;
 
     constructor(id?: string) {
-        this.id = id ?? `arp-${Date.now()}`;
+        super(id ?? `arp-${Date.now()}`);
     }
 
     // ── MidiProcessor interface ──────────────────────────────────────────
@@ -237,16 +235,6 @@ export class Arpeggiator implements MidiProcessor {
         this.lastStepTimeSamples = -Infinity;
         this.activeGenerated = [];
         this.scheduled.clear();
-    }
-
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
     }
 
     /** Set the custom arp pattern (for pattern mode). */

@@ -17,7 +17,15 @@ export type ProjectTemplate = {
     create: () => void | Promise<void>;
 };
 
-export let synthDeviceCounter = 0;
+let _synthDeviceCounter = 0;
+
+export function getSynthDeviceCounter(): number {
+    return _synthDeviceCounter;
+}
+
+export function resetSynthDeviceCounter(): void {
+    _synthDeviceCounter = 0;
+}
 
 export function attachSynthDevice(trackId: string): void {
     const state = trackStore.value;
@@ -26,7 +34,7 @@ export function attachSynthDevice(trackId: string): void {
     }
 
     const device = {
-        id: `device-synth-${++synthDeviceCounter}`,
+        id: `device-synth-${++_synthDeviceCounter}`,
         name: 'Synth',
         type: 'synth',
         bypassed: false,

@@ -41,11 +41,11 @@ export function insertAutomationShape(
         const cycleStart = startBeat + c * cycleDuration;
         const cycleEnd = cycleStart + cycleDuration;
         const points = generateShapePoints(shape, cycleStart, cycleEnd, lane.minValue, lane.maxValue);
-        // Remove the last point of each cycle except the final one to avoid duplicates
-        if (c < cycles - 1) {
-            points.pop();
+        // Skip the last point of each cycle except the final one to avoid duplicates at boundaries
+        const end = c < cycles - 1 ? points.length - 1 : points.length;
+        for (let i = 0; i < end; i++) {
+            allPoints.push(points[i]!);
         }
-        allPoints.push(...points);
     }
 
     batchAddAutomationPoints(laneId, allPoints);

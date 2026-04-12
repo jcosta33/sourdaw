@@ -3,10 +3,9 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
-export class Transposer implements MidiProcessor {
-    readonly id: string;
+export class Transposer extends BaseMidiProcessor {
     readonly name = 'Transposer';
 
     private semitones = 0;
@@ -14,12 +13,11 @@ export class Transposer implements MidiProcessor {
     private randomRange = 0; // ±semitones random offset
     private clampMin = 0;
     private clampMax = 127;
-    private bypassed = false;
     private rngState = 0xface;
     private noteMap = new Map<string, number>(); // "ch:inNote" → outNote
 
     constructor(id?: string) {
-        this.id = id ?? `transpose-${Date.now()}`;
+        super(id ?? `transpose-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -56,16 +54,6 @@ export class Transposer implements MidiProcessor {
     reset(): void {
         this.noteMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'semitones':

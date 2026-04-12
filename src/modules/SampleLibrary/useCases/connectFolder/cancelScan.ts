@@ -1,7 +1,5 @@
-import { scanAbortController } from './helpers';
+import { getScanAbortController } from './helpers';
 
 export function cancelScan(): void {
-    if (scanAbortController) {
-        scanAbortController.abort();
-    }
+    getScanAbortController()?.abort();
 }

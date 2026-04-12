@@ -37,7 +37,7 @@ import {
     MPE_SLIDE_CC,
     type ActiveNoteData,
 } from '../../models/WebMidiTypes';
-import { activeNotes, channelToNote, mpeEnabled, targetTrackId } from './state';
+import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
 
 const midiMessageHandlerDependencies = {
     getMidiStoreState,
@@ -109,22 +109,22 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
         activeNotes.delete(note);
 
-        if (mpeEnabled) {
+        if (getMpeEnabled()) {
             channelToNote.delete(noteData.channel);
         }
 
-        if (noteData.fermenterDeviceId && targetTrackId) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
+        if (noteData.fermenterDeviceId && getTargetTrackId()) {
+            const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
             const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.fermenterDeviceId);
             if (dn?.fermenterControls) {
                 dn.fermenterControls.noteOff(note);
             }
         }
 
-        if (noteData.toasterDeviceId && targetTrackId) {
+        if (noteData.toasterDeviceId && getTargetTrackId()) {
             const trackState = deps.getTrackStoreState();
-            const track = trackState?.tracks.find((t) => t.id === targetTrackId);
-            let instrumentTrackId = targetTrackId;
+            const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
+            let instrumentTrackId = getTargetTrackId()!;
             let toasterChildPad: number | null = null;
 
             if (track && track.devices.length === 0 && track.parentId && trackState) {
@@ -152,8 +152,8 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             }
         }
 
-        if (noteData.grandBouleDeviceId && targetTrackId) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
+        if (noteData.grandBouleDeviceId && getTargetTrackId()) {
+            const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
             const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.grandBouleDeviceId);
             if (dn?.grandBouleControls) {
                 dn.grandBouleControls.noteOff(note);
@@ -161,8 +161,8 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             deps.eventBus.emit('midi.noteOff', { midiNote: note });
         }
 
-        if ((noteData as { levainDeviceId?: string }).levainDeviceId && targetTrackId) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
+        if ((noteData as { levainDeviceId?: string }).levainDeviceId && getTargetTrackId()) {
+            const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
             const levainId = (noteData as { levainDeviceId?: string }).levainDeviceId;
             const dn = strip?.deviceNodes.find((d) => d.deviceId === levainId);
             if (dn?.levainControls) {
@@ -172,7 +172,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
         if (noteData.osc) {
             const now = audioEngine.context.currentTime;
-            const synthParams = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId) : null;
+            const synthParams = getTargetTrackId() ? deps.getSynthParamsForTrack(getTargetTrackId()!) : null;
             const releaseTime = synthParams?.release ?? 0.3;
             if (noteData.osc._env) {
                 noteData.osc._env.gain.cancelScheduledValues(now);
@@ -185,18 +185,18 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             }
         }
 
-        if (!targetTrackId) {
+        if (!getTargetTrackId()) {
             return;
         }
 
         const transport = deps.getTransportStoreValue();
         const trackState = deps.getTrackStoreState();
-        const track = trackState?.tracks.find((t) => t.id === targetTrackId);
+        const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
         const isArmed = track?.armed ?? false;
         const isRecording = transport?.isRecording ?? false;
 
         if (isRecording && isArmed) {
-            const clipId = findActiveRecordingClip(targetTrackId);
+            const clipId = findActiveRecordingClip(getTargetTrackId()!);
             if (!clipId) {
                 return;
             }
@@ -207,7 +207,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
             const midiNote = deps.createMidiNote(note, noteData.startBeat, Math.max(durationBeats, 0.0625), 100);
 
-            if (mpeEnabled) {
+            if (getMpeEnabled()) {
                 if (noteData.pressure !== undefined) {
                     midiNote.pressure = noteData.pressure;
                 }
@@ -246,7 +246,7 @@ export const handleNoteOn = inject({
             return;
         }
 
-        if (!targetTrackId) {
+        if (!getTargetTrackId()) {
             logger.warn('[MIDI] No target track set — select a MIDI track first');
             return;
         }
@@ -262,14 +262,14 @@ export const handleNoteOn = inject({
         };
         activeNotes.set(note, noteData);
 
-        if (mpeEnabled && channel >= 1) {
+        if (getMpeEnabled() && channel >= 1) {
             channelToNote.set(channel, note);
         }
 
         const trackState = deps.getTrackStoreState();
-        const track = trackState?.tracks.find((t) => t.id === targetTrackId);
+        const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
 
-        let instrumentTrackId = targetTrackId;
+        let instrumentTrackId = getTargetTrackId()!;
         let instrumentTrack = track;
         let toasterChildPad: number | null = null;
 
@@ -424,7 +424,7 @@ export const handleNoteOn = inject({
                 }
             }
         } else {
-            const synthParams = deps.getSynthParamsForTrack(targetTrackId);
+            const synthParams = deps.getSynthParamsForTrack(getTargetTrackId()!);
             osc = deps.scheduleNote(
                 engine.context,
                 strip.gainNode,
@@ -450,7 +450,7 @@ export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
             return;
         }
 
-        if (mpeEnabled && cc === MPE_SLIDE_CC && channel >= 1) {
+        if (getMpeEnabled() && cc === MPE_SLIDE_CC && channel >= 1) {
             const noteForChannel = channelToNote.get(channel);
             if (noteForChannel !== undefined) {
                 const noteData = activeNotes.get(noteForChannel);
@@ -463,21 +463,21 @@ export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
 
         deps.applyMidiMappings(channel, cc, value);
 
-        if (!targetTrackId) {
+        if (!getTargetTrackId()) {
             return;
         }
 
         if (cc === 7) {
-            audioEngine.setTrackGain(targetTrackId, value / 127);
+            audioEngine.setTrackGain(getTargetTrackId()!, value / 127);
         } else if (cc === 10) {
-            audioEngine.setTrackPan(targetTrackId, ((value / 127) * 2 - 1) * 50);
+            audioEngine.setTrackPan(getTargetTrackId()!, ((value / 127) * 2 - 1) * 50);
         }
 
         const trackState = deps.getTrackStoreState();
-        const track = trackState?.tracks.find((t) => t.id === targetTrackId);
+        const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
         const grandBouleDevice = track?.devices.find((d) => d.type === 'grand-boule');
         if (grandBouleDevice) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
+            const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
             const dn = strip?.deviceNodes.find((d) => d.deviceId === grandBouleDevice.id || d.type === 'grand-boule');
             if (dn?.grandBouleControls?.ready) {
                 if (cc === 64) {
@@ -495,7 +495,7 @@ export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
 
         const levainDevice = track?.devices.find((d) => d.type === 'levain');
         if (levainDevice) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
+            const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
             const dn = strip?.deviceNodes.find((d) => d.deviceId === levainDevice.id || d.type === 'levain');
             if (dn?.levainControls?.ready) {
                 dn.levainControls.handleCc(cc, value);
@@ -505,7 +505,7 @@ export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
 );
 
 export function handleChannelPressure(channel: number, pressure: number): void {
-    if (!mpeEnabled || channel < 1) {
+    if (!getMpeEnabled() || channel < 1) {
         return;
     }
 
@@ -527,7 +527,7 @@ export const handlePitchBend = inject(midiMessageHandlerDependencies)((deps) =>
     (function handlePitchBend(channel: number, lsb: number, msb: number): void {
         const bendValue = ((msb << 7) | lsb) - 8192;
 
-        if (mpeEnabled && channel >= 1) {
+        if (getMpeEnabled() && channel >= 1) {
             const noteForChannel = channelToNote.get(channel);
             if (noteForChannel === undefined) {
                 return;
@@ -539,14 +539,14 @@ export const handlePitchBend = inject(midiMessageHandlerDependencies)((deps) =>
             noteData.pitchBend = bendValue;
             if (noteData.osc) {
                 const bendCents = (bendValue / 8192) * MPE_BEND_RANGE_CENTS;
-                const baseDetune = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId).detune : 0;
+                const baseDetune = getTargetTrackId() ? deps.getSynthParamsForTrack(getTargetTrackId()!).detune : 0;
                 noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, audioEngine.context.currentTime, 0.003);
             }
             return;
         }
 
         const bendCents = (bendValue / 8192) * STANDARD_BEND_RANGE_CENTS;
-        const baseDetune = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId).detune : 0;
+        const baseDetune = getTargetTrackId() ? deps.getSynthParamsForTrack(getTargetTrackId()!).detune : 0;
         const now = audioEngine.context.currentTime;
         for (const noteData of activeNotes.values()) {
             if (noteData.osc) {

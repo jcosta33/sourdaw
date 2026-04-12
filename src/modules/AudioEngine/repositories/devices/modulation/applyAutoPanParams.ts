@@ -1,9 +1,10 @@
 import { type OfflineDeviceNode } from '../types';
 
 export function applyAutoPanParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
-    const lfoAP = dn.nodes[5] as OscillatorNode;
-    const lfoGainLAP = dn.nodes[6] as GainNode;
-    const lfoGainRAP = dn.nodes[7] as GainNode;
+    const nn = dn.namedNodes;
+    const lfoAP = (nn?.['lfo'] ?? dn.nodes[5]) as OscillatorNode;
+    const lfoGainLAP = (nn?.['lfoGainL'] ?? dn.nodes[6]) as GainNode;
+    const lfoGainRAP = (nn?.['lfoGainR'] ?? dn.nodes[7]) as GainNode;
     if (params['autopan-rate'] !== undefined) {
         lfoAP.frequency.value = params['autopan-rate'];
     }

@@ -1,5 +1,5 @@
 import { MIDI_CC } from '../../../models/WebMidiTypes';
-import { midiAccess, activeInput, activeNotes, channelToNote } from '../state';
+import { getMidiAccess, getActiveInput, activeNotes, channelToNote } from '../state';
 import { audioEngine } from '../../createWebAudioEngine';
 
 export function resetMidiState(): void {
@@ -20,8 +20,9 @@ export function resetMidiState(): void {
     activeNotes.clear();
     channelToNote.clear();
 
-    if (activeInput && midiAccess) {
-        const output = midiAccess.outputs.values().next().value;
+    const access = getMidiAccess();
+    if (getActiveInput() && access) {
+        const output = access.outputs.values().next().value;
         if (output) {
             for (let ch = 0; ch < 16; ch++) {
                 output.send([MIDI_CC | ch, 120, 0]);

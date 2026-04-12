@@ -3,7 +3,15 @@ import { persistLibraryRoots } from '../../repositories/libraryPersistence/persi
 import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
 import { addSamples, updateLibraryRootStatus, setScanProgress } from '../../stores/libraryStore';
 import { buildFolderTree } from '../buildFolderTree';
-export let scanAbortController: AbortController | null = null;
+let _scanAbortController: AbortController | null = null;
+
+export function getScanAbortController(): AbortController | null {
+    return _scanAbortController;
+}
+
+export function setScanAbortController(controller: AbortController | null): void {
+    _scanAbortController = controller;
+}
 
 export async function* traverseBrowserDirectory(
     dir: FileSystemDirectoryHandle,
@@ -49,8 +57,8 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
     if (!root.handle) {
         return;
     }
-    scanAbortController = new AbortController();
-    const signal = scanAbortController.signal;
+    setScanAbortController(new AbortController());
+    const signal = getScanAbortController()!.signal;
 
     setScanProgress(true, 0);
 
@@ -70,7 +78,7 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
             if (batch.length >= 100) {
                 addSamples([...batch]);
                 batch.length = 0;
-                setScanProgress(true, totalFound / Math.max(totalFound + 100, 1));
+                setScanProgress(true, Math.min(0.95, totalFound / Math.max(totalFound + 20, 1)));
             }
         }
 
@@ -87,14 +95,14 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
         updateLibraryRootStatus(root.id, 'offline');
     } finally {
         setScanProgress(false, 1);
-        scanAbortController = null;
+        setScanAbortController(null);
     }
 }
 
 export // ── Tauri directory scanning ─────────────────────────────────────────────────
 
 async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
-    scanAbortController = new AbortController();
+    setScanAbortController(new AbortController());
     setScanProgress(true, 0);
 
     try {
@@ -106,7 +114,7 @@ async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
             try {
                 const entries = await readDir(dirPath);
                 for (const entry of entries) {
-                    if (scanAbortController?.signal.aborted) {
+                    if (getScanAbortController()?.signal.aborted) {
                         return;
                     }
 
@@ -123,7 +131,7 @@ async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
                         if (batch.length >= 100) {
                             addSamples([...batch]);
                             batch.length = 0;
-                            setScanProgress(true, totalFound / Math.max(totalFound + 100, 1));
+                            setScanProgress(true, Math.min(0.95, totalFound / Math.max(totalFound + 20, 1)));
                         }
                     }
                 }
@@ -146,6 +154,6 @@ async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
         updateLibraryRootStatus(root.id, 'offline');
     } finally {
         setScanProgress(false, 1);
-        scanAbortController = null;
+        setScanAbortController(null);
     }
 }

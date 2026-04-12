@@ -1,10 +1,10 @@
 import { tauriInvoke } from '#/utils/tauriBridge';
 
 import {
-    midiAccess,
-    activeInput,
-    tauriMode,
-    tauriEventUnlisten,
+    getMidiAccess,
+    getActiveInput,
+    getTauriMode,
+    getTauriEventUnlisten,
     activeNotes,
     channelToNote,
     midiLearn,
@@ -17,14 +17,16 @@ import {
 } from '../state';
 
 export function destroyWebMidi(): void {
-    if (activeInput) {
-        activeInput.onmidimessage = null;
+    const input = getActiveInput();
+    if (input) {
+        input.onmidimessage = null;
         setActiveInput(null);
     }
 
-    if (tauriMode) {
-        if (tauriEventUnlisten) {
-            tauriEventUnlisten();
+    if (getTauriMode()) {
+        const unlisten = getTauriEventUnlisten();
+        if (unlisten) {
+            unlisten();
             setTauriEventUnlisten(null);
         }
         tauriInvoke('close_midi_input').catch(() => {});
@@ -43,8 +45,9 @@ export function destroyWebMidi(): void {
     activeNotes.clear();
     channelToNote.clear();
 
-    if (midiAccess) {
-        midiAccess.onstatechange = null;
+    const access = getMidiAccess();
+    if (access) {
+        access.onstatechange = null;
         setMidiAccess(null);
     }
 

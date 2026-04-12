@@ -1,9 +1,10 @@
 import { type OfflineDeviceNode } from '../types';
 
 export function applyStereoWidenerParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
-    const midGain = dn.nodes[7] as GainNode;
-    const sideGain = dn.nodes[8] as GainNode;
-    const monoBass = dn.nodes[9] as BiquadFilterNode;
+    const nn = dn.namedNodes;
+    const midGain = (nn?.['midGain'] ?? dn.nodes[7]) as GainNode;
+    const sideGain = (nn?.['sideGain'] ?? dn.nodes[8]) as GainNode;
+    const monoBass = (nn?.['monoBassFilter'] ?? dn.nodes[9]) as BiquadFilterNode;
 
     if (params['width-amount'] !== undefined) {
         sideGain.gain.value = params['width-amount'];

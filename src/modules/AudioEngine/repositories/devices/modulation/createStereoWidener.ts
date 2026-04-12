@@ -80,5 +80,10 @@ export function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
             monoBassFilter,
             sideInvert,
         ],
+        namedNodes: {
+            input, output, splitter, merger,
+            midSum, sideSum, rightInvert,
+            midGain, sideGain, monoBassFilter, sideInvert,
+        },
     };
 }

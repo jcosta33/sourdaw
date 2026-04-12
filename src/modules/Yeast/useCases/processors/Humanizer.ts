@@ -4,7 +4,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
 
@@ -16,20 +16,18 @@ const PRESETS: Record<HumanizePreset, { timingMeanMs: number; timingSigmaMs: num
     laidBack: { timingMeanMs: 8, timingSigmaMs: 5, velSigma: 5 },
 };
 
-export class Humanizer implements MidiProcessor {
-    readonly id: string;
+export class Humanizer extends BaseMidiProcessor {
     readonly name = 'Humanizer';
 
     private timingMeanMs = 0;
     private timingSigmaMs = 5;
     private velSigma = 8;
-    private bypassed = false;
     private rngState = 0xcafe;
     // Track timing offsets for matching Note Offs
     private noteTimingMap = new Map<number, number>(); // ch*128+note → timing offset samples
 
     constructor(id?: string) {
-        this.id = id ?? `humanize-${Date.now()}`;
+        super(id ?? `humanize-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
@@ -82,16 +80,6 @@ export class Humanizer implements MidiProcessor {
     reset(): void {
         this.noteTimingMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'timing_mean_ms':

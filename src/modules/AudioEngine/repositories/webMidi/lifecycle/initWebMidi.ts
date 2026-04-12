@@ -4,8 +4,8 @@ import { type MidiInputInfo } from '../../../models/WebMidiTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import {
-    midiAccess,
-    activeInput,
+    getMidiAccess,
+    getActiveInput,
     setState,
     getState,
     setMidiAccess,
@@ -19,10 +19,11 @@ import { attachInput, selectMidiInputTauri } from './helpers';
 type TauriMidiDevice = { index: number; name: string };
 
 function enumerateInputs(): MidiInputInfo[] {
-    if (!midiAccess) {
+    const access = getMidiAccess();
+    if (!access) {
         return [];
     }
-    const entries = Array.from(midiAccess.inputs.values());
+    const entries = Array.from(access.inputs.values());
     return entries.map((input) => ({
         id: input.id,
         name: input.name ?? 'Unknown Device',
@@ -35,14 +36,16 @@ function onStateChange(): void {
     const state = getState();
     const selectedStillExists = inputs.some((i) => i.id === state.selectedInputId);
 
-    if (!selectedStillExists && activeInput) {
-        activeInput.onmidimessage = null;
+    const currentInput = getActiveInput();
+    if (!selectedStillExists && currentInput) {
+        currentInput.onmidimessage = null;
         setActiveInput(null);
     }
 
-    if (!selectedStillExists && inputs.length > 0 && midiAccess) {
+    const currentAccess = getMidiAccess();
+    if (!selectedStillExists && inputs.length > 0 && currentAccess) {
         const first = inputs[0]!;
-        const input = midiAccess.inputs.get(first.id);
+        const input = currentAccess.inputs.get(first.id);
         if (input) {
             attachInput(input);
             setState({ inputs, selectedInputId: first.id });

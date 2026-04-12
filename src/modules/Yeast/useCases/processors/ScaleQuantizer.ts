@@ -4,7 +4,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -26,20 +26,18 @@ const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
 type RemapMode = 'nearest' | 'up' | 'down';
 
-export class ScaleQuantizer implements MidiProcessor {
-    readonly id: string;
+export class ScaleQuantizer extends BaseMidiProcessor {
     readonly name = 'Scale Quantizer';
 
     private root = 0; // 0-11 (C=0)
     private scaleName = 'major';
     private remapMode: RemapMode = 'nearest';
     private transpose = 0; // diatonic degrees
-    private bypassed = false;
     // Track note mapping for proper Note Off
     private noteMap = new Map<number, number>(); // ch*128+inNote → outNote
 
     constructor(id?: string) {
-        this.id = id ?? `scale-${Date.now()}`;
+        super(id ?? `scale-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -120,16 +118,6 @@ export class ScaleQuantizer implements MidiProcessor {
     reset(): void {
         this.noteMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'root':

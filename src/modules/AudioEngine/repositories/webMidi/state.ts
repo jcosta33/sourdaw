@@ -9,12 +9,31 @@ type Subscriber = () => void;
 
 const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
 
-export let midiAccess: MIDIAccess | null = null;
-export let activeInput: MIDIInput | null = null;
-export let targetTrackId: string | null = null;
-export let mpeEnabled = false;
-export let tauriMode = false;
-export let tauriEventUnlisten: (() => void) | null = null;
+let _midiAccess: MIDIAccess | null = null;
+let _activeInput: MIDIInput | null = null;
+let _targetTrackId: string | null = null;
+let _mpeEnabled = false;
+let _tauriMode = false;
+let _tauriEventUnlisten: (() => void) | null = null;
+
+export function getMidiAccess(): MIDIAccess | null {
+    return _midiAccess;
+}
+export function getActiveInput(): MIDIInput | null {
+    return _activeInput;
+}
+export function getTargetTrackId(): string | null {
+    return _targetTrackId;
+}
+export function getMpeEnabled(): boolean {
+    return _mpeEnabled;
+}
+export function getTauriMode(): boolean {
+    return _tauriMode;
+}
+export function getTauriEventUnlisten(): (() => void) | null {
+    return _tauriEventUnlisten;
+}
 
 export const activeNotes = new Map<number, ActiveNoteData>();
 export const channelToNote = new Map<number, number>();
@@ -85,23 +104,23 @@ export function getSnapshot(): WebMidiState {
 
 // Setters for module-level state
 export function setMidiAccess(access: MIDIAccess | null): void {
-    midiAccess = access;
+    _midiAccess = access;
 }
 export function setActiveInput(input: MIDIInput | null): void {
-    activeInput = input;
+    _activeInput = input;
 }
 export function setTargetTrackId(id: string | null): void {
-    targetTrackId = id;
+    _targetTrackId = id;
 }
 export function setMpeEnabledInternal(enabled: boolean): void {
-    mpeEnabled = enabled;
+    _mpeEnabled = enabled;
 }
 export function getMpeEnabledInternal(): boolean {
-    return mpeEnabled;
+    return _mpeEnabled;
 }
 export function setTauriMode(enabled: boolean): void {
-    tauriMode = enabled;
+    _tauriMode = enabled;
 }
 export function setTauriEventUnlisten(fn: (() => void) | null): void {
-    tauriEventUnlisten = fn;
+    _tauriEventUnlisten = fn;
 }

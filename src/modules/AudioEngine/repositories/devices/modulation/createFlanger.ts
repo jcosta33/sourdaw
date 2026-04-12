@@ -32,6 +32,7 @@ export function createFlanger(ctx: BaseAudioContext): OfflineDeviceNode {
         inputNode: splitter,
         outputNode: merger,
         nodes: [splitter, dry, wet, delay, lfo, lfoGain, feedback, merger],
+        namedNodes: { splitter, dry, wet, delay, lfo, lfoGain, feedback, merger },
         dispose() {
             lfo.stop();
             for (const n of [splitter, dry, wet, delay, lfo, lfoGain, feedback, merger]) {

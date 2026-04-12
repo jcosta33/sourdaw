@@ -10,12 +10,12 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { ScheduledEventQueue } from '../../models/MidiProcessor';
 
 const MAX_STATES = 12; // max pitch classes or held notes
 
-export class MarkovChain implements MidiProcessor {
-    readonly id: string;
+export class MarkovChain extends BaseMidiProcessor {
     readonly name = 'Markov';
 
     // Transition matrix: probs[from][to] — each row sums to 1.0
@@ -25,7 +25,6 @@ export class MarkovChain implements MidiProcessor {
     private rate: RateValue = { type: 'straight', denom: 8 };
     private gate = 0.7;
     private velocity = 100;
-    private bypassed = false;
     private rngState = 0xabcd;
     private lastStepTime = -Infinity;
     private scheduled = new ScheduledEventQueue();
@@ -35,7 +34,7 @@ export class MarkovChain implements MidiProcessor {
     private held: number[] = [];
 
     constructor(id?: string) {
-        this.id = id ?? `markov-${Date.now()}`;
+        super(id ?? `markov-${Date.now()}`);
         this.initDefaultMatrix(7); // default: 7 notes (one octave scale)
     }
 
@@ -133,16 +132,6 @@ export class MarkovChain implements MidiProcessor {
         this.stateToNote = [];
         this.scheduled.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'rate_denom':

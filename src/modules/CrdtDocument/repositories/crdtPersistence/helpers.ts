@@ -3,15 +3,23 @@ import { logger } from '#/infra/logger/appLogger';
 export const DB_NAME = 'sourdaw-crdt-docs';
 export const DB_VERSION = 1;
 export const STORE_NAME = 'documents';
-export let db: IDBDatabase | null = null;
-export let dbPromise: Promise<IDBDatabase | null> | null = null;
+let _db: IDBDatabase | null = null;
+let _dbPromise: Promise<IDBDatabase | null> | null = null;
+
+export function getDb(): IDBDatabase | null {
+    return _db;
+}
+
+export function getDbPromise(): Promise<IDBDatabase | null> | null {
+    return _dbPromise;
+}
 
 export const openDatabase = (): Promise<IDBDatabase | null> => {
-    if (dbPromise) {
-        return dbPromise;
+    if (_dbPromise) {
+        return _dbPromise;
     }
 
-    dbPromise = new Promise((resolve) => {
+    _dbPromise = new Promise((resolve) => {
         if (typeof globalThis.indexedDB === 'undefined') {
             resolve(null);
             return;
@@ -27,8 +35,8 @@ export const openDatabase = (): Promise<IDBDatabase | null> => {
         };
 
         request.onsuccess = () => {
-            db = request.result;
-            resolve(db);
+            _db = request.result;
+            resolve(_db);
         };
 
         request.onerror = () => {
@@ -37,5 +45,5 @@ export const openDatabase = (): Promise<IDBDatabase | null> => {
         };
     });
 
-    return dbPromise;
+    return _dbPromise;
 };

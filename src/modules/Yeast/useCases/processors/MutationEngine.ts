@@ -7,7 +7,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 type MutationTarget = {
     name: string;
@@ -19,8 +19,7 @@ type MutationTarget = {
     damping: number; // 0-1, how strongly to pull back to base
 };
 
-export class MutationEngine implements MidiProcessor {
-    readonly id: string;
+export class MutationEngine extends BaseMidiProcessor {
     readonly name = 'Mutation';
 
     private targets: MutationTarget[] = [
@@ -32,13 +31,12 @@ export class MutationEngine implements MidiProcessor {
 
     private depth = 0.5; // 0-1 master mutation amount
     private rate = 1.0; // mutations per beat
-    private bypassed = false;
     private rngState = 0x1234;
     private stepCounter = 0;
     private stepsPerMutation = 4;
 
     constructor(id?: string) {
-        this.id = id ?? `mutation-${Date.now()}`;
+        super(id ?? `mutation-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -91,16 +89,6 @@ export class MutationEngine implements MidiProcessor {
             target.value = target.baseValue;
         }
         this.stepCounter = 0;
-    }
-
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
     }
 
     setParam(name: string, value: number): void {

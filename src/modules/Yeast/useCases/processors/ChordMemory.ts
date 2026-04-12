@@ -6,15 +6,14 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 type StoredChord = {
     root: number;
     notes: number[]; // absolute MIDI notes
 };
 
-export class ChordMemory implements MidiProcessor {
-    readonly id: string;
+export class ChordMemory extends BaseMidiProcessor {
     readonly name = 'Chord Memory';
 
     private memory = new Map<number, StoredChord>(); // trigger note → stored chord
@@ -22,12 +21,11 @@ export class ChordMemory implements MidiProcessor {
     private learnBuffer: number[] = [];
     private learnRoot = -1;
     private transposeMode = true; // transpose stored chord relative to trigger
-    private bypassed = false;
     // Track active chords for Note Off
     private activeChords = new Map<string, number[]>(); // "ch:triggerNote" → emitted notes
 
     constructor(id?: string) {
-        this.id = id ?? `chordmem-${Date.now()}`;
+        super(id ?? `chordmem-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -100,16 +98,6 @@ export class ChordMemory implements MidiProcessor {
         this.learnBuffer = [];
         this.learnRoot = -1;
         this.learning = false;
-    }
-
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
     }
 
     setParam(name: string, value: number): void {

@@ -4,7 +4,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -23,8 +23,7 @@ type HarmonyVoice = {
     enabled: boolean;
 };
 
-export class Harmonizer implements MidiProcessor {
-    readonly id: string;
+export class Harmonizer extends BaseMidiProcessor {
     readonly name = 'Harmonizer';
 
     private root = 0;
@@ -34,12 +33,11 @@ export class Harmonizer implements MidiProcessor {
         { degrees: 4, velocityOffset: -15, timeOffsetSamples: 0, enabled: false }, // 5th
         { degrees: -1, velocityOffset: -20, timeOffsetSamples: 0, enabled: false }, // below
     ];
-    private bypassed = false;
     // Track generated harmony notes for proper Note Off
     private generatedMap = new Map<string, number[]>(); // "ch:note" → generated harmony notes
 
     constructor(id?: string) {
-        this.id = id ?? `harmonizer-${Date.now()}`;
+        super(id ?? `harmonizer-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
@@ -113,16 +111,6 @@ export class Harmonizer implements MidiProcessor {
     reset(): void {
         this.generatedMap.clear();
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'root':

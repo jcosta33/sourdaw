@@ -13,7 +13,7 @@ async function connectFolderBrowser(): Promise<string | null> {
         const handle = await (
             window as unknown as { showDirectoryPicker: (opts: { mode: string }) => Promise<FileSystemDirectoryHandle> }
         ).showDirectoryPicker({ mode: 'read' });
-        const id = `lib-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const id = `lib-${crypto.randomUUID().slice(0, 12)}`;
 
         const root: LibraryRoot = {
             id,
@@ -47,7 +47,7 @@ async function connectFolderTauri(): Promise<string | null> {
             return null;
         }
 
-        const id = `lib-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const id = `lib-${crypto.randomUUID().slice(0, 12)}`;
         const folderName = selected.split('/').pop() ?? selected.split('\\').pop() ?? selected;
 
         const root: LibraryRoot = {

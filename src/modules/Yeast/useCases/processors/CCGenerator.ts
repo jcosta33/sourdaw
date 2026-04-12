@@ -10,7 +10,7 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHold';
 
@@ -37,8 +37,7 @@ function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): num
     }
 }
 
-export class CCGenerator implements MidiProcessor {
-    readonly id: string;
+export class CCGenerator extends BaseMidiProcessor {
     readonly name = 'CC Generator';
 
     private ccNumber = 1; // mod wheel default
@@ -50,14 +49,13 @@ export class CCGenerator implements MidiProcessor {
     private max = 127;
     private phase = 0;
     private retriggerOnNote = false;
-    private bypassed = false;
     private lastEmittedValue = -1;
     private changeThreshold = 2; // only emit when value changes by this much
     private rng = { v: 0.5 };
     private accumPhase = 0;
 
     constructor(id?: string) {
-        this.id = id ?? `ccgen-${Date.now()}`;
+        super(id ?? `ccgen-${Date.now()}`);
     }
 
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
@@ -103,16 +101,6 @@ export class CCGenerator implements MidiProcessor {
         this.accumPhase = 0;
         this.lastEmittedValue = -1;
     }
-    setBypassed(b: boolean): void {
-        this.bypassed = b;
-    }
-    isBypassed(): boolean {
-        return this.bypassed;
-    }
-    latencySamples(): number {
-        return 0;
-    }
-
     setParam(name: string, value: number): void {
         switch (name) {
             case 'cc_number':
