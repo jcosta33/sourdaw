@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '../../stores/trackStore';
 import { snapToGrid } from './snapToGrid';
 
 export const snapToGridOrClipsDependencies = {

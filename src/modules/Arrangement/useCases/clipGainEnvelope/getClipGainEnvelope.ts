@@ -1,4 +1,4 @@
-import { type ClipGainEnvelope, gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { type ClipGainEnvelope, gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
 
 export type { ClipGainEnvelope };
 

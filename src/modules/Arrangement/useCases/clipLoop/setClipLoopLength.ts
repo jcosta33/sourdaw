@@ -1,4 +1,4 @@
-import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { updateClip } from '../../repositories/track/updateClip';
 
 export function setClipLoopLength(clipId: string, loopLength: number): void {
     if (loopLength <= 0) {

@@ -1,7 +1,7 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 
 export function stopRecording(clipIds: string[]): void {

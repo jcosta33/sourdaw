@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { restoreSnapshot } from '../snapshotHelpers/restoreSnapshot';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
@@ -9,6 +11,12 @@ vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
 }));
 vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
     markerStore: { set: vi.fn(), value: null },
+}));
+vi.mock('#/modules/Automation/stores/automationStore', () => ({
+    automationStore: { set: vi.fn(), value: null },
+}));
+vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+    midiStore: { set: vi.fn(), value: null },
 }));
 vi.mock('#/modules/Transport/stores/transportStore', () => ({
     transportStore: { set: vi.fn(), value: null },
@@ -37,6 +45,8 @@ describe('restoreSnapshot', () => {
             tracks: { tracks: [], selectedTrackId: null },
             markers: [],
             transport: { playheadPosition: 0 },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            automation: { lanes: [] },
         };
 
         restoreSnapshot({
@@ -47,6 +57,8 @@ describe('restoreSnapshot', () => {
         expect(trackStore.set).toHaveBeenCalledWith(payload.tracks);
         expect(markerStore.set).toHaveBeenCalledWith(payload.markers);
         expect(transportStore.set).toHaveBeenCalledWith(payload.transport);
+        expect(midiStore.set).toHaveBeenCalledWith(payload.midi);
+        expect(automationStore.set).toHaveBeenCalledWith(payload.automation);
     });
 
     it('should log when snapshot JSON is corrupt', () => {

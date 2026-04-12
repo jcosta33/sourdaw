@@ -1,4 +1,4 @@
-import { gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
 
 export function getGainAtBeat(clipId: string, beatOffset: number): number {
     const env = gainEnvelopeStore.get(clipId);

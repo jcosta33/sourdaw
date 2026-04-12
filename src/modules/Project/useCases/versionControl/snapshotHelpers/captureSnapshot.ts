@@ -1,4 +1,6 @@
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation';
+import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { type ProjectSnapshot } from '../../../models/ProjectVersion';
 
@@ -13,6 +15,8 @@ export function captureSnapshot(): ProjectSnapshot {
         tracks: trackStore.value,
         markers: markerStore.value,
         transport: transportStore.value,
+        midi: midiStore.value,
+        automation: automationStore.value,
         timestamp: Date.now(),
     });
     return { data, size: new Blob([data]).size };

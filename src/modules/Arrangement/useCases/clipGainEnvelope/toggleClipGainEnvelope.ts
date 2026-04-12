@@ -1,4 +1,4 @@
-import { gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
 import { getClipGainEnvelope } from './getClipGainEnvelope';
 
 export const toggleClipGainEnvelopeDeps = {

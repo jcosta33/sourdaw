@@ -1,4 +1,4 @@
-import { gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
 
 export function removeGainEnvelopePoint(clipId: string, pointId: string): void {
     const env = gainEnvelopeStore.get(clipId);

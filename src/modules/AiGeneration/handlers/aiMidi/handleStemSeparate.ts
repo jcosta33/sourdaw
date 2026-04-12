@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -16,18 +17,18 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
             const state = trackStore.value;
             const track = state?.tracks.find((t) => t.clips.some((c) => c.id === a.payload.clipId));
             if (!track) {
-                logger.warn('[Audio AI] Clip not found');
-                return;
+                notifyUser('Stem separation failed: clip not found', 'error');
+                throw new Error('Clip not found');
             }
             const clip = track.clips.find((c) => c.id === a.payload.clipId);
             if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
-                logger.warn('[Audio AI] Clip has no audio buffer');
-                return;
+                notifyUser('Stem separation failed: clip has no audio buffer', 'error');
+                throw new Error('Clip has no audio buffer');
             }
             const sourceBuffer = audioBufferCache.get(clip.audioBufferId);
             if (!sourceBuffer) {
-                logger.warn('[Audio AI] Audio buffer not found in cache');
-                return;
+                notifyUser('Stem separation failed: audio buffer not found in cache', 'error');
+                throw new Error('Audio buffer not found in cache');
             }
 
             const wavData = audioBufferToWav(sourceBuffer);
@@ -55,6 +56,8 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
             logger.info(`[Audio AI] Separated into ${String(Object.keys(stemResults).length)} stems`);
         } catch (error) {
             logger.warn(`[Audio AI] Stem separation failed: ${String(error)}`);
+            notifyUser(`Stem separation failed: ${String(error)}`, 'error');
+            throw error;
         }
     },
     describe: () => ({ label: 'AI: separate stems' }),

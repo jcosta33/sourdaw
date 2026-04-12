@@ -1,6 +1,6 @@
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { getAllTracks } from '#/modules/Arrangement/useCases/getAllTracks';
+import { getAllTracks } from '../getAllTracks';
 import { recordAutomationValue } from '#/modules/Automation';
 import { type AutomationMode } from '../../stores/trackStore';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { type ClipGainEnvelope, gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { type ClipGainEnvelope, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
 import { resetClipGainEnvelope } from '../resetClipGainEnvelope';
 
 describe('resetClipGainEnvelope', () => {

@@ -1,5 +1,5 @@
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { createTake } from '#/modules/Arrangement/models/TakeLane';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { createTake } from '../../models/TakeLane';
 
 export function addTake(
     trackId: string,

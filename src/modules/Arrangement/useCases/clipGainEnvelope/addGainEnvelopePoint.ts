@@ -1,4 +1,4 @@
-import { type GainEnvelopePoint, gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { type GainEnvelopePoint, gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
 import { getClipGainEnvelope } from './getClipGainEnvelope';
 
 export type { GainEnvelopePoint };

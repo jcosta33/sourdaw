@@ -1,4 +1,4 @@
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
 export function flattenComp(trackId: string): void {
     const state = takeLaneStore.value;
