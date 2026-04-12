@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { type ShortcutAction, shortcutStore } from '../models/Shortcuts';
+import { type KeyBinding, type ShortcutAction, shortcutStore } from '../models/Shortcuts';
 import {
     duplicateClipToNextBar,
     undo,
@@ -96,6 +96,25 @@ const actionHandlers: Partial<Record<ShortcutAction, ShortcutHandler>> = {
 export const startShortcutEngine = inject({ eventBus })(
     ({ eventBus }) =>
         (function startShortcutEngine(): () => void {
+            // Cache Object.entries(bindings) so we don't allocate a new array on
+            // every keydown. Invalidated via store subscription when bindings change.
+            let cachedBindings: unknown = null;
+            let cachedEntries: [string, KeyBinding][] = [];
+
+            const unsub = shortcutStore.subscribe((state) => {
+                if (state?.bindings !== cachedBindings) {
+                    cachedBindings = state?.bindings ?? null;
+                    cachedEntries = state ? (Object.entries(state.bindings) as [string, KeyBinding][]) : [];
+                }
+            });
+
+            // Initialise from current value
+            const initial = shortcutStore.value;
+            if (initial) {
+                cachedBindings = initial.bindings;
+                cachedEntries = Object.entries(initial.bindings) as [string, KeyBinding][];
+            }
+
             const handleGlobalKeyDown = (e: KeyboardEvent) => {
                 if (
                     ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) ||
@@ -104,12 +123,11 @@ export const startShortcutEngine = inject({ eventBus })(
                     return;
                 }
 
-                const state = shortcutStore.value;
-                if (!state) {
+                if (cachedEntries.length === 0) {
                     return;
                 }
 
-                for (const [action, binding] of Object.entries(state.bindings)) {
+                for (const [action, binding] of cachedEntries) {
                     const matchesKey = e.key.toLowerCase() === binding.key.toLowerCase();
                     const matchesMeta = !!binding.metaKey === e.metaKey;
                     const matchesCtrl = !!binding.ctrlKey === e.ctrlKey;
@@ -128,6 +146,9 @@ export const startShortcutEngine = inject({ eventBus })(
             };
 
             window.addEventListener('keydown', handleGlobalKeyDown);
-            return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+            return () => {
+                window.removeEventListener('keydown', handleGlobalKeyDown);
+                unsub();
+            };
         })
 );

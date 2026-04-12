@@ -5,6 +5,7 @@ import { type TrackAddedPayload, type TrackRemovedPayload } from '#/modules/Arra
 import { type AudioDeviceLoadedPayload } from '#/modules/AudioEngine/events';
 import {
     type ShowDevicePanelPayload,
+    type ShowDevicePanelGenericPayload,
     type VoidPayload,
     type NotifyPayload,
     type ZoomToSelectionPayload,
@@ -22,7 +23,10 @@ export type AppEvents = {
     'track.removed': TrackRemovedPayload;
     'audioDevice.loaded': AudioDeviceLoadedPayload;
 
-    // Panel toggles
+    // Panel toggles (generic — prefer this over per-device events)
+    'panel.showDevice': ShowDevicePanelGenericPayload;
+
+    // Panel toggles (per-device — deprecated, use 'panel.showDevice' instead)
     'panel.showFermenter': ShowDevicePanelPayload;
     'panel.showToaster': ShowDevicePanelPayload;
     'panel.showLevain': ShowDevicePanelPayload;

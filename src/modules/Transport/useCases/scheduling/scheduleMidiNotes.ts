@@ -25,6 +25,23 @@ import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
 import type { SynthParams } from '#/modules/AudioEngine/useCases';
 import { type SourceWithFade } from '../playheadScheduler';
 
+// Worklet synth device types that share a common noteOn/noteOff controls interface.
+// Each entry maps a device type to the controls property name on the device node
+// and an optional velocity transform (defaults to identity).
+type WorkletSynthEntry = {
+    controlsKey: 'fermenterControls' | 'grandBouleControls' | 'levainControls';
+    velocityTransform?: (velocity: number) => number;
+};
+
+const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
+    fermenter: { controlsKey: 'fermenterControls' },
+    'grand-boule': {
+        controlsKey: 'grandBouleControls',
+        velocityTransform: (v: number) => v / 127,
+    },
+    levain: { controlsKey: 'levainControls' },
+};
+
 // Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible
 // with the drum kit shape scheduleKitNote / getDrumKitByIndex operate on.
 type DrumKit = {
@@ -82,6 +99,48 @@ export function resolveDrumKitDef(
     }
     const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
     return getDrumKitDefByIndex(kitIndex);
+}
+
+/**
+ * Dispatch noteOn/noteOff to a worklet synth device (fermenter, grand-boule, levain).
+ * Returns true if a matching device was found (even if controls were not yet ready).
+ * This avoids repeating the same find-device → find-node → call-controls pattern
+ * for each worklet synth type.
+ */
+type NoteControls = {
+    noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
+    noteOff: (note: number, sampleFrame?: number) => void;
+};
+
+type DeviceNodeLike = {
+    deviceId: string;
+    fermenterControls?: NoteControls;
+    grandBouleControls?: NoteControls;
+    levainControls?: NoteControls;
+};
+
+function dispatchWorkletSynth(
+    devices: { type: string; id: string }[],
+    deviceNodes: DeviceNodeLike[],
+    pitch: number,
+    velocity: number | undefined,
+    sampleFrame: number,
+    endSampleFrame: number
+): boolean {
+    const device = devices.find((d) => d.type in WORKLET_SYNTH_DEVICES);
+    if (!device) {
+        return false;
+    }
+    const entry = WORKLET_SYNTH_DEVICES[device.type]!;
+    const dn = deviceNodes.find((d) => d.deviceId === device.id);
+    const controls = dn?.[entry.controlsKey];
+    if (controls) {
+        const rawVel = velocity ?? 100;
+        const vel = entry.velocityTransform ? entry.velocityTransform(rawVel) : rawVel;
+        controls.noteOn(pitch, vel, sampleFrame);
+        controls.noteOff(pitch, endSampleFrame);
+    }
+    return true;
 }
 
 export function scheduleFrozenTrack(
@@ -377,33 +436,10 @@ export async function scheduleMidiNotes(
                                 note.velocity,
                                 clip.gain
                             );
-                        } else if (track.devices.some((d) => d.type === 'fermenter')) {
-                            const fermenterDevice = track.devices.find((d) => d.type === 'fermenter');
-                            if (fermenterDevice) {
-                                const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
-                                if (dn?.fermenterControls) {
-                                    dn.fermenterControls.noteOn(pitch, note.velocity, sampleFrame);
-                                    dn.fermenterControls.noteOff(pitch, endSampleFrame);
-                                }
-                            }
-                        } else if (track.devices.some((d) => d.type === 'grand-boule')) {
-                            const grandBouleDevice = track.devices.find((d) => d.type === 'grand-boule');
-                            if (grandBouleDevice) {
-                                const dn = strip.deviceNodes.find((d) => d.deviceId === grandBouleDevice.id);
-                                if (dn?.grandBouleControls) {
-                                    dn.grandBouleControls.noteOn(pitch, (note.velocity ?? 100) / 127, sampleFrame);
-                                    dn.grandBouleControls.noteOff(pitch, endSampleFrame);
-                                }
-                            }
-                        } else if (track.devices.some((d) => d.type === 'levain')) {
-                            const levainDevice = track.devices.find((d) => d.type === 'levain');
-                            if (levainDevice) {
-                                const dn = strip.deviceNodes.find((d) => d.deviceId === levainDevice.id);
-                                if (dn?.levainControls) {
-                                    dn.levainControls.noteOn(pitch, note.velocity, sampleFrame);
-                                    dn.levainControls.noteOff(pitch, endSampleFrame);
-                                }
-                            }
+                        } else if (
+                            dispatchWorkletSynth(track.devices, strip.deviceNodes, pitch, note.velocity, sampleFrame, endSampleFrame)
+                        ) {
+                            // Handled by worklet synth lookup (fermenter / grand-boule / levain).
                         } else {
                             const faustDevice = track.devices.find((d) => d.type.startsWith('faust-'));
                             if (faustDevice) {

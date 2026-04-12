@@ -34,10 +34,20 @@ const DEVICE_TYPE_TO_PANEL_EVENT: Partial<Record<string, DevicePanelEvent>> = {
     'grand-boule': 'panel.showGrandBoule',
 };
 
-/** Generic dispatch — for cases where the panel event is determined at runtime by device type. */
+/**
+ * Generic dispatch — for cases where the panel event is determined at runtime by device type.
+ *
+ * Emits both the unified `panel.showDevice` event and the legacy per-device event
+ * for backward compatibility. Once all subscribers migrate to `onShowDevicePanel`,
+ * the per-device emit can be removed.
+ */
 export const showDevicePanelForType = inject({ eventBus })(
     ({ eventBus }) =>
         (function showDevicePanelForType(deviceType: string, deviceId: string): void {
+            // Unified event — new subscribers should listen to this
+            eventBus.emit('panel.showDevice', { deviceType, deviceId });
+
+            // Legacy per-device event — kept for backward compatibility
             const event = DEVICE_TYPE_TO_PANEL_EVENT[deviceType];
             if (event) {
                 eventBus.emit(event, { deviceId });

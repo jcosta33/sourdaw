@@ -1,5 +1,6 @@
 export type {
     ShowDevicePanelPayload,
+    ShowDevicePanelGenericPayload,
     VoidPayload,
     NotifyPayload,
     ZoomToSelectionPayload,

@@ -4,11 +4,13 @@ import { type Clip } from '../../stores/trackStore';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { snapSplitBeatToZeroCrossing } from '../../services/snapSplitBeatToZeroCrossing';
 
-export function splitClip(clipId: string, splitBeat: number): void {
+export function splitClip(clipId: string, splitBeat: number): string | null {
     const state = getTrackState();
     if (!state) {
-        return;
+        return null;
     }
+
+    let rightClipId: string | null = null;
 
     setTrackState({
         ...state,
@@ -31,9 +33,12 @@ export function splitClip(clipId: string, splitBeat: number): void {
                 fadeOutBeats: 0,
             };
 
+            const newId = getNextClipId();
+            rightClipId = newId;
+
             const rightClip: Clip = {
                 ...clip,
-                id: getNextClipId(),
+                id: newId,
                 name: `${clip.name} (R)`,
                 startBeat: adjustedSplitBeat,
                 endBeat: clip.endBeat,
@@ -48,4 +53,6 @@ export function splitClip(clipId: string, splitBeat: number): void {
             };
         }),
     });
+
+    return rightClipId;
 }
