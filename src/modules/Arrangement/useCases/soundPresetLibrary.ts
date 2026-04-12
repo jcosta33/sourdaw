@@ -15,12 +15,12 @@ function isPresetCompatible(preset: SoundPreset): boolean {
     const isNative = currentPlatformKey() === 'native';
     return preset.devices.every((d) => {
         const descriptor = BUILTIN_PLUGINS.find((p) => p.id === d.type);
-        if (!descriptor) return true; // unknown device types (e.g. faust-*) pass through
+        if (!descriptor) {return true;} // unknown device types (e.g. faust-*) pass through
         const platform = descriptor.platform ?? 'both';
-        if (platform === 'both') return true;
+        if (platform === 'both') {return true;}
         // Native app runs in WebView with Web Audio — web plugins work there too.
         // Only hide native-only plugins on the web platform.
-        if (isNative) return true; // native can run both web and native plugins
+        if (isNative) {return true;} // native can run both web and native plugins
         return platform === 'web'; // web can only run web plugins (not native-only)
     });
 }

@@ -4,7 +4,7 @@ import { samplerStore } from '../../stores/samplerStore';
 
 export async function allSoundOff(): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
 
     try {
         await samplerAllSoundOff(state.instanceId);

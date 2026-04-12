@@ -423,7 +423,7 @@ export async function demo_SweetDreams(): Promise<void> {
     const outroFade = S.outro + 48;
     for (let cycle = 0; cycle * 8 < outroFade; cycle++) {
         const cycleStart = cycle * 8;
-        if (cycleStart >= TB) break;
+        if (cycleStart >= TB) {break;}
         const isChorus =
             (cycleStart >= S.chorus1 && cycleStart < S.verse2) ||
             (cycleStart >= S.chorus2 && cycleStart < S.bridge) ||
@@ -433,12 +433,12 @@ export async function demo_SweetDreams(): Promise<void> {
 
         for (const [offset, pitch, baseVel] of riffRPattern) {
             const beat = cycleStart + offset;
-            if (beat >= TB) break;
+            if (beat >= TB) {break;}
             riffRNotes.push(note(pitch, beat, 0.4, hv(Math.round(baseVel * velMult), 4)));
         }
         for (const [offset, pitch, baseVel] of riffLPattern) {
             const beat = cycleStart + offset;
-            if (beat >= TB) break;
+            if (beat >= TB) {break;}
             // Longer notes (0.85) and softer than right — quarter-note feel that
             // fills underneath the right channel's staccato eighths
             riffLNotes.push(note(pitch, beat, 0.85, hv(Math.round(baseVel * velMult * 0.9), 3)));
@@ -520,7 +520,7 @@ export async function demo_SweetDreams(): Promise<void> {
 
     for (let cycle = Math.floor(S.verse1 / 16); cycle * 16 < S.outro + 32; cycle++) {
         const cycleStart = cycle * 16;
-        if (cycleStart >= TB) break;
+        if (cycleStart >= TB) {break;}
         const isBridge = cycleStart >= S.bridge && cycleStart < S.finalChorus;
 
         if (isBridge) {
@@ -528,7 +528,7 @@ export async function demo_SweetDreams(): Promise<void> {
             if (cycleStart === S.bridge) {
                 for (const [offset, pitch, dur, vel] of bridgeBassPattern) {
                     const beat = S.bridge + offset;
-                    if (beat >= S.finalChorus || beat >= TB) break;
+                    if (beat >= S.finalChorus || beat >= TB) {break;}
                     bassNotes.push(note(pitch, beat, dur, hv(vel, 5)));
                 }
             }
@@ -537,8 +537,8 @@ export async function demo_SweetDreams(): Promise<void> {
 
         for (const [offset, pitch, dur, vel] of bassPattern) {
             const beat = cycleStart + offset;
-            if (beat < S.verse1 || beat >= TB) continue;
-            if (beat >= S.bridge && beat < S.finalChorus) continue;
+            if (beat < S.verse1 || beat >= TB) {continue;}
+            if (beat >= S.bridge && beat < S.finalChorus) {continue;}
             bassNotes.push(note(pitch, beat, dur, hv(vel, 5)));
         }
     }
@@ -812,7 +812,7 @@ export async function demo_SweetDreams(): Promise<void> {
 
     const toasterSegmentIndex = (absBeat: number): number => {
         for (let i = toasterSegRanges.length - 1; i >= 0; i--) {
-            if (absBeat >= toasterSegRanges[i]![0]) return i;
+            if (absBeat >= toasterSegRanges[i]![0]) {return i;}
         }
         return 0;
     };
@@ -822,7 +822,7 @@ export async function demo_SweetDreams(): Promise<void> {
     const pushToast = (pad: number, absBeat: number, vel: number, dur = 0.12) => {
         const si = toasterSegmentIndex(absBeat);
         const [segStart, segEnd] = toasterSegRanges[si]!;
-        if (absBeat < segStart || absBeat >= segEnd) return;
+        if (absBeat < segStart || absBeat >= segEnd) {return;}
         const rel = absBeat - segStart;
         padSegNotes[pad]![si]!.push(note(36 + pad, rel, dur, vel));
     };
@@ -830,12 +830,12 @@ export async function demo_SweetDreams(): Promise<void> {
     // Drums enter at verse 1 (beat 32), build throughout
     // Kick: beats 1 and 3 (half-time feel, NOT 4-on-the-floor)
     for (let b = S.verse1; b < TB; b += 1) {
-        if (b >= S.outro + 48) break; // fade out drums
+        if (b >= S.outro + 48) {break;} // fade out drums
         const posInBar = b % 4;
-        if (posInBar !== 0 && posInBar !== 2) continue; // beats 1 and 3 only
+        if (posInBar !== 0 && posInBar !== 2) {continue;} // beats 1 and 3 only
         const isBridge = b >= S.bridge && b < S.finalChorus;
         // Bridge: only downbeat (beat 1)
-        if (isBridge && posInBar !== 0) continue;
+        if (isBridge && posInBar !== 0) {continue;}
         const isChorus =
             (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
         const vel = isChorus ? hv(100, 4) : hv(88, 4);
@@ -844,11 +844,11 @@ export async function demo_SweetDreams(): Promise<void> {
 
     // Snare/Clap: beats 2 and 4 of each bar
     for (let b = S.verse1; b < TB; b += 1) {
-        if (b >= S.outro + 48) break;
+        if (b >= S.outro + 48) {break;}
         const posInBar = b % 4;
-        if (posInBar !== 1 && posInBar !== 3) continue;
+        if (posInBar !== 1 && posInBar !== 3) {continue;}
         const isBridge = b >= S.bridge && b < S.finalChorus;
-        if (isBridge && posInBar !== 3) continue; // half-time snare in bridge
+        if (isBridge && posInBar !== 3) {continue;} // half-time snare in bridge
         const isChorus =
             (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
         const vel = isChorus ? hv(105, 4) : hv(90, 5);
@@ -857,14 +857,14 @@ export async function demo_SweetDreams(): Promise<void> {
 
     // Closed Hi-hat: 8th notes
     for (let b = S.verse1; b < TB; b += 0.5) {
-        if (b >= S.outro + 48) break;
+        if (b >= S.outro + 48) {break;}
         const isBridge = b >= S.bridge && b < S.finalChorus;
-        if (isBridge && Math.floor(b * 2) % 4 !== 0) continue; // sparse in bridge
+        if (isBridge && Math.floor(b * 2) % 4 !== 0) {continue;} // sparse in bridge
         // Skip where open hat plays (upbeats in choruses)
         const isUpbeat = (b * 2) % 2 === 1;
         const isChorus =
             (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
-        if (isChorus && isUpbeat && Math.floor(b) % 2 === 0) continue; // open hat takes over
+        if (isChorus && isUpbeat && Math.floor(b) % 2 === 0) {continue;} // open hat takes over
 
         const vel = isUpbeat ? hv(60, 5) : hv(75, 5);
         pushToast(2, b, vel, 0.06);
@@ -872,13 +872,13 @@ export async function demo_SweetDreams(): Promise<void> {
 
     // Open Hi-hat: upbeats during choruses
     for (let b = S.chorus1; b < TB; b += 0.5) {
-        if (b >= S.outro + 32) break;
+        if (b >= S.outro + 32) {break;}
         const isChorus =
             (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
-        if (!isChorus) continue;
+        if (!isChorus) {continue;}
         const isUpbeat = (b * 2) % 2 === 1;
-        if (!isUpbeat) continue;
-        if (Math.floor(b) % 2 !== 0) continue; // every other upbeat
+        if (!isUpbeat) {continue;}
+        if (Math.floor(b) % 2 !== 0) {continue;} // every other upbeat
         pushToast(3, b, hv(72, 5), 0.2);
     }
 
@@ -896,7 +896,7 @@ export async function demo_SweetDreams(): Promise<void> {
         const list: ReturnType<typeof createMidiClip>[] = [];
         for (let s = 0; s < toasterSegRanges.length; s++) {
             const arr = padSegNotes[padIdx]![s]!;
-            if (arr.length === 0) continue;
+            if (arr.length === 0) {continue;}
             const [st, en] = toasterSegRanges[s]!;
             const padName = DEFAULT_PAD_NAMES[padIdx] ?? `Pad ${padIdx + 1}`;
             const c = createMidiClip(t.id, `${padName} - ${toasterSegLabels[s]}`, st, en, t.color);

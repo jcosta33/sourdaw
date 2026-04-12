@@ -9,11 +9,11 @@ import { setSamplerParamThrottled } from './samplerParamBridge/setSamplerParamTh
 
 export async function detectAndApplyLoopPoints(): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
 
     try {
         const result = await detectSmartLoopPoints(state.instanceId);
-        if (!result) return;
+        if (!result) {return;}
 
         setLoopParams('forward', result.startFrame, result.endFrame);
         setSamplerParamThrottled(state.instanceId, 'loopMode', 1); // Forward

@@ -19,7 +19,7 @@ export const chamberStore = createStore<ChamberStoreState>({
 
 export function registerChamberInstance(id: string): void {
     const state = chamberStore.value;
-    if (!state) return;
+    if (!state) {return;}
 
     if (!state.instances[id]) {
         chamberStore.set({
@@ -40,7 +40,7 @@ export function updateChamberEngine(
     updater: (engine: ProofChamberEngineState) => ProofChamberEngineState
 ): void {
     const state = chamberStore.value;
-    if (!state || !state.instances[id]) return;
+    if (!state || !state.instances[id]) {return;}
 
     const instance = state.instances[id]!;
 
@@ -60,7 +60,7 @@ export function updateChamberEngine(
 
 export function setChamberUILevel(id: string, level: 1 | 2 | 3 | 4 | 5): void {
     const state = chamberStore.value;
-    if (!state || !state.instances[id]) return;
+    if (!state || !state.instances[id]) {return;}
 
     const instance = state.instances[id]!;
     chamberStore.set({

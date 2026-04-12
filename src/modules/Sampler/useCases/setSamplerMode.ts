@@ -10,7 +10,7 @@ import { samplerStore, setMode } from '../stores/samplerStore';
 
 export async function switchSamplerMode(mode: SamplerMode): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
 
     setMode(mode);
     try {

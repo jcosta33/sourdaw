@@ -109,8 +109,8 @@ export const FilterSection = ({
                     width={500}
                     height={120}
                     onParamChange={(id, val) => {
-                        if (id === 'filterCutoff') onCutoffChange(val);
-                        if (id === 'filterResonance') onResonanceChange(val);
+                        if (id === 'filterCutoff') {onCutoffChange(val);}
+                        if (id === 'filterResonance') {onResonanceChange(val);}
                     }}
                 />
             </div>

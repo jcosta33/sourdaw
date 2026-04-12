@@ -350,7 +350,7 @@ const drawMidiNotePreview = (
     while (loopOffset < clipDuration && iterations < 100) {
         for (const note of notes) {
             const relStart = note.startBeat - clip.startBeat + loopOffset;
-            if (relStart >= clipDuration) continue;
+            if (relStart >= clipDuration) {continue;}
 
             const nx = clipX + (relStart / clipDuration) * clipW;
             const nw = Math.max(1, (note.duration / clipDuration) * clipW);
@@ -365,7 +365,7 @@ const drawMidiNotePreview = (
         }
         loopOffset += loopLen;
         iterations++;
-        if (!clip.loopEnabled || loopLen <= 0) break;
+        if (!clip.loopEnabled || loopLen <= 0) {break;}
     }
 };
 

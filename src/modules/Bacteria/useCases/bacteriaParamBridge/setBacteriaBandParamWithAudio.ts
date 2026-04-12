@@ -33,10 +33,10 @@ export const setBacteriaBandParamWithAudio = inject(bacteriaParamBridgeDependenc
 
             const prefixedKey = `band${bandIndex}_${key}`;
             const encodedValue = encodePatchValue(String(key), value);
-            if (encodedValue === null) return;
+            if (encodedValue === null) {return;}
 
             const ref = findDeviceRef(deviceId);
-            if (!ref) return;
+            if (!ref) {return;}
 
             const compositeKey = `${deviceId}:${prefixedKey}`;
             latestValues.set(compositeKey, encodedValue);

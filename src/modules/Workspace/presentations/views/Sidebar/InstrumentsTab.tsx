@@ -328,11 +328,11 @@ export const InstrumentsTab = ({
                         {premiumMatches.map((id) => {
                             const card = renderPremiumInstrument(id);
                             if (card)
-                                return (
+                                {return (
                                     <div key={id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
                                         {card}
                                     </div>
-                                );
+                                );}
                             return null;
                         })}
                         {allResults.map((preset) => (

@@ -21,7 +21,7 @@ export function stopRecording(clipIds: string[]): void {
         tracks: trackState.tracks.map((t) => ({
             ...t,
             clips: t.clips.map((c) => {
-                if (!clipIds.includes(c.id)) return c;
+                if (!clipIds.includes(c.id)) {return c;}
                 // Audio clips get an exact endBeat from the buffer duration via a
                 // deferred updateClip in toggleRecording — use the playhead as a
                 // provisional value here. MIDI clips have no buffer callback, so

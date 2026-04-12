@@ -94,7 +94,7 @@ export const SignalFlowView = ({
         w: NODE_W,
         h: NODE_H,
     });
-    for (let i = 0; i < numLayers; i++) connections.push([i, warpIdx]);
+    for (let i = 0; i < numLayers; i++) {connections.push([i, warpIdx]);}
 
     // Filter
     x += NODE_W + GAP_X;
@@ -287,9 +287,9 @@ export const SignalFlowView = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = canvasW * dpr;

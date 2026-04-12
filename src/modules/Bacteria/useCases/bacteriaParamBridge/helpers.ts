@@ -64,7 +64,7 @@ export function createFlushParam(
         const compositeKey = `${deviceId}:${key}`;
         pendingUpdates.delete(compositeKey);
         const value = latestValues.get(compositeKey);
-        if (value === undefined) return;
+        if (value === undefined) {return;}
         latestValues.delete(compositeKey);
         updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
         persistDeviceParamFn(ref.deviceId, key, value);

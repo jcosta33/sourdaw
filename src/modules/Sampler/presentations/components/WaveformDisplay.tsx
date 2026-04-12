@@ -32,10 +32,10 @@ export const WaveformDisplay = ({
     // Draw waveform.
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas || peaks.length === 0) return;
+        if (!canvas || peaks.length === 0) {return;}
 
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
@@ -52,7 +52,7 @@ export const WaveformDisplay = ({
 
         // peaks is flattened [min0, max0, min1, max1, ...]
         const numBins = Math.floor(peaks.length / 2);
-        if (numBins === 0) return;
+        if (numBins === 0) {return;}
 
         const binWidth = w / numBins;
 
@@ -78,7 +78,7 @@ export const WaveformDisplay = ({
     useEffect(() => {
         const cursor = cursorRef.current;
         const canvas = canvasRef.current;
-        if (!cursor || !canvas || totalFrames <= 0) return;
+        if (!cursor || !canvas || totalFrames <= 0) {return;}
 
         const rect = canvas.getBoundingClientRect();
         const normalizedPos = Math.min(playbackFrame / totalFrames, 1);

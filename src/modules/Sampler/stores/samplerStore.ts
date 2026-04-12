@@ -111,7 +111,7 @@ export function updateEnvelope(updates: Partial<EnvelopeParams>): void {
 
 export function setFilterParams(cutoff?: number, resonance?: number, type?: FilterType): void {
     samplerStore.update((s) => {
-        if (!s) return s;
+        if (!s) {return s;}
         return {
             ...s,
             filterCutoff: cutoff ?? s.filterCutoff,
@@ -123,7 +123,7 @@ export function setFilterParams(cutoff?: number, resonance?: number, type?: Filt
 
 export function setLoopParams(mode?: LoopMode, start?: number, end?: number): void {
     samplerStore.update((s) => {
-        if (!s) return s;
+        if (!s) {return s;}
         return {
             ...s,
             loopMode: mode ?? s.loopMode,

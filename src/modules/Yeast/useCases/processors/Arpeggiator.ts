@@ -329,12 +329,12 @@ export class Arpeggiator implements MidiProcessor {
         const octaves: number[] = [];
 
         if (this.octaveDirection === 'up') {
-            for (let o = 0; o < this.octaveRange; o++) octaves.push(o);
+            for (let o = 0; o < this.octaveRange; o++) {octaves.push(o);}
         } else if (this.octaveDirection === 'down') {
-            for (let o = 0; o > -this.octaveRange; o--) octaves.push(o);
+            for (let o = 0; o > -this.octaveRange; o--) {octaves.push(o);}
         } else {
-            for (let o = 0; o < this.octaveRange; o++) octaves.push(o);
-            for (let o = this.octaveRange - 2; o > 0; o--) octaves.push(o);
+            for (let o = 0; o < this.octaveRange; o++) {octaves.push(o);}
+            for (let o = this.octaveRange - 2; o > 0; o--) {octaves.push(o);}
         }
 
         for (const oct of octaves) {

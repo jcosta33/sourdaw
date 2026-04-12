@@ -32,7 +32,7 @@ function runCanvas2DFrame(
     const { width, height } = canvas;
     ctx.clearRect(0, 0, width, height);
 
-    for (let i = 0; i < NUM_STRINGS; i += 1) states[i]!.amplitude *= DECAY;
+    for (let i = 0; i < NUM_STRINGS; i += 1) {states[i]!.amplitude *= DECAY;}
     for (const [midi, velocity] of activeNotes) {
         const key = midi - 21;
         if (key >= 0 && key < NUM_STRINGS) {

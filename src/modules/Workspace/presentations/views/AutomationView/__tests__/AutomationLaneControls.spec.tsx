@@ -11,7 +11,7 @@ vi.mock('#/utils/Styles/cn', () => ({
                 classes.push(input);
             } else if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
                 for (const [key, value] of Object.entries(input)) {
-                    if (value) classes.push(key);
+                    if (value) {classes.push(key);}
                 }
             }
         }

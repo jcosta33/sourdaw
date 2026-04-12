@@ -14,8 +14,8 @@ import { type MidiProcessor, ScheduledEventQueue } from '../../models/MidiProces
 
 /** Bjorklund's algorithm — distribute `hits` across `steps` as evenly as possible. */
 function bjorklund(hits: number, steps: number): boolean[] {
-    if (hits >= steps) return new Array(steps).fill(true);
-    if (hits <= 0) return new Array(steps).fill(false);
+    if (hits >= steps) {return new Array(steps).fill(true);}
+    if (hits <= 0) {return new Array(steps).fill(false);}
 
     let pattern: boolean[][] = [];
     for (let i = 0; i < steps; i++) {
@@ -86,7 +86,7 @@ export class EuclideanGenerator implements MidiProcessor {
             output.push(event);
         }
 
-        if (!transport.isPlaying) return;
+        if (!transport.isPlaying) {return;}
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
@@ -119,7 +119,7 @@ export class EuclideanGenerator implements MidiProcessor {
 
         // Drain scheduled Note Offs
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) output.push(e);
+        for (const e of drained) {output.push(e);}
     }
 
     reset(): void {

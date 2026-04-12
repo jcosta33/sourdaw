@@ -317,8 +317,8 @@ export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             }}
                             onFilterChange={(cutoff, resonance) => {
                                 setFilterParams(cutoff, resonance);
-                                if (cutoff !== undefined) handleParamChange('filterCutoff', cutoff);
-                                if (resonance !== undefined) handleParamChange('filterResonance', resonance);
+                                if (cutoff !== undefined) {handleParamChange('filterCutoff', cutoff);}
+                                if (resonance !== undefined) {handleParamChange('filterResonance', resonance);}
                             }}
                             onGainChange={(gain) => {
                                 setMasterGain(gain);

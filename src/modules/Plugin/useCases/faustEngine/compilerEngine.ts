@@ -213,7 +213,7 @@ export async function createFaustNode(
         const node = await mod.generator.createNode(context);
 
         // Registration successful (or was already done)
-        if (!existingReg) resolveReg!();
+        if (!existingReg) {resolveReg!();}
 
         return node;
     } catch (error) {
@@ -227,7 +227,7 @@ export async function createFaustNode(
         if (msg.includes('already registered')) {
             // Signal that registration is "done" (even if it failed with "already registered")
             // so other waiters can try to create their nodes.
-            if (!existingReg) resolveReg!();
+            if (!existingReg) {resolveReg!();}
 
             // Try one more time — if it was just a race, it might succeed now.
             try {
@@ -237,7 +237,7 @@ export async function createFaustNode(
             }
         } else {
             // Real error, allow other waiters to fail too if they want
-            if (!existingReg) resolveReg!();
+            if (!existingReg) {resolveReg!();}
         }
 
         logger.warn(`[Faust] Node creation failed for "${mod.name}": ${msg}`);

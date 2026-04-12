@@ -26,7 +26,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
                 const name = match[1]!;
                 const argsStr = match[2] ?? '';
 
-                if (!validNames.has(name)) continue;
+                if (!validNames.has(name)) {continue;}
 
                 const args: Record<string, unknown> = {};
                 const argPattern = /(\w+)\s*=\s*(?:"([^"]*)"|([.\w]+))/g;
@@ -34,10 +34,10 @@ export const generateWebLlmToolCalls = inject({ logger })(
                 while ((argMatch = argPattern.exec(argsStr)) !== null) {
                     const key = argMatch[1]!;
                     const val = argMatch[2] ?? argMatch[3]!;
-                    if (val === 'true') args[key] = true;
-                    else if (val === 'false') args[key] = false;
-                    else if (!isNaN(Number(val)) && val !== '') args[key] = Number(val);
-                    else args[key] = val;
+                    if (val === 'true') {args[key] = true;}
+                    else if (val === 'false') {args[key] = false;}
+                    else if (!isNaN(Number(val)) && val !== '') {args[key] = Number(val);}
+                    else {args[key] = val;}
                 }
 
                 results.push({ name, arguments: args });

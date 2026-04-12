@@ -42,7 +42,7 @@ export async function createNativePluginBridgeNode(
     // Relay audio between worklet and Rust
     node.port.onmessage = async (event: MessageEvent) => {
         if (event.data.type === 'process' && isTauri()) {
-            if (pendingBlock) return; // Drop block — previous round-trip still in flight
+            if (pendingBlock) {return;} // Drop block — previous round-trip still in flight
             pendingBlock = true;
 
             const audioBuffer = event.data.audio as ArrayBuffer;

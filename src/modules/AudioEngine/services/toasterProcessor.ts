@@ -62,7 +62,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) return;
+                    if (this._ready) {return;}
                     this._initWasm(msg.wasmBytes);
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
@@ -90,8 +90,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
             hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].sampleFrame <= msg.sampleFrame) lo = mid + 1;
-            else hi = mid;
+            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {lo = mid + 1;}
+            else {hi = mid;}
         }
         this._queue.splice(lo, 0, msg);
     }
@@ -132,10 +132,10 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs, outputs) {
-        if (!this._ready || this._faulted) return true;
+        if (!this._ready || this._faulted) {return true;}
 
         const output = outputs[0];
-        if (!output || output.length < 2) return true;
+        if (!output || output.length < 2) {return true;}
 
         const frames = output[0].length;
 

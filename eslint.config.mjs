@@ -621,7 +621,7 @@ export default defineConfig(
             '@eslint-react/no-forward-ref': 'error',
 
             // Naming conventions
-            '@eslint-react/naming-convention/context-name': 'error',
+            '@eslint-react/naming-convention-context-name': 'error',
 
             // DAW UX allowances
             'jsx-a11y-x/no-autofocus': 'off',

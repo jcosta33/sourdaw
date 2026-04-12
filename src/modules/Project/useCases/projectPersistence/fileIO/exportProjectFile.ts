@@ -16,13 +16,13 @@ import { syncCurrentArrangementToStore } from '../../arrangement/helpers';
 function collectBufferIds(trackState: TrackStoreState | null | undefined): Set<string> {
     const ids = new Set<string>();
     for (const track of trackState?.tracks ?? []) {
-        if (track.frozenBufferId) ids.add(track.frozenBufferId);
+        if (track.frozenBufferId) {ids.add(track.frozenBufferId);}
         for (const clip of track.clips) {
-            if (clip.audioBufferId) ids.add(clip.audioBufferId);
+            if (clip.audioBufferId) {ids.add(clip.audioBufferId);}
         }
         for (const alt of track.alternatives) {
             for (const clip of alt.clips) {
-                if (clip.audioBufferId) ids.add(clip.audioBufferId);
+                if (clip.audioBufferId) {ids.add(clip.audioBufferId);}
             }
         }
     }
@@ -46,9 +46,9 @@ export async function exportProjectFile(): Promise<void> {
     // Collect all audioBufferIds referenced by the project (current track state
     // and every arrangement, including non-active ones).
     const allBufferIds = new Set<string>();
-    for (const id of collectBufferIds(tracks)) allBufferIds.add(id);
+    for (const id of collectBufferIds(tracks)) {allBufferIds.add(id);}
     for (const arr of arrState.arrangements) {
-        for (const id of collectBufferIds(arr.tracks)) allBufferIds.add(id);
+        for (const id of collectBufferIds(arr.tracks)) {allBufferIds.add(id);}
     }
     const audioBuffers = await audioBufferCache.exportBuffers([...allBufferIds]);
 

@@ -77,7 +77,7 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
     useEffect(() => {
         const container = containerRef.current;
         const canvas = canvasRef.current;
-        if (container === null || canvas === null) return;
+        if (container === null || canvas === null) {return;}
 
         // Resize canvas to match CSS layout.
         const observer = new ResizeObserver((entries) => {
@@ -94,7 +94,7 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
         observer.observe(container);
 
         const ctx = canvas.getContext('2d');
-        if (ctx === null) return;
+        if (ctx === null) {return;}
 
         let raf = 0;
         const render = (): void => {

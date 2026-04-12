@@ -320,11 +320,11 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
     const mockTracks: { id: string; name: string }[] = [];
 
     const findTrackId = (nameOrId: string): string | null => {
-        if (state.tracks.some((t) => t.id === nameOrId)) return nameOrId;
-        if (mockTracks.some((t) => t.id === nameOrId)) return nameOrId;
+        if (state.tracks.some((t) => t.id === nameOrId)) {return nameOrId;}
+        if (mockTracks.some((t) => t.id === nameOrId)) {return nameOrId;}
 
         let match = bestMatch(nameOrId, state.tracks, (t) => t.name);
-        if (!match) match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;
+        if (!match) {match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;}
         return match?.id ?? null;
     };
 

@@ -73,7 +73,7 @@ export class ScaleQuantizer implements MidiProcessor {
 
     private quantizeToScale(note: number, pattern: number[]): number {
         const pc = (((note - this.root) % 12) + 12) % 12;
-        if (pattern.includes(pc)) return note;
+        if (pattern.includes(pc)) {return note;}
 
         switch (this.remapMode) {
             case 'nearest': {
@@ -91,13 +91,13 @@ export class ScaleQuantizer implements MidiProcessor {
             }
             case 'up': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes((((pc + offset) % 12) + 12) % 12)) return note + offset;
+                    if (pattern.includes((((pc + offset) % 12) + 12) % 12)) {return note + offset;}
                 }
                 return note;
             }
             case 'down': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes((((pc - offset) % 12) + 12) % 12)) return note - offset;
+                    if (pattern.includes((((pc - offset) % 12) + 12) % 12)) {return note - offset;}
                 }
                 return note;
             }
@@ -108,7 +108,7 @@ export class ScaleQuantizer implements MidiProcessor {
         const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
         const degreeIdx = pattern.indexOf(pc);
-        if (degreeIdx === -1) return note; // not in scale, pass through
+        if (degreeIdx === -1) {return note;} // not in scale, pass through
 
         const newDegreeIdx = degreeIdx + degrees;
         const newOctaveOffset = Math.floor(newDegreeIdx / pattern.length);

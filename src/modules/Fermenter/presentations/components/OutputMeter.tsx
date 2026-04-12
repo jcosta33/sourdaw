@@ -12,7 +12,7 @@ type OutputMeterProps = {
 
 export const OutputMeter = ({ peakL, peakR, height = 48 }: OutputMeterProps): ReactElement => {
     const toDb = (v: number): number => {
-        if (v < 0.0001) return -60;
+        if (v < 0.0001) {return -60;}
         return 20 * Math.log10(v);
     };
 
@@ -28,8 +28,8 @@ export const OutputMeter = ({ peakL, peakR, height = 48 }: OutputMeterProps): Re
     const rPct = dbToPercent(rDb);
 
     const barColor = (pct: number): string => {
-        if (pct > 0.9) return 'var(--color-state-danger)';
-        if (pct > 0.7) return 'var(--color-accent-peach)';
+        if (pct > 0.9) {return 'var(--color-state-danger)';}
+        if (pct > 0.7) {return 'var(--color-accent-peach)';}
         return 'var(--color-accent-mint)';
     };
 

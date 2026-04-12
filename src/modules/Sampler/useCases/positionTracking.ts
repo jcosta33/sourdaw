@@ -21,13 +21,13 @@ const listeners = new Set<PositionListener>();
 const POLL_INTERVAL_MS = 33; // ~30Hz
 
 function startPolling(): void {
-    if (pollTimer !== null) return;
+    if (pollTimer !== null) {return;}
 
     pollTimestamp = performance.now();
 
     pollTimer = setInterval(async () => {
         const state = samplerStore.value;
-        if (!state?.instanceId) return;
+        if (!state?.instanceId) {return;}
 
         try {
             prevPolledFrame = lastPolledFrame;

@@ -56,9 +56,9 @@ export class MarkovChain implements MidiProcessor {
     }
 
     private sampleNext(): number {
-        if (this.stateCount === 0) return 0;
+        if (this.stateCount === 0) {return 0;}
         const row = this.probs[this.currentState % this.stateCount];
-        if (!row) return 0;
+        if (!row) {return 0;}
 
         this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
         let r = this.rngState / 0x7fffffff;
@@ -66,7 +66,7 @@ export class MarkovChain implements MidiProcessor {
 
         for (let i = 0; i < row.length; i++) {
             cumulative += row[i]!;
-            if (r <= cumulative) return i;
+            if (r <= cumulative) {return i;}
         }
         return row.length - 1;
     }
@@ -92,14 +92,14 @@ export class MarkovChain implements MidiProcessor {
             }
         }
 
-        if (!transport.isPlaying || this.stateToNote.length === 0) return;
+        if (!transport.isPlaying || this.stateToNote.length === 0) {return;}
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
         const now = input.length > 0 ? input[0]!.timeSamples : 0;
         const blockEnd = now + 128;
 
-        if (this.lastStepTime === -Infinity) this.lastStepTime = now;
+        if (this.lastStepTime === -Infinity) {this.lastStepTime = now;}
 
         let safety = 0;
         while (this.lastStepTime + stepLen <= blockEnd && safety < 64) {
@@ -123,7 +123,7 @@ export class MarkovChain implements MidiProcessor {
         }
 
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) output.push(e);
+        for (const e of drained) {output.push(e);}
     }
 
     reset(): void {
@@ -165,7 +165,7 @@ export class MarkovChain implements MidiProcessor {
             const row = this.probs[from]!;
             const sum = row.reduce((a, b) => a + b, 0);
             if (sum > 0) {
-                for (let i = 0; i < row.length; i++) row[i] = row[i]! / sum;
+                for (let i = 0; i < row.length; i++) {row[i] = row[i]! / sum;}
             }
         }
     }

@@ -29,7 +29,7 @@ describe('telemetryAllocator', () => {
         const b = telemetryAllocator.allocateSlot();
         expect(a).not.toBeNull();
         expect(b).not.toBeNull();
-        if (!a || !b) return;
+        if (!a || !b) {return;}
 
         allocatedOffsets.push(a.byteOffset, b.byteOffset);
         expect(a.byteOffset).not.toBe(b.byteOffset);
@@ -42,7 +42,7 @@ describe('telemetryAllocator', () => {
     it('should return a released slot for reuse', () => {
         const first = telemetryAllocator.allocateSlot();
         expect(first).not.toBeNull();
-        if (!first) return;
+        if (!first) {return;}
 
         const off = first.byteOffset;
         allocatedOffsets.push(off);
@@ -51,7 +51,7 @@ describe('telemetryAllocator', () => {
 
         const again = telemetryAllocator.allocateSlot();
         expect(again).not.toBeNull();
-        if (!again) return;
+        if (!again) {return;}
         allocatedOffsets.push(again.byteOffset);
         expect(again.byteOffset).toBe(off);
     });
@@ -60,7 +60,7 @@ describe('telemetryAllocator', () => {
         const slots: NonNullable<ReturnType<typeof telemetryAllocator.allocateSlot>>[] = [];
         for (;;) {
             const s = telemetryAllocator.allocateSlot();
-            if (!s) break;
+            if (!s) {break;}
             slots.push(s);
         }
         for (const s of slots) {

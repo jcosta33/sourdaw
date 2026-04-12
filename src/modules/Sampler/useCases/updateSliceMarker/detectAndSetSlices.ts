@@ -6,7 +6,7 @@ import { setMarkers } from '../../stores/sliceStore';
 
 export async function detectAndSetSlices(algorithm: OnsetAlgorithm = 'superflux'): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId || !state.activeSample) return;
+    if (!state?.instanceId || !state.activeSample) {return;}
 
     try {
         const result = await detectOnsets(state.instanceId, algorithm);

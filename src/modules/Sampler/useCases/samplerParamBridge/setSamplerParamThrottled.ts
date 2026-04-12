@@ -7,7 +7,7 @@ const latest = new Map<string, { param: string; value: number }>();
 function flushSamplerParam(cacheKey: string, instanceId: string): void {
     pending.delete(cacheKey);
     const entry = latest.get(cacheKey);
-    if (!entry) return;
+    if (!entry) {return;}
     latest.delete(cacheKey);
     setSamplerParam(instanceId, entry.param, entry.value).catch((err) => {
         logger.warn('Failed to set sampler param:', err);

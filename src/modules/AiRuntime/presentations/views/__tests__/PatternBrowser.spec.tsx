@@ -38,8 +38,8 @@ vi.mock('../../../models/midiPatternLibrary', () => ({
             },
         ];
         return templates.filter((t) => {
-            if (category && t.category !== category) return false;
-            if (query && !t.name.toLowerCase().includes(query.toLowerCase())) return false;
+            if (category && t.category !== category) {return false;}
+            if (query && !t.name.toLowerCase().includes(query.toLowerCase())) {return false;}
             return true;
         });
     }),

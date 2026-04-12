@@ -314,7 +314,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 onClick={() => {
                     if (hasArp) {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                        if (arp) removeYeastProcessor(arp.id);
+                        if (arp) {removeYeastProcessor(arp.id);}
                     } else {
                         addYeastProcessor('arpeggiator');
                     }
@@ -332,7 +332,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     className="min-w-[4.5rem]"
                     onChange={(e) => {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                        if (arp) setYeastProcessorParam(arp.id, 'mode', parseInt(e.target.value));
+                        if (arp) {setYeastProcessorParam(arp.id, 'mode', parseInt(e.target.value));}
                     }}
                     defaultValue={0}
                 >
@@ -353,7 +353,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     value={8}
                     onChange={(v) => {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                        if (arp) setYeastProcessorParam(arp.id, 'rate_denom', Math.round(v));
+                        if (arp) {setYeastProcessorParam(arp.id, 'rate_denom', Math.round(v));}
                     }}
                     min={1}
                     max={32}
@@ -369,7 +369,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 size="sm"
                 onClick={() => {
                     const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                    if (arp) setYeastProcessorParam(arp.id, 'latch', 1);
+                    if (arp) {setYeastProcessorParam(arp.id, 'latch', 1);}
                 }}
             >
                 Latch

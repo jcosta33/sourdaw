@@ -126,7 +126,7 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;
             }
-            if (!slot) return;
+            if (!slot) {return;}
             const view = slot.view;
             const poll = () => {
                 cb({

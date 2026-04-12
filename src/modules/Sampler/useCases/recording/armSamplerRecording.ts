@@ -7,6 +7,6 @@ export async function armSamplerRecording(
     maxDurationSecs: number
 ): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
     await armRecording(state.instanceId, threshold, targetPad, maxDurationSecs);
 }

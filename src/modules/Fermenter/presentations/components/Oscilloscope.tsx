@@ -22,9 +22,9 @@ export const Oscilloscope = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -85,8 +85,8 @@ export const Oscilloscope = ({
             const idx = Math.floor(i * step);
             const sample = buffer[idx] ?? 0;
             const y = ((1 - sample) / 2) * height;
-            if (i === 0) ctx.moveTo(i, y);
-            else ctx.lineTo(i, y);
+            if (i === 0) {ctx.moveTo(i, y);}
+            else {ctx.lineTo(i, y);}
         }
         ctx.stroke();
         ctx.restore();
@@ -100,8 +100,8 @@ export const Oscilloscope = ({
             const idx = Math.floor(i * step);
             const sample = buffer[idx] ?? 0;
             const y = ((1 - sample) / 2) * height;
-            if (i === 0) ctx.moveTo(i, y);
-            else ctx.lineTo(i, y);
+            if (i === 0) {ctx.moveTo(i, y);}
+            else {ctx.lineTo(i, y);}
         }
         ctx.stroke();
     }, [buffer, width, height, color]);

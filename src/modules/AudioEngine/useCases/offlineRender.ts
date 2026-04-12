@@ -960,12 +960,12 @@ export const exportStems: ExportStemsFn = inject({
                     task!()
                         .then(() => {
                             activeTasks--;
-                            if (taskIndex >= tasks.length && activeTasks === 0) resolve();
-                            else next();
+                            if (taskIndex >= tasks.length && activeTasks === 0) {resolve();}
+                            else {next();}
                         })
                         .catch(reject);
                 }
-                if (taskIndex >= tasks.length && activeTasks === 0) resolve();
+                if (taskIndex >= tasks.length && activeTasks === 0) {resolve();}
             };
             next();
         });

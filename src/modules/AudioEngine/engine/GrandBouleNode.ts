@@ -112,7 +112,7 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
         }, 10_000);
 
         engineWorker.onmessage = (e: MessageEvent) => {
-            if (settled) return;
+            if (settled) {return;}
             if (e.data.type === 'ready') {
                 settled = true;
                 clearTimeout(timeout);

@@ -982,7 +982,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // Sparse kicks in intro, hi-hat variety, 4-on-floor in final section
     const drumN: MidiNote[] = [];
     for (let b = 64; b < 576; b += 1) {
-        if (b >= 320 && b < 384) continue; // breakdown silence
+        if (b >= 320 && b < 384) {continue;} // breakdown silence
         const pos = b % 4;
         const bar = Math.floor(b / 4);
         const inBuild = b < 128;
@@ -1085,7 +1085,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const pulseDenseOffsets = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75]; // 16ths
     for (let bar = 8; bar < TB / 4; bar++) {
         const b = bar * 4;
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const c = ch(b);
         const vel = b < 64 ? 0.7 : b >= 512 ? 0.75 : 1.0;
 
@@ -1138,7 +1138,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // RHODES — warm chords in groove sections (8-beat intervals with ninth)
     const rhodesN: MidiNote[] = [];
     for (let b = 64; b < 512; b += 8) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const c = ch(b);
         const vel = b < 128 ? 52 : b >= 224 ? 65 : 58;
         rhodesN.push(note(c.root + 12, b + 0.05, 7.5, hv(vel, 6)));
@@ -1176,7 +1176,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // SHIMMER PAD — ethereal in intense sections (-12 octave to sit below leads)
     const shimmerN: MidiNote[] = [];
     for (let b = 128; b < 512; b += 16) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const c = ch(b);
         const vel = b >= 224 && b < 320 ? 65 : 50;
         shimmerN.push(note(c.root + 12, b, 15.8, hv(vel - 10, 10)));
@@ -1204,8 +1204,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // STRINGS SOFT — counter-voice, enters at build
     const strSoftN: MidiNote[] = [];
     for (let b = 64; b < TB; b += 16) {
-        if (b >= 320 && b < 384) continue;
-        if (b >= 576) continue;
+        if (b >= 320 && b < 384) {continue;}
+        if (b >= 576) {continue;}
         const c = ch(b);
         const vel = b < 128 ? 48 : b >= 384 ? 58 : 62;
         strSoftN.push(note(c.fifth + 12, b + 0.5, 15, hv(vel, 8)));
@@ -1286,7 +1286,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         [7, 69, 2.5, 60],
     ] as const;
     for (let b = 232; b < 512; b += 32) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         for (const [off, pitch, dur, vel] of answerMotif) {
             leadSoftN.push(note(pitch, b + off, dur, hv(vel, 10)));
         }
@@ -1314,8 +1314,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     let arpStep = 0;
     for (let b = 64; b < TB; b += 0.5) {
         // 8th notes, not 16ths
-        if (b >= 320 && b < 384) continue;
-        if (b >= 576) continue;
+        if (b >= 320 && b < 384) {continue;}
+        if (b >= 576) {continue;}
         const chordIdx = Math.floor(b / 16) % 4;
         const pool = ARP_POOLS[chordIdx]!;
         const pitch = pool[ARP_STEPS[arpStep % ARP_STEPS.length]! % pool.length]!;
@@ -1336,8 +1336,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
     // NOISE SWEEP — filtered noise texture
     const noiseN: MidiNote[] = [];
-    for (let b = 196; b < 224; b += 2) noiseN.push(note(60, b, 1.8, hv(30 + (b - 196) * 2, 5)));
-    for (let b = 356; b < 384; b += 2) noiseN.push(note(60, b, 1.8, hv(30 + (b - 356) * 2, 5)));
+    for (let b = 196; b < 224; b += 2) {noiseN.push(note(60, b, 1.8, hv(30 + (b - 196) * 2, 5)));}
+    for (let b = 356; b < 384; b += 2) {noiseN.push(note(60, b, 1.8, hv(30 + (b - 356) * 2, 5)));}
 
     // FLUTE COUNTER — lyrical Dm phrases that answer the lead
     const fluteN: MidiNote[] = [];
@@ -1364,19 +1364,19 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     ];
     for (let ph = 0; ph < (512 - 128) / 8; ph++) {
         const start = 128 + ph * 8;
-        if (start >= 320 && start < 384) continue;
+        if (start >= 320 && start < 384) {continue;}
         const mel = ph % 3 === 0 ? fluteA : ph % 3 === 1 ? fluteB : fluteC;
-        for (const [off, pitch, dur, vel] of mel) fluteN.push(note(pitch, start + off, dur, hv(vel)));
+        for (const [off, pitch, dur, vel] of mel) {fluteN.push(note(pitch, start + off, dur, hv(vel)));}
     }
 
     // BELL ACCENTS — bell tones every 8 beats (-12 octave to sit in mid range)
     const bellAccN: MidiNote[] = [];
     for (let b = 64; b < TB; b += 8) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const c = ch(b);
         const inOutro = b >= 512;
         bellAccN.push(note(c.ninth + 24, b + 2, 3, hv(inOutro ? 30 : 42)));
-        if (b % 32 === 0 && b >= 128) bellAccN.push(note(c.root + 36, b + 4, 4, hv(35)));
+        if (b % 32 === 0 && b >= 128) {bellAccN.push(note(c.root + 36, b + 4, 4, hv(35)));}
     }
 
     // CRYSTAL TEXTURE — delicate 16th arps in intense sections (accent every 4th note)
@@ -1389,7 +1389,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     ];
     let cStep = 0;
     for (let b = 192; b < 512; b += 0.5) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const ci = Math.floor(b / 16) % 4;
         const pool = crystalPool[ci]!;
         const pitch = pool[cStep % pool.length]! + 12;
@@ -1402,7 +1402,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // TREMOLO PULSE — rhythmic chord pulses with tremolo effect
     const tremN: MidiNote[] = [];
     for (let b = 128; b < 384; b += 4) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const c = ch(b);
         const vel = b >= 224 ? 60 : 48;
         tremN.push(note(c.fifth + 24, b, 0.3, hv(vel)));
@@ -1418,15 +1418,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         const vel = inBD ? 28 : b >= 512 ? 35 : 48;
         wideN.push(note(c.root + 12, b, 31, hv(vel)));
         wideN.push(note(c.fifth + 12, b, 31, hv(vel - 5)));
-        if (!inBD) wideN.push(note(c.ninth + 12, b, 31, hv(vel - 10)));
+        if (!inBD) {wideN.push(note(c.ninth + 12, b, 31, hv(vel - 10)));}
     }
 
     // DRUM FILLS — minimal tom accents at section boundaries (not busy 16th fills)
     const drumFillN: MidiNote[] = [];
     const fillBeats = [112, 192, 288, 368, 448, 544];
     for (const fb of fillBeats) {
-        if (fb >= 576) break;
-        if (fb >= 320 && fb < 384) continue;
+        if (fb >= 576) {break;}
+        if (fb >= 320 && fb < 384) {continue;}
         // Simple 3-hit fill: low tom, mid tom, floor tom
         drumFillN.push(note(43, fb, 0.5, hv(62)));
         drumFillN.push(note(47, fb + 1, 0.5, hv(58)));
@@ -1447,7 +1447,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const chirpN: MidiNote[] = [];
     const chirpPitches = [86, 88, 89, 91, 93, 95, 98]; // D minor, octave 6-7
     for (let b = 128; b < 512; b += 2) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         if (Math.random() < 0.3) {
             const pitch = chirpPitches[Math.floor(Math.random() * chirpPitches.length)]!;
             chirpN.push(note(pitch, b + Math.random() * 0.5, 0.05, hv(30, 5)));
@@ -1477,7 +1477,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // 3. POLYRHYTHMIC CLICK — 3-against-4 polyrhythm (every 1.333 beats)
     const polyClickN: MidiNote[] = [];
     for (let b = 128; b < 512; b += 4 / 3) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const c = ch(b);
         polyClickN.push(note(c.ninth, b - 128, 0.15, hv(42, 8)));
     }
@@ -1543,7 +1543,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // 8. METALLIC RING — one hit per 16 beats, high register, very short
     const metalRingN: MidiNote[] = [];
     for (let b = 128; b < TB; b += 16) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const c = ch(b);
         metalRingN.push(note(c.ninth + 24, b - 128, 0.1, hv(38, 8)));
     }
@@ -1551,7 +1551,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // 9. GHOST SNARE — offbeat 16th ghost snare hits (pitch 38)
     const ghostSnareN: MidiNote[] = [];
     for (let b = 128; b < 512; b += 0.25) {
-        if (b >= 320 && b < 384) continue;
+        if (b >= 320 && b < 384) {continue;}
         const pos = b % 1;
         if (pos === 0.25 || pos === 0.75) {
             ghostSnareN.push(note(38, b - 128, 0.1, hv(36, 6)));
@@ -1841,7 +1841,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
     // Fills occur every 8 bars (32 beats) to enrich transitions
     for (let b = 64; b < 512; b += 32) {
-        if (b >= 320 && b < 384) continue; // skip breakdown
+        if (b >= 320 && b < 384) {continue;} // skip breakdown
         const c = ch(b);
         const isMajorChange = b % 64 === 0;
 

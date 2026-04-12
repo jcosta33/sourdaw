@@ -35,7 +35,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) return;
+                    if (this._ready) {return;}
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
@@ -63,7 +63,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
 
     _passthrough(input, output) {
         for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-            if (input[ch] && output[ch]) output[ch].set(input[ch]);
+            if (input[ch] && output[ch]) {output[ch].set(input[ch]);}
         }
     }
 
@@ -72,11 +72,11 @@ class ScoringProcessor extends AudioWorkletProcessor {
         const output = outputs[0];
 
         if (!this._ready || this._faulted) {
-            if (input && output) this._passthrough(input, output);
+            if (input && output) {this._passthrough(input, output);}
             return true;
         }
 
-        if (!input || output.length < 1 || input.length < 1) return true;
+        if (!input || output.length < 1 || input.length < 1) {return true;}
 
         const frames = input[0].length;
 
@@ -87,7 +87,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
 
             const mem = this._memory.buffer;
             output[0].set(new Float32Array(mem, leftPtr, frames));
-            if (output[1]) output[1].set(new Float32Array(mem, rightPtr, frames));
+            if (output[1]) {output[1].set(new Float32Array(mem, rightPtr, frames));}
 
             // Send telemetry periodically
             this._frameCount++;
@@ -112,7 +112,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
         } catch (err) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(err) });
-            if (input && output) this._passthrough(input, output);
+            if (input && output) {this._passthrough(input, output);}
         }
 
         return true;

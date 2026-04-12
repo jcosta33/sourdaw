@@ -51,9 +51,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -138,7 +138,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         // Draw per-band filled curves (subtle)
         for (let b = 0; b < patch.eqBands.length; b++) {
             const band = patch.eqBands[b]!;
-            if (!band.enabled || Math.abs(band.gain) < 0.01) continue;
+            if (!band.enabled || Math.abs(band.gain) < 0.01) {continue;}
 
             ctx.beginPath();
             ctx.moveTo(freqToX(freqs[0]!, w), zeroY);
@@ -216,7 +216,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
     // Drag handling
     const handlePointerDown = (e: React.PointerEvent) => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
@@ -243,9 +243,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
     const handlePointerMove = (e: React.PointerEvent) => {
         const idx = dragBandRef.current;
-        if (idx === null) return;
+        if (idx === null) {return;}
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;

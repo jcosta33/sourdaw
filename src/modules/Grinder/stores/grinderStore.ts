@@ -56,7 +56,7 @@ export function loadGrinderPatch(deviceId: string, patch: GrinderPatch): void {
 export function replaceGrinderPatchLocally(deviceId: string, patch: GrinderPatch): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId];
-    if (!state) return;
+    if (!state) {return;}
     grinderStore.set({ ...instances, [deviceId]: { ...state, patch: migrateGrinderPatch(patch) } });
 }
 

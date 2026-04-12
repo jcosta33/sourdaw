@@ -71,7 +71,7 @@ export class CCGenerator implements MidiProcessor {
             }
         }
 
-        if (!transport.isPlaying) return;
+        if (!transport.isPlaying) {return;}
 
         // Compute how much phase advances per sample
         const phasePerSample = this.syncMode

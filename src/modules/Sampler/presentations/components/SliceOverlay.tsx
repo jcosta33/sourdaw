@@ -31,7 +31,7 @@ export const SliceOverlay = ({
 
     function handlePointerDown(index: number, markerId: string, e: React.PointerEvent): void {
         const marker = markers[index];
-        if (!marker) return;
+        if (!marker) {return;}
 
         e.preventDefault();
         e.stopPropagation();
@@ -40,7 +40,7 @@ export const SliceOverlay = ({
         const startX = e.clientX;
         const startFrame = marker.framePosition;
         const container = (e.target as HTMLElement).parentElement;
-        if (!container) return;
+        if (!container) {return;}
 
         const containerRect = container.getBoundingClientRect();
 

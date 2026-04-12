@@ -139,9 +139,9 @@ export const tryPaintSubLane = (x: number, y: number, autoDragRef: AutoDragRef):
 
 export const paintAutoDragPoint = (x: number, y: number, scrollY: number, autoDragRef: AutoDragRef): void => {
     const ref = autoDragRef.current;
-    if (!ref) return;
+    if (!ref) {return;}
     const view = timelineViewStore.value;
-    if (!view) return;
+    if (!view) {return;}
     const beat = x / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
     const contentY = getContentY(y, scrollY);
     const trackHit = resolveTrackAtY(contentY);

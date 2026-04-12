@@ -10,7 +10,7 @@ import { samplerStore, setActiveSample, setLoading, setWaveformPeaks } from '../
 
 export async function loadSampleFromPath(filePath: string): Promise<void> {
     const state = samplerStore.value;
-    if (!state?.instanceId) return;
+    if (!state?.instanceId) {return;}
 
     setLoading(true);
 

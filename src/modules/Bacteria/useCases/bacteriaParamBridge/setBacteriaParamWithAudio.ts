@@ -31,10 +31,10 @@ export const setBacteriaParamWithAudio = inject(bacteriaParamBridgeDependencies)
             setBacteriaParam(deviceId, key, value);
 
             const encodedValue = encodePatchValue(key, value);
-            if (encodedValue === null) return;
+            if (encodedValue === null) {return;}
 
             const ref = findDeviceRef(deviceId);
-            if (!ref) return;
+            if (!ref) {return;}
 
             const compositeKey = `${deviceId}:${key}`;
             latestValues.set(compositeKey, encodedValue);

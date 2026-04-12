@@ -60,7 +60,7 @@ export function setBacteriaBandParam<K extends keyof BacteriaPatch['bands'][0]>(
     const instances = bacteriaStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
     const bands = [...state.patch.bands];
-    if (bandIndex < 0 || bandIndex >= bands.length) return;
+    if (bandIndex < 0 || bandIndex >= bands.length) {return;}
     bands[bandIndex] = { ...bands[bandIndex]!, [key]: value };
     bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, bands } } });
 }

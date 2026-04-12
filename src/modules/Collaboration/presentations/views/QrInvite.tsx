@@ -32,7 +32,7 @@ export const QrInvite = ({ inviteString }: QrInviteProps): ReactElement => {
     }, []);
 
     useEffect(() => {
-        if (!canvasRef.current || !inviteString) return;
+        if (!canvasRef.current || !inviteString) {return;}
         setTooLong(false);
         QRCode.toCanvas(canvasRef.current, inviteString, {
             width: 200,

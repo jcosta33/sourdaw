@@ -54,8 +54,8 @@ export const CollaborationPanel = (): ReactElement | null => {
 
     useEffect(() => {
         return () => {
-            if (copiedInviteTimerRef.current !== null) clearTimeout(copiedInviteTimerRef.current);
-            if (copiedAnswerTimerRef.current !== null) clearTimeout(copiedAnswerTimerRef.current);
+            if (copiedInviteTimerRef.current !== null) {clearTimeout(copiedInviteTimerRef.current);}
+            if (copiedAnswerTimerRef.current !== null) {clearTimeout(copiedAnswerTimerRef.current);}
         };
     }, []);
 
@@ -112,7 +112,7 @@ export const CollaborationPanel = (): ReactElement | null => {
     const handleCopyInvite = () => {
         navigator.clipboard.writeText(inviteString);
         setCopiedInvite(true);
-        if (copiedInviteTimerRef.current !== null) clearTimeout(copiedInviteTimerRef.current);
+        if (copiedInviteTimerRef.current !== null) {clearTimeout(copiedInviteTimerRef.current);}
         copiedInviteTimerRef.current = setTimeout(() => {
             setCopiedInvite(false);
             copiedInviteTimerRef.current = null;
@@ -122,7 +122,7 @@ export const CollaborationPanel = (): ReactElement | null => {
     const handleCopyAnswer = () => {
         navigator.clipboard.writeText(joinAnswer);
         setCopiedAnswer(true);
-        if (copiedAnswerTimerRef.current !== null) clearTimeout(copiedAnswerTimerRef.current);
+        if (copiedAnswerTimerRef.current !== null) {clearTimeout(copiedAnswerTimerRef.current);}
         copiedAnswerTimerRef.current = setTimeout(() => {
             setCopiedAnswer(false);
             copiedAnswerTimerRef.current = null;

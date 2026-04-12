@@ -147,7 +147,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
             }),
             onMidiPedalCc(({ cc, value }) => {
                 const s = grandBouleStore.value;
-                if (s === null) return;
+                if (s === null) {return;}
                 if (cc === 64) {
                     grandBouleStore.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
                 } else if (cc === 66) {

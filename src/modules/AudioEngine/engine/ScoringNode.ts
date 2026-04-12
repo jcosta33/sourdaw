@@ -124,7 +124,7 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
                 cancelAnimationFrame(telemetryRafId);
                 telemetryRafId = null;
             }
-            if (!slot) return;
+            if (!slot) {return;}
             const view = slot.view;
             const poll = () => {
                 const active = view[SCORING_IDX.active] !== 0;

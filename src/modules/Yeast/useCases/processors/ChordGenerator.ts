@@ -63,7 +63,7 @@ export class ChordGenerator implements MidiProcessor {
 
                 for (let i = 0; i < intervals.length; i++) {
                     const note = event.kind.note + intervals[i]!;
-                    if (note < 0 || note > 127) continue;
+                    if (note < 0 || note > 127) {continue;}
                     notes.push(note);
 
                     const offset =

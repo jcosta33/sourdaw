@@ -55,12 +55,12 @@ const LEVEL_OPTIONS = [
 ];
 
 function formatLufs(v: number): string {
-    if (v <= -100) return '-∞';
+    if (v <= -100) {return '-∞';}
     return `${v.toFixed(1)}`;
 }
 
 function formatDb(v: number): string {
-    if (v <= -100) return '-∞';
+    if (v <= -100) {return '-∞';}
     return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
 }
 
@@ -694,7 +694,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
     const moveModule = (fromIdx: number, direction: -1 | 1) => {
         const toIdx = fromIdx + direction;
-        if (toIdx < 0 || toIdx >= 5) return;
+        if (toIdx < 0 || toIdx >= 5) {return;}
         const newOrder: [number, number, number, number, number] = [...patch.chainOrder];
         const temp = newOrder[fromIdx]!;
         newOrder[fromIdx] = newOrder[toIdx]!;

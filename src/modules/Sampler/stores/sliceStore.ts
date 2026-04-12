@@ -26,7 +26,7 @@ export function setMarkers(markers: SliceMarker[], autoDetected: boolean): void 
 
 export function addMarker(framePosition: number): void {
     sliceStore.update((s) => {
-        if (!s) return s;
+        if (!s) {return s;}
         const id = `slice-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         const marker: SliceMarker = {
             id,
@@ -40,7 +40,7 @@ export function addMarker(framePosition: number): void {
 
 export function removeMarker(id: string): void {
     sliceStore.update((s) => {
-        if (!s) return s;
+        if (!s) {return s;}
         const markers = s.markers.filter((m) => m.id !== id);
         return { ...s, markers };
     });
@@ -48,7 +48,7 @@ export function removeMarker(id: string): void {
 
 export function updateMarkerPosition(id: string, framePosition: number): void {
     sliceStore.update((s) => {
-        if (!s) return s;
+        if (!s) {return s;}
         const markers = s.markers
             .map((m) => (m.id === id ? { ...m, framePosition } : m))
             .sort((a, b) => a.framePosition - b.framePosition);
@@ -58,7 +58,7 @@ export function updateMarkerPosition(id: string, framePosition: number): void {
 
 export function setActiveSlice(index: number): void {
     sliceStore.update((s) => {
-        if (!s || index < 0 || index >= s.markers.length) return s;
+        if (!s || index < 0 || index >= s.markers.length) {return s;}
         return { ...s, activeSliceIndex: index };
     });
 }

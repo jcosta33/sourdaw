@@ -13,10 +13,10 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {return;}
 
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {return;}
 
         // Try getting the master analyser. Might be null if engine isn't ready.
         let analyser: AnalyserNode | undefined;
@@ -26,7 +26,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             return;
         }
 
-        if (!analyser) return;
+        if (!analyser) {return;}
 
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -53,7 +53,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             gradient.addColorStop(1, 'rgba(252, 211, 77, 1)'); // bright
 
             for (let i = 0; i < bufferLength; i += 2) {
-                if (x > width) break;
+                if (x > width) {break;}
 
                 const barHeight = (dataArray[i]! / 255) * height;
 
@@ -71,7 +71,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
         };
     }, [isSelected]);
 
-    if (!masterTrack) return null;
+    if (!masterTrack) {return null;}
 
     return (
         <div
@@ -79,7 +79,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             tabIndex={0}
             onClick={() => selectTrack(masterTrack.id)}
             onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') selectTrack(masterTrack.id);
+                if (e.key === 'Enter' || e.key === ' ') {selectTrack(masterTrack.id);}
             }}
             className={cn(
                 'absolute inset-0 overflow-hidden cursor-pointer transition-colors',
