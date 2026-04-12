@@ -131,12 +131,19 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     if (recClips.length > 0) {
         const liveEnd = playheadPositionRef.current;
         const recIds = new Set(recClips);
-        const recTracks = cachedModel!.tracks.map((track) => ({
-            ...track,
-            clips: track.clips.map((clip) =>
-                recIds.has(clip.id) ? { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) } : clip
-            ),
-        }));
+        // Only rebuild tracks that actually contain a recording clip
+        const recTracks = cachedModel!.tracks.map((track) => {
+            const hasRecClip = track.clips.some((clip) => recIds.has(clip.id));
+            if (!hasRecClip) {
+                return track;
+            }
+            return {
+                ...track,
+                clips: track.clips.map((clip) =>
+                    recIds.has(clip.id) ? { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) } : clip
+                ),
+            };
+        });
         return { ...cachedModel!, tracks: recTracks, dataDirty: true };
     }
 

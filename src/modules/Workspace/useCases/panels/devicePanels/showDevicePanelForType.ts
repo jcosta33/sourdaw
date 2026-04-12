@@ -44,13 +44,15 @@ const DEVICE_TYPE_TO_PANEL_EVENT: Partial<Record<string, DevicePanelEvent>> = {
 export const showDevicePanelForType = inject({ eventBus })(
     ({ eventBus }) =>
         (function showDevicePanelForType(deviceType: string, deviceId: string): void {
+            const event = DEVICE_TYPE_TO_PANEL_EVENT[deviceType];
+            if (!event) {
+                return;
+            }
+
             // Unified event — new subscribers should listen to this
             eventBus.emit('panel.showDevice', { deviceType, deviceId });
 
             // Legacy per-device event — kept for backward compatibility
-            const event = DEVICE_TYPE_TO_PANEL_EVENT[deviceType];
-            if (event) {
-                eventBus.emit(event, { deviceId });
-            }
+            eventBus.emit(event, { deviceId });
         })
 );

@@ -161,6 +161,11 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
 
             const dpr = window.devicePixelRatio || 1;
             const visiblePitches = getVisiblePitches(st, sr, folded);
+            // Build O(1) pitch→row lookup to avoid indexOf scans in draw passes
+            const pitchToRow = new Map<number, number>();
+            for (let i = 0; i < visiblePitches.length; i++) {
+                pitchToRow.set(visiblePitches[i]!, i);
+            }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
             const containerW = canvas.parentElement?.clientWidth ?? GRID_BEATS * bw;
             const totalWidth = Math.max(containerW, GRID_BEATS * bw);
@@ -237,13 +242,13 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 ctx.save();
                 ctx.translate(0, RULER_HEIGHT);
                 if (ghost && tracks) {
-                    drawGhostNotes(ctx, visiblePitches, bw, midiState?.notesByClipId ?? null, tracks, tId, cId);
+                    drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId);
                 }
-                drawActiveNotes(ctx, visiblePitches, notes, bw, selIds, tracks, tId, cId, deps.dragPreviewRef.current);
+                drawActiveNotes(ctx, pitchToRow, notes, bw, selIds, tracks, tId, cId, deps.dragPreviewRef.current);
                 if (si) {
                     drawStepCursor(ctx, sb, bw, gs, noteAreaHeight);
                 }
-                drawPreview(ctx, visiblePitches, bw, deps.drawPreviewRef.current);
+                drawPreview(ctx, pitchToRow, bw, deps.drawPreviewRef.current);
                 drawRubberBand(ctx, deps.rubberBandRef.current);
                 ctx.restore();
             }
@@ -399,7 +404,7 @@ function drawNoteGrid(
 
 function drawGhostNotes(
     ctx: CanvasRenderingContext2D,
-    visiblePitches: number[],
+    pitchToRow: Map<number, number>,
     beatWidth: number,
     midiNotesByClipId: Record<string, MidiNote[]> | null,
     tracks: Array<{
@@ -423,7 +428,7 @@ function drawGhostNotes(
             }
             const ghostClipColor = otherClip.color || otherTrack.color;
             for (const gn of otherNotes) {
-                drawGhostNote(ctx, visiblePitches, beatWidth, gn, ghostClipColor, 0.06, 0.1);
+                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostClipColor, 0.06, 0.1);
             }
         }
     }
@@ -440,7 +445,7 @@ function drawGhostNotes(
             }
             const ghostColor = sameTrackClip.color || activeTrack.color;
             for (const gn of ghostNotes) {
-                drawGhostNote(ctx, visiblePitches, beatWidth, gn, ghostColor, 0.08, 0.12);
+                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostColor, 0.08, 0.12);
             }
         }
     }
@@ -448,14 +453,14 @@ function drawGhostNotes(
 
 function drawGhostNote(
     ctx: CanvasRenderingContext2D,
-    visiblePitches: number[],
+    pitchToRow: Map<number, number>,
     beatWidth: number,
     note: MidiNote,
     color: string,
     fillAlpha: number,
     strokeAlpha: number
 ): void {
-    const row = visiblePitches.indexOf(note.pitch);
+    const row = pitchToRow.get(note.pitch) ?? -1;
     if (row === -1) {
         return;
     }
@@ -483,7 +488,7 @@ type DragPreview = {
 
 function drawActiveNotes(
     ctx: CanvasRenderingContext2D,
-    visiblePitches: number[],
+    pitchToRow: Map<number, number>,
     notes: MidiNote[],
     beatWidth: number,
     selectedNoteIds: Set<string>,
@@ -520,7 +525,7 @@ function drawActiveNotes(
             }
         }
 
-        const row = visiblePitches.indexOf(displayPitch);
+        const row = pitchToRow.get(displayPitch) ?? -1;
         if (row === -1) {
             continue;
         }
@@ -585,14 +590,14 @@ function drawStepCursor(
 
 function drawPreview(
     ctx: CanvasRenderingContext2D,
-    visiblePitches: number[],
+    pitchToRow: Map<number, number>,
     beatWidth: number,
     preview: { beat: number; pitch: number; duration: number } | null
 ): void {
     if (!preview) {
         return;
     }
-    const dpRow = visiblePitches.indexOf(preview.pitch);
+    const dpRow = pitchToRow.get(preview.pitch) ?? -1;
     if (dpRow === -1) {
         return;
     }
