@@ -4,7 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { audioBufferToWav } from './audioBufferToWav';
+import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({
     execute: async (a) => {
@@ -31,7 +31,7 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
         }
 
         try {
-            const wavData = audioBufferToWav(sourceBuffer);
+            const wavData = await audioBufferToWav(sourceBuffer);
 
             const stemResults = await doSeparateStems(wavData, stems);
 

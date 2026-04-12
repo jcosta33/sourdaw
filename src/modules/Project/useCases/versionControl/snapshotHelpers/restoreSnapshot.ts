@@ -14,6 +14,10 @@ export const restoreSnapshot = inject({ logger })(
         (function restoreSnapshot(snapshot: ProjectSnapshot): void {
             try {
                 const parsed = JSON.parse(snapshot.data);
+                if (typeof parsed !== 'object' || parsed === null) {
+                    logger.warn('Snapshot data is not a valid object — skipping restore');
+                    return;
+                }
                 if (parsed.tracks) {
                     trackStore.set(parsed.tracks);
                 }

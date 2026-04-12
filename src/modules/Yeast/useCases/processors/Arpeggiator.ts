@@ -303,6 +303,8 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.held.push(hn);
 
         if (this.latchEnabled) {
+            // Audio-thread note: shallow copy of small held-notes array (typically <12 items).
+            // Low-impact allocation — pre-allocated ring buffer not warranted for this size.
             this.latched = [...this.held];
         }
     }

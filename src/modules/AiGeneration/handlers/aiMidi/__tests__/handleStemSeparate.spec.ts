@@ -34,7 +34,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     separateStems: mocks.separateStems,
 }));
 
-vi.mock('../audioBufferToWav', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioBufferToWav: mocks.audioBufferToWav,
 }));
 

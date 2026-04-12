@@ -1,6 +1,12 @@
-import { type GrandBouleMidiCalibration } from '../../models/GrandBouleMidiCalibration';
+import { clamp } from '#/utils/Math/clamp';
+
+import {
+    type GrandBouleMidiCalibration,
+    MIDI_CALIBRATION_RANGES,
+} from '../../models/GrandBouleMidiCalibration';
 import { grandBouleStore } from '../../stores/grandBouleStore';
-export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+export { clamp };
 
 export const updateCalibration = (patch: Partial<GrandBouleMidiCalibration>): void => {
     const state = grandBouleStore.value;
@@ -11,4 +17,16 @@ export const updateCalibration = (patch: Partial<GrandBouleMidiCalibration>): vo
         ...state,
         midiCalibration: { ...state.midiCalibration, ...patch },
     });
+};
+
+/**
+ * Generic setter for any MIDI calibration parameter.
+ * Looks up the range from MIDI_CALIBRATION_RANGES and clamps the value.
+ */
+export const setMidiCalibrationParam = (
+    key: keyof GrandBouleMidiCalibration,
+    value: number,
+): void => {
+    const r = MIDI_CALIBRATION_RANGES[key];
+    updateCalibration({ [key]: clamp(value, r.min, r.max) });
 };
