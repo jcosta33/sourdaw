@@ -12,26 +12,26 @@ Analysed the full frontend from `src/app/main.tsx` inward through every major mo
 
 ## Resolved findings (updated 2026-04-13)
 
-The following sections have been addressed in branch `agent/refactor-code-quality` (20 commits, 868 files):
+The following sections have been addressed in branch `agent/refactor-code-quality` (25 commits, 883 files):
 
 **Bugs/Correctness:** §1.1 ✅, §1.2 ✅, §1.3 ✅ (UUID counters), §1.4 ✅, §1.5 ✅ (MIDI cleanup in remove+ripple)
 **Architecture:** §2.1 ✅, §2.2 ✅, §2.3 ✅, §2.4 ✅, §2.5 ✅, §2.6 ✅ (zero violations all modules)
 **Structural:** §3.2 ✅ (generic panel event), §3.4 ✅, §3.5 ✅, §3.6 ✅, §4.1 ✅, §8.3 ✅
-**Typing:** §5.2 ✅, §5.3 ✅, §5.5 ✅ (Grinder/Gluten meters)
+**Typing:** §5.2 ✅, §5.3 ✅, §5.5 ✅ (Grinder/Gluten meters), §41.2 ✅ (AppAction unions tightened), §45.2 ✅ (collision detection)
 **Convention:** §7.1/17.1 ✅ (ESLint enforced), §23.3 ✅ (64 calls migrated to logger)
 **MIDI:** §9.1 ✅, §9.2 ✅ (updateNotesForClip helper), §46 ✅ (transform helper)
 **Infra:** §10.1 ⚠️ (documented — needs DI inversion spec)
-**Collaboration:** §13.1 ✅ (11 stores reset), §14.2 ✅, §27 ✅, §51.1 ✅, §51.2 ✅, §100.1 ✅
+**Collaboration:** §13.1 ✅ (11 stores reset), §14.2 ✅, §27 ✅, §51.1 ✅, §51.2 ✅, §100.1 ✅, §101.1 ✅ (snapshot validation)
 **Transport:** §11.1 ✅, §23.2 ✅, §28.2 ✅, §55.1 ✅, §80.1 ✅ (dispatch map), §85.1 ✅
-**AudioEngine:** §23.1 ✅, §25.1 ✅, §25.2 ✅ (named nodes), §25.3 ✅ (LFO dispose), §25.4 ✅, §29 ✅
-**AI:** §15.1 ✅ (prompt extracted), §48 ✅ (handler factory), §50 ✅ (notifications), §59 ✅
+**AudioEngine:** §16.2 ✅ (WAV encoder dedup), §23.1 ✅, §25.1 ✅, §25.2 ✅ (named nodes), §25.3 ✅ (LFO dispose), §25.4 ✅, §29 ✅, §132.1 ✅ (ShortTermLUFS)
+**AI:** §15.1 ✅ (prompt extracted), §48 ✅ (handler factory), §50 ✅ (notifications), §59 ✅, §91.3 ✅ (if/else)
 **Arrangement bugs:** §30.1 ✅, §30.2 ✅, §30.3 ✅, §30.4 ✅, §30.5 ✅, §32 ✅
-**Plugin:** §33.1 ✅, §53 ✅ (shared createFindDeviceRef)
+**Plugin:** §33.1 ✅, §52.2 ✅, §52.3 ✅ (calibration consolidation), §53 ✅ (shared createFindDeviceRef)
 **Constants:** §43 ✅ (shared NOTE_NAMES), §98.1 ✅, §110.1 ✅, §114.2 ✅, §138.3 ✅
 **ID counters:** §95.1 ✅, §95.2 ✅, §122.1 ✅ (all UUID), §56.4 ✅
-**Performance:** §49.1 ✅, §49.2 ✅ (BaseMidiProcessor), §54.1 ✅, §55.1 ✅, §56.3 ✅, §74.2 ✅, §76.1 ✅, §82.1 ✅, §85.1 ✅, §86.1 ✅, §86.2 ✅, §108.1-108.3 ✅, §117.2 ✅, §126.1 ✅, §133.1 ✅, §134.1 ✅, §141.1-141.3 ✅, §153.2 ✅
+**Performance:** §49.1 ✅, §49.2 ✅ (BaseMidiProcessor), §54.1 ✅, §55.1 ✅, §56.3 ✅, §74.2 ✅, §76.1 ✅, §82.1 ✅, §85.1 ✅, §86.1 ✅, §86.2 ✅, §108.1-108.3 ✅, §117.2 ✅, §126.1 ✅, §132.1 ✅, §133.1 ✅, §134.1 ✅, §141.1-141.3 ✅, §148.1 ✅ (worklet shift→splice), §153.2 ✅
 **Mutable exports:** All `export let` → getter/setter (HMR safe)
-**Workspace:** §21.2 ✅ (PreferencesDialog split), §47.1 ✅ (generic event)
+**Workspace:** §12.3 ✅ (localStorage constant), §21.2 ✅ (PreferencesDialog split), §47.1 ✅ (generic event)
 
 ---
 
