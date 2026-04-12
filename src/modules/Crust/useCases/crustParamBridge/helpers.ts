@@ -1,6 +1,8 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
-export type DeviceRef = { trackId: string; deviceId: string };
+import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
+export { createFindDeviceRef };
+export type { DeviceRef, GetAllTracksFn };
 export const pendingUpdates = new Map<string, number>();
 export const latestValues = new Map<string, number>();
 
@@ -8,17 +10,6 @@ export type BridgeDeps = {
     updateDeviceParam: typeof updateDeviceParam;
     persistDeviceParam: typeof persistDeviceParam;
 };
-
-export function createFindDeviceRef(getAllTracksFn: typeof getAllTracks) {
-    return function findDeviceRef(deviceId: string): DeviceRef | null {
-        for (const track of getAllTracksFn()) {
-            if (track.devices.some((d) => d.id === deviceId)) {
-                return { trackId: track.id, deviceId };
-            }
-        }
-        return null;
-    };
-}
 
 export function createFlushHandlers(deps: BridgeDeps) {
     function flushParam(deviceId: string, ref: DeviceRef, key: string): void {

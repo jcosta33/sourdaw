@@ -39,10 +39,7 @@ import {
     getVisiblePitches,
 } from '../helpers/pianoRollConstants';
 
-type GestureEvent = UIEvent & {
-    readonly scale: number;
-    readonly rotation: number;
-};
+import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 
 type PianoRollChordType =
     | 'major'

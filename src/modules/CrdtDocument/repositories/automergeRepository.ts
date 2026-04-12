@@ -276,8 +276,8 @@ class AutomergeRepository {
             }
         }
 
-        for (const doc of this.docs.values()) {
-            Automerge.save(doc);
+        for (const [id, doc] of this.docs) {
+            this.docs.set(id, Automerge.load(Automerge.save(doc)) as Automerge.Doc<AnyDoc>);
         }
 
         this.notifyListeners();

@@ -4,19 +4,7 @@
  */
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
-
-type DeviceRef = { trackId: string; deviceId: string };
-
-function createFindDeviceRef(getAllTracksFn: typeof getAllTracks) {
-    return function findDeviceRef(deviceId: string): DeviceRef | null {
-        for (const track of getAllTracksFn()) {
-            if (track.devices.some((d) => d.id === deviceId)) {
-                return { trackId: track.id, deviceId };
-            }
-        }
-        return null;
-    };
-}
+import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 const findDeviceRef = createFindDeviceRef(getAllTracks);
 

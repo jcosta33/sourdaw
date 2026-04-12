@@ -24,8 +24,9 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { humanizeNotes } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
-// Local type aliases — duplicated from AiGeneration algorithm files to avoid
-// a circular module dependency (AiGeneration already imports from AiRuntime).
+// Synced from AiGeneration — keep in sync manually until circular dep is resolved.
+// These must match the VALID_* sets in generationHandlerHelpers.ts, which are the
+// runtime validation gates. Values not in those sets are silently rejected.
 type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
 type ScaleType =
     | 'major'

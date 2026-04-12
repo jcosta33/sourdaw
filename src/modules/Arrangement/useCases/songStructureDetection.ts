@@ -146,15 +146,15 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
         } else if (progress > 0.85 && i === mergedBoundaries.length - 1) {
             sectionInfo = SECTION_PALETTE[5]!; // Outro
             confidence = 0.8;
+        } else if (isHigh && progress > 0.5) {
+            sectionInfo = SECTION_PALETTE[7]!; // Drop
+            confidence = 0.6;
         } else if (isHigh) {
             sectionInfo = SECTION_PALETTE[3]!; // Chorus
             confidence = 0.7;
         } else if (isLow) {
             sectionInfo = SECTION_PALETTE[6]!; // Break
             confidence = 0.65;
-        } else if (isHigh && progress > 0.5) {
-            sectionInfo = SECTION_PALETTE[7]!; // Drop
-            confidence = 0.6;
         } else if (!isHigh && !isLow) {
             // Check if this leads into a high energy section → Pre-Chorus
             if (i + 1 < mergedBoundaries.length) {

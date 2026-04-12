@@ -1,9 +1,6 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 
-type GestureEvent = UIEvent & {
-    readonly scale: number;
-    readonly rotation: number;
-};
+import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
