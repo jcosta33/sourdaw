@@ -12,6 +12,22 @@ import {
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
 
+// Pre-generated noise buffer (§54.1 — avoid per-note AudioBuffer allocation)
+let cachedNoiseBuffer: AudioBuffer | null = null;
+function getNoiseBuffer(ctx: BaseAudioContext): AudioBuffer {
+    if (cachedNoiseBuffer && cachedNoiseBuffer.sampleRate === ctx.sampleRate) {
+        return cachedNoiseBuffer;
+    }
+    const len = Math.ceil(ctx.sampleRate * 0.1); // 100ms of noise
+    const buf = new AudioBuffer({ numberOfChannels: 1, length: len, sampleRate: ctx.sampleRate });
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    cachedNoiseBuffer = buf;
+    return buf;
+}
+
 const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'waveform',
     'attack',
@@ -162,15 +178,8 @@ export function scheduleNote(
     let noiseSource: AudioBufferSourceNode | null = null;
     if (params.noiseLevel > 0) {
         const noiseAttackDecay = 0.05; // 50ms burst
-        const noiseDuration = noiseAttackDecay + 0.05; // short burst + tail
-        const noiseLen = Math.ceil(ctx.sampleRate * noiseDuration);
-        const noiseBuffer = new AudioBuffer({ numberOfChannels: 1, length: noiseLen, sampleRate: ctx.sampleRate });
-        const data = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < noiseLen; i++) {
-            data[i] = Math.random() * 2 - 1;
-        }
         noiseSource = ctx.createBufferSource();
-        noiseSource.buffer = noiseBuffer;
+        noiseSource.buffer = getNoiseBuffer(ctx);
         const noiseGain = ctx.createGain();
         // Fast attack-decay envelope for the noise burst
         noiseGain.gain.setValueAtTime(params.noiseLevel * 0.5, startTime);

@@ -1,4 +1,4 @@
-import { mapAllTracks } from '#/modules/Arrangement/repositories/track/mapAllTracks';
+import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 
 export function acceptGhostClip(clipId: string): void {
     mapAllTracks((t) => ({

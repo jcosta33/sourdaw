@@ -7,37 +7,37 @@
  */
 
 // ── Track: clip editing ───────────────────────────────────────────
-export { splitClip } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
-export { splitClipWithUndo } from '#/modules/Arrangement/useCases/clipEditing/splitClipWithUndo';
-export { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
-export { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
-export { lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
-export { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
-export { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
-export { muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
-export { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
-export { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
+export { splitClip } from './clipEditing/splitClip';
+export { splitClipWithUndo } from './clipEditing/splitClipWithUndo';
+export { normalizeClip } from './clipEditing/normalizeClip';
+export { reverseClip } from './clipEditing/reverseClip';
+export { lockClip } from './clipEditing/lockClip';
+export { setClipColor } from './clipEditing/setClipColor';
+export { renameClip } from './clipEditing/renameClip';
+export { muteClip } from './clipEditing/muteClip';
+export { trimClipStart } from './clipEditing/trimClipStart';
+export { trimClipEnd } from './clipEditing/trimClipEnd';
 
 // ── Track: clip operations ────────────────────────────────────────
-export { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-export { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
-export { duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
-export { duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
-export { moveClipPreview } from '#/modules/Arrangement/useCases/clip/moveClipPreview';
-export { moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
+export { addClip } from './clip/addClip';
+export { removeClip } from './clip/removeClip';
+export { duplicateClip } from './clip/duplicateClip';
+export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
+export { moveClipPreview } from './clip/moveClipPreview';
+export { moveClip } from './clip/moveClip';
 
 // ── Track: clipboard ──────────────────────────────────────────────
-export { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
-export { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
-export { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
+export { copySelectedClip } from './clipboard/copySelectedClip';
+export { cutSelectedClip } from './clipboard/cutSelectedClip';
+export { pasteClip } from './clipboard/pasteClip';
 
 // ── Track: general ────────────────────────────────────────────────
-export { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
-export { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-export { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-export { exportMidiClip } from '#/modules/Arrangement/useCases/exportMidiClip';
-export { importMidiFile } from '#/modules/Arrangement/useCases/importMidiFile';
-export { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
+export { selectTrack } from './toggleTrackState/selectTrack';
+export { addTrack } from './addTrack';
+export { addDevice } from './device/addDevice';
+export { exportMidiClip } from './exportMidiClip';
+export { importMidiFile } from './importMidiFile';
+export { stripSilence } from './stripSilence';
 
 // ── Track: automation ─────────────────────────────────────────────
 export {

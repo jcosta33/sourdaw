@@ -1,9 +1,10 @@
 import { midiStore } from '#/modules/MIDI/stores';
 import { createMidiNote } from '#/modules/MIDI/useCases';
-import { type MidiNote } from '#/modules/Arrangement/models/MidiNoteViewTypes';
-import { noteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
+import { type MidiNote } from '../../models/MidiNoteViewTypes';
+import { clipboardStore } from '../../stores/clipboardStore';
 
 export function pasteNotes(clipId: string, beatOffset: number): void {
+    const noteClipboard = clipboardStore.value?.noteClipboard ?? null;
     if (!noteClipboard || noteClipboard.notes.length === 0) {
         return;
     }

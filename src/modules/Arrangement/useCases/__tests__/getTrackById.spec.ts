@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '../../models/Track';
 import { getTrackById } from '../getTrackById';
 import { getTrackById as repoGetTrackById } from '../../repositories/track/getTrackById';
 

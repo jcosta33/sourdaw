@@ -1,8 +1,8 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { type Clip } from '#/modules/Arrangement/stores/trackStore';
-import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
-import { snapSplitBeatToZeroCrossing } from '#/modules/Arrangement/services/snapSplitBeatToZeroCrossing';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
+import { type Clip } from '../../stores/trackStore';
+import { getNextClipId } from '../../repositories/clipIdCounter';
+import { snapSplitBeatToZeroCrossing } from '../../services/snapSplitBeatToZeroCrossing';
 
 export function splitClip(clipId: string, splitBeat: number): void {
     const state = getTrackState();

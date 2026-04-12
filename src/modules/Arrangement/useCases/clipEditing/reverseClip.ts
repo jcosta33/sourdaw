@@ -1,5 +1,5 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateClip } from '../../repositories/track/updateClip';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 export function reverseClip(clipId: string): void {

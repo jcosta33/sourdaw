@@ -1,7 +1,7 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { updateTrack } from '#/modules/Arrangement/repositories/track/updateTrack';
-import { type Clip } from '#/modules/Arrangement/models/Track';
-import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateTrack } from '../../repositories/track/updateTrack';
+import { type Clip } from '../../models/Track';
+import { getNextClipId } from '../../repositories/clipIdCounter';
 
 export function glueClips(clipIds: string[]): void {
     const state = getTrackState();

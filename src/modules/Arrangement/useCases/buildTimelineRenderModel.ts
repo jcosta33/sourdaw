@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '../stores/trackStore';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { midiStore } from '#/modules/MIDI/stores';

@@ -1,8 +1,8 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { updateClip } from '#/modules/Arrangement/repositories/track/updateClip';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateClip } from '../../repositories/track/updateClip';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { splitClip } from './splitClip';
-import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
+import { removeClip } from '../clip/removeClip';
 
 export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     const origClip = getTrackState()

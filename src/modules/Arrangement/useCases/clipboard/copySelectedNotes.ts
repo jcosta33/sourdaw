@@ -1,5 +1,5 @@
 import { midiStore } from '#/modules/MIDI/stores';
-import { setNoteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
+import { setNoteClipboard } from '../../stores/clipboardStore';
 
 export const copySelectedNotesDependencies = {
     midiStore,

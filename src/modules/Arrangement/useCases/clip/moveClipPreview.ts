@@ -1,6 +1,6 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
-import { setTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
+import { type Clip } from '../../models/Track';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 
 export function moveClipPreview(clipId: string, targetTrackId: string, startBeat: number): void {

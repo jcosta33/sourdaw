@@ -1,7 +1,7 @@
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { createTrack } from '../models/Track';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { addClip } from './clip/addClip';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';

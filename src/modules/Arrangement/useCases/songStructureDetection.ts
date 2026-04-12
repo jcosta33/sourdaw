@@ -8,9 +8,9 @@
  * and pattern repetition detection for MIDI clips.
  */
 
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { createSection, type ArrangementSection } from '#/modules/Arrangement/models/Marker';
+import { trackStore } from '../stores/trackStore';
+import { markerStore } from '../stores/markerStore';
+import { createSection, type ArrangementSection } from '../models/Marker';
 
 /** Standard song section names with associated colors */
 const SECTION_PALETTE = [

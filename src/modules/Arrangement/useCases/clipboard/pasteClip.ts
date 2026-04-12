@@ -1,13 +1,14 @@
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { getTrackState } from '../../repositories/track/getTrackState';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { createMidiNote } from '#/modules/MIDI/useCases';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { type MidiNote } from '#/modules/Arrangement/models/MidiNoteViewTypes';
-import { clipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
+import { addClip } from '../clip/addClip';
+import { type MidiNote } from '../../models/MidiNoteViewTypes';
+import { clipboardStore } from '../../stores/clipboardStore';
 
 export function pasteClip(): void {
+    const clipClipboard = clipboardStore.value?.clipClipboard ?? [];
     if (clipClipboard.length === 0) {
         return;
     }

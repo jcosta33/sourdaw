@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { copySelectedNotes } from '../copySelectedNotes';
 import { midiStore } from '#/modules/MIDI/stores';
-import { setNoteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
+import { setNoteClipboard } from '../../../stores/clipboardStore';
 
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {

@@ -26,7 +26,7 @@ export class Humanizer implements MidiProcessor {
     private bypassed = false;
     private rngState = 0xcafe;
     // Track timing offsets for matching Note Offs
-    private noteTimingMap = new Map<string, number>(); // "ch:note" → timing offset samples
+    private noteTimingMap = new Map<number, number>(); // ch*128+note → timing offset samples
 
     constructor(id?: string) {
         this.id = id ?? `humanize-${Date.now()}`;
@@ -39,7 +39,7 @@ export class Humanizer implements MidiProcessor {
                 const timingOffsetSamples = Math.round(timingOffsetMs * 0.001 * transport.sampleRate);
                 const velOffset = Math.round(this.gaussian(0, this.velSigma));
 
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = event.kind.channel * 128 + event.kind.note;
                 this.noteTimingMap.set(key, timingOffsetSamples);
 
                 output.push({
@@ -52,7 +52,7 @@ export class Humanizer implements MidiProcessor {
                     },
                 });
             } else if (event.kind.type === 'noteOff') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = event.kind.channel * 128 + event.kind.note;
                 const offset = this.noteTimingMap.get(key) ?? 0;
                 this.noteTimingMap.delete(key);
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { selectTrack } from '../timelineViewActions';
-import * as selectTrackModule from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
+import * as selectTrackModule from '../toggleTrackState/selectTrack';
 
 describe('timelineViewActions', () => {
     it('re-exports selectTrack from toggleTrackState', () => {

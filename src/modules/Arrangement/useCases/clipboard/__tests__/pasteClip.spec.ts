@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setClipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
+import { setClipClipboard } from '../../../stores/clipboardStore';
 import { pasteClip } from '../pasteClip';
-import { getTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import { getTrackState } from '../../../repositories/track/getTrackState';
 import { getTransportState } from '#/modules/Transport/useCases';
 
-vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
+vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: vi.fn(),
 }));
-vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
+vi.mock('../../clip/addClip', () => ({
     addClip: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({

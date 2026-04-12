@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '../../stores/trackStore';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { midiStore } from '#/modules/MIDI/stores';

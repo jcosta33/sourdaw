@@ -1,6 +1,6 @@
-import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
-import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '#/modules/Arrangement/repositories/presets/factoryPresets';
-import { BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
+import { type SoundPreset } from '../models/SoundPreset';
+import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '../repositories/presets/factoryPresets';
+import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
 
 let cachedPresets: SoundPreset[] | null = null;
 let cachedPlatformKey: string | null = null;
