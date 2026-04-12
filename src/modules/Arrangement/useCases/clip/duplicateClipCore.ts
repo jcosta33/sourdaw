@@ -1,5 +1,5 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
-import { duplicateClipAutomation } from '#/modules/Automation';
+import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { addClip } from './addClip';
 import { type Clip } from '../../models/Track';
 
