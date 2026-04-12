@@ -1,4 +1,4 @@
-import * as bridge from '../../repositories/samplerBridge';
+import { samplerNoteOn } from '../../repositories/samplerBridge';
 import { samplerStore } from '../../stores/samplerStore';
 import { padStore } from '../../stores/padStore';
 
@@ -11,7 +11,7 @@ export async function triggerPadOn(padIndex: number, velocity: number = 100): Pr
     if (!pad) return;
 
     try {
-        await bridge.samplerNoteOn(state.instanceId, pad.midiNote, velocity);
+        await samplerNoteOn(state.instanceId, pad.midiNote, velocity);
     } catch (err) {
         console.error('Note trigger failed:', err);
     }

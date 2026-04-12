@@ -259,7 +259,9 @@ if (backend === 'native') {
     await streamNativeCompletion(
         completionMessages,
         (token) => {
-            if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
+            if (aborter.signal.aborted) {
+                throw createAiRuntimeError('AbortedByUser');
+            }
             fullContent += token;
             const parsed = extractThinkBlock(fullContent);
             updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
@@ -271,7 +273,9 @@ if (backend === 'native') {
     await streamCloudChatCompletion(
         completionMessages,
         (token) => {
-            if (aborter.signal.aborted) throw createAiRuntimeError('AbortedByUser');
+            if (aborter.signal.aborted) {
+                throw createAiRuntimeError('AbortedByUser');
+            }
             fullContent += token;
             const parsed = extractThinkBlock(fullContent);
             updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });

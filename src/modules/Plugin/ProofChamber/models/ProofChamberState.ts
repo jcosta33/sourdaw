@@ -1,6 +1,6 @@
 export type ProofChamberAlgorithm = 'Dattorro Plate' | 'FDN Room' | 'Spring' | 'Convolution';
 
-export interface ProofChamberEngineState {
+export type ProofChamberEngineState = {
     algorithm: ProofChamberAlgorithm;
 
     // Level 1 Parameters
@@ -15,14 +15,14 @@ export interface ProofChamberEngineState {
     modulationDepth: number; // 0.0 - 1.0
     bandwidth: number; // 0.0 - 0.999999
     damping: number; // 0.0 - 0.999999
-}
+};
 
-export interface ProofChamberPluginState {
+export type ProofChamberPluginState = {
     id: string;
     engineState: ProofChamberEngineState;
     uiLevel: 1 | 2 | 3 | 4 | 5; // Progressive disclosure level
     isBypassed: boolean;
-}
+};
 
 export function createDefaultChamberState(id: string): ProofChamberPluginState {
     return {

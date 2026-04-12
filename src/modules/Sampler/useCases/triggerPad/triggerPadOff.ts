@@ -1,4 +1,4 @@
-import * as bridge from '../../repositories/samplerBridge';
+import { samplerNoteOff } from '../../repositories/samplerBridge';
 import { samplerStore } from '../../stores/samplerStore';
 import { padStore } from '../../stores/padStore';
 
@@ -11,7 +11,7 @@ export async function triggerPadOff(padIndex: number): Promise<void> {
     if (!pad) return;
 
     try {
-        await bridge.samplerNoteOff(state.instanceId, pad.midiNote);
+        await samplerNoteOff(state.instanceId, pad.midiNote);
     } catch (err) {
         console.error('Note release failed:', err);
     }

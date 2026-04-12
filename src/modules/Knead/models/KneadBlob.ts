@@ -1,4 +1,4 @@
-export interface NoteBlob {
+export type NoteBlob = {
     id: string;
     startTime: number; // in seconds
     endTime: number; // in seconds
@@ -11,9 +11,9 @@ export interface NoteBlob {
     formantShiftCents: number;
     gainDb: number;
     muted: boolean;
-}
+};
 
-export interface KneadTrackState {
+export type KneadTrackState = {
     trackId: string;
     blobs: NoteBlob[];
     retuneSpeedMs: number;
@@ -21,4 +21,4 @@ export interface KneadTrackState {
     toleranceTimeMs: number;
     humanizePercent: number;
     formantPreserve: boolean;
-}
+};

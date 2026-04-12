@@ -28,14 +28,18 @@ export const padStore = createStore<PadState>({
 
 export function selectPad(index: number): void {
     padStore.update((s) => {
-        if (!s || index < 0 || index >= s.pads.length) return s;
+        if (!s || index < 0 || index >= s.pads.length) {
+            return s;
+        }
         return { ...s, selectedPadIndex: index };
     });
 }
 
 export function updatePad(index: number, updates: Partial<PadConfig>): void {
     padStore.update((s) => {
-        if (!s || !s.pads[index]) return s;
+        if (!s || !s.pads[index]) {
+            return s;
+        }
         const pads = [...s.pads];
         pads[index] = { ...pads[index]!, ...updates };
         return { ...s, pads };
@@ -48,7 +52,9 @@ export function assignSampleToPad(index: number, sampleId: number, name: string)
 
 export function resetPad(index: number): void {
     padStore.update((s) => {
-        if (!s) return s;
+        if (!s) {
+            return s;
+        }
         const pads = [...s.pads];
         const channelStrips = [...s.channelStrips];
         pads[index] = createDefaultPad(index);
@@ -59,7 +65,9 @@ export function resetPad(index: number): void {
 
 export function updateChannelStrip(index: number, updates: Partial<PadChannelStrip>): void {
     padStore.update((s) => {
-        if (!s || !s.channelStrips[index]) return s;
+        if (!s || !s.channelStrips[index]) {
+            return s;
+        }
         const channelStrips = [...s.channelStrips];
         channelStrips[index] = { ...channelStrips[index]!, ...updates };
         return { ...s, channelStrips };
@@ -68,10 +76,18 @@ export function updateChannelStrip(index: number, updates: Partial<PadChannelStr
 
 export function reorderPad(fromIndex: number, toIndex: number): void {
     padStore.update((s) => {
-        if (!s) return s;
-        if (fromIndex < 0 || fromIndex >= s.pads.length) return s;
-        if (toIndex < 0 || toIndex >= s.pads.length) return s;
-        if (fromIndex === toIndex) return s;
+        if (!s) {
+            return s;
+        }
+        if (fromIndex < 0 || fromIndex >= s.pads.length) {
+            return s;
+        }
+        if (toIndex < 0 || toIndex >= s.pads.length) {
+            return s;
+        }
+        if (fromIndex === toIndex) {
+            return s;
+        }
 
         const pads = [...s.pads];
         const channelStrips = [...s.channelStrips];

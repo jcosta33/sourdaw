@@ -84,8 +84,12 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
             const { width, height } = entries[0]!.contentRect;
             const w = Math.round(width * devicePixelRatio);
             const h = Math.round(height * devicePixelRatio);
-            if (canvas.width !== w) canvas.width = w;
-            if (canvas.height !== h) canvas.height = h;
+            if (canvas.width !== w) {
+                canvas.width = w;
+            }
+            if (canvas.height !== h) {
+                canvas.height = h;
+            }
         });
         observer.observe(container);
 
@@ -130,11 +134,15 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
                 const y = Math.floor(row * rowH);
                 const nextY = Math.floor((row + 1) * rowH);
                 const rh = nextY - y;
-                if (rh <= 0) continue;
+                if (rh <= 0) {
+                    continue;
+                }
 
                 for (let c = 0; c < DISPLAY_COLS; c++) {
                     const mag = rowData[c]!;
-                    if (mag <= 0.01) continue;
+                    if (mag <= 0.01) {
+                        continue;
+                    }
                     const [r, g, b, a] = colorMap(mag);
                     ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${(a / 255).toFixed(2)})`;
                     const x = Math.floor(c * colW);

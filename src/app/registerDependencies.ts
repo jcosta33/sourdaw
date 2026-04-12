@@ -1,9 +1,8 @@
 import { createEventBus } from '#/infra/events/createEventBus';
 import { logger } from '#/infra/logger/appLogger';
 
-import { type TrackAddedPayload } from '#/modules/Arrangement/events/TrackAddedEvent';
-import { type TrackRemovedPayload } from '#/modules/Arrangement/events/TrackRemovedEvent';
-import { type AudioDeviceLoadedPayload } from '#/modules/AudioEngine/events/AudioDeviceLoadedEvent';
+import { type TrackAddedPayload, type TrackRemovedPayload } from '#/modules/Arrangement/events';
+import { type AudioDeviceLoadedPayload } from '#/modules/AudioEngine/events';
 import {
     type ShowDevicePanelPayload,
     type VoidPayload,
@@ -15,7 +14,7 @@ import {
     type MidiNoteOnPayload,
     type MidiNoteOffPayload,
     type MidiPedalCcPayload,
-} from '#/modules/Workspace/events/WorkspaceEvents';
+} from '#/modules/Workspace/events';
 
 export type AppEvents = {
     // Domain events

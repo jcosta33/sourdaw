@@ -94,7 +94,9 @@ export class Arpeggiator implements MidiProcessor {
         }
 
         // Advance arp steps within the current block time range
-        if (!transport.isPlaying) return;
+        if (!transport.isPlaying) {
+            return;
+        }
 
         const stepLenSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
         const blockEnd =
@@ -294,7 +296,9 @@ export class Arpeggiator implements MidiProcessor {
 
     private addHeldNote(channel: number, note: number, velocity: number): void {
         // Avoid duplicates
-        if (this.held.some((h) => h.channel === channel && h.note === note)) return;
+        if (this.held.some((h) => h.channel === channel && h.note === note)) {
+            return;
+        }
 
         this.pressCounter++;
         const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter };
@@ -317,7 +321,9 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private expandOctaves(pool: HeldNote[]): HeldNote[] {
-        if (this.octaveRange <= 1) return pool;
+        if (this.octaveRange <= 1) {
+            return pool;
+        }
 
         const expanded: HeldNote[] = [];
         const octaves: number[] = [];
@@ -344,7 +350,9 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private selectStepNotes(pool: HeldNote[]): HeldNote[] {
-        if (pool.length === 0) return [];
+        if (pool.length === 0) {
+            return [];
+        }
 
         // Sort pool by pitch for Up/Down modes, by press order for Order mode
         const byPitch = [...pool].sort((a, b) => a.note - b.note);
@@ -380,14 +388,18 @@ export class Arpeggiator implements MidiProcessor {
     }
 
     private reflectedIndex(step: number, len: number): number {
-        if (len <= 1) return 0;
+        if (len <= 1) {
+            return 0;
+        }
         const cycle = (len - 1) * 2;
         const pos = step % cycle;
         return pos < len ? pos : cycle - pos;
     }
 
     private advanceStep(poolSize: number): void {
-        if (poolSize === 0) return;
+        if (poolSize === 0) {
+            return;
+        }
         this.stepIndex++;
     }
 

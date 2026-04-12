@@ -726,7 +726,9 @@ async function compressInvite(json: string): Promise<string> {
     const reader = stream.readable.getReader();
     for (;;) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+            break;
+        }
         chunks.push(value!);
     }
     const total = chunks.reduce((n, c) => n + c.length, 0);
@@ -755,7 +757,9 @@ async function decompressInvite(raw: string): Promise<string> {
     const reader = stream.readable.getReader();
     for (;;) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+            break;
+        }
         chunks.push(value!);
     }
     const total = chunks.reduce((n, c) => n + c.length, 0);

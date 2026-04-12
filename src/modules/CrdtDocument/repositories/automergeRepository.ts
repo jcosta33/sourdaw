@@ -30,7 +30,9 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
         const id = _crdtWorkerNextId++;
         const handler = (e: MessageEvent): void => {
             const data = e.data as WorkerResponse;
-            if (data.id !== id) return;
+            if (data.id !== id) {
+                return;
+            }
             worker.removeEventListener('message', handler);
             if (data.type === 'error') {
                 reject(new Error(data.message));

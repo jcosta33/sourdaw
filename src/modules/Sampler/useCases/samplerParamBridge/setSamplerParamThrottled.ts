@@ -1,4 +1,4 @@
-import * as bridge from '../../repositories/samplerBridge';
+import { setSamplerParam } from '../../repositories/samplerBridge';
 
 const pending = new Map<string, number>();
 const latest = new Map<string, { param: string; value: number }>();
@@ -8,7 +8,7 @@ function flushSamplerParam(cacheKey: string, instanceId: string): void {
     const entry = latest.get(cacheKey);
     if (!entry) return;
     latest.delete(cacheKey);
-    bridge.setSamplerParam(instanceId, entry.param, entry.value).catch((err) => {
+    setSamplerParam(instanceId, entry.param, entry.value).catch((err) => {
         console.error('Failed to set sampler param:', err);
     });
 }

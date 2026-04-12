@@ -198,7 +198,9 @@ class BitWriter {
     }
 
     writeBit(v: 0 | 1): void {
-        if (v) this.buf[this.pos]! |= 0x80 >> this.bit;
+        if (v) {
+            this.buf[this.pos]! |= 0x80 >> this.bit;
+        }
         if (++this.bit === 8) {
             this.bit = 0;
             this.buf[++this.pos] = 0;
@@ -289,14 +291,18 @@ function fixedResiduals(int16: Int32Array, blockStart: number, blockSize: number
 
 /** Choose the optimal Rice parameter k for an array of residuals. */
 function bestRiceK(res: Int32Array, start: number, count: number): number {
-    if (count === 0) return 0;
+    if (count === 0) {
+        return 0;
+    }
     let sum = 0;
     for (let i = 0; i < count; i++) {
         const r = res[start + i]!;
         sum += r >= 0 ? 2 * r : -2 * r - 1; // zigzag to unsigned
     }
     const mean = sum / count;
-    if (mean < 1) return 0;
+    if (mean < 1) {
+        return 0;
+    }
     return Math.min(14, Math.floor(Math.log2(mean)));
 }
 
@@ -357,7 +363,9 @@ function writeSubframeFixed(
         const r = res[i]!;
         const u = r >= 0 ? 2 * r : -2 * r - 1; // zigzag
         bw.writeUnary(u >> k);
-        if (k > 0) bw.writeBits(u & ((1 << k) - 1), k);
+        if (k > 0) {
+            bw.writeBits(u & ((1 << k) - 1), k);
+        }
     }
 }
 
@@ -369,7 +377,9 @@ function encodeSubframe(bw: BitWriter, int16: Int32Array, blockStart: number, bl
 
     for (let order = 0; order <= 4; order++) {
         // Predictor order must not exceed available warm-up samples
-        if (order > blockSize) break;
+        if (order > blockSize) {
+            break;
+        }
         const res = fixedResiduals(int16, blockStart, blockSize, order);
         const bits = fixedSubframeBits(res, blockSize - order, order);
         if (bits < bestBits) {
@@ -467,8 +477,11 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
         wb((blockSizeCode << 4) | 0x00); // block size code | sample rate code (0=from STREAMINFO)
         wb(((numChannels - 1) << 4) | (0x4 << 1) | 0); // channel assignment | sample size (0=from STREAMINFO) | reserved
         for (const b of encodeUtf8Number(frameNumber)) wb(b); // frame number (UTF-8 encoded)
-        if (blockSizeExtra === 8) wb(blockSize - 1);
-        else if (blockSizeExtra === 16) wbe16(blockSize - 1);
+        if (blockSizeExtra === 8) {
+            wb(blockSize - 1);
+        } else if (blockSizeExtra === 16) {
+            wbe16(blockSize - 1);
+        }
         wb(crc8(out, frameStart, pos)); // CRC-8 of header
 
         // Subframes — written bit-by-bit

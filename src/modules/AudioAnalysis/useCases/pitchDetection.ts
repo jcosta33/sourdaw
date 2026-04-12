@@ -11,6 +11,7 @@
 import { PitchDetector } from 'pitchy';
 
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { NOTE_NAMES } from '#/utils/noteNames';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -32,8 +33,6 @@ export type PitchTrackingOptions = {
     /** Minimum volume in dB to include a pitch (default -40) */
     minVolumeDb?: number;
 };
-
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
 // ── Core detection ──────────────────────────────────────────────────────
 

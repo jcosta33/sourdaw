@@ -336,7 +336,9 @@ async function scheduleTrackClips(
         const children = allTracks.filter((t) => t.parentId === track.id);
         for (let i = 0; i < children.length; i++) {
             const childTrack = children[i];
-            if (!childTrack) continue;
+            if (!childTrack) {
+                continue;
+            }
             const childClips = deps.resolveClipsWithComping(childTrack.id, childTrack.clips);
             clipsToProcess.push(...childClips.map((c) => ({ clip: c, padIndex: i })));
         }
@@ -786,7 +788,9 @@ export const renderOffline: RenderOfflineFn = inject({
 
         const renderTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
         const buffer = await renderWithTimeout(offlineCtx, renderTimeoutMs).finally(() => {
-            if (renderTimer !== null) clearInterval(renderTimer);
+            if (renderTimer !== null) {
+                clearInterval(renderTimer);
+            }
         });
 
         onProgress?.(1);
@@ -930,7 +934,9 @@ export const exportStems: ExportStemsFn = inject({
 
             const stemTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
             const buffer = await renderWithTimeout(offlineCtx, stemTimeoutMs).finally(() => {
-                if (stemTimer !== null) clearInterval(stemTimer);
+                if (stemTimer !== null) {
+                clearInterval(stemTimer);
+            }
             });
 
             stems.set(track.id, buffer);

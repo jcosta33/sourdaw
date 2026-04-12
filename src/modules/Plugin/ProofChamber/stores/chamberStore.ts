@@ -5,10 +5,10 @@ import {
     createDefaultChamberState,
 } from '../models/ProofChamberState';
 
-export interface ChamberStoreState {
+export type ChamberStoreState = {
     activeInstanceId: string | null;
     instances: Record<string, ProofChamberPluginState>;
-}
+};
 
 export const chamberStore = createStore<ChamberStoreState>({
     initialData: {

@@ -8,7 +8,7 @@ import { findWasmDescriptor } from './wasmDeviceRegistry';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { logger } from '#/infra/logger/appLogger';
 
-export interface TrackNodeDeps {
+export type TrackNodeDeps = {
     context: AudioContext;
     masterGainNode: GainNode;
     getBusGainNode: (busId: string) => GainNode | undefined;
@@ -16,7 +16,7 @@ export interface TrackNodeDeps {
     getSendsForTrack: (trackId: string) => SendNode[];
     pendingFaustParams: Map<string, Map<string, number>>;
     pendingDevicePromises: Set<Promise<any>>;
-}
+};
 
 export class TrackNode {
     public strip: TrackChannelStrip;

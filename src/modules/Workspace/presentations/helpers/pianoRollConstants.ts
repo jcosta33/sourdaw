@@ -3,7 +3,7 @@
  * Shared between the main view, renderer, gestures hook, and sub-components.
  */
 
-export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+export { NOTE_NAMES } from '#/utils/noteNames';
 export const TOTAL_ROWS = 60;
 export const BASE_PITCH = 24;
 export const ROW_HEIGHT = 16;

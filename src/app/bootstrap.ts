@@ -2,7 +2,7 @@
 // before any downstream module (like toasterSubscriber → toasterStore) resolves
 // Logger/EventBus at module scope.
 import { eventBus, logger } from './registerDependencies';
-import { initToasterSubscribers } from '#/modules/Toaster/useCases/toasterSubscriber';
+import { initToasterSubscribers } from '#/modules/Toaster/useCases';
 
 initToasterSubscribers();
 

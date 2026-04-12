@@ -106,9 +106,13 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             width={200}
                             height={120}
                             onParamChange={(id, v) => {
-                                if (id === 'dist-drive') onParam('distDrive', v);
-                                else if (id === 'dist-tone') onParam('distTone', v);
-                                else if (id === 'dist-mix') onParam('distMix', v);
+                                if (id === 'dist-drive') {
+                                    onParam('distDrive', v);
+                                } else if (id === 'dist-tone') {
+                                    onParam('distTone', v);
+                                } else if (id === 'dist-mix') {
+                                    onParam('distMix', v);
+                                }
                             }}
                         />
                         <div className="flex gap-2">
@@ -156,8 +160,11 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             width={200}
                             height={120}
                             onParamChange={(id, v) => {
-                                if (id === 'comp-threshold') onParam('compThreshold', v);
-                                else if (id === 'comp-ratio') onParam('compRatio', v);
+                                if (id === 'comp-threshold') {
+                                    onParam('compThreshold', v);
+                                } else if (id === 'comp-ratio') {
+                                    onParam('compRatio', v);
+                                }
                             }}
                         />
                         <div className="flex flex-wrap gap-2 max-w-[200px]">
@@ -261,9 +268,13 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             width={200}
                             height={100}
                             onParamChange={(id, v) => {
-                                if (id === 'delay-time') onParam('delayTime', v);
-                                else if (id === 'delay-feedback') onParam('delayFeedback', v);
-                                else if (id === 'delay-mix') onParam('delayMix', v);
+                                if (id === 'delay-time') {
+                                    onParam('delayTime', v);
+                                } else if (id === 'delay-feedback') {
+                                    onParam('delayFeedback', v);
+                                } else if (id === 'delay-mix') {
+                                    onParam('delayMix', v);
+                                }
                             }}
                         />
                         <div className="flex gap-2">
@@ -403,7 +414,9 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     'eq-high-q': 'eqHighQ',
                                 };
                                 const key = map[id];
-                                if (key) onParam(key, v);
+                                if (key) {
+                                    onParam(key, v);
+                                }
                             }}
                         />
                     </div>

@@ -53,10 +53,14 @@ export class Harmonizer implements MidiProcessor {
                 const harmonyNotes: number[] = [];
 
                 for (const voice of this.voices) {
-                    if (!voice.enabled) continue;
+                    if (!voice.enabled) {
+                        continue;
+                    }
 
                     const harmonyNote = this.diatonicTranspose(event.kind.note, voice.degrees, pattern);
-                    if (harmonyNote < 0 || harmonyNote > 127) continue;
+                    if (harmonyNote < 0 || harmonyNote > 127) {
+                        continue;
+                    }
 
                     harmonyNotes.push(harmonyNote);
                     const vel = Math.max(1, Math.min(127, event.kind.velocity + voice.velocityOffset));
@@ -129,31 +133,49 @@ export class Harmonizer implements MidiProcessor {
                 break;
             }
             case 'voice0_degrees':
-                if (this.voices[0]) this.voices[0].degrees = Math.round(value);
+                if (this.voices[0]) {
+                    this.voices[0].degrees = Math.round(value);
+                }
                 break;
             case 'voice1_degrees':
-                if (this.voices[1]) this.voices[1].degrees = Math.round(value);
+                if (this.voices[1]) {
+                    this.voices[1].degrees = Math.round(value);
+                }
                 break;
             case 'voice2_degrees':
-                if (this.voices[2]) this.voices[2].degrees = Math.round(value);
+                if (this.voices[2]) {
+                    this.voices[2].degrees = Math.round(value);
+                }
                 break;
             case 'voice0_enabled':
-                if (this.voices[0]) this.voices[0].enabled = value > 0.5;
+                if (this.voices[0]) {
+                    this.voices[0].enabled = value > 0.5;
+                }
                 break;
             case 'voice1_enabled':
-                if (this.voices[1]) this.voices[1].enabled = value > 0.5;
+                if (this.voices[1]) {
+                    this.voices[1].enabled = value > 0.5;
+                }
                 break;
             case 'voice2_enabled':
-                if (this.voices[2]) this.voices[2].enabled = value > 0.5;
+                if (this.voices[2]) {
+                    this.voices[2].enabled = value > 0.5;
+                }
                 break;
             case 'voice0_vel_offset':
-                if (this.voices[0]) this.voices[0].velocityOffset = Math.round(value);
+                if (this.voices[0]) {
+                    this.voices[0].velocityOffset = Math.round(value);
+                }
                 break;
             case 'voice1_vel_offset':
-                if (this.voices[1]) this.voices[1].velocityOffset = Math.round(value);
+                if (this.voices[1]) {
+                    this.voices[1].velocityOffset = Math.round(value);
+                }
                 break;
             case 'voice2_vel_offset':
-                if (this.voices[2]) this.voices[2].velocityOffset = Math.round(value);
+                if (this.voices[2]) {
+                    this.voices[2].velocityOffset = Math.round(value);
+                }
                 break;
         }
     }
