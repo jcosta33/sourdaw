@@ -13,24 +13,24 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
         const stems = a.payload.stems ?? ['all'];
         logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);
 
-        try {
-            const state = trackStore.value;
-            const track = state?.tracks.find((t) => t.clips.some((c) => c.id === a.payload.clipId));
-            if (!track) {
-                notifyUser('Stem separation failed: clip not found', 'error');
-                throw new Error('Clip not found');
-            }
-            const clip = track.clips.find((c) => c.id === a.payload.clipId);
-            if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
-                notifyUser('Stem separation failed: clip has no audio buffer', 'error');
-                throw new Error('Clip has no audio buffer');
-            }
-            const sourceBuffer = audioBufferCache.get(clip.audioBufferId);
-            if (!sourceBuffer) {
-                notifyUser('Stem separation failed: audio buffer not found in cache', 'error');
-                throw new Error('Audio buffer not found in cache');
-            }
+        const state = trackStore.value;
+        const track = state?.tracks.find((t) => t.clips.some((c) => c.id === a.payload.clipId));
+        if (!track) {
+            notifyUser('Stem separation failed: clip not found', 'error');
+            throw new Error('Clip not found');
+        }
+        const clip = track.clips.find((c) => c.id === a.payload.clipId);
+        if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
+            notifyUser('Stem separation failed: clip has no audio buffer', 'error');
+            throw new Error('Clip has no audio buffer');
+        }
+        const sourceBuffer = audioBufferCache.get(clip.audioBufferId);
+        if (!sourceBuffer) {
+            notifyUser('Stem separation failed: audio buffer not found in cache', 'error');
+            throw new Error('Audio buffer not found in cache');
+        }
 
+        try {
             const wavData = audioBufferToWav(sourceBuffer);
 
             const stemResults = await doSeparateStems(wavData, stems);

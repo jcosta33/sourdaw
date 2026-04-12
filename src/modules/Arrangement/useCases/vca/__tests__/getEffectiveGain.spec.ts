@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type Track } from '#/modules/Arrangement/models/Track';
-import { getVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
+import { type Track } from '../../../models/Track';
+import { getVcaGroupsState } from '../../../stores/vcaGroupStore';
 import { getEffectiveGain } from '../getEffectiveGain';
 
-vi.mock('#/modules/Arrangement/stores/vcaGroupStore', () => ({
+vi.mock('../../../stores/vcaGroupStore', () => ({
     getVcaGroupsState: vi.fn(() => []),
 }));
 

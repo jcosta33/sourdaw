@@ -1,5 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
-import { type MixerSnapshot } from '#/modules/Arrangement/models/MixerSnapshotTypes';
+import { type MixerSnapshot } from '../../../models/MixerSnapshotTypes';
 
 export type MixerSnapshotState = {
     snapshots: MixerSnapshot[];

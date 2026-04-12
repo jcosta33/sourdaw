@@ -1,6 +1,6 @@
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { setTrackState } from '../../../repositories/track/setTrackState';
-import { type MixerChannelSnapshot } from '#/modules/Arrangement/models/MixerSnapshotTypes';
+import { type MixerChannelSnapshot } from '../../../models/MixerSnapshotTypes';
 import { mixerSnapshotStore } from './helpers';
 
 export function recallMixerSnapshot(snapshotId: string): MixerChannelSnapshot[] | null {

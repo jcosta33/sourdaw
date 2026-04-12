@@ -1,4 +1,4 @@
-import { groupCompingStore } from '#/modules/Arrangement/stores/groupComping';
+import { groupCompingStore } from '../../../stores/groupComping';
 
 export function deleteCompGroup(grpId: string): void {
     const state = groupCompingStore.value;

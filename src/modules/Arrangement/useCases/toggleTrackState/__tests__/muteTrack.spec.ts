@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setTrackMute } from '#/modules/AudioEngine/useCases/trackAudioControls/setTrackMute';
-import { applySoloLogic } from '#/modules/Arrangement/services/applySoloLogic';
+import { applySoloLogic } from '../../../services/applySoloLogic';
 import { muteTrack } from '../muteTrack';
 
 vi.mock('#/modules/AudioEngine/useCases/trackAudioControls/setTrackMute', () => ({
     setTrackMute: vi.fn(),
 }));
-vi.mock('#/modules/Arrangement/services/applySoloLogic', () => ({
+vi.mock('../../../services/applySoloLogic', () => ({
     applySoloLogic: vi.fn(),
 }));
 

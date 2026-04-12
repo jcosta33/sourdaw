@@ -1,4 +1,4 @@
-import { getVcaGroupsState, type VcaGroup } from '#/modules/Arrangement/stores/vcaGroupStore';
+import { getVcaGroupsState, type VcaGroup } from '../../stores/vcaGroupStore';
 
 export type { VcaGroup };
 

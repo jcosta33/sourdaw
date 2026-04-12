@@ -4,7 +4,7 @@ import {
     getNextTakeSetId,
     getNextRegionId,
     GROUP_COLORS,
-} from '#/modules/Arrangement/stores/groupComping';
+} from '../../../stores/groupComping';
 
 export const compGroupOperationsDependencies = {
     groupCompingStore,

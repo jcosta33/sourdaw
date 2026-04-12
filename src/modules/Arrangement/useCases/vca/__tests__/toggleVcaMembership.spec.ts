@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '../../../models/Track';
 import { assignTrackToVCA } from '../../vcaFader/assignTrackToVCA';
 import { removeTrackFromVCA } from '../../vcaFader/removeTrackFromVCA';
 import { toggleVcaMembership } from '../toggleVcaMembership';

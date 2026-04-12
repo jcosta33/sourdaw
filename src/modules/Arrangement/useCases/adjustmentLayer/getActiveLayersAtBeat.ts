@@ -1,4 +1,4 @@
-import { adjustmentLayerStore, type AdjustmentLayer } from '#/modules/Arrangement/stores/adjustmentLayer';
+import { adjustmentLayerStore, type AdjustmentLayer } from '../../stores/adjustmentLayer';
 
 export function getActiveLayersAtBeat(beat: number): AdjustmentLayer[] {
     const state = adjustmentLayerStore.value;

@@ -1,4 +1,4 @@
-import { groupCompingStore, getNextTakeSetId, GROUP_COLORS, type CompTakeSet } from '#/modules/Arrangement/stores/groupComping';
+import { groupCompingStore, getNextTakeSetId, GROUP_COLORS, type CompTakeSet } from '../../../stores/groupComping';
 
 export function addGroupTakeSet(grpId: string, name: string): void {
     const state = groupCompingStore.value;
