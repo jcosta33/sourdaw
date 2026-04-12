@@ -10,7 +10,11 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
         const bars = a.payload.bars ?? 4;
         const direction = a.payload.direction ?? 'forward';
 
-        const maxBeat = existing.length > 0 ? Math.max(...existing.map((n) => n.startBeat + n.duration)) : 0;
+        let maxBeat = 0;
+        for (const n of existing) {
+            const v = n.startBeat + n.duration;
+            if (v > maxBeat) { maxBeat = v; }
+        }
 
         const instruction =
             direction === 'forward'

@@ -51,7 +51,12 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
             if (targetTrack) {
                 const transport = getTransportState();
                 const startBeat = transport ? transport.playheadPosition : 0;
-                const endBeat = startBeat + Math.max(...finalNotes.map((n) => n.start_beat + n.duration_beats));
+                let maxNoteBeat = -Infinity;
+                for (const n of finalNotes) {
+                    const v = n.start_beat + n.duration_beats;
+                    if (v > maxNoteBeat) { maxNoteBeat = v; }
+                }
+                const endBeat = startBeat + maxNoteBeat;
 
                 const clip = addClip({
                     trackId: targetTrack.id,

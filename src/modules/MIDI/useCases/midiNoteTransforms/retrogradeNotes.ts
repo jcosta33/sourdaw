@@ -6,9 +6,13 @@ export function retrogradeNotes(clipId: string): void {
             return notes;
         }
 
-        const starts = notes.map((n) => n.startBeat);
-        const minStart = Math.min(...starts);
-        const maxEnd = Math.max(...notes.map((n) => n.startBeat + n.duration));
+        let minStart = Infinity;
+        let maxEnd = -Infinity;
+        for (const n of notes) {
+            if (n.startBeat < minStart) { minStart = n.startBeat; }
+            const end = n.startBeat + n.duration;
+            if (end > maxEnd) { maxEnd = end; }
+        }
         const totalLength = maxEnd - minStart;
 
         return notes.map((n) => ({

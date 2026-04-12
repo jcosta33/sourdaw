@@ -8,9 +8,12 @@ export function scaleVelocities(
     maxVelocity = 127
 ): void {
     updateNotesForClip(clipId, (notes) => {
-        const velocities = notes.map((n) => n.velocity);
-        const currentMin = Math.min(...velocities);
-        const currentMax = Math.max(...velocities);
+        let currentMin = Infinity;
+        let currentMax = -Infinity;
+        for (const n of notes) {
+            if (n.velocity < currentMin) { currentMin = n.velocity; }
+            if (n.velocity > currentMax) { currentMax = n.velocity; }
+        }
         const range = currentMax - currentMin || 1;
 
         return notes.map((n) => {

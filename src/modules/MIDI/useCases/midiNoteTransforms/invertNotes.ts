@@ -6,9 +6,12 @@ export function invertNotes(clipId: string): void {
             return notes;
         }
 
-        const pitches = notes.map((n) => n.pitch);
-        const minPitch = Math.min(...pitches);
-        const maxPitch = Math.max(...pitches);
+        let minPitch = Infinity;
+        let maxPitch = -Infinity;
+        for (const n of notes) {
+            if (n.pitch < minPitch) { minPitch = n.pitch; }
+            if (n.pitch > maxPitch) { maxPitch = n.pitch; }
+        }
         const axis = minPitch + maxPitch;
 
         return notes.map((n) => ({

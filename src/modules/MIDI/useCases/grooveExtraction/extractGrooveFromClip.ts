@@ -22,8 +22,13 @@ export function extractGrooveFromClip(clipId: string, gridDivision = 0.25): Groo
     }
 
     // Find clip bounds
-    const minBeat = Math.min(...notes.map((n) => n.startBeat));
-    const maxBeat = Math.max(...notes.map((n) => n.startBeat + n.duration));
+    let minBeat = Infinity;
+    let maxBeat = -Infinity;
+    for (const n of notes) {
+        if (n.startBeat < minBeat) { minBeat = n.startBeat; }
+        const end = n.startBeat + n.duration;
+        if (end > maxBeat) { maxBeat = end; }
+    }
     const clipLength = maxBeat - minBeat;
 
     // Number of grid positions in the clip

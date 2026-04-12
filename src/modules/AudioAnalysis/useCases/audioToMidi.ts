@@ -213,7 +213,10 @@ export function audioToMidi(options: AudioToMidiOptions): void {
         return;
     }
 
-    const maxAmplitude = Math.max(...onsets.map((o) => o.amplitude), 1e-8);
+    let maxAmplitude = 1e-8;
+    for (const o of onsets) {
+        if (o.amplitude > maxAmplitude) { maxAmplitude = o.amplitude; }
+    }
 
     for (let i = 0; i < onsets.length; i++) {
         const onset = onsets[i]!;

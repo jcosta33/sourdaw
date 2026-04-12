@@ -72,8 +72,13 @@ export function arpeggiate(
         return;
     }
 
-    const minBeat = Math.min(...notes.map((n) => n.startBeat));
-    const maxBeat = Math.max(...notes.map((n) => n.startBeat + n.duration));
+    let minBeat = Infinity;
+    let maxBeat = -Infinity;
+    for (const n of notes) {
+        if (n.startBeat < minBeat) { minBeat = n.startBeat; }
+        const end = n.startBeat + n.duration;
+        if (end > maxBeat) { maxBeat = end; }
+    }
 
     const stepSize = 4 / rate;
     const gateDuration = stepSize * (gatePercent / 100);
