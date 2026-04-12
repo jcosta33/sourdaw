@@ -126,9 +126,13 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _drainQueue(blockEndFrame) {
-        while (this._queue.length > 0 && this._queue[0].sampleFrame <= blockEndFrame) {
-            this._dispatch(this._queue.shift());
+        // Audio-thread: drain with index + single splice instead of per-element shift() (O(n²))
+        let drained = 0;
+        while (drained < this._queue.length && this._queue[drained].sampleFrame <= blockEndFrame) {
+            this._dispatch(this._queue[drained]);
+            drained++;
         }
+        if (drained > 0) {this._queue.splice(0, drained);}
     }
 
     process(_inputs, outputs) {
