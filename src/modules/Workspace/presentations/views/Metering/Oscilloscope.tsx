@@ -6,7 +6,7 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, getTrackAnalyser } from '#/modules/AudioEngine/useCases';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type OscilloscopeProps = {
     trackId?: string;

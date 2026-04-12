@@ -6,7 +6,7 @@
  * vertically to change resonance.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type FilterResponseProps = {
     cutoff: number; // Hz (20–20000)

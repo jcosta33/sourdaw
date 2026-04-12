@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { automationStore } from '#/modules/Automation';
 import { midiStore } from '#/modules/MIDI/stores';
 import { takeLaneStore } from '../../stores/takeLaneStore';

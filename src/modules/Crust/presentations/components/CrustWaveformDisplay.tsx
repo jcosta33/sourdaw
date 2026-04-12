@@ -17,7 +17,7 @@
  * Delta mode: bg → #1A0805, GR signal shown in red + banner
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { createCompactFloatBuffer } from '#/helpers/createCompactFloatBuffer';
+import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 
 const HISTORY = 200;
 

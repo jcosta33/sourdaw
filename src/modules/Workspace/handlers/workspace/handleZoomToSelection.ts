@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { zoomToSelection } from '../../useCases/togglePanel/zoomOperations/zoomToSelection';
 
 export const handleZoomToSelection = createHandler<'zoomToSelection'>({

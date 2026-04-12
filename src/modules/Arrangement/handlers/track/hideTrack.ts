@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { hideTrack } from '#/modules/Arrangement/useCases/toggleTrackState/hideTrack';
 
 export const handleHideTrack = createHandler<'hideTrack'>({

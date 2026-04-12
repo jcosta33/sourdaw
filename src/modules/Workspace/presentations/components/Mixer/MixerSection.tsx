@@ -1,7 +1,7 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
 import { DawMiniSectionHeader } from '#/components/daw/DawMiniSectionHeader';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type MixerSectionProps = HTMLAttributes<HTMLElement> & {
     label: ReactNode;

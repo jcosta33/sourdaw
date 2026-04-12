@@ -1,5 +1,5 @@
 import { type ReactElement, type MouseEvent, type WheelEvent, type KeyboardEvent, useState, useRef } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import {
     addAutomationPoint,

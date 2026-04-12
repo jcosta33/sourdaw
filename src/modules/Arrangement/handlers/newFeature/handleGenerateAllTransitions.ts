@@ -1,5 +1,5 @@
-import { createHandler } from '#/helpers/createHandler';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateAllTransitionFills } from '../../useCases/fillTransitionGeneration/generation';
 
 export const handleGenerateAllTransitions = createHandler<'generateAllTransitions'>({

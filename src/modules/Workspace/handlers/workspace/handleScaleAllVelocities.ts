@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { scaleAllVelocities } from '#/modules/MIDI/useCases';
 
 export const handleScaleAllVelocities = createHandler<'scaleAllVelocities'>({

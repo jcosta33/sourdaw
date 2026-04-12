@@ -1,4 +1,4 @@
-import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import { BASE_URL } from './lifecycle';
 
 /**

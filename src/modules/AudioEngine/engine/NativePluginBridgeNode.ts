@@ -11,7 +11,7 @@
  * recent available block in the meantime.
  */
 
-import { tauriInvoke, isTauri } from '#/helpers/tauriBridge';
+import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
 
 export type NativePluginBridgeResult = {
     workletNode: AudioWorkletNode;

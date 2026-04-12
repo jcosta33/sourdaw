@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { reorderTrack } from '#/modules/Arrangement/useCases/toggleTrackState/reorderTrack';
 
 export const handleReorderTrack = createHandler<'reorderTrack'>({

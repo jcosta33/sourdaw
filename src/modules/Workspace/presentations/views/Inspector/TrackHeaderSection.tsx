@@ -9,7 +9,7 @@ import {
     unfreezeTrack,
 } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
-import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
+import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
 

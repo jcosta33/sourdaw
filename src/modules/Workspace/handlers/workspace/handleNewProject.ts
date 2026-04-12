@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { newProject } from '#/modules/Project';
 
 export const handleNewProject = createHandler<'newProject'>({

@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { onVoiceToggle } from '../../useCases/voiceToggle/onVoiceToggle';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri as isTauriAvailable } from '#/helpers/tauriBridge';
+import { isTauri as isTauriAvailable } from '#/utils/tauriBridge';
 import { injectPromptCommand } from '../../useCases/promptInjection';
 import { voiceStatusStore } from '../../stores/voiceStatusStore';
 import { ensureWhisperReady } from '../../useCases/voiceDictation/ensureWhisperReady';

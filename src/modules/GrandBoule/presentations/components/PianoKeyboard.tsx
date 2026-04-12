@@ -1,5 +1,5 @@
 import { type PointerEvent, type ReactElement, useState } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 /**
  * Interactive 88-key piano keyboard. Emits MIDI note events via the

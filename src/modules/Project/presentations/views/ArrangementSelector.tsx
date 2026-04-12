@@ -10,7 +10,7 @@ import { switchArrangement } from '../../useCases/arrangement/switchArrangement'
 import { createArrangement } from '../../useCases/arrangement/createArrangement';
 import { duplicateArrangement } from '../../useCases/arrangement/duplicateArrangement';
 import { renameArrangement } from '../../useCases/arrangement/renameArrangement';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 export const ArrangementSelector = (): ReactElement | null => {
     const [open, setOpen] = useState(false);

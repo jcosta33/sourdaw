@@ -7,7 +7,7 @@
  * an explanatory tooltip instead.
  */
 
-import { isTauri } from '#/helpers/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 
 export type PlatformCapabilities = {
     /** VST3/AU/CLAP plugin hosting — Tauri only */

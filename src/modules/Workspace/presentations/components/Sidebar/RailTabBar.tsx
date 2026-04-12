@@ -1,7 +1,7 @@
 import { type ComponentType, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Button } from '#/components/ui/button';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type RailTabBarItem<TId extends string> = {
     id: TId;

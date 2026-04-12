@@ -8,7 +8,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
 import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
 import {
     startPluginScan,
@@ -16,7 +16,7 @@ import {
     loadExternalPlugin,
     type ScannedPlugin,
 } from '#/modules/Plugin/useCases';
-import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
+import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 type PluginBrowserProps = {

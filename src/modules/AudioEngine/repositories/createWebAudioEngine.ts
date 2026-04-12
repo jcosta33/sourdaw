@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 import { TrackNode } from '../engine/TrackNode';

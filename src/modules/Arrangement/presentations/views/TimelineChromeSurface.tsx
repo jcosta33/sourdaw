@@ -1,5 +1,5 @@
 import { type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type TimelineChromeSurfaceProps = ComponentPropsWithRef<'div'> & {
     tone?: 'band' | 'subtle';

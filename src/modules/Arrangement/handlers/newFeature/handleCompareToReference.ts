@@ -1,5 +1,5 @@
-import { createHandler } from '#/helpers/createHandler';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { compareToReference } from '#/modules/AudioAnalysis/useCases';
 
 export const handleCompareToReference = createHandler<'compareToReference'>({

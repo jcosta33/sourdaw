@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { ungroupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/ungroupTracks';
 
 export const handleUngroupTracks = createHandler<'ungroupTracks'>({

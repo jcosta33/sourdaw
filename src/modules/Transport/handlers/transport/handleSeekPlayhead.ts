@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { seekPlayhead } from '../../useCases/transportControls/seekPlayhead';
 
 export const handleSeekPlayhead = createHandler<'seekPlayhead'>({

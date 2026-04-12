@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { glueClips } from '../../useCases/clipEditing/glueClips';
 
 export const handleGlueClips = createHandler<'glueClips'>({

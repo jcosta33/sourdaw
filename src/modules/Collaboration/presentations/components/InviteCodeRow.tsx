@@ -3,7 +3,7 @@ import { type ReactElement } from 'react';
 import { Check, Copy } from 'lucide-react';
 
 import { Button } from '#/components/ui/button';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type InviteCodeRowProps = {
     value: string;

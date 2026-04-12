@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { addExternalDevice, addTrack } from '#/modules/Arrangement/useCases';
 import { findPluginByName } from '../../useCases/pluginScan/queries';
 

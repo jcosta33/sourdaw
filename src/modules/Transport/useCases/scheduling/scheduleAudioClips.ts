@@ -13,7 +13,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
 
 const MICRO_FADE_SECONDS = 0.003;

@@ -1,5 +1,5 @@
 import { setTrackNotes } from '../../useCases/setTrackGainPan/setTrackNotes';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleSetTrackNotes = createHandler<'setTrackNotes'>({
     execute: (action) => {

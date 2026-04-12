@@ -3,7 +3,7 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync } from 'lucide-react';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
 import { useTracks } from '../hooks/useTracks';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';

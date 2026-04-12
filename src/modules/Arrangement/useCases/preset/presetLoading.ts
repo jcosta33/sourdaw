@@ -4,7 +4,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { type Device } from '../../stores/trackStore';
 import { addTrack } from '../addTrack';

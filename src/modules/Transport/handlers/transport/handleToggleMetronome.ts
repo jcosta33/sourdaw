@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { toggleMetronome } from '../../useCases/transportControls/toggleMetronome';
 
 export const handleToggleMetronome = createHandler<'toggleMetronome'>({

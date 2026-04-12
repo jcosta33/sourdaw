@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { toggleMono } from '#/modules/AudioEngine/useCases';
 
 export const handleToggleControlRoomMono = createHandler<'toggleControlRoomMono'>({

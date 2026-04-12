@@ -3,7 +3,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Sparkles, Loader2, Music } from 'lucide-react';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 
 type ClipMidiAiSectionProps = {

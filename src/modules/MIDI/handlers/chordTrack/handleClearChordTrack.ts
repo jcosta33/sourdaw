@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { clearChordTrack } from '../../useCases/chordTrack/clearChordTrack';
 
 export const handleClearChordTrack = createHandler<'clearChordTrack'>({

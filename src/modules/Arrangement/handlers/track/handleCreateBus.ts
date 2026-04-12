@@ -1,5 +1,5 @@
 import { addTrack } from '../../useCases/addTrack';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleCreateBus = createHandler<'createBus'>({
     execute: (action) => {

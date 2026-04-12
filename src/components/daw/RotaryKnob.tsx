@@ -1,5 +1,5 @@
 import { type MouseEvent, type ReactElement, type PointerEvent, useRef } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { useStore } from '#/infra/store/useStore';
 import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
 import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn/startMidiLearn';

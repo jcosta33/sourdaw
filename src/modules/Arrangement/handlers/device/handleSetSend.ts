@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { setSend } from '../../useCases/device/sendManagement/setSend';
 
 export const handleSetSend = createHandler<'setSend'>({

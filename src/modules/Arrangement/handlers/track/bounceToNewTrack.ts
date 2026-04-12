@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { bounceToNewTrack } from '#/modules/Arrangement/useCases/freezeBounce/bounceOperations';
 
 export const handleBounceToNewTrack = createHandler<'bounceToNewTrack'>({

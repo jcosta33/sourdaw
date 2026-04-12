@@ -1,5 +1,5 @@
 import { setTrackOutput } from '../../useCases/toggleTrackState/setTrackOutput';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleSetTrackOutput = createHandler<'setTrackOutput'>({
     execute: (action) => {

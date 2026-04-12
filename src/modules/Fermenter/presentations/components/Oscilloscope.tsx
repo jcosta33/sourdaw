@@ -3,7 +3,7 @@
  * Renders the last 128 samples as a waveform on a canvas.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type OscilloscopeProps = {
     buffer: Float32Array | null;

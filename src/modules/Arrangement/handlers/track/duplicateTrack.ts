@@ -1,5 +1,5 @@
 import { duplicateTrack } from '../../useCases/duplicateTrack';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
     execute: (action) => {

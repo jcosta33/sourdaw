@@ -1,4 +1,4 @@
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { notifyAiChange } from './notifyAiChange';
 
 export type AiActionToastMessages = {

@@ -1,9 +1,9 @@
 import { type ReactElement } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { useNotificationQueue } from '../hooks/useNotificationQueue';
-export { notifyUser } from '#/helpers/Notification/notifyUser';
+export { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const NotificationToast = (): ReactElement | null => {
     const { items, dismissLatest } = useNotificationQueue();

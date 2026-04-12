@@ -2,7 +2,7 @@
  * Lane control buttons — virgin territory toggle, Y-zoom, visibility, close.
  */
 import { type ReactElement } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { Eye, EyeOff, X, Maximize2 } from 'lucide-react';
 
 type AutomationLaneControlsProps = {

@@ -1,5 +1,5 @@
 import { zoomTracksVertical } from '../../useCases/trackZoom';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleZoomTracksVertical = createHandler<'zoomTracksVertical'>({
     execute: (action) => {

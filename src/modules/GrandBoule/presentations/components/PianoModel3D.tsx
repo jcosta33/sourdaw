@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useRef } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 /**
  * Interactive 3D grand piano model (§8).

@@ -1,5 +1,5 @@
-import { createHandler } from '#/helpers/createHandler';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { detectAndApplySongStructure } from '#/modules/Arrangement/useCases';
 
 export const handleDetectSongStructure = createHandler<'detectSongStructure'>({

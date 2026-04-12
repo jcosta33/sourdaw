@@ -4,7 +4,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Button } from '#/components/ui/button';
 import { ValueField } from '#/components/daw/ValueField';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { Map, Plus, Trash2 } from 'lucide-react';
 import { useTempoEditorState } from '../hooks/useTempoEditorState';
 

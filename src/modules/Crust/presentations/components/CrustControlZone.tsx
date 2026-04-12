@@ -8,7 +8,7 @@
  * Level 5: L4 + Loudness statistics panel
  */
 import { type ReactElement } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';

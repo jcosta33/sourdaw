@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
-import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
+import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 /**
  * Refs for DOM elements that StatusBar updates at 60 fps via direct mutation.

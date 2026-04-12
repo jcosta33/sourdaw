@@ -1,7 +1,7 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type CollaborationBlockProps = HTMLAttributes<HTMLDivElement> & {
     title?: ReactNode;

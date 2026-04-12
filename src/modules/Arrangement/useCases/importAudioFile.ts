@@ -4,7 +4,7 @@ import { createTrack } from '../models/Track';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { trackStore } from '../stores/trackStore';
 import { pushUndo } from '#/modules/Command/stores';
 import { createCallbackUndoEntry } from '#/modules/Command/useCases';

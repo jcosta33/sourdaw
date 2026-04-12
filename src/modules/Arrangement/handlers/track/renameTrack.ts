@@ -1,5 +1,5 @@
 import { renameTrack } from '../../useCases/renameTrack';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleRenameTrack = createHandler<'renameTrack'>({
     execute: (action) => {

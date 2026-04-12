@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { removeDevice } from '../../useCases/device/removeDevice';
 
 export const handleRemoveDevice = createHandler<'removeDevice'>({

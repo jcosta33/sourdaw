@@ -9,7 +9,7 @@ import { type TimelineRenderer } from '../../models/RendererBackend';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
 
-import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
+import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { ClipContextMenu } from './ClipContextMenu';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';

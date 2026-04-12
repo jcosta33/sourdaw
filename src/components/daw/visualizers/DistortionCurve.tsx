@@ -6,7 +6,7 @@
  * aggressive S-curve. Uses 45 degree unity line as reference.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type DistortionCurveProps = {
     drive: number; // 0–100

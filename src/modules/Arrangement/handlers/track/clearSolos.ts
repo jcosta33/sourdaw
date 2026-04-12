@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { clearSolos } from '#/modules/Arrangement/useCases/toggleTrackState/clearSolos';
 
 export const handleClearSolos = createHandler<'clearSolos'>({

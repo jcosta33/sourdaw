@@ -6,7 +6,7 @@
  * as knob values change.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type ADSREnvelopeProps = {
     attack: number; // seconds (0–2)

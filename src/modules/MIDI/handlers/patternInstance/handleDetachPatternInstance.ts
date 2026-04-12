@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { detachPatternInstance } from '../../useCases/patternInstance/detachPatternInstance';
 
 export const handleDetachPatternInstance = createHandler<'detachPatternInstance'>({

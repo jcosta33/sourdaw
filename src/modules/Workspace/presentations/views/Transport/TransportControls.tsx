@@ -6,7 +6,7 @@ import { Button } from '#/components/ui/button';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { TransportValuePill } from '../../components/Transport/TransportValuePill';
 import {
     togglePlayback,

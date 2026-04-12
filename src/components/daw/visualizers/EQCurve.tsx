@@ -5,7 +5,7 @@
  * Log frequency axis (20 Hz – 20 kHz), linear dB axis (±24 dB).
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type EQCurveProps = {
     lowGain: number;

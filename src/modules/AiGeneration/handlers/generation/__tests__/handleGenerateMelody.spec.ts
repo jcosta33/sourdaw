@@ -1,0 +1,90 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { handleGenerateMelody } from '../handleGenerateMelody';
+
+const mocks = vi.hoisted(() => ({
+    applyMelodyToTrack: vi.fn(),
+    resolveOrCreateMidiTrack: vi.fn(() => 't1'),
+    getPlayheadBeat: vi.fn(() => 0),
+}));
+
+vi.mock('../../../useCases/generateMelody/applyToTrack', () => ({
+    applyMelodyToTrack: mocks.applyMelodyToTrack,
+}));
+
+vi.mock('../generationHandlerHelpers', () => ({
+    getPlayheadBeat: mocks.getPlayheadBeat,
+    resolveOrCreateMidiTrack: mocks.resolveOrCreateMidiTrack,
+    VALID_MELODY_STYLES: new Set(['simple', 'arpeggiated']),
+    VALID_SCALES: new Set(['major', 'minor']),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        addTrack: vi.fn(),
+        getTrackStoreState: vi.fn(),
+    };
+});
+
+describe('handleGenerateMelody', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveOrCreateMidiTrack.mockReturnValue('t1');
+    });
+
+    it('executes generation with validated payload and defaults', () => {
+        handleGenerateMelody.execute({
+            type: 'generateMelody',
+            payload: {
+                style: 'arpeggiated',
+                scale: 'minor',
+                key: 5,
+                bars: 4,
+            },
+        });
+
+        expect(mocks.applyMelodyToTrack).toHaveBeenCalledWith(
+            't1',
+            { style: 'arpeggiated', scale: 'minor', key: 5, bars: 4 },
+            0
+        );
+    });
+
+    it('falls back to default style, scale, and key for invalid inputs', () => {
+        handleGenerateMelody.execute({
+            type: 'generateMelody',
+            payload: {
+                style: 'invalid-style' as any,
+                scale: 'invalid-scale' as any,
+                key: -5,
+                bars: 2,
+            },
+        });
+
+        expect(mocks.applyMelodyToTrack).toHaveBeenCalledWith(
+            't1',
+            { style: 'simple', scale: 'major', key: 0, bars: 2 },
+            0
+        );
+    });
+
+    it('bails if track cannot be resolved or created', () => {
+        mocks.resolveOrCreateMidiTrack.mockReturnValue(null);
+
+        handleGenerateMelody.execute({
+            type: 'generateMelody',
+            payload: { style: 'simple', scale: 'major', key: 0, bars: 1 },
+        });
+
+        expect(mocks.applyMelodyToTrack).not.toHaveBeenCalled();
+    });
+
+    it('provides a description', () => {
+        const desc = handleGenerateMelody.describe({
+            type: 'generateMelody',
+            payload: { style: 'arpeggiated', scale: 'minor', key: 0, bars: 1 },
+        });
+        expect(desc.label).toBe('Generate arpeggiated melody');
+    });
+});

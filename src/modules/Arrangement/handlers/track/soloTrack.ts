@@ -1,5 +1,5 @@
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleSoloTrack = createHandler<'soloTrack'>({
     execute: (action) => {

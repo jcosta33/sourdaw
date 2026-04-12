@@ -9,7 +9,7 @@ import { undoToIndex } from '../../useCases/undoRedo';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { X, Undo2, Redo2 } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { Button } from '#/components/ui/button';

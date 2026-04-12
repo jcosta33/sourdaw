@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { addAutomationLane } from '#/modules/Automation';
 
 export const handleAddAutomationLane = createHandler<'addAutomationLane'>({

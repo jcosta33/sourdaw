@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { createFolder } from '#/modules/Arrangement/useCases/folder/createFolder';
 
 export const handleCreateFolder = createHandler<'createFolder'>({

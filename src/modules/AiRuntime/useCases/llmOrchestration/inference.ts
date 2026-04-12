@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
 import { selectToolsForPrompt } from '../../transformers/toolSelector';

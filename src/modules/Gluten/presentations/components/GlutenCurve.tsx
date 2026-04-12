@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useRef } from 'react';
-import { resolveCanvasColor } from '#/helpers/UI/resolveToken';
+import { resolveCanvasColor } from '#/utils/UI/resolveToken';
 
 type GlutenCurveProps = {
     threshold: number;

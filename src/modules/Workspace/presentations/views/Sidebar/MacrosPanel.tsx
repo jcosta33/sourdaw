@@ -14,7 +14,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { macroStore } from '#/modules/Command/stores';
 import { startMacroRecording, stopMacroRecording, playMacro, deleteMacro, renameMacro } from '#/modules/Command/useCases';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type MacroView = {
     id: string;

@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { addSection } from '#/modules/Arrangement/useCases';
 
 export const handleAddSection = createHandler<'addSection'>({

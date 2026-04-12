@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useRef } from 'react';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { logger } from '#/infra/logger/appLogger';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
@@ -18,7 +18,7 @@ import {
     encodeFlac,
 } from '../../useCases/exportActions';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { isTauri } from '#/helpers/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { zipSync } from 'fflate';

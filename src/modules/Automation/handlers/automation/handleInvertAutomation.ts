@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { invertAutomation } from '../../useCases/automation/invertAutomation';
 
 export const handleInvertAutomation = createHandler<'invertAutomation'>({

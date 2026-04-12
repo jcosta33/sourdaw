@@ -7,7 +7,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 
 export const SIDECAR_PORT = parseInt((import.meta.env.VITE_LLM_SIDECAR_PORT as string | undefined) ?? '8847', 10);
@@ -37,7 +37,7 @@ export const initNativeEngine = inject({ logger })(
                 // Listen for real progress events from Rust
                 let unlisten: (() => void) | null = null;
                 try {
-                    const { tauriListen } = await import('#/helpers/tauriBridge');
+                    const { tauriListen } = await import('#/utils/tauriBridge');
                     unlisten = await tauriListen('llm-progress', (event: unknown) => {
                         const payload = (event as { payload: { progress: number; text: string } }).payload;
                         if (payload) {

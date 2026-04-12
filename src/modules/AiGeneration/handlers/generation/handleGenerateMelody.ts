@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { applyMelodyToTrack } from '../../useCases/generateMelody/applyToTrack';
 import { type ScaleType } from '../../useCases/generateMelody/algorithm';

@@ -3,7 +3,7 @@ import { Button } from '#/components/ui/button';
 import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';

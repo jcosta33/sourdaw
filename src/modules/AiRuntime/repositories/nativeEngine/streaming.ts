@@ -1,4 +1,4 @@
-import { isTauri, tauriInvoke, createChannel } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke, createChannel } from '#/utils/tauriBridge';
 import { BASE_URL } from './lifecycle';
 
 type LlmStreamEvent =

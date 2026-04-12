@@ -3,7 +3,7 @@
  * All backend calls go through tauriInvoke — the single shared bridge.
  */
 
-import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import type {
     LoopPointDetectionResult,
     MeteringResult,

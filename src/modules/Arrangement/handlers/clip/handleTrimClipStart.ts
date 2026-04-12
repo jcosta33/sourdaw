@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({

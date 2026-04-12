@@ -7,7 +7,7 @@
  * Uses cyan accent (routing/secondary) for consistency.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type DelayTapsProps = {
     time: number; // ms, delay time

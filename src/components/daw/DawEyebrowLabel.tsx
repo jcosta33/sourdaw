@@ -1,5 +1,5 @@
 import { type ComponentProps, type ReactElement } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type DawEyebrowLabelProps = ComponentProps<'span'> & {
     size?: 'xs' | 'sm';

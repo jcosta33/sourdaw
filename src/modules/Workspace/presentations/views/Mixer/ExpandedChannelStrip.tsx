@@ -2,14 +2,14 @@ import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Circle, Ear, ShieldCheck } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
-import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
+import { cn } from '#/utils/Styles/cn';
+import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';

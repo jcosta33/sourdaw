@@ -7,7 +7,7 @@ import { DawPickerCard } from '#/components/daw/DawPickerCard';
 import { Button } from '#/components/ui/button';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Slider } from '#/components/ui/slider';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import {
     PATTERN_CATEGORIES,
     PATTERN_TEMPLATES,

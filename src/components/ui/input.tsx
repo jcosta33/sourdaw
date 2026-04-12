@@ -1,6 +1,6 @@
 import { type ComponentProps } from 'react';
 
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 function Input({ className, type, ...props }: ComponentProps<'input'>) {
     return (

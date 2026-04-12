@@ -1,5 +1,5 @@
 import { type LatentVector } from '#/modules/AudioEngine/stores/rave';
-import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededRandom';
+import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
 /**
  * Randomize latent vectors with controlled temperature.

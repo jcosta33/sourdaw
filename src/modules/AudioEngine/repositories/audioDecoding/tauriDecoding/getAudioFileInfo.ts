@@ -1,4 +1,4 @@
-import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 // ── Types ───────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type DawPluginLedProps = HTMLAttributes<HTMLDivElement> & {
     tone?: 'amber' | 'peach' | 'cyan' | 'mint' | 'lavender' | 'danger' | 'neutral' | 'rose' | 'indigo' | 'sage' | 'copper';

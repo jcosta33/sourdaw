@@ -1,5 +1,5 @@
 import { type ButtonHTMLAttributes, type ReactElement } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type DawSwatchButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'color'> & {
     color: string;

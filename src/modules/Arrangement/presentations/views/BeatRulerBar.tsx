@@ -8,7 +8,7 @@ import {
     setLoopRegion,
     disableLooping,
 } from '#/modules/Transport/useCases';
-import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
+import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 const HEIGHT = 18;

@@ -5,7 +5,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { useTracks } from '../../hooks/useTracks';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';

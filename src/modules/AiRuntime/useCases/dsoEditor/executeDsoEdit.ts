@@ -14,7 +14,7 @@
 import { inject } from '#/infra/di/inject';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import { type Dso, type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
 import { serializeLogicalState, buildProjectSummary, logEdit } from './serializeLogicalState';
 import { buildDsoPrompt } from './dsoPrompt';
@@ -383,7 +383,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
  * Uses the schema_constrained_generation Tauri command with a Tauri Channel.
  */
 async function invokeNativeSchemaConstrained(system: string, user: string, onProgress: () => void): Promise<string> {
-    const { createChannel } = await import('#/helpers/tauriBridge');
+    const { createChannel } = await import('#/utils/tauriBridge');
 
     type StreamEvent =
         | { event: 'token'; data: { text: string } }

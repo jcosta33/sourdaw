@@ -42,7 +42,7 @@ import {
     isCloudAvailable,
     resolveBackend,
 } from '#/modules/AiRuntime/useCases';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { SectionTitle, FieldGroup, ToggleRow, VoiceKeyEditor, GridSubdivisionSection } from './preferencesShared';
 import { ShortcutsSection } from './ShortcutsSection';
 import { setSoloMode } from '../../useCases/togglePanel/panelToggles/setSoloMode';

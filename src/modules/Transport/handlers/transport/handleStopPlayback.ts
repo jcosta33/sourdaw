@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { stopPlayback } from '../../useCases/transportControls/stopPlayback';
 
 export const handleStopPlayback = createHandler<'stopPlayback'>({

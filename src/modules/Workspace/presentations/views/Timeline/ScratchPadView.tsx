@@ -26,7 +26,7 @@ import {
     captureArrangementToScratchPad,
     commitScratchPadToArrangement,
 } from '#/modules/Arrangement/useCases';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type ScratchPadSectionView = {
     id: string;

@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type PeerPresenceRowProps = {
     name: string;

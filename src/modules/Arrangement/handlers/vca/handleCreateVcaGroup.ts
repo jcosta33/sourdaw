@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { createVcaGroup } from '../../useCases/vca/createVcaGroup';
 
 export const handleCreateVcaGroup = createHandler<'createVcaGroup'>({

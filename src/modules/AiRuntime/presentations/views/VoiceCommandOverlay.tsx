@@ -5,7 +5,7 @@
 import { type ReactElement } from 'react';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Mic, MicOff } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 // Re-export for consumers that check availability

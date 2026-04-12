@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { createSession } from '../../useCases/collaboration/sessionManagement';
 
 export const handleCreateCollabSession = createHandler<'createCollabSession'>({

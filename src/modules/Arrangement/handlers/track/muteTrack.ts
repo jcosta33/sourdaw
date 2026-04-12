@@ -1,5 +1,5 @@
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleMuteTrack = createHandler<'muteTrack'>({
     execute: (action) => {

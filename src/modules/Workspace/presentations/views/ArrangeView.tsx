@@ -21,7 +21,7 @@ import {
     TrackListView,
 } from '#/modules/Arrangement/presentations/views';
 import { useTracks } from '../hooks/useTracks';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport/stores';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
 import { setTrackListWidth } from '../../useCases/togglePanel/panelToggles/setTrackListWidth';
@@ -31,7 +31,7 @@ import { Piano, Upload, Headphones } from 'lucide-react';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
-import { clamp } from '#/helpers/Math/clamp';
+import { clamp } from '#/utils/Math/clamp';
 
 const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;

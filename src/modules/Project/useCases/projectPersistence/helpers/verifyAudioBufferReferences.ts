@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export function verifyAudioBufferReferences(): void {
     const state = trackStore.value;

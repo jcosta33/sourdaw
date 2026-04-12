@@ -1,4 +1,4 @@
-import { tauriInvoke, isTauri } from '#/helpers/tauriBridge';
+import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
 import { type PluginInstance } from './types';
 
 export async function loadPlugin(pluginId: string, instanceId: string): Promise<PluginInstance> {

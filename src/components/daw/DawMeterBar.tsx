@@ -1,5 +1,5 @@
 import { type HTMLAttributes, type ReactElement, type Ref } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type DawMeterBarProps = Omit<HTMLAttributes<HTMLDivElement>, 'children'> & {
     fillRef?: Ref<HTMLDivElement>;

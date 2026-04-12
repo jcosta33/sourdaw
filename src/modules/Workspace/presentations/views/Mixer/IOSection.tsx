@@ -1,7 +1,7 @@
 import { type ReactElement, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button } from '#/components/ui/button';
-import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { useTracks } from '../../hooks/useTracks';
 import { setTrackOutput } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';

@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { lockClip } from '../../useCases/clipEditing/lockClip';
 
 export const handleLockClip = createHandler<'lockClip'>({

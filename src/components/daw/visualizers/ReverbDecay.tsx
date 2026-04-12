@@ -6,7 +6,7 @@
  * Uses lavender accent (Time & Space category color) for consistency.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type ReverbDecayProps = {
     size: number; // 0–1, room size factor

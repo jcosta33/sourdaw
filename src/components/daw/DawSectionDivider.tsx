@@ -1,5 +1,5 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type DawSectionDividerProps = HTMLAttributes<HTMLDivElement> & {
     label: ReactNode;

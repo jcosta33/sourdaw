@@ -3,7 +3,7 @@
 import { type ComponentProps, useState } from 'react';
 import { Slider as SliderPrimitive } from 'radix-ui';
 
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 function Slider({
     className,

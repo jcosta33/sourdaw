@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Folder, File, Star, Upload } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { addTrack, addClip } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { PreviewButton } from '../../components/Sidebar/PreviewButton';

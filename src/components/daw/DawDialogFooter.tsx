@@ -1,6 +1,6 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
 
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type DawDialogFooterProps = HTMLAttributes<HTMLDivElement> & {
     tone?: 'neutral' | 'warm';

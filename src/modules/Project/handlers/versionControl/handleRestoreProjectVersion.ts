@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { restoreVersion } from '../../useCases/versionControl/restoreVersion';
 
 export const handleRestoreProjectVersion = createHandler<'restoreProjectVersion'>({

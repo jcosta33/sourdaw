@@ -1,6 +1,6 @@
 import { type ButtonHTMLAttributes, type ReactElement } from 'react';
 
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type MixerInsetButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
     tone?: 'default' | 'accent';

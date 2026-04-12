@@ -2,7 +2,7 @@
  * Gain Reduction meter — vertical bar with peak hold and dB labels.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveCanvasColor } from '#/helpers/UI/resolveToken';
+import { resolveCanvasColor } from '#/utils/UI/resolveToken';
 
 type GrMeterProps = {
     grDb: number;

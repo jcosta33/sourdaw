@@ -4,7 +4,7 @@
  * Shows multiple waveform cycles stacked in depth.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type Wavetable3DProps = {
     /** Wavetable data: array of waveform frames (each frame is Float32Array of samples) */

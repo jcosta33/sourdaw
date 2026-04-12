@@ -1,4 +1,4 @@
-import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import { type MidiInputInfo } from '#/modules/AudioEngine/models/WebMidiTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 

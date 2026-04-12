@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { quantizeNotes } from '#/modules/MIDI/useCases';
 
 export const handleQuantizeNotes = createHandler<'quantizeNotes'>({

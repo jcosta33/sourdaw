@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
 import { stripSilence as stripSilenceFromClip } from '#/modules/Arrangement/useCases';
 

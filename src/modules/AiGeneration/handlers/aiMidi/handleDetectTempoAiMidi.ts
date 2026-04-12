@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
 import { detectTempo as detectClipTempo } from '#/modules/Arrangement/useCases';
 

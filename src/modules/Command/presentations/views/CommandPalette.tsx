@@ -3,7 +3,7 @@ import { useStore } from '#/infra/store/useStore';
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { closeCommandPalette, type WorkspaceState } from '#/modules/Workspace/useCases';
 import { searchCommands, type CommandEntry } from '../../models/CommandRegistry';

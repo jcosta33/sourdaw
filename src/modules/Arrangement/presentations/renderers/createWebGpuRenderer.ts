@@ -1,7 +1,7 @@
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes

@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { scaleVelocities } from '#/modules/MIDI/useCases';
 import { type VelocityCurve } from '#/modules/Arrangement/useCases';
 

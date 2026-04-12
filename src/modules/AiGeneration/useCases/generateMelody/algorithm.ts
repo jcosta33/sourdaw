@@ -3,7 +3,7 @@
  * Accepts an optional seed for deterministic, reproducible output.
  */
 
-import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededRandom';
+import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
 export type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
 

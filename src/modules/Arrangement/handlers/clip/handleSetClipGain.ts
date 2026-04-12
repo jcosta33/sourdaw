@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { setClipGain } from '../../useCases/clipEditing/setClipGain';
 
 export const handleSetClipGain = createHandler<'setClipGain'>({

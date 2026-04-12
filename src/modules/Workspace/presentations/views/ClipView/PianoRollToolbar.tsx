@@ -7,7 +7,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
 import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
 

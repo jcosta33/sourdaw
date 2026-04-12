@@ -3,7 +3,7 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
-import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
 import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';

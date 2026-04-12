@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { playMacro } from '../../useCases/macro/playback';
 
 export const handlePlayMacro = createHandler<'playMacro'>({

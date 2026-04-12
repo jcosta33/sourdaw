@@ -217,24 +217,22 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
             {/* ── Empty state ── */}
             {roots.length === 0 ? (
-                <div className="px-4 py-10">
-                    <DawBlockedState
-                        eyebrow="Sample Library"
-                        icon={<FolderPlus className="size-8" />}
-                        title="No folders connected"
-                        description="Connect a folder from your computer to browse and search your samples."
-                        summary="Local folders only. No upload, no account, and your files stay on your machine."
-                        action={
-                            <button
-                                type="button"
-                                className="rounded-md bg-white/[0.08] px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-white/[0.12]"
-                                onClick={handleConnectFolder}
-                            >
-                                Connect Sample Folder
-                            </button>
-                        }
-                    />
-                </div>
+                <DawBlockedState
+                    eyebrow="Sample Library"
+                    icon={<FolderPlus className="size-8" />}
+                    title="No folders connected"
+                    description="Connect a folder from your computer to browse and search your samples."
+                    summary="Local folders only. No upload, no account, and your files stay on your machine."
+                    action={
+                        <button
+                            type="button"
+                            className="rounded-md bg-white/[0.08] px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-white/[0.12]"
+                            onClick={handleConnectFolder}
+                        >
+                            Connect Sample Folder
+                        </button>
+                    }
+                />
             ) : null}
 
             {/* ── Connected roots ── */}

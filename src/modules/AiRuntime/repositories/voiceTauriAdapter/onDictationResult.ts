@@ -1,4 +1,4 @@
-import { tauriListen } from '#/helpers/tauriBridge';
+import { tauriListen } from '#/utils/tauriBridge';
 
 export type DictationResult = {
     text: string;

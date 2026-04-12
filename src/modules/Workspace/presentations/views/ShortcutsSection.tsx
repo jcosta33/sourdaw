@@ -13,7 +13,7 @@ import {
     DEFAULT_SHORTCUTS,
     type ShortcutState,
 } from '../../models/Shortcuts';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { CaptureKeyButton } from '../components/CaptureKeyButton';
 import { SectionTitle } from './preferencesShared';
 

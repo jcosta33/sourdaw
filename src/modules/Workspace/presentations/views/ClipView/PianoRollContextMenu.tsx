@@ -25,7 +25,7 @@ import {
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
-import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
 

@@ -1,4 +1,4 @@
-import { tauriInvoke } from '#/helpers/tauriBridge';
+import { tauriInvoke } from '#/utils/tauriBridge';
 import { activeInput, tauriEventUnlisten, setActiveInput, setTauriEventUnlisten } from '../state';
 import { onMidiMessage } from '../messageHandlers';
 
@@ -19,7 +19,7 @@ export async function selectMidiInputTauri(portIndex: number): Promise<void> {
     const portName = (await tauriInvoke('open_midi_input', { portIndex })) as string;
     portName;
 
-    const { tauriListen } = await import('#/helpers/tauriBridge');
+    const { tauriListen } = await import('#/utils/tauriBridge');
     const unlisten = (await tauriListen('midi-message', (event) => {
         const payload = event as { payload: { data: number[] } };
         const bytes = payload.payload.data;

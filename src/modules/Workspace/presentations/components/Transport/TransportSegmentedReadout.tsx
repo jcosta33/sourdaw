@@ -1,7 +1,7 @@
 import { type ReactElement, type ReactNode, type RefObject } from 'react';
 
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type TransportSegmentedReadoutProps = {
     label: ReactNode;

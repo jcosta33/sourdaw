@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation';
 
 export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'>({

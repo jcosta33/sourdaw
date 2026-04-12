@@ -21,7 +21,7 @@ import { onPanelShowCrust } from '../../useCases/panels/devicePanels/onPanelShow
 import { onPanelShowCrumbs } from '../../useCases/panels/devicePanels/onPanelShowCrumbs';
 import { onPanelShowGrandBoule } from '../../useCases/panels/devicePanels/onPanelShowGrandBoule';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
-import { clamp } from '#/helpers/Math/clamp';
+import { clamp } from '#/utils/Math/clamp';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
 import { InspectorPanel } from './InspectorPanel';

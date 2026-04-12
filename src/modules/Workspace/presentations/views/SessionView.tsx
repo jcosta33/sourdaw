@@ -9,7 +9,7 @@ import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { DawSideRail } from '#/components/daw/DawSideRail';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { Button } from '#/components/ui/button';
 import { Play, Square, Plus } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';

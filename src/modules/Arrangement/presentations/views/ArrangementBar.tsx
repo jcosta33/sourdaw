@@ -13,8 +13,8 @@ import { resizeSection } from '../../useCases/marker/sectionOperations/resizeSec
 import { reorderSection } from '../../useCases/marker/sectionOperations/reorderSection';
 import { type ArrangementSection } from '../../models/Marker';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
-import { cn } from '#/helpers/Styles/cn';
-import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { cn } from '#/utils/Styles/cn';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 type ArrangementBarProps = {

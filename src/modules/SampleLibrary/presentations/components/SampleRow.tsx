@@ -3,7 +3,7 @@
  */
 import { type ReactElement } from 'react';
 import { File, Star } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { type SampleRecord } from '../../models/LibraryTypes';
 
 type SampleRowProps = {

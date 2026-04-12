@@ -1,5 +1,5 @@
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleSelectTrack = createHandler<'selectTrack'>({
     execute: (action) => {

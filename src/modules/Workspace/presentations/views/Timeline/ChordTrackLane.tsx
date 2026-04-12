@@ -22,7 +22,7 @@ import {
     formatChordName,
 } from '#/modules/MIDI/useCases';
 const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type ChordTrackLaneProps = {
     pixelsPerBeat: number;

@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
 import { useTracks } from '../hooks/useTracks';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 export const MiniMasterSpectrum = ({ className }: { className?: string }): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement>(null);

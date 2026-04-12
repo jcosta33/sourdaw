@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { clearScratchPad } from '#/modules/Arrangement/useCases';
 
 export const handleClearScratchPad = createHandler<'clearScratchPad'>({

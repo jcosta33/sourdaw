@@ -1,5 +1,5 @@
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleToggleSoloSafe = createHandler<'toggleSoloSafe'>({
     execute: (action) => {

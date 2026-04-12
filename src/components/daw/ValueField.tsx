@@ -1,5 +1,5 @@
 import { type ReactElement, type PointerEvent, useRef, useState } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type ValueFieldProps = {
     value: number;

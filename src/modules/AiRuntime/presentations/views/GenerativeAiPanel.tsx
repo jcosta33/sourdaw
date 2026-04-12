@@ -9,7 +9,7 @@ import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { isTauri } from '#/helpers/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { aiStore } from '#/modules/AiGeneration/stores';

@@ -14,7 +14,7 @@ import {
     audioToMidi,
 } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 

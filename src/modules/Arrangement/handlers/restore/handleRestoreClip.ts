@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { midiStore } from '#/modules/MIDI/stores';
 import { updateTrack } from '../../useCases/updateTrack';
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';

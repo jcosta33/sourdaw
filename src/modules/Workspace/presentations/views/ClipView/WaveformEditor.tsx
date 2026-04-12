@@ -11,8 +11,8 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
-import { cn } from '#/helpers/Styles/cn';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { cn } from '#/utils/Styles/cn';
+import { resolveToken } from '#/utils/UI/resolveToken';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -29,7 +29,7 @@ import {
     moveWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).

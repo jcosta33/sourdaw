@@ -1,6 +1,6 @@
 import { type ReactElement, type PointerEvent } from 'react';
 import { Slider } from '#/components/ui/slider';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type BipolarSliderProps = {
     value: number;

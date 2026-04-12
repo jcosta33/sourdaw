@@ -1,5 +1,5 @@
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { setTrackPan } from '#/modules/Arrangement/useCases/setTrackGainPan/setTrackPan';
 
 export const handleSetTrackPan = createHandler<'setTrackPan'>({

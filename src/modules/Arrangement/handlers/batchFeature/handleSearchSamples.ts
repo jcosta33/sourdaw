@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { searchSamples } from '#/modules/SoundLibrary/useCases';
 
 export const handleSearchSamples = createHandler<'searchSamples'>({

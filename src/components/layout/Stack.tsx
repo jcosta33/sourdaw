@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, type ElementType, type ComponentPropsWithoutRef } from 'react';
 
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type StackElement = ElementType;
 
@@ -59,7 +59,7 @@ export const Stack = <T extends StackElement = 'div'>({
     return (
         <Component
             className={cn(
-                'flex flex-col min-h-0',
+                'flex flex-col',
                 GAP_CLASS_NAMES[gap],
                 ALIGN_CLASS_NAMES[align],
                 JUSTIFY_CLASS_NAMES[justify],

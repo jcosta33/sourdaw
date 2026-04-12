@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { addAutomationPoint } from '#/modules/Automation';
 
 export const handleAddAutomationPoint = createHandler<'addAutomationPoint'>({

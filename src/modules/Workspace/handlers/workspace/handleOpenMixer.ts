@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
 
 export const handleOpenMixer = createHandler<'openMixer'>({

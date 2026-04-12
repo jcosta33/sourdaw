@@ -3,8 +3,8 @@ import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hi
 import { trackStore } from '../../stores/trackStore';
 import { libraryStore } from '#/modules/SampleLibrary/stores';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { isTauri } from '#/helpers/tauriBridge';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriBridge';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { addClip } from '../../useCases/clip/addClip';

@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce/freezeTrack/unfreezeTrack';
 
 export const handleUnfreezeTrack = createHandler<'unfreezeTrack'>({

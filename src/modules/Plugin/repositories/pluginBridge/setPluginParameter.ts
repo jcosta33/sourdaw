@@ -1,4 +1,4 @@
-import { tauriInvoke, isTauri } from '#/helpers/tauriBridge';
+import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
 
 export async function setPluginParameter(instanceId: string, paramId: number, value: number): Promise<void> {
     if (!isTauri()) {

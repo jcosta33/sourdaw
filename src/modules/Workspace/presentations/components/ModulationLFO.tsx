@@ -7,7 +7,7 @@
  * Animates at the actual LFO rate for a "living" feel.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type ModulationLFOProps = {
     rate: number; // Hz

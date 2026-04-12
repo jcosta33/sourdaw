@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { createVersionBranch } from '../../useCases/versionControl/branching/createVersionBranch';
 
 export const handleCreateVersionBranch = createHandler<'createVersionBranch'>({

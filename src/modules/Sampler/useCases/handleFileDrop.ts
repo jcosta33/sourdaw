@@ -5,7 +5,7 @@
  */
 
 import type { DragEvent } from 'react';
-import { isTauri } from '#/helpers/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 import type { SampleCategory, SamplerMode } from '../models/SamplerTypes';
 import { loadSampleFromPath } from './loadSample';
 import { switchSamplerMode } from './setSamplerMode';

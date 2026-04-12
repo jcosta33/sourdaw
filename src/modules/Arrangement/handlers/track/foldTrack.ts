@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { foldTrack } from '#/modules/Arrangement/useCases/toggleTrackState/foldTrack';
 
 export const handleFoldTrack = createHandler<'foldTrack'>({

@@ -1,5 +1,5 @@
 import { type MouseEvent, type ReactElement, useRef } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type DragResizeHandleProps = {
     /** Which side of the panel this handle sits on.

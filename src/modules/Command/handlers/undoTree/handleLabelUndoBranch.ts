@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { setNodeLabel } from '../../useCases/undoTree/branchOperations/setNodeLabel';
 
 export const handleLabelUndoBranch = createHandler<'labelUndoBranch'>({

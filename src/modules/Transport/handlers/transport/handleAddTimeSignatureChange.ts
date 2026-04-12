@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { addTimeSignatureChange } from '../../useCases/timeSignatureChanges/addTimeSignatureChange';
 
 export const handleAddTimeSignatureChange = createHandler<'addTimeSignatureChange'>({

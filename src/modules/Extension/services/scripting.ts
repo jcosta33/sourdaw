@@ -12,7 +12,7 @@
  */
 
 import { extensionStore } from '#/modules/Extension/stores/extension';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 /**
  * Append a log entry to the extension console (keeps last 100 entries).

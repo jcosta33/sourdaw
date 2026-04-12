@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { setTempo } from '../../useCases/setTempo';
 
 export const handleSetTempo = createHandler<'setTempo'>({

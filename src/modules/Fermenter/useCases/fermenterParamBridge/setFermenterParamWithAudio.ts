@@ -1,7 +1,7 @@
-import { inject } from '#/infra/di/inject';
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { setFermenterParam } from '../../stores/fermenterStore';
-import { fermenterParamBridgeDependencies } from './fermenterParamBridgeDependencies';
+import { getAllTracks, persistDeviceParam } from '#/modules/Arrangement/useCases';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import type { DeviceRef, PersistDeviceParamFn, UpdateDeviceParamFn } from './helpers';
 import { createFindDeviceRef } from './helpers';
 
@@ -26,32 +26,25 @@ function createFlushParam(
     };
 }
 
+const findDeviceRef = createFindDeviceRef(getAllTracks);
+const flushParam = createFlushParam(updateDeviceParam, persistDeviceParam);
+
 /**
  * Set a Fermenter parameter — updates the UI store immediately,
  * and throttles audio engine updates to once per animation frame.
  */
-export const setFermenterParamWithAudio = inject(fermenterParamBridgeDependencies)(
-    ({
-        getAllTracks: getAllTracksFn,
-        updateDeviceParam: updateDeviceParamFn,
-        persistDeviceParam: persistDeviceParamFn,
-    }) => {
-        const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-        const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
-        return function setFermenterParamWithAudio(deviceId: string, key: keyof FermenterPatch, value: number): void {
-            setFermenterParam(deviceId, key, value);
+export function setFermenterParamWithAudio(deviceId: string, key: keyof FermenterPatch, value: number): void {
+    setFermenterParam(deviceId, key, value);
 
-            const ref = findDeviceRef(deviceId);
-            if (!ref) return;
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
 
-            const compositeKey = `${deviceId}:${key}`;
-            latestValues.set(compositeKey, value);
-            if (!pendingUpdates.has(compositeKey)) {
-                pendingUpdates.set(
-                    compositeKey,
-                    requestAnimationFrame(() => flushParam(deviceId, ref, key))
-                );
-            }
-        };
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, value);
+    if (!pendingUpdates.has(compositeKey)) {
+        pendingUpdates.set(
+            compositeKey,
+            requestAnimationFrame(() => flushParam(deviceId, ref, key))
+        );
     }
-);
+}

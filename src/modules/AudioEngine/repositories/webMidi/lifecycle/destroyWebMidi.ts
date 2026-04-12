@@ -1,4 +1,4 @@
-import { tauriInvoke } from '#/helpers/tauriBridge';
+import { tauriInvoke } from '#/utils/tauriBridge';
 
 import {
     midiAccess,

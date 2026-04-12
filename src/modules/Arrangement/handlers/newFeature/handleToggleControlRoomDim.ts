@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { toggleDim } from '#/modules/AudioEngine/useCases';
 
 export const handleToggleControlRoomDim = createHandler<'toggleControlRoomDim'>({

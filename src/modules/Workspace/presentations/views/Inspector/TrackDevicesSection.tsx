@@ -17,9 +17,9 @@ import { useStore } from '#/infra/store/useStore';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
 import { openPluginGui } from '#/modules/Plugin/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
-import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
+import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { showDevicePanelForType } from '../../../useCases/panels/devicePanels/showDevicePanelForType';
 

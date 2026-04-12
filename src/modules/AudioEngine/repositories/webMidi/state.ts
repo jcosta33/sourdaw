@@ -2,7 +2,7 @@
  * Internal mutable state for the Web MIDI repository.
  * Singleton module — shared across all split files via imports.
  */
-import { isTauri } from '#/helpers/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 import { type WebMidiState, type MidiLearnState, type ActiveNoteData } from '#/modules/AudioEngine/models/WebMidiTypes';
 
 type Subscriber = () => void;

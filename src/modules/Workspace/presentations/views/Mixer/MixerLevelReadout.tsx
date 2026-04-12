@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 import { LevelMeter } from '../Metering/LevelMeter';
 

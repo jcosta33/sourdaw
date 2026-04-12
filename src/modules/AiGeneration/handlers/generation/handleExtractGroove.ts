@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { extractGroove } from '../../useCases/grooveTemplate/operations/extractGroove';
 
 export const handleExtractGroove = createHandler<'extractGroove'>({

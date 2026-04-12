@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { thinAutomationPoints } from '../../useCases/automation/thinAutomationPoints';
 
 export const handleThinAutomation = createHandler<'thinAutomation'>({

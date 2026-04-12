@@ -1,4 +1,4 @@
-import { tauriInvoke, isTauri } from '#/helpers/tauriBridge';
+import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
 import { type PluginGuiInfo } from './types';
 
 export async function openPluginGui(instanceId: string): Promise<PluginGuiInfo> {

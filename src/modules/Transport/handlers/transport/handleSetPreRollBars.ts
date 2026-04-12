@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { setPreRollBars } from '../../useCases/transportControls/setPreRollBars';
 
 export const handleSetPreRollBars = createHandler<'setPreRollBars'>({

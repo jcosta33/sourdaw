@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { transposeNotes } from '#/modules/MIDI/useCases';
 
 export const handleTransposeNotes = createHandler<'transposeNotes'>({

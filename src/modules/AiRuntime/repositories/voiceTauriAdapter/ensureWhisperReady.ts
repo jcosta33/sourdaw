@@ -1,4 +1,4 @@
-import { tauriInvoke } from '#/helpers/tauriBridge';
+import { tauriInvoke } from '#/utils/tauriBridge';
 
 /**
  * Ensure the Whisper model is downloaded and loaded before first use.

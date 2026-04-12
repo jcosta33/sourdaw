@@ -1,5 +1,5 @@
 import { armTrack } from '../../useCases/recording/armTrack';
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleArmTrack = createHandler<'armTrack'>({
     execute: (action) => {

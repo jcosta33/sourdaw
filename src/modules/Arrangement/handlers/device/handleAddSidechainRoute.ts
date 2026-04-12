@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 

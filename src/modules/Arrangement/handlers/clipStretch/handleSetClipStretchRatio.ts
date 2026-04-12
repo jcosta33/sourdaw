@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { setClipStretchRatio } from '../../useCases/clipStretch/setClipStretchRatio';
 
 export const handleSetClipStretchRatio = createHandler<'setClipStretchRatio'>({

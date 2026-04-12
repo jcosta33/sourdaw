@@ -1,6 +1,6 @@
 import { type ReactElement, type MouseEvent } from 'react';
 import { Star, Piano, Waves } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
 import { PreviewButton } from './PreviewButton';
 import { CATEGORY_COLORS } from './sidebarConstants';

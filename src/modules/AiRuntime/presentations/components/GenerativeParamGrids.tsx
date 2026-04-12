@@ -16,7 +16,7 @@ import {
     Music2,
     Music4,
 } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type GridProps = {
     value: string;

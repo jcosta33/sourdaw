@@ -1,6 +1,6 @@
 import { type ReactElement, type ComponentPropsWithoutRef } from 'react';
 
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type SpacerSize = 1 | 2 | 3 | 4 | 6 | 8 | 12 | 16;
 type SpacerAxis = 'x' | 'y';

@@ -5,7 +5,7 @@
  */
 import { type ReactElement, useState } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { useTracks } from '../hooks/useTracks';
 import { type Track } from '../../models/TrackViewTypes';
 

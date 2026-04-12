@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { type WarpAlgorithm } from '../../stores/audioWarp';
 import { setWarpAlgorithm } from '../../useCases/audioWarping/setWarpAlgorithm';
 

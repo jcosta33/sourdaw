@@ -4,7 +4,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { arrangementStore } from '../../../stores/arrangementStore';
 import { type ProjectData } from '../../../models/ProjectData';
 import { projectStore } from '../../../stores/projectStore';

@@ -5,8 +5,8 @@
  * showing the last ~5 seconds of gain reduction over time.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { createCompactFloatBuffer } from '#/helpers/createCompactFloatBuffer';
-import { resolveCanvasColor } from '#/helpers/UI/resolveToken';
+import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
+import { resolveCanvasColor } from '#/utils/UI/resolveToken';
 
 type GrHistoryProps = {
     grDb: number;

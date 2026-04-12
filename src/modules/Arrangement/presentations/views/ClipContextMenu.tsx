@@ -6,7 +6,7 @@ import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { selectClip, setWorkspaceMode } from '#/modules/Workspace/useCases';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { trackStore } from '../../stores/trackStore';
@@ -27,7 +27,7 @@ import { cutSelectedClip } from '../../useCases/clipboard/cutSelectedClip';
 import { exportMidiClip } from '../../useCases/exportMidiClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { stripSilence } from '../../useCases/stripSilence';
-import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 type ClipContextMenuProps = {
     x: number;

@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { toggleChordTrack } from '../../useCases/chordTrack/toggleChordTrack';
 
 export const handleToggleChordTrack = createHandler<'toggleChordTrack'>({

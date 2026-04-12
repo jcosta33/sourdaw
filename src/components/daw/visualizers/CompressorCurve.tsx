@@ -8,7 +8,7 @@
  * Uses design tokens for consistent DAW aesthetic.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type CompressorCurveProps = {
     threshold: number; // dB, e.g. -20

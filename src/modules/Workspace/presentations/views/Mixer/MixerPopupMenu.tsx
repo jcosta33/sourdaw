@@ -6,7 +6,7 @@ import {
     type ReactNode,
 } from 'react';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type MixerPopupMenuProps = ComponentPropsWithRef<'div'> & {
     position?: 'absolute' | 'fixed';

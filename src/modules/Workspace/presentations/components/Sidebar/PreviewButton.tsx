@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 import { Play, Square } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type PreviewButtonProps = {
     isPlaying: boolean;

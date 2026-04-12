@@ -1,5 +1,5 @@
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededRandom';
+import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
 /**
  * Adds random timing and velocity variation to notes.

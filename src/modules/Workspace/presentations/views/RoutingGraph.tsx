@@ -6,7 +6,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { selectTrack } from '#/modules/Arrangement/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type Track } from '../../models/TrackViewTypes';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type RoutingTrackState = {
     tracks: Track[];

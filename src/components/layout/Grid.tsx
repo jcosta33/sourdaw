@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, type ElementType, type ComponentPropsWithoutRef } from 'react';
 
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 
 type GridElement = ElementType;
 

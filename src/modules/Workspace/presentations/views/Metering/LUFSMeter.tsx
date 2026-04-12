@@ -12,7 +12,7 @@ import {
     ShortTermLUFS,
     IntegratedLUFS,
 } from '#/modules/AudioEngine/useCases';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type LUFSMeterProps = {
     height?: number;

@@ -3,7 +3,7 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
 import { addClip } from '../../useCases/clip/addClip';
@@ -19,8 +19,8 @@ import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
 import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 import { type Track, type InputMonitoring } from '../../models/Track';
-import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
-import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
+import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },

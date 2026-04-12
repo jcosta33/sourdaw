@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { clearMidiOutput } from '../../useCases/midiRouting/clearMidiOutput';
 
 export const handleClearMidiOutput = createHandler<'clearMidiOutput'>({

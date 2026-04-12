@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
 

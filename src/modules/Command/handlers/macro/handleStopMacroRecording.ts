@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { stopMacroRecording } from '../../useCases/macro/recording/stopMacroRecording';
 
 export const handleStopMacroRecording = createHandler<'stopMacroRecording'>({

@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { deleteTime } from '../../useCases/timeOperations/deleteTime';
 
 export const handleDeleteTime = createHandler<'deleteTime'>({

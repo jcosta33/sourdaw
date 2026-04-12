@@ -1,4 +1,4 @@
-import { createHandler } from '#/helpers/createHandler';
+import { createHandler } from '#/utils/createHandler';
 import { cutSelectedClip } from '../../useCases/clipboard/cutSelectedClip';
 
 export const handleCutClip = createHandler<'cutClip'>({

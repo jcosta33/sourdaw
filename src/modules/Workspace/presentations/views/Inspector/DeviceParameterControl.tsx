@@ -2,7 +2,7 @@ import { type ReactElement, type ChangeEvent } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';

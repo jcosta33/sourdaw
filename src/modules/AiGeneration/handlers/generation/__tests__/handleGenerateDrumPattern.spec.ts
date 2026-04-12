@@ -1,0 +1,87 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { handleGenerateDrumPattern } from '../handleGenerateDrumPattern';
+
+const mocks = vi.hoisted(() => ({
+    applyDrumPatternToTrack: vi.fn(),
+    resolveOrCreateMidiTrack: vi.fn(() => 't1'),
+    getPlayheadBeat: vi.fn(() => 8),
+}));
+
+vi.mock('../../../useCases/generateDrumPattern/applyToTrack', () => ({
+    applyDrumPatternToTrack: mocks.applyDrumPatternToTrack,
+}));
+
+vi.mock('../generationHandlerHelpers', () => ({
+    getPlayheadBeat: mocks.getPlayheadBeat,
+    resolveOrCreateMidiTrack: mocks.resolveOrCreateMidiTrack,
+    VALID_DRUM_STYLES: new Set(['rock', 'house']),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        addTrack: vi.fn(),
+        getTrackStoreState: vi.fn(),
+    };
+});
+
+describe('handleGenerateDrumPattern', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveOrCreateMidiTrack.mockReturnValue('t1');
+    });
+
+    it('executes generation with validated payload and defaults', () => {
+        handleGenerateDrumPattern.execute({
+            type: 'generateDrumPattern',
+            payload: {
+                style: 'house',
+                bars: 2,
+                density: 0.8,
+            },
+        });
+
+        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith(
+            't1',
+            { style: 'house', bars: 2, density: 0.8 },
+            8
+        );
+    });
+
+    it('falls back to default style for invalid inputs', () => {
+        handleGenerateDrumPattern.execute({
+            type: 'generateDrumPattern',
+            payload: {
+                style: 'invalid-style' as any,
+                bars: 4,
+                density: 0.5,
+            },
+        });
+
+        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith(
+            't1',
+            { style: 'rock', bars: 4, density: 0.5 },
+            8
+        );
+    });
+
+    it('bails if track cannot be resolved or created', () => {
+        mocks.resolveOrCreateMidiTrack.mockReturnValue(null);
+
+        handleGenerateDrumPattern.execute({
+            type: 'generateDrumPattern',
+            payload: { style: 'rock', bars: 1, density: 0.5 },
+        });
+
+        expect(mocks.applyDrumPatternToTrack).not.toHaveBeenCalled();
+    });
+
+    it('provides a description', () => {
+        const desc = handleGenerateDrumPattern.describe({
+            type: 'generateDrumPattern',
+            payload: { style: 'house', bars: 1, density: 0.5 },
+        });
+        expect(desc.label).toBe('Generate house drum pattern');
+    });
+});

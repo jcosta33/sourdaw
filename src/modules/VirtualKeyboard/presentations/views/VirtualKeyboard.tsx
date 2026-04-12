@@ -20,7 +20,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { cn } from '#/helpers/Styles/cn';
+import { cn } from '#/utils/Styles/cn';
 import { Slider } from '#/components/ui/slider';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
