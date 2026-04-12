@@ -41,8 +41,24 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             cleanupMidiData(a.payload.clipId);
             return;
         }
-        for (const removed of rippleResult.removedClips) {
-            cleanupMidiData(removed.id);
+        // Batch MIDI cleanup for all removed clips in a single store write
+        const ms = midiStore.value;
+        if (ms) {
+            const notesCopy = { ...ms.notesByClipId };
+            const ccCopy = { ...ms.ccByClipId };
+            const pbCopy = { ...ms.pitchBendByClipId };
+            let changed = false;
+            for (const removed of rippleResult.removedClips) {
+                if (notesCopy[removed.id] || ccCopy[removed.id] || pbCopy[removed.id]) {
+                    delete notesCopy[removed.id];
+                    delete ccCopy[removed.id];
+                    delete pbCopy[removed.id];
+                    changed = true;
+                }
+            }
+            if (changed) {
+                midiStore.set({ ...ms, notesByClipId: notesCopy, ccByClipId: ccCopy, pitchBendByClipId: pbCopy });
+            }
         }
     },
     describe: (a) => {

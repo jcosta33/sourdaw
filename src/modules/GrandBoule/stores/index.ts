@@ -1,1 +1,1 @@
-export { defaultGrandBouleState, grandBouleStore } from './grandBouleStore';
+export { defaultGrandBouleState, createDefaultGrandBouleState, grandBouleStore } from './grandBouleStore';
