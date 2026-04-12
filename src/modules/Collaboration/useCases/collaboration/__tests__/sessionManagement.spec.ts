@@ -1,50 +1,105 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Container } from '#/infra/di/Container';
-import { createSession } from '../sessionManagement';
-import {
-    setupProjectionBridge,
-    subscribeToCrdtChanges,
-    getCrdtDoc,
-    createCrdtDoc,
-    hasCrdtDoc,
-    removeCrdtDoc,
-    mutateCrdtDoc,
-    persistCrdtProject,
-} from '#/modules/CrdtDocument/useCases';
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { createSession, leaveSession } from '../sessionManagement';
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    setupProjectionBridge: vi.fn(),
-    subscribeToCrdtChanges: vi.fn(),
-    getCrdtDoc: vi.fn(),
-    createCrdtDoc: vi.fn(),
-    hasCrdtDoc: vi.fn(),
-    removeCrdtDoc: vi.fn(),
+const mocks = vi.hoisted(() => ({
+    collaborationStoreValue: { value: {} },
+    collaborationStoreSet: vi.fn(),
+    PeerConnectionManager: vi.fn().mockImplementation(() => ({
+        closeAll: vi.fn(),
+        getConnectedPeerIds: vi.fn(() => []),
+        broadcastCrdtSync: vi.fn(),
+    })),
+    AutomergeSync: vi.fn().mockImplementation(() => ({
+        start: vi.fn(),
+        stop: vi.fn(),
+    })),
+    AssetTransfer: vi.fn(),
+    PermissionManager: vi.fn().mockImplementation(() => ({
+        clear: vi.fn(),
+        grantRole: vi.fn(),
+    })),
+    setupProjectionBridge: vi.fn(() => vi.fn()), 
     mutateCrdtDoc: vi.fn(),
-    persistCrdtProject: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    createCrdtDoc: vi.fn(),
+    branchStoreValue: { value: { branches: [] } },
+    branchStoreSubscribe: vi.fn(() => vi.fn()),
+    branchStoreSet: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getAudioContext: vi.fn(),
+// Use exact relative paths as in sessionManagement.ts
+vi.mock('../../repositories/peerConnection', () => ({
+    PeerConnectionManager: mocks.PeerConnectionManager,
 }));
 
-describe('sessionManagement createSession injectable', () => {
+vi.mock('../automergeSync', () => ({
+    AutomergeSync: mocks.AutomergeSync,
+}));
+
+vi.mock('../assetTransfer', () => ({
+    AssetTransfer: mocks.AssetTransfer,
+}));
+
+vi.mock('../permissions', () => ({
+    PermissionManager: mocks.PermissionManager,
+}));
+
+vi.mock('../../stores/collaborationStore', () => ({
+    collaborationStore: {
+        get value() { return mocks.collaborationStoreValue.value; },
+        set: mocks.collaborationStoreSet,
+    }
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    setupProjectionBridge: mocks.setupProjectionBridge,
+    mutateCrdtDoc: mocks.mutateCrdtDoc,
+    removeCrdtDoc: mocks.removeCrdtDoc,
+    createCrdtDoc: mocks.createCrdtDoc,
+}));
+
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    branchStore: {
+        get value() { return mocks.branchStoreValue.value; },
+        subscribe: mocks.branchStoreSubscribe,
+        set: mocks.branchStoreSet,
+    }
+}));
+
+describe('collaboration sessionManagement', () => {
     beforeEach(() => {
-        Container.clear();
         vi.clearAllMocks();
+        mocks.collaborationStoreValue.value = {};
     });
 
-    it('invokes injected CRDT / engine collaborators when starting a session (smoke)', () => {
-        vi.mocked(setupProjectionBridge).mockReturnValue(() => {});
-        vi.mocked(subscribeToCrdtChanges).mockReturnValue(() => {});
-        vi.mocked(hasCrdtDoc).mockReturnValue(false);
-        vi.mocked(persistCrdtProject).mockResolvedValue(undefined);
+    it('createSession initializes sub-systems and updates store', () => {
+        const sessionId = createSession('Alice');
 
-        const sessionId = createSession('Test Host');
+        expect(sessionId).toBeDefined();
+        expect(mocks.PeerConnectionManager).toHaveBeenCalled();
+        expect(mocks.AutomergeSync).toHaveBeenCalled();
+        expect(mocks.setupProjectionBridge).toHaveBeenCalled();
+        
+        expect(mocks.collaborationStoreSet).toHaveBeenCalledWith(expect.objectContaining({
+            isEnabled: true,
+            localName: 'Alice',
+            isHost: true,
+        }));
+    });
 
-        expect(typeof sessionId).toBe('string');
-        expect(setupProjectionBridge).toHaveBeenCalledTimes(1);
-        expect(removeCrdtDoc).toHaveBeenCalled();
-        expect(createCrdtDoc).toHaveBeenCalled();
+    it('leaveSession cleans up sub-systems and resets store', () => {
+        mocks.collaborationStoreValue.value = { localPeerId: 'p1' } as any;
+        
+        // Setup existing session state
+        createSession('Alice');
+        
+        leaveSession();
+
+        expect(mocks.collaborationStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({
+            isEnabled: false,
+            sessionId: null,
+            peers: [],
+        }));
     });
 });

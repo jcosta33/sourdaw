@@ -11,13 +11,15 @@ export const handleSwitchTrackAlternative = createHandler<'switchTrackAlternativ
 
         const { trackId, alternativeId } = action.payload;
 
+        const targetTrack = state.tracks.find((t) => t.id === trackId);
+        if (!targetTrack || targetTrack.activeAlternativeId === alternativeId) {
+            return;
+        }
+
         setTrackStoreState({
             ...state,
             tracks: state.tracks.map((track) => {
                 if (track.id !== trackId) {
-                    return track;
-                }
-                if (track.activeAlternativeId === alternativeId) {
                     return track;
                 }
 

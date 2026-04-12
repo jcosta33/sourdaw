@@ -1,23 +1,24 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getVcaGroups } from '../getVcaGroups';
+import { describe, it, expect, beforeEach } from 'vitest';
 
-const mockGetVcaGroupsState = vi.fn();
-vi.mock('#/modules/Arrangement/stores/vcaGroupStore', () => ({
-    getVcaGroupsState: () => mockGetVcaGroupsState()
-}));
+import { setVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
+
+import { getVcaGroups } from '../getVcaGroups';
 
 describe('getVcaGroups', () => {
     beforeEach(() => {
-        mockGetVcaGroupsState.mockReset();
+        setVcaGroupsState([]);
     });
 
-    it('returns a copy of the groups from the injected getter', () => {
-        const g1 = { id: 'v1', name: 'A', gain: 1, muted: false, trackIds: [] };
-        mockGetVcaGroupsState.mockReturnValue([g1]);
+    it('should return a copy of the current VCA group list', () => {
+        setVcaGroupsState([{ id: 'g1', name: 'VCA 1', gain: 0, muted: false, trackIds: ['t1'] }]);
+        const a = getVcaGroups();
+        const b = getVcaGroups();
+        expect(a).not.toBe(b);
+        expect(a).toEqual(b);
+        expect(a[0]?.id).toBe('g1');
+    });
 
-        const out = getVcaGroups();
-        expect(out).toEqual([g1]);
-        out.pop();
-        expect(getVcaGroups()).toHaveLength(1);
+    it('should return an empty array when no groups are registered', () => {
+        expect(getVcaGroups()).toEqual([]);
     });
 });

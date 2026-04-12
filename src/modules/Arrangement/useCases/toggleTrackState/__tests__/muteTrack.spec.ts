@@ -1,32 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setTrackMute } from '#/modules/AudioEngine/useCases/trackAudioControls/setTrackMute';
-import { applySoloLogic } from '#/modules/Arrangement/services/applySoloLogic';
 import { muteTrack } from '../muteTrack';
 
-vi.mock('#/modules/AudioEngine/useCases/trackAudioControls/setTrackMute', () => ({
-    setTrackMute: vi.fn(),
-}));
-vi.mock('#/modules/Arrangement/services/applySoloLogic', () => ({
+const mocks = vi.hoisted(() => ({
+    updateTrack: vi.fn(),
+    engineSetTrackMute: vi.fn(),
     applySoloLogic: vi.fn(),
 }));
 
-const mockUpdateTrack = vi.fn();
 vi.mock('#/modules/Arrangement/repositories/track/updateTrack', () => ({
-    updateTrack: (...args: any[]) => mockUpdateTrack(...args)
+    updateTrack: mocks.updateTrack,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    setTrackMute: mocks.engineSetTrackMute,
+}));
+
+vi.mock('#/modules/Arrangement/services/applySoloLogic', () => ({
+    applySoloLogic: mocks.applySoloLogic,
 }));
 
 describe('muteTrack', () => {
-    beforeEach(() => {
-        vi.mocked(setTrackMute).mockClear();
-        vi.mocked(applySoloLogic).mockClear();
-        mockUpdateTrack.mockReset();
-    });
+    beforeEach(() => vi.clearAllMocks());
 
-    it('should update track mute, engine, and solo logic', () => {
+    it('updates track muted state, notifies audio engine, and applies solo logic', () => {
         muteTrack('t1', true);
 
-        expect(mockUpdateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        expect(setTrackMute).toHaveBeenCalledWith('t1', true);
-        expect(applySoloLogic).toHaveBeenCalledTimes(1);
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        expect(mocks.engineSetTrackMute).toHaveBeenCalledWith('t1', true);
+        expect(mocks.applySoloLogic).toHaveBeenCalledTimes(1);
     });
 });

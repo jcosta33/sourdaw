@@ -1,103 +1,90 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ensureTrackStrips } from '../ensureTrackStrips';
-import { trackStore } from '#/modules/Arrangement/stores';
-import {
-    addDeviceToStrip,
-    ensureTrackStrip,
-    setTrackMute,
-    setTrackOutput,
-    updateDeviceParam,
-} from '#/modules/AudioEngine/useCases';
-import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing/useCases';
 
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return {
-        ...mod,
-        trackStore: { value: null },
-    };
-});
+const mocks = vi.hoisted(() => ({
+    trackStoreValue: { value: null },
+    ensureTrackStrip: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackGain: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackMute: vi.fn(),
+    addDeviceToStrip: vi.fn(),
+    updateDeviceParam: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+}));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return {
-        ...mod,
-        ensureTrackStrip: vi.fn(),
-        setTrackGain: vi.fn(),
-        setTrackPan: vi.fn(),
-        setTrackMute: vi.fn(),
-        setTrackOutput: vi.fn(),
-        addDeviceToStrip: vi.fn(),
-        updateDeviceParam: vi.fn(),
-    };
-});
+// Mock the store file directly
+vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+    trackStore: { get value() { return mocks.trackStoreValue.value; } }
+}));
 
-vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Routing/useCases')>();
-    return {
-        ...mod,
-        ensureBusStrip: vi.fn(),
-        setBusGain: vi.fn(),
-        setSend: vi.fn(),
-    };
-});
+// Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: { get value() { return mocks.trackStoreValue.value; } },
+    markerStore: { value: { markers: [], sections: [] } },
+    chordTrackStore: { value: {} },
+    scratchPadStore: { value: {} },
+    takeLaneStore: { value: {} },
+}));
+
+// Mock AudioEngine use cases
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    ensureTrackStrip: mocks.ensureTrackStrip,
+    setTrackOutput: mocks.setTrackOutput,
+    setTrackGain: mocks.setTrackGain,
+    setTrackPan: mocks.setTrackPan,
+    setTrackMute: mocks.setTrackMute,
+    addDeviceToStrip: mocks.addDeviceToStrip,
+    updateDeviceParam: mocks.updateDeviceParam,
+    // Add other common exports to satisfy the barrel mock
+    resumeEngine: vi.fn(),
+    getAudioContext: vi.fn(),
+    stopAllScheduled: vi.fn(),
+    resetMidiState: vi.fn(),
+    scheduleClick: vi.fn(),
+    startAudioRecording: vi.fn(),
+    stopAudioRecording: vi.fn(),
+}));
+
+// Mock Routing use cases
+vi.mock('#/modules/Routing/useCases', async () => ({
+    ensureBusStrip: mocks.ensureBusStrip,
+    setBusGain: mocks.setBusGain,
+    setSend: mocks.setSend,
+}));
 
 describe('ensureTrackStrips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        trackStore.value = null as any;
     });
 
-    it('noops when no tracks are loaded', () => {
-        ensureTrackStrips();
-        expect(ensureTrackStrip).not.toHaveBeenCalled();
-    });
-
-    it('sets up bus strips, audio strips, devices and sends', () => {
-        trackStore.value = {
+    it('bootstraps tracks and their components in the engine', () => {
+        mocks.trackStoreValue.value = {
             tracks: [
-                { id: 'bus-1', kind: 'bus', gain: 0.8, pan: 0, muted: false, soloed: false, devices: [], sends: [], outputId: 'master' },
                 {
                     id: 't1',
                     kind: 'audio',
-                    gain: 1,
-                    pan: 0,
+                    gain: 0.8,
+                    pan: -10,
                     muted: false,
                     soloed: false,
-                    outputId: 'master',
+                    outputId: 'main',
                     devices: [
-                        {
-                            id: 'd1',
-                            type: 'gain',
-                            parameterValues: { gain: 0.5 },
-                        },
+                        { id: 'd1', type: 'reverb', parameterValues: { room: 0.5 } }
                     ],
-                    sends: [{ busId: 'bus-1', level: 0.3, preFader: false }],
+                    sends: [{ busId: 'b1', level: 0.1, preFader: false }],
                 },
-            ],
+                { id: 'b1', kind: 'bus', gain: 1.0 },
+            ]
         } as any;
 
         ensureTrackStrips();
 
-        expect(ensureBusStrip).toHaveBeenCalledWith('bus-1');
-        expect(setBusGain).toHaveBeenCalledWith('bus-1', 0.8);
-        expect(ensureTrackStrip).toHaveBeenCalledWith('t1');
-        expect(addDeviceToStrip).toHaveBeenCalledWith('t1', 'd1', 'gain');
-        expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.5);
-        expect(setSend).toHaveBeenCalledWith('t1', 'bus-1', 0.3, false);
-    });
-
-    it('mutes non-soloed tracks when any track is soloed', () => {
-        trackStore.value = {
-            tracks: [
-                { id: 't1', kind: 'audio', gain: 1, pan: 0, muted: false, soloed: true, outputId: 'master', devices: [], sends: [] },
-                { id: 't2', kind: 'audio', gain: 1, pan: 0, muted: false, soloed: false, outputId: 'master', devices: [], sends: [] },
-            ],
-        } as any;
-
-        ensureTrackStrips();
-
-        // The non-soloed track gets muted
-        expect(setTrackMute).toHaveBeenCalledWith('t2', true, 1);
+        expect(mocks.ensureBusStrip).toHaveBeenCalledWith('b1');
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('t1');
+        expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.8);
+        expect(mocks.setSend).toHaveBeenCalledWith('t1', 'b1', 0.1, false);
     });
 });

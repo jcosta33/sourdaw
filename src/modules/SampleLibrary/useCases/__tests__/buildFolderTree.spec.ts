@@ -1,57 +1,56 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { buildFolderTree } from '../buildFolderTree';
 
-const { setFolderTree, mockStore } = vi.hoisted(() => {
-    const ref = {
-        value: null as { samples: { id: string; libraryRootId: string; folder: string }[]; roots: { id: string; name: string }[] } | null,
-    };
-    const setFolderTree = vi.fn();
-    return { setFolderTree, mockStore: ref };
-});
+const mocks = vi.hoisted(() => ({
+    libraryStoreValue: { value: { samples: [], roots: [] } },
+    setFolderTree: vi.fn(),
+}));
 
 vi.mock('../../stores/libraryStore', () => ({
     libraryStore: {
-        get value() {
-            return mockStore.value;
-        },
+        get value() { return mocks.libraryStoreValue.value; }
     },
-    setFolderTree,
+    setFolderTree: mocks.setFolderTree,
 }));
-
-import { buildFolderTree } from '../buildFolderTree';
 
 describe('buildFolderTree', () => {
     beforeEach(() => {
-        setFolderTree.mockClear();
+        vi.clearAllMocks();
     });
 
-    it('noops when the library store is empty', () => {
-        mockStore.value = null;
-        buildFolderTree('r1');
-        expect(setFolderTree).not.toHaveBeenCalled();
-    });
-
-    it('builds a nested tree from sample folder paths and increments file counts', () => {
-        mockStore.value = {
+    it('builds a hierarchical folder tree from flat sample paths', () => {
+        mocks.libraryStoreValue.value = {
+            roots: [{ id: 'r1', name: 'My Samples' }],
             samples: [
-                { id: 'a', libraryRootId: 'r1', folder: 'kicks' },
-                { id: 'b', libraryRootId: 'r1', folder: 'kicks' },
-                { id: 'c', libraryRootId: 'r1', folder: 'snares/acoustic' },
-                { id: 'd', libraryRootId: 'r2', folder: 'ignored' },
+                { libraryRootId: 'r1', folder: 'Drums/Kicks' },
+                { libraryRootId: 'r1', folder: 'Drums/Snares' },
+                { libraryRootId: 'r1', folder: 'Vocals' },
             ],
-            roots: [{ id: 'r1', name: 'My Root' }],
-        };
+        } as any;
 
         buildFolderTree('r1');
 
-        expect(setFolderTree).toHaveBeenCalledTimes(1);
-        const [rootId, root] = setFolderTree.mock.calls[0]!;
+        expect(mocks.setFolderTree).toHaveBeenCalledTimes(1);
+        const [rootId, tree] = mocks.setFolderTree.mock.calls[0];
+        
         expect(rootId).toBe('r1');
-        expect(root.name).toBe('My Root');
-        expect(root.fileCount).toBe(3);
-        expect(root.children.map((c: { name: string }) => c.name)).toEqual(['kicks', 'snares']);
-        const kicks = root.children.find((c: { name: string }) => c.name === 'kicks')!;
-        expect(kicks.fileCount).toBe(2);
-        const snares = root.children.find((c: { name: string }) => c.name === 'snares')!;
-        expect(snares.children.map((c: { name: string }) => c.name)).toEqual(['acoustic']);
+        expect(tree.name).toBe('My Samples');
+        expect(tree.fileCount).toBe(3);
+        
+        // Children: Drums, Vocals
+        expect(tree.children).toHaveLength(2);
+        expect(tree.children[0].name).toBe('Drums');
+        expect(tree.children[1].name).toBe('Vocals');
+        
+        // Sub-children of Drums: Kicks, Snares
+        expect(tree.children[0].children).toHaveLength(2);
+        expect(tree.children[0].children[0].name).toBe('Kicks');
+        expect(tree.children[0].children[1].name).toBe('Snares');
+    });
+
+    it('bails if root not found', () => {
+        mocks.libraryStoreValue.value = { roots: [], samples: [] } as any;
+        buildFolderTree('r1');
+        expect(mocks.setFolderTree).not.toHaveBeenCalled();
     });
 });

@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setMetronomeVolume } from '../setMetronomeVolume';
+
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 import { getTransportState } from '#/modules/Transport/repositories/transport/getTransportState';
 import { updateTransportState } from '#/modules/Transport/repositories/transport/updateTransportState';
+
+import { setMetronomeVolume } from '../setMetronomeVolume';
 
 vi.mock('#/modules/Transport/repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
@@ -18,22 +20,18 @@ describe('setMetronomeVolume', () => {
     });
 
     it('should clamp metronome volume between 0 and 1', () => {
-        const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
-        vi.mocked(updateTransportState).mockImplementation(update);
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, metronomeVolume: 0.5 });
 
-        setMetronomeVolume(1.5);
+        setMetronomeVolume(2);
+        expect(updateTransportState).toHaveBeenCalledWith({ metronomeVolume: 1 });
 
-        expect(update).toHaveBeenCalledWith({ metronomeVolume: 1 });
+        setMetronomeVolume(-0.5);
+        expect(updateTransportState).toHaveBeenCalledWith({ metronomeVolume: 0 });
     });
 
-    it('should not update when transport state is missing', () => {
-        const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as any);
-        vi.mocked(updateTransportState).mockImplementation(update);
-
-        setMetronomeVolume(0.5);
-
-        expect(update).not.toHaveBeenCalled();
+    it('should not update transport when state is missing', () => {
+        vi.mocked(getTransportState).mockReturnValue(null);
+        setMetronomeVolume(0.25);
+        expect(updateTransportState).not.toHaveBeenCalled();
     });
 });

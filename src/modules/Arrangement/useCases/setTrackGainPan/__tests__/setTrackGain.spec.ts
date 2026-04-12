@@ -1,0 +1,75 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setTrackGain } from '../setTrackGain';
+
+const mocks = vi.hoisted(() => ({
+    updateTrack: vi.fn(),
+    engineSetTrackGain: vi.fn(),
+    updateDeviceParam: vi.fn(),
+    getAllTracks: vi.fn(),
+    getTransportState: vi.fn(),
+    getTrackById: vi.fn(),
+    recordAutomationValue: vi.fn(),
+}));
+
+vi.mock('../../../repositories/track/updateTrack', () => ({
+    updateTrack: mocks.updateTrack,
+}));
+
+vi.mock('../../../repositories/track/getTrackById', () => ({
+    getTrackById: mocks.getTrackById,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    setTrackGain: mocks.engineSetTrackGain,
+    updateDeviceParam: mocks.updateDeviceParam,
+}));
+
+vi.mock('#/modules/Arrangement/useCases/getAllTracks', () => ({
+    getAllTracks: mocks.getAllTracks,
+}));
+
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    getTransportState: mocks.getTransportState,
+}));
+
+vi.mock('#/modules/Automation', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    recordAutomationValue: mocks.recordAutomationValue,
+}));
+
+describe('setTrackGain', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getAllTracks.mockReturnValue([]);
+        mocks.getTransportState.mockReturnValue({ isPlaying: false });
+    });
+
+    it('updates track gain and notifies engine', () => {
+        setTrackGain('t1', 0.5);
+
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        const updater = mocks.updateTrack.mock.calls[0][1];
+        expect(updater({ gain: 1.0 })).toEqual({ gain: 0.5 });
+
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.5);
+    });
+
+    it('clamps gain between 0 and 1', () => {
+        setTrackGain('t1', 1.5);
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 1);
+
+        setTrackGain('t1', -0.5);
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0);
+    });
+
+    it('records automation if track automation mode is write/touch', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.getTransportState.mockReturnValue({ isPlaying: true, playheadPosition: 10 });
+
+        setTrackGain('t1', 0.8);
+
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 10);
+    });
+});

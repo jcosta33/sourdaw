@@ -1,0 +1,63 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { handleSetTrackPan } from '../handleSetTrackPan';
+
+const mocks = vi.hoisted(() => ({
+    setTrackPan: vi.fn(),
+    getTrackStoreState: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackPan', () => ({
+    setTrackPan: mocks.setTrackPan,
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+describe('handleSetTrackPan', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    describe('execute', () => {
+        it('calls setTrackPan', () => {
+            handleSetTrackPan.execute({
+                type: 'setTrackPan',
+                payload: { trackId: 't1', pan: -0.5 },
+            });
+            expect(mocks.setTrackPan).toHaveBeenCalledWith('t1', -0.5);
+        });
+    });
+
+    describe('describe', () => {
+        it('returns inverse action with previous pan', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', pan: 0.5 }] });
+            
+            const desc = handleSetTrackPan.describe({
+                type: 'setTrackPan',
+                payload: { trackId: 't1', pan: -0.5 },
+            });
+
+            expect(desc.label).toBe('Set track pan');
+            expect(desc.inverseAction).toEqual({
+                type: 'setTrackPan',
+                payload: { trackId: 't1', pan: 0.5 }
+            });
+        });
+
+        it('returns null inverse action if track not found', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+            
+            const desc = handleSetTrackPan.describe({
+                type: 'setTrackPan',
+                payload: { trackId: 't1', pan: -0.5 },
+            });
+
+            expect(desc.inverseAction).toBeNull();
+        });
+    });
+
+    it('is undoable', () => {
+        expect(handleSetTrackPan.undoable).toBe(true);
+    });
+});

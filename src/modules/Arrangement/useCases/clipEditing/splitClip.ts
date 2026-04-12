@@ -10,42 +10,48 @@ export function splitClip(clipId: string, splitBeat: number): void {
         return;
     }
 
-    setTrackState({
-        ...state,
-        tracks: state.tracks.map((t) => {
-            const clip = t.clips.find((c) => c.id === clipId);
-            if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
-                return t;
-            }
+    let splitOccurred = false;
+    const newTracks = state.tracks.map((t) => {
+        const clip = t.clips.find((c) => c.id === clipId);
+        if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
+            return t;
+        }
 
-            const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
+        const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
 
-            if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
-                return t;
-            }
+        if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
+            return t;
+        }
 
-            const leftClip: Clip = {
-                ...clip,
-                endBeat: adjustedSplitBeat,
-                name: `${clip.name} (L)`,
-                fadeOutBeats: 0,
-            };
+        splitOccurred = true;
+        const leftClip: Clip = {
+            ...clip,
+            endBeat: adjustedSplitBeat,
+            name: `${clip.name} (L)`,
+            fadeOutBeats: 0,
+        };
 
-            const rightClip: Clip = {
-                ...clip,
-                id: getNextClipId(),
-                name: `${clip.name} (R)`,
-                startBeat: adjustedSplitBeat,
-                endBeat: clip.endBeat,
-                fadeInBeats: 0,
-                fadeOutBeats: clip.fadeOutBeats,
-                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
-            };
+        const rightClip: Clip = {
+            ...clip,
+            id: getNextClipId(),
+            name: `${clip.name} (R)`,
+            startBeat: adjustedSplitBeat,
+            endBeat: clip.endBeat,
+            fadeInBeats: 0,
+            fadeOutBeats: clip.fadeOutBeats,
+            audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
+        };
 
-            return {
-                ...t,
-                clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
-            };
-        }),
+        return {
+            ...t,
+            clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
+        };
     });
+
+    if (splitOccurred) {
+        setTrackState({
+            ...state,
+            tracks: newTracks,
+        });
+    }
 }

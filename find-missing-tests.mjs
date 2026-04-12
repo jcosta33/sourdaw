@@ -22,15 +22,15 @@ const allSources = walkDir('./src/modules');
 const missingTests = [];
 for (const source of allSources) {
     if (source.endsWith('index.ts') || source.endsWith('index.tsx')) continue;
-    if (source.includes('/models/')) continue; // Skip models for now
-    if (source.includes('/types/')) continue; // Skip types
+    if (source.includes('/models/')) continue;
+    if (source.includes('/types/')) continue;
     const dir = path.dirname(source);
     const ext = path.extname(source);
     const name = path.basename(source, ext);
-    const testFile = path.join(dir, '__tests__', `${name}.spec${ext}`);
-    if (!fs.existsSync(testFile)) {
+    const testFileTs = path.join(dir, '__tests__', `${name}.spec.ts`);
+    const testFileTsx = path.join(dir, '__tests__', `${name}.spec.tsx`);
+    if (!fs.existsSync(testFileTs) && !fs.existsSync(testFileTsx)) {
         missingTests.push(source);
     }
 }
-console.log(missingTests.slice(0, 30).join('\n'));
-console.log("Total missing:", missingTests.length);
+missingTests.forEach(f => console.log(f));
