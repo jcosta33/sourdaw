@@ -5,6 +5,12 @@ import { automationStore } from '#/modules/Automation';
 import { createHandler } from '#/utils/createHandler';
 import { midiStore } from '#/modules/MIDI/stores';
 
+// Local structural shapes (AGENTS.md model isolation). These match the minimum
+// guarantees of MIDI's store entries — used purely to produce inverse-action snapshots.
+type MidiNoteEntry = { readonly id: string };
+type MidiCcEntry = { readonly id: string };
+type MidiPitchBendEntry = { readonly id: string };
+
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     execute: (action) => {
         removeTrack(action.payload.trackId);
@@ -25,9 +31,9 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
 
         const midiState = midiStore.value;
         const clipIds = track.clips.map((c) => c.id);
-        const midiNotesByClipId: Record<string, unknown> = {};
-        const midiCcByClipId: Record<string, unknown> = {};
-        const midiPitchBendByClipId: Record<string, unknown> = {};
+        const midiNotesByClipId: Record<string, readonly MidiNoteEntry[]> = {};
+        const midiCcByClipId: Record<string, readonly MidiCcEntry[]> = {};
+        const midiPitchBendByClipId: Record<string, readonly MidiPitchBendEntry[]> = {};
         if (midiState) {
             for (const cid of clipIds) {
                 if (midiState.notesByClipId[cid]) {

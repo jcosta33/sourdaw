@@ -29,6 +29,8 @@ export type ActiveNoteData = {
     toasterDeviceId?: string;
     /** When the note was sent to a Grand Boule instance, stores the device ID for noteOff routing */
     grandBouleDeviceId?: string;
+    /** When the note was sent to a Levain instance, stores the device ID for noteOff routing */
+    levainDeviceId?: string;
 };
 
 // MIDI message constants

@@ -5,6 +5,11 @@ import { removeClip } from '../../useCases/clip/removeClip';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
+// Minimal structural clip shape used to widen a concrete Clip into the structural
+// `ClipSnapshot` carried by the `restoreClip` inverse action payload.
+type MinimalClipShape = { id: string; trackId: string; startBeat: number; endBeat: number };
+type MidiEntry = { readonly id: string };
+
 function cleanupMidiData(clipId: string): void {
     const ms = midiStore.value;
     if (!ms) {
@@ -63,7 +68,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
     },
     describe: (a) => {
         const state = getTrackStoreState();
-        let clipSnapshot: unknown = null;
+        let clipSnapshot: MinimalClipShape | null = null;
         let trackId: string | null = null;
         if (state) {
             for (const track of state.tracks) {
@@ -82,8 +87,8 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const plan = planRippleDelete({ trackId, clipIds: [a.payload.clipId] });
         const ripplePlan = plan
             ? {
-                  removedClips: structuredClone(plan.removedClips) as unknown[],
-                  shiftedClips: structuredClone(plan.shiftedClips) as unknown[],
+                  removedClips: structuredClone(plan.removedClips) as readonly MinimalClipShape[],
+                  shiftedClips: structuredClone(plan.shiftedClips),
               }
             : null;
 
@@ -101,9 +106,9 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                     trackId,
                     clipSnapshot,
                     ripplePlan,
-                    midiNotesSnapshot: notes ? structuredClone(notes) : null,
-                    midiCcSnapshot: cc ? structuredClone(cc) : null,
-                    midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
+                    midiNotesSnapshot: notes ? (structuredClone(notes) as readonly MidiEntry[]) : null,
+                    midiCcSnapshot: cc ? (structuredClone(cc) as readonly MidiEntry[]) : null,
+                    midiPitchBendSnapshot: pb ? (structuredClone(pb) as readonly MidiEntry[]) : null,
                 },
             },
         };

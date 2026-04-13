@@ -12,11 +12,17 @@ export type InjectOptions = {
     lazy?: boolean;
 };
 
-export type InjectableFunction = {
-    (...args: any[]): any;
+// Internal metadata shape for injectable functions. `unknown` is used rather than `any`
+// so downstream consumers must narrow through the well-typed `inject<TDeps>(...)` overloads.
+// The runtime `_factory`/`_deps` are kept intentionally loose — they are only read by the
+// DI machinery in this file and by test overrides via `Container.setTestOverride`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- DI metadata; loose by design
+type InjectableCallable = (...args: any[]) => any;
+
+export type InjectableFunction = InjectableCallable & {
     _isInjectable: boolean;
     _deps: Record<string, unknown>;
-    _factory: (deps: any) => any;
+    _factory: (deps: Record<string, unknown>) => InjectableCallable;
     _options?: InjectOptions;
 };
 

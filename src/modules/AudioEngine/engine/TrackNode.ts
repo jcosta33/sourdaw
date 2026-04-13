@@ -278,11 +278,13 @@ export class TrackNode {
 
                         const pending = pendingFaustParams.get(deviceId);
                         if (pending) {
-                            const worklet = builtinDn.nodes[0] as AudioWorkletNode;
-                            for (const [pId, val] of pending) {
-                                const param = worklet.parameters.get(pId);
-                                if (param) {
-                                    param.setTargetAtTime(val, context.currentTime, 0.01);
+                            const worklet = builtinDn.nodes[0];
+                            if (worklet instanceof AudioWorkletNode) {
+                                for (const [pId, val] of pending) {
+                                    const param = worklet.parameters.get(pId);
+                                    if (param) {
+                                        param.setTargetAtTime(val, context.currentTime, 0.01);
+                                    }
                                 }
                             }
                             pendingFaustParams.delete(deviceId);
@@ -375,7 +377,10 @@ export class TrackNode {
                 map.set(paramId, value);
                 return;
             }
-            const worklet = dn.nodes[0] as AudioWorkletNode;
+            const worklet = dn.nodes[0];
+            if (!(worklet instanceof AudioWorkletNode)) {
+                return;
+            }
             const param = worklet.parameters.get(paramId);
             if (param) {
                 param.setTargetAtTime(value, this.deps.context.currentTime, 0.01);
@@ -384,7 +389,10 @@ export class TrackNode {
         }
 
         if (dn.type === 'builtin-sidechain-compressor') {
-            const worklet = dn.nodes[0] as AudioWorkletNode;
+            const worklet = dn.nodes[0];
+            if (!(worklet instanceof AudioWorkletNode)) {
+                return;
+            }
             const param = worklet.parameters.get(paramId.replace('sc-comp-', ''));
             if (param) {
                 if (paramId === 'sc-comp-attack' || paramId === 'sc-comp-release') {

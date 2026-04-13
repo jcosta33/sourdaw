@@ -37,7 +37,7 @@ export async function generateMidiVariations(clipId: string): Promise<void> {
     // Build representation of current notes (relative to clip start)
     const noteStrings = notes
         .map(
-            (n: any) =>
+            (n) =>
                 `[pitch=${n.pitch}, start=${(n.startBeat - startBeat).toFixed(2)}, duration=${n.duration.toFixed(2)}, velocity=${n.velocity.toFixed(2)}]`
         )
         .join(', ');

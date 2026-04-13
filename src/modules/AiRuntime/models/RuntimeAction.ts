@@ -9,12 +9,12 @@ export type RuntimeAction =
           type: 'restoreTrack';
           payload: {
               trackId: string;
-              trackSnapshot: unknown;
-              automationLaneSnapshots: unknown[];
-              midiNotesByClipId: Record<string, unknown>;
-              midiCcByClipId: Record<string, unknown>;
-              midiPitchBendByClipId: Record<string, unknown>;
-              takeLaneSnapshots: unknown[];
+              trackSnapshot: { readonly id: string };
+              automationLaneSnapshots: readonly { readonly id: string; readonly trackId: string }[];
+              midiNotesByClipId: Record<string, readonly { readonly id: string }[]>;
+              midiCcByClipId: Record<string, readonly { readonly id: string }[]>;
+              midiPitchBendByClipId: Record<string, readonly { readonly id: string }[]>;
+              takeLaneSnapshots: readonly { readonly id: string; readonly trackId: string }[];
           };
       }
     | {
@@ -22,11 +22,28 @@ export type RuntimeAction =
           payload: {
               clipId: string;
               trackId: string;
-              clipSnapshot: unknown;
-              ripplePlan: { removedClips: unknown[]; shiftedClips: unknown[] } | null;
-              midiNotesSnapshot: unknown | null;
-              midiCcSnapshot: unknown | null;
-              midiPitchBendSnapshot: unknown | null;
+              clipSnapshot: {
+                  readonly id: string;
+                  readonly trackId: string;
+                  readonly startBeat: number;
+                  readonly endBeat: number;
+              };
+              ripplePlan: {
+                  readonly removedClips: readonly {
+                      readonly id: string;
+                      readonly trackId: string;
+                      readonly startBeat: number;
+                      readonly endBeat: number;
+                  }[];
+                  readonly shiftedClips: readonly {
+                      readonly clipId: string;
+                      readonly origStartBeat: number;
+                      readonly origEndBeat: number;
+                  }[];
+              } | null;
+              midiNotesSnapshot: readonly { readonly id: string }[] | null;
+              midiCcSnapshot: readonly { readonly id: string }[] | null;
+              midiPitchBendSnapshot: readonly { readonly id: string }[] | null;
           };
       }
     | { type: 'removeAllTracks'; payload?: undefined }

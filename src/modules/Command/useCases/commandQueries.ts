@@ -1,22 +1,50 @@
 import { type DocumentBundle } from '#/modules/CrdtDocument/useCases';
 
+/**
+ * Structural snapshot shapes carried by inverse actions (`restoreTrack` / `restoreClip`).
+ * See `Command/models/AppAction.ts` for full rationale — these are structural types the
+ * Command layer knows without importing Arrangement's concrete models.
+ */
+export type TrackSnapshot = { readonly id: string };
+export type ClipSnapshot = {
+    readonly id: string;
+    readonly trackId: string;
+    readonly startBeat: number;
+    readonly endBeat: number;
+};
+export type AutomationLaneSnapshot = { readonly id: string; readonly trackId: string };
+export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
+export type MidiNotesSnapshot = readonly { readonly id: string }[];
+export type MidiCcSnapshot = readonly { readonly id: string }[];
+export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
+export type RippleShiftSnapshot = {
+    readonly clipId: string;
+    readonly origStartBeat: number;
+    readonly origEndBeat: number;
+};
+export type RipplePlanSnapshot = {
+    readonly removedClips: readonly ClipSnapshot[];
+    readonly shiftedClips: readonly RippleShiftSnapshot[];
+};
+
+export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
+
 export type AppAction =
     | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
     | {
           /** Inverse of `removeTrack`. Carries full snapshots of the removed track and its
            *  satellite state (automation, MIDI, take lanes). Emitted only by the
-           *  `removeTrack` handler's `describe()` — not invoked directly. Payload shapes
-           *  are opaque to the command layer; the Arrangement restore handler casts them. */
+           *  `removeTrack` handler's `describe()` — not invoked directly. */
           type: 'restoreTrack';
           payload: {
               trackId: string;
-              trackSnapshot: unknown;
-              automationLaneSnapshots: unknown[];
-              midiNotesByClipId: Record<string, unknown>;
-              midiCcByClipId: Record<string, unknown>;
-              midiPitchBendByClipId: Record<string, unknown>;
-              takeLaneSnapshots: unknown[];
+              trackSnapshot: TrackSnapshot;
+              automationLaneSnapshots: readonly AutomationLaneSnapshot[];
+              midiNotesByClipId: Record<string, MidiNotesSnapshot>;
+              midiCcByClipId: Record<string, MidiCcSnapshot>;
+              midiPitchBendByClipId: Record<string, MidiPitchBendSnapshot>;
+              takeLaneSnapshots: readonly TakeLaneSnapshot[];
           };
       }
     | {
@@ -27,11 +55,11 @@ export type AppAction =
           payload: {
               clipId: string;
               trackId: string;
-              clipSnapshot: unknown;
-              ripplePlan: { removedClips: unknown[]; shiftedClips: unknown[] } | null;
-              midiNotesSnapshot: unknown | null;
-              midiCcSnapshot: unknown | null;
-              midiPitchBendSnapshot: unknown | null;
+              clipSnapshot: ClipSnapshot;
+              ripplePlan: RipplePlanSnapshot | null;
+              midiNotesSnapshot: MidiNotesSnapshot | null;
+              midiCcSnapshot: MidiCcSnapshot | null;
+              midiPitchBendSnapshot: MidiPitchBendSnapshot | null;
           };
       }
     | { type: 'removeAllTracks'; payload?: undefined }
@@ -142,7 +170,7 @@ export type AppAction =
     | { type: 'addSend'; payload: { trackId: string; busId: string; level: number } }
     | { type: 'removeSend'; payload: { trackId: string; busId: string } }
     | { type: 'removeAutomationPoint'; payload: { laneId: string; pointIndex: number } }
-    | { type: 'setAutomationMode'; payload: { trackId: string; mode: 'read' | 'write' | 'touch' | 'latch' | 'off' } }
+    | { type: 'setAutomationMode'; payload: { trackId: string; mode: AutomationMode } }
     | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
     | { type: 'disableTrack'; payload: { trackId: string; disabled: boolean } }
     | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
