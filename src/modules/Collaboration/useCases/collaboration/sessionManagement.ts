@@ -42,31 +42,57 @@ type LocalBranchState = {
     activeBranchId: string;
 };
 
-let peerManager: PeerConnectionManager | null = null;
-let automergeSync: AutomergeSync | null = null;
-let assetTransfer: AssetTransfer | null = null;
-let permissionManager: PermissionManager | null = null;
-let cleanupProjectionBridge: (() => void) | null = null;
-let presenceListeners = new Set<(data: PresenceData) => void>();
-let playheadBroadcastInterval: ReturnType<typeof setInterval> | null = null;
-/** Tracks the host-assigned peer slot ID for the in-flight invite, if any. */
-let pendingInviteId: PeerId | null = null;
+/**
+ * §14.1 — Coalesce all collaboration-session mutables into one holder so the
+ * session lives behind a single named handle and individual bindings can't
+ * be reassigned from outside this file. Module-level \`let\`s here previously
+ * covered 12 independent pieces of session state with no cross-referencing
+ * discipline.
+ *
+ * Note on HMR: the holder-object pattern doesn't by itself make HMR-safe;
+ * what it buys is: (1) encapsulation, (2) a single place to reset on
+ * startSession/endSession, (3) no external mutation surface. A true
+ * HMR-safe collaboration session needs externally-persistent state tied
+ * to the WebRTC connection, which is a separate spec.
+ */
+const sessionState: {
+    peerManager: PeerConnectionManager | null;
+    automergeSync: AutomergeSync | null;
+    assetTransfer: AssetTransfer | null;
+    permissionManager: PermissionManager | null;
+    cleanupProjectionBridge: (() => void) | null;
+    presenceListeners: Set<(data: PresenceData) => void>;
+    playheadBroadcastInterval: ReturnType<typeof setInterval> | null;
+    /** Host-assigned peer slot ID for the in-flight invite, if any. */
+    pendingInviteId: PeerId | null;
+    /** Snapshot of branchStore taken at session start; restored on session end. */
+    branchStoreSnapshot: LocalBranchState | null;
+    /** Unsubscribe from branchStore changes (local mutations → Automerge doc). */
+    unsubscribeBranchStore: (() => void) | null;
+    /** Unsubscribe from automergeRepository changes (__branches__ doc → branchStore). */
+    unsubscribeAutomergeChanges: (() => void) | null;
+    /**
+     * Guard flag to prevent infinite update loop: projecting __branches__ →
+     * branchStore triggers branchStore.subscribe, which must not write back.
+     */
+    isProjectingBranches: boolean;
+} = {
+    peerManager: null,
+    automergeSync: null,
+    assetTransfer: null,
+    permissionManager: null,
+    cleanupProjectionBridge: null,
+    presenceListeners: new Set(),
+    playheadBroadcastInterval: null,
+    pendingInviteId: null,
+    branchStoreSnapshot: null,
+    unsubscribeBranchStore: null,
+    unsubscribeAutomergeChanges: null,
+    isProjectingBranches: false,
+};
+
 /** Cleanup timers for peers that disconnected without sending peer-leave. */
 const peerCleanupTimers = new Map<PeerId, ReturnType<typeof setTimeout>>();
-
-// -- Branch sync state --
-/** Snapshot of branchStore taken at session start; restored on session end. */
-let branchStoreSnapshot: LocalBranchState | null = null;
-/** Unsubscribe from branchStore changes (local mutations → Automerge doc). */
-let unsubscribeBranchStore: (() => void) | null = null;
-/** Unsubscribe from automergeRepository changes (__branches__ doc → branchStore). */
-let unsubscribeAutomergeChanges: (() => void) | null = null;
-/**
- * Guard flag to prevent infinite update loop:
- * projecting __branches__ → branchStore triggers branchStore.subscribe,
- * which must not write back to the Automerge doc.
- */
-let isProjectingBranches = false;
 
 const PEER_CLEANUP_DELAY_MS = 15_000;
 
@@ -90,7 +116,7 @@ const PLAYHEAD_BROADCAST_HZ = 4;
  */
 const startBranchSync = (isHost: boolean): void => {
     // Snapshot current state so we can restore it on session end.
-    branchStoreSnapshot = branchStore.value
+    sessionState.branchStoreSnapshot = branchStore.value
         ? { ...branchStore.value, branches: [...branchStore.value.branches] }
         : null;
 
@@ -109,8 +135,8 @@ const startBranchSync = (isHost: boolean): void => {
     // For joiners, the doc is created on demand in AutomergeSync.receiveSync.
 
     // Mirror local branch mutations into the Automerge doc.
-    unsubscribeBranchStore = branchStore.subscribe((state) => {
-        if (isProjectingBranches || !state) {
+    sessionState.unsubscribeBranchStore = branchStore.subscribe((state) => {
+        if (sessionState.isProjectingBranches || !state) {
             return;
         }
         if (!hasCrdtDoc(DOC_ID_BRANCHES)) {
@@ -125,7 +151,7 @@ const startBranchSync = (isHost: boolean): void => {
     });
 
     // Project incoming __branches__ doc changes back into branchStore.
-    unsubscribeAutomergeChanges = subscribeToCrdtChanges(() => {
+    sessionState.unsubscribeAutomergeChanges = subscribeToCrdtChanges(() => {
         const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_ID_BRANCHES);
         if (!doc?.branches) {
             return;
@@ -139,7 +165,7 @@ const startBranchSync = (isHost: boolean): void => {
         if (currentJson === incomingJson) {
             return;
         }
-        isProjectingBranches = true;
+        sessionState.isProjectingBranches = true;
         try {
             // Keep the peer's own activeBranchId — don't force them onto the host's branch.
             const validActiveBranchId = incomingBranches.some((branch) => branch.branchId === activeBranchId)
@@ -147,7 +173,7 @@ const startBranchSync = (isHost: boolean): void => {
                 : MAIN_BRANCH_ID;
             branchStore.set({ branches: incomingBranches, activeBranchId: validActiveBranchId });
         } finally {
-            isProjectingBranches = false;
+            sessionState.isProjectingBranches = false;
         }
     });
 };
@@ -157,25 +183,25 @@ const startBranchSync = (isHost: boolean): void => {
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
 const stopBranchSync = (): void => {
-    if (unsubscribeBranchStore) {
-        unsubscribeBranchStore();
-        unsubscribeBranchStore = null;
+    if (sessionState.unsubscribeBranchStore) {
+        sessionState.unsubscribeBranchStore();
+        sessionState.unsubscribeBranchStore = null;
     }
-    if (unsubscribeAutomergeChanges) {
-        unsubscribeAutomergeChanges();
-        unsubscribeAutomergeChanges = null;
+    if (sessionState.unsubscribeAutomergeChanges) {
+        sessionState.unsubscribeAutomergeChanges();
+        sessionState.unsubscribeAutomergeChanges = null;
     }
 
     removeCrdtDoc(DOC_ID_BRANCHES);
 
-    if (branchStoreSnapshot) {
-        isProjectingBranches = true;
+    if (sessionState.branchStoreSnapshot) {
+        sessionState.isProjectingBranches = true;
         try {
-            branchStore.set(branchStoreSnapshot);
+            branchStore.set(sessionState.branchStoreSnapshot);
         } finally {
-            isProjectingBranches = false;
+            sessionState.isProjectingBranches = false;
         }
-        branchStoreSnapshot = null;
+        sessionState.branchStoreSnapshot = null;
     }
 
     // Persist without the __branches__ doc so IDB stays clean.
@@ -218,17 +244,17 @@ export function createSession(name: string): string {
     const sessionId = generateSessionId();
     const color = pickPeerColor([]);
 
-    peerManager = new PeerConnectionManager({
+    sessionState.peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
         onDisconnected: handlePeerDisconnected,
     });
 
-    automergeSync = new AutomergeSync(peerManager);
-    automergeSync.start();
-    cleanupProjectionBridge = setupProjectionBridge();
+    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager);
+    sessionState.automergeSync.start();
+    sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
-    assetTransfer = new AssetTransfer(peerManager, {
+    sessionState.assetTransfer = new AssetTransfer(sessionState.peerManager, {
         onAssetAvailable: (hash) => {
             void resolveAssetForClips(hash);
         },
@@ -237,7 +263,7 @@ export function createSession(name: string): string {
         },
     });
 
-    permissionManager = new PermissionManager(peerManager);
+    sessionState.permissionManager = new PermissionManager(sessionState.peerManager);
     startPlayheadBroadcast();
     startBranchSync(true);
 
@@ -261,19 +287,19 @@ export function createSession(name: string): string {
  * The host calls this, copies the result, and the joiner pastes it into `joinSession`.
  */
 export const generateInvite = async (): Promise<string> => {
-    if (!peerManager) {
+    if (!sessionState.peerManager) {
         throw createCollaborationError('No active session');
     }
 
     // Clean up any previously generated invite that was never answered.
-    if (pendingInviteId) {
-        peerManager.removePeer(pendingInviteId);
-        pendingInviteId = null;
+    if (sessionState.pendingInviteId) {
+        sessionState.peerManager.removePeer(sessionState.pendingInviteId);
+        sessionState.pendingInviteId = null;
     }
 
     const joinerPeerId = generatePeerId();
-    pendingInviteId = joinerPeerId;
-    const peer = peerManager.createPeer(joinerPeerId);
+    sessionState.pendingInviteId = joinerPeerId;
+    const peer = sessionState.peerManager.createPeer(joinerPeerId);
     const sdp = await peer.createOffer();
 
     const state = collaborationStore.value!;
@@ -316,26 +342,26 @@ export async function joinSession(inviteString: string, name: string): Promise<s
     // Pick a color that doesn't clash with the host's (always the first color).
     const color = pickPeerColor([PEER_COLORS[0]!]);
 
-    peerManager = new PeerConnectionManager({
+    sessionState.peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
         onDisconnected: handlePeerDisconnected,
     });
 
-    automergeSync = new AutomergeSync(peerManager);
-    automergeSync.start();
-    cleanupProjectionBridge = setupProjectionBridge();
+    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager);
+    sessionState.automergeSync.start();
+    sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
-    assetTransfer = new AssetTransfer(peerManager, {
+    sessionState.assetTransfer = new AssetTransfer(sessionState.peerManager, {
         onAssetAvailable: resolveAssetForClips,
         onProgress: (_hash, _received, _total) => {},
     });
 
-    permissionManager = new PermissionManager(peerManager);
+    sessionState.permissionManager = new PermissionManager(sessionState.peerManager);
     startPlayheadBroadcast();
     startBranchSync(false);
 
-    const peer = peerManager.createPeer(invite.peerId);
+    const peer = sessionState.peerManager.createPeer(invite.peerId);
     const answerSdp = await peer.acceptOffer(invite.sdp);
 
     collaborationStore.set({
@@ -381,17 +407,17 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
         throw createCollaborationError('Invalid answer');
     }
 
-    if (!peerManager) {
+    if (!sessionState.peerManager) {
         throw createCollaborationError('No active session');
     }
 
-    const peer = peerManager.getPeer(answer.pendingPeerId);
+    const peer = sessionState.peerManager.getPeer(answer.pendingPeerId);
     if (!peer) {
         throw createCollaborationError('No pending peer connection matches this answer — the invite may have expired');
     }
 
     await peer.acceptAnswer(answer.sdp);
-    pendingInviteId = null;
+    sessionState.pendingInviteId = null;
 
     // Add the joiner to our peer list
     const state = collaborationStore.value;
@@ -414,31 +440,31 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
 
 /** Tear down all subsystems without changing store state. */
 const cleanupSubsystems = (): void => {
-    pendingInviteId = null;
+    sessionState.pendingInviteId = null;
     stopPlayheadBroadcast();
     stopBranchSync();
     for (const timer of peerCleanupTimers.values()) {
         clearTimeout(timer);
     }
     peerCleanupTimers.clear();
-    if (automergeSync) {
-        automergeSync.stop();
-        automergeSync = null;
+    if (sessionState.automergeSync) {
+        sessionState.automergeSync.stop();
+        sessionState.automergeSync = null;
     }
-    if (cleanupProjectionBridge) {
-        cleanupProjectionBridge();
-        cleanupProjectionBridge = null;
+    if (sessionState.cleanupProjectionBridge) {
+        sessionState.cleanupProjectionBridge();
+        sessionState.cleanupProjectionBridge = null;
     }
-    if (permissionManager) {
-        permissionManager.clear();
-        permissionManager = null;
+    if (sessionState.permissionManager) {
+        sessionState.permissionManager.clear();
+        sessionState.permissionManager = null;
     }
-    assetTransfer = null;
-    if (peerManager) {
-        peerManager.closeAll();
-        peerManager = null;
+    sessionState.assetTransfer = null;
+    if (sessionState.peerManager) {
+        sessionState.peerManager.closeAll();
+        sessionState.peerManager = null;
     }
-    presenceListeners.clear();
+    sessionState.presenceListeners.clear();
 };
 
 // -- Asset resolution --
@@ -449,7 +475,7 @@ const cleanupSubsystems = (): void => {
  * This lets the scheduler play the clip on the next playback start.
  */
 async function resolveAssetForClips(hash: string): Promise<void> {
-    const blob = assetTransfer?.getAsset(hash);
+    const blob = sessionState.assetTransfer?.getAsset(hash);
     if (!blob) {
         return;
     }
@@ -484,8 +510,8 @@ async function resolveAssetForClips(hash: string): Promise<void> {
 // -- Playhead broadcast --
 
 const startPlayheadBroadcast = (): void => {
-    playheadBroadcastInterval = setInterval(() => {
-        if (!peerManager || peerManager.getConnectedPeerIds().length === 0) {
+    sessionState.playheadBroadcastInterval = setInterval(() => {
+        if (!sessionState.peerManager || sessionState.peerManager.getConnectedPeerIds().length === 0) {
             return;
         }
         const state = collaborationStore.value;
@@ -493,7 +519,7 @@ const startPlayheadBroadcast = (): void => {
             return;
         }
         const playheadBeat = transportStore.value?.playheadPosition ?? null;
-        peerManager.broadcastPresence({
+        sessionState.peerManager.broadcastPresence({
             type: 'presence',
             data: {
                 peerId: state.localPeerId,
@@ -515,9 +541,9 @@ const startPlayheadBroadcast = (): void => {
 };
 
 const stopPlayheadBroadcast = (): void => {
-    if (playheadBroadcastInterval !== null) {
-        clearInterval(playheadBroadcastInterval);
-        playheadBroadcastInterval = null;
+    if (sessionState.playheadBroadcastInterval !== null) {
+        clearInterval(sessionState.playheadBroadcastInterval);
+        sessionState.playheadBroadcastInterval = null;
     }
 };
 
@@ -525,8 +551,8 @@ const stopPlayheadBroadcast = (): void => {
  * Leave the current session.
  */
 export function leaveSession(): void {
-    if (peerManager) {
-        peerManager.broadcastCrdtSync({
+    if (sessionState.peerManager) {
+        sessionState.peerManager.broadcastCrdtSync({
             type: 'peer-leave',
             peerId: collaborationStore.value?.localPeerId ?? '',
         });
@@ -551,7 +577,7 @@ export function leaveSession(): void {
  * Broadcast local presence data to all peers.
  */
 export const broadcastPresence = (data: Omit<PresenceData, 'peerId' | 'name' | 'color'>): void => {
-    if (!peerManager) {
+    if (!sessionState.peerManager) {
         return;
     }
 
@@ -560,7 +586,7 @@ export const broadcastPresence = (data: Omit<PresenceData, 'peerId' | 'name' | '
         return;
     }
 
-    peerManager.broadcastPresence({
+    sessionState.peerManager.broadcastPresence({
         type: 'presence',
         data: {
             ...data,
@@ -575,17 +601,17 @@ export const broadcastPresence = (data: Omit<PresenceData, 'peerId' | 'name' | '
  * Subscribe to incoming presence data from peers.
  */
 export const onPresence = (listener: (data: PresenceData) => void): (() => void) => {
-    presenceListeners.add(listener);
+    sessionState.presenceListeners.add(listener);
     return () => {
-        presenceListeners.delete(listener);
+        sessionState.presenceListeners.delete(listener);
     };
 };
 
 /** Get the asset transfer instance (for requesting/providing assets). */
-export const getAssetTransfer = (): AssetTransfer | null => assetTransfer;
+export const getAssetTransfer = (): AssetTransfer | null => sessionState.assetTransfer;
 
 /** Get the permission manager instance (for role checks). */
-export const getPermissionManager = (): PermissionManager | null => permissionManager;
+export const getPermissionManager = (): PermissionManager | null => sessionState.permissionManager;
 
 // -- Internal handlers --
 
@@ -594,14 +620,14 @@ const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void =>
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
         if (message.docId === DOC_ID_ASSET) {
-            assetTransfer?.handleMessage(peerId, message);
+            sessionState.assetTransfer?.handleMessage(peerId, message);
         } else if (message.docId === '__permissions__') {
-            permissionManager?.handleMessage(peerId, message);
+            sessionState.permissionManager?.handleMessage(peerId, message);
         } else {
-            automergeSync?.handlePeerMessage({ peerId, message });
+            sessionState.automergeSync?.handlePeerMessage({ peerId, message });
         }
     } else if (message.type === 'presence') {
-        for (const listener of presenceListeners) {
+        for (const listener of sessionState.presenceListeners) {
             listener(message.data);
         }
         updatePeerLastSeen(peerId);
@@ -620,15 +646,15 @@ const handlePeerConnected = (peerId: PeerId): void => {
         peerCleanupTimers.delete(peerId);
     }
 
-    automergeSync?.addPeer(peerId);
+    sessionState.automergeSync?.addPeer(peerId);
 
-    peerManager?.sendCrdtSync({
+    sessionState.peerManager?.sendCrdtSync({
         peerId,
         message: { type: 'peer-info', peer: getLocalPeerInfo() },
     });
 
     // Host auto-grants editor role so joiners can edit immediately.
-    permissionManager?.grantRole(peerId, 'editor');
+    sessionState.permissionManager?.grantRole(peerId, 'editor');
 
     updatePeerConnectionState(peerId, true);
 
@@ -639,7 +665,7 @@ const handlePeerConnected = (peerId: PeerId): void => {
 };
 
 const handlePeerDisconnected = (peerId: PeerId): void => {
-    automergeSync?.removePeer(peerId);
+    sessionState.automergeSync?.removePeer(peerId);
     updatePeerConnectionState(peerId, false);
 
     // Schedule removal in case the peer never sends peer-leave (tab crash, etc.).
@@ -685,7 +711,7 @@ const removePeer = (peerId: PeerId): void => {
         ...state,
         peers: state.peers.filter((p) => p.id !== peerId),
     });
-    peerManager?.removePeer(peerId);
+    sessionState.peerManager?.removePeer(peerId);
 };
 
 const updatePeerLastSeen = (peerId: PeerId): void => {
