@@ -64,8 +64,6 @@ export function generateFingerprint(name: string, path: string): string {
     return `fp-${Math.abs(hash).toString(36)}`;
 }
 
-let nextSampleId = 1;
-
 export function getNextSampleId(): string {
-    return `sample-${nextSampleId++}`;
+    return `sample-${crypto.randomUUID()}`;
 }

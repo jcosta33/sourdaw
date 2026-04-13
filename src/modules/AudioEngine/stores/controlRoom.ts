@@ -54,15 +54,12 @@ export type ControlRoomState = {
     muted: boolean;
 };
 
-let nextMonitorId = 1;
-let nextCueId = 1;
-
 export function getNextMonitorId(): string {
-    return `mon-${nextMonitorId++}`;
+    return `mon-${crypto.randomUUID()}`;
 }
 
 export function getNextCueId(): string {
-    return `cue-${nextCueId++}`;
+    return `cue-${crypto.randomUUID()}`;
 }
 
 function createDefaultState(): ControlRoomState {

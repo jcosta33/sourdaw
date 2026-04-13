@@ -3,8 +3,6 @@ import { type Clip } from '../../models/TrackViewTypes';
 import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
 import { setNotesForClip } from '../midiNoteCrud/setNotesForClip';
 
-let nextInstanceId = 5000;
-
 /**
  * Create a pattern instance linked to a source clip.
  * The instance inherits MIDI notes and properties from the parent.
@@ -29,7 +27,7 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
     const parentId = sourceClip.parentClipId ?? sourceClipId;
     const duration = sourceClip.endBeat - sourceClip.startBeat;
 
-    const instanceId = `clip-inst-${nextInstanceId++}`;
+    const instanceId = `clip-inst-${crypto.randomUUID()}`;
     const instance: Clip = {
         id: instanceId,
         trackId: targetTrackId,

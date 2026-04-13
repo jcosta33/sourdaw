@@ -47,9 +47,6 @@ export type VersionControlState = {
     autoSaveInterval: number;
 };
 
-let nextVersionId = 1;
-let nextBranchId = 1;
-
 export function createVersion(
     label: string,
     description: string,
@@ -58,7 +55,7 @@ export function createVersion(
     tags: string[] = []
 ): ProjectVersion {
     return {
-        id: `ver-${nextVersionId++}`,
+        id: `ver-${crypto.randomUUID()}`,
         label,
         createdAt: new Date().toISOString(),
         parentId,
@@ -70,7 +67,7 @@ export function createVersion(
 
 export function createBranch(name: string, headVersionId: string): VersionBranch {
     return {
-        id: `branch-${nextBranchId++}`,
+        id: `branch-${crypto.randomUUID()}`,
         name,
         headVersionId,
         createdAt: new Date().toISOString(),

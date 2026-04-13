@@ -96,8 +96,6 @@ type AppShellProps = {
 
 const ALPHA_NOTICE_KEY = 'sourdaw-alpha-notice-dismissed';
 
-let hasShownAlphaNotice = false;
-
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const workspaceState = useWorkspaceState();
     const {
@@ -170,14 +168,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return cleanup;
     }, []);
 
-    // Show alpha notice when project initializes
+    // Show alpha notice when project initializes — localStorage is the
+    // source of truth, so HMR can't cause the notice to re-appear.
     useEffect(() => {
-        if (project.initialized && !hasShownAlphaNotice) {
-            const hasDismissed = localStorage.getItem(ALPHA_NOTICE_KEY) === 'true';
-            if (!hasDismissed) {
-                setShowAlphaNotice(true);
-            }
-            hasShownAlphaNotice = true;
+        if (project.initialized && localStorage.getItem(ALPHA_NOTICE_KEY) !== 'true') {
+            setShowAlphaNotice(true);
         }
     }, [project.initialized]);
 

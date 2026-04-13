@@ -15,8 +15,6 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
 import { compileFaustDSP } from '#/modules/Plugin/useCases';
 
-let nextPresetDeviceId = 1;
-
 const INSTRUMENT_TYPES = new Set([
     'synth',
     'builtin-synth',
@@ -55,7 +53,7 @@ export const loadPresetToTrack = inject({ logger })(
     ({ logger }) => {
         const attachInstrumentDevice = (trackId: string, dp: DevicePreset): void => {
             const device: Device = {
-                id: `preset-dev-${nextPresetDeviceId++}`,
+                id: `preset-dev-${crypto.randomUUID()}`,
                 name: dp.name,
                 type: dp.type,
                 bypassed: false,

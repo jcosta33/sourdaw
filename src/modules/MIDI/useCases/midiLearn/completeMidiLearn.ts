@@ -2,8 +2,6 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { midiLearnStore, type MidiMapping, type MidiMappingTargetType } from '../../stores/midiLearnStore';
 
-let nextMappingId = 1;
-
 const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number }> = {
     trackGain: { min: 0, max: 1 },
     trackPan: { min: -50, max: 50 },
@@ -25,7 +23,7 @@ export const completeMidiLearn = inject({ logger })(
             const existingIndex = state.mappings.findIndex((m) => m.channel === channel && m.cc === cc);
 
             const mapping: MidiMapping = {
-                id: `midi-map-${nextMappingId++}`,
+                id: `midi-map-${crypto.randomUUID()}`,
                 channel,
                 cc,
                 targetType: target.targetType,

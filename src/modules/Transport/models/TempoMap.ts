@@ -5,14 +5,12 @@ export type TempoChange = {
     curve: 'instant' | 'linear';
 };
 
-let nextTempoChangeId = 1;
-
 export const createTempoChange = (
     beat: number,
     tempo: number,
     curve: TempoChange['curve'] = 'instant'
 ): TempoChange => ({
-    id: `tempo-${nextTempoChangeId++}`,
+    id: `tempo-${crypto.randomUUID()}`,
     beat,
     tempo: Math.max(20, Math.min(999, tempo)),
     curve,

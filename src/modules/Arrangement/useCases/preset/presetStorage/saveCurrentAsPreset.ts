@@ -1,13 +1,11 @@
 import { type SoundPreset } from '../../../models/SoundPreset';
 import { readStoredPresets, writeStoredPresets } from './helpers';
 
-let nextUserPresetId = 1;
-
 export function saveUserPreset(preset: Omit<SoundPreset, 'id' | 'isFactory' | 'author'>): SoundPreset {
     const stored = readStoredPresets();
     const full: SoundPreset = {
         ...preset,
-        id: `user-preset-${Date.now()}-${nextUserPresetId++}`,
+        id: `user-preset-${crypto.randomUUID()}`,
         author: 'User',
         isFactory: false,
     };

@@ -5,14 +5,12 @@ export type TimeSignatureChange = {
     denominator: number;
 };
 
-let nextTimeSignatureChangeId = 1;
-
 export const createTimeSignatureChange = (
     beat: number,
     numerator: number,
     denominator: number
 ): TimeSignatureChange => ({
-    id: `ts-${nextTimeSignatureChangeId++}`,
+    id: `ts-${crypto.randomUUID()}`,
     beat,
     numerator: Math.max(1, Math.min(32, numerator)),
     denominator: Math.max(1, Math.min(32, denominator)),
