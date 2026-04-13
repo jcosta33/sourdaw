@@ -16,35 +16,44 @@ type WebLlmEngine = {
     };
 };
 
-let engine: WebLlmEngine | null = null;
-let initPromise: Promise<WebLlmEngine> | null = null;
-let engineWorker: Worker | null = null;
-let activeModelId: string = DEFAULT_WEBLLM_MODEL_ID;
+// §67.2 — Coalesce 4 module-level \`let\`s into one holder so the WebLLM
+// engine lifecycle lives behind a single named handle.
+const engineState: {
+    engine: WebLlmEngine | null;
+    initPromise: Promise<WebLlmEngine> | null;
+    worker: Worker | null;
+    activeModelId: string;
+} = {
+    engine: null,
+    initPromise: null,
+    worker: null,
+    activeModelId: DEFAULT_WEBLLM_MODEL_ID,
+};
 
 export function getActiveModelId(): string {
-    return activeModelId;
+    return engineState.activeModelId;
 }
 
 export const initWebLlmEngine = inject({ logger })(
     ({ logger }) =>
         function initWebLlmEngine(modelId?: string): Promise<WebLlmEngine> {
-            const targetModel = modelId ?? activeModelId;
+            const targetModel = modelId ?? engineState.activeModelId;
 
             // If already loaded with the same model, return immediately
-            if (engine && targetModel === activeModelId) {
-                return Promise.resolve(engine);
+            if (engineState.engine && targetModel === engineState.activeModelId) {
+                return Promise.resolve(engineState.engine);
             }
 
             // If switching models, unload the current one first
-            if (engine && targetModel !== activeModelId) {
+            if (engineState.engine && targetModel !== engineState.activeModelId) {
                 unloadWebLlmEngine();
             }
 
-            if (initPromise && targetModel === activeModelId) {
-                return initPromise;
+            if (engineState.initPromise && targetModel === engineState.activeModelId) {
+                return engineState.initPromise;
             }
 
-            activeModelId = targetModel;
+            engineState.activeModelId = targetModel;
 
             // WebGPU is required — absent on Linux (WebKitGTK) and older browsers
             if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
@@ -53,7 +62,7 @@ export const initWebLlmEngine = inject({ logger })(
                 );
             }
 
-            initPromise = (async () => {
+            engineState.initPromise = (async () => {
                 llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
 
                 // Dynamic import — avoids loading the 6.2MB WebLLM bundle at app startup.
@@ -64,7 +73,7 @@ export const initWebLlmEngine = inject({ logger })(
                 ]);
 
                 const worker = new LlmWorker();
-                engineWorker = worker;
+                engineState.worker = worker;
 
                 const created = await CreateWebWorkerMLCEngine(
                     worker,
@@ -81,41 +90,41 @@ export const initWebLlmEngine = inject({ logger })(
                     { context_window_size: 8192 }
                 );
 
-                engine = created as unknown as WebLlmEngine;
+                engineState.engine = created as unknown as WebLlmEngine;
                 llmStatusStore.set({ state: 'ready', modelId: targetModel });
                 logger.info(`[AI Engine] WebLLM loaded: ${targetModel}`);
-                return engine;
+                return engineState.engine;
             })();
 
-            initPromise.catch((error) => {
+            engineState.initPromise.catch((error) => {
                 llmStatusStore.set({ state: 'error', message: String(error) });
-                initPromise = null;
-                engine = null;
+                engineState.initPromise = null;
+                engineState.engine = null;
             });
 
-            return initPromise;
+            return engineState.initPromise;
         }
 );
 
 export const unloadWebLlmEngine = inject({ logger })(
     ({ logger }) =>
         function unloadWebLlmEngine(): void {
-            if (engineWorker) {
-                engineWorker.terminate();
-                engineWorker = null;
+            if (engineState.worker) {
+                engineState.worker.terminate();
+                engineState.worker = null;
             }
-            engine = null;
-            initPromise = null;
+            engineState.engine = null;
+            engineState.initPromise = null;
             logger.info('[AI Engine] WebLLM unloaded from memory');
         }
 );
 
 export function isWebLlmLoaded(): boolean {
-    return engine !== null;
+    return engineState.engine !== null;
 }
 
 export function getLlmEngine(): WebLlmEngine | null {
-    return engine;
+    return engineState.engine;
 }
 
 /**
