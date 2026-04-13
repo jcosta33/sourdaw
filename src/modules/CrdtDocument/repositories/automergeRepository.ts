@@ -10,14 +10,17 @@ type AnyDoc = Record<string, unknown>;
 // background Worker so the main thread stays responsive during project open
 // and collaboration patch ingestion.
 
-let _crdtWorker: Worker | null = null;
-let _crdtWorkerNextId = 0;
+// §135.3 — Worker + next-id coalesced into a single holder.
+const crdtWorkerState: { worker: Worker | null; nextId: number } = {
+    worker: null,
+    nextId: 0,
+};
 
 function getCrdtWorker(): Worker {
-    if (!_crdtWorker) {
-        _crdtWorker = new Worker(new URL('../workers/crdtWorker.ts', import.meta.url), { type: 'module' });
+    if (!crdtWorkerState.worker) {
+        crdtWorkerState.worker = new Worker(new URL('../workers/crdtWorker.ts', import.meta.url), { type: 'module' });
     }
-    return _crdtWorker;
+    return crdtWorkerState.worker;
 }
 
 type WorkerResponse =
@@ -28,7 +31,7 @@ type WorkerResponse =
 function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
         const worker = getCrdtWorker();
-        const id = _crdtWorkerNextId++;
+        const id = crdtWorkerState.nextId++;
         const cleanup = (): void => {
             worker.removeEventListener('message', handler);
             worker.removeEventListener('error', errorHandler);
