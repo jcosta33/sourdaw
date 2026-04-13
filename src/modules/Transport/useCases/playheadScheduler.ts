@@ -40,15 +40,21 @@ function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioConte
     sources.length = 0;
 }
 
-let timerId: ReturnType<typeof setTimeout> | null = null;
-let lastTickTime = 0;
-let accumulatedPosition = 0;
-let lastScheduledBeat = -1;
-const scheduledAudioClips = new Set<string>();
-const scheduledFrozenTracks = new Set<string>();
-const activeAudioSources: AudioBufferSourceNode[] = [];
-let punchRecordingActive = false;
-let punchRecordingClipIds: string[] = [];
+// §28.1 / §107.1 — Coalesce scheduler mutables into a single holder so
+// the active playback session lives behind one handle. Mutation is still
+// only done from within this file; the holder object prevents importers
+// from rebinding any of these via \`export let\`.
+const schedulerSession = {
+    timerId: null as ReturnType<typeof setTimeout> | null,
+    lastTickTime: 0,
+    accumulatedPosition: 0,
+    lastScheduledBeat: -1,
+    scheduledAudioClips: new Set<string>(),
+    scheduledFrozenTracks: new Set<string>(),
+    activeAudioSources: [] as AudioBufferSourceNode[],
+    punchRecordingActive: false,
+    punchRecordingClipIds: [] as string[],
+};
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
 const DEFAULT_SCHEDULE_GRAIN_MS = 10;
@@ -62,10 +68,10 @@ export function startPlayheadScheduler(): void {
     startAutomationRecording();
 
     const ctx = getAudioContext();
-    lastTickTime = ctx.currentTime;
-    accumulatedPosition = state.playheadPosition;
+    schedulerSession.lastTickTime = ctx.currentTime;
+    schedulerSession.accumulatedPosition = state.playheadPosition;
     playheadPositionRef.current = state.playheadPosition;
-    lastScheduledBeat = state.playheadPosition - 0.0001;
+    schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
     resetMetronomeBeat(state.playheadPosition);
 
     const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
@@ -77,14 +83,14 @@ export function startPlayheadScheduler(): void {
         }
 
         const now = ctx.currentTime;
-        const deltaSec = now - lastTickTime;
-        lastTickTime = now;
+        const deltaSec = now - schedulerSession.lastTickTime;
+        schedulerSession.lastTickTime = now;
 
         const changes = tempoMapStore.value?.changes ?? [];
-        const currentTempo = getTempoAtBeat(changes, accumulatedPosition, current.tempo);
+        const currentTempo = getTempoAtBeat(changes, schedulerSession.accumulatedPosition, current.tempo);
         const beatsPerSecond = currentTempo / 60;
         const deltaBeats = deltaSec * beatsPerSecond;
-        let newPosition = accumulatedPosition + deltaBeats;
+        let newPosition = schedulerSession.accumulatedPosition + deltaBeats;
 
         if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
             if (current.isRecording) {
@@ -108,18 +114,18 @@ export function startPlayheadScheduler(): void {
 
             const loopLength = current.loopEnd - current.loopStart;
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
-            lastScheduledBeat = newPosition - 0.0001;
+            schedulerSession.lastScheduledBeat = newPosition - 0.0001;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            stopActiveSources(activeAudioSources, ctx);
-            scheduledAudioClips.clear();
-            scheduledFrozenTracks.clear();
+            stopActiveSources(schedulerSession.activeAudioSources, ctx);
+            schedulerSession.scheduledAudioClips.clear();
+            schedulerSession.scheduledFrozenTracks.clear();
         }
 
         const tracks = trackStore.value?.tracks ?? [];
         const { jumpToPosition: rawJumpToPosition, shouldStop } = evaluateFollowActions(
             tracks,
-            accumulatedPosition,
+            schedulerSession.accumulatedPosition,
             newPosition
         );
         let jumpToPosition = rawJumpToPosition;
@@ -131,29 +137,29 @@ export function startPlayheadScheduler(): void {
 
         if (jumpToPosition !== null) {
             newPosition = jumpToPosition;
-            lastScheduledBeat = newPosition;
+            schedulerSession.lastScheduledBeat = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            stopActiveSources(activeAudioSources, ctx);
-            scheduledAudioClips.clear();
-            scheduledFrozenTracks.clear();
+            stopActiveSources(schedulerSession.activeAudioSources, ctx);
+            schedulerSession.scheduledAudioClips.clear();
+            schedulerSession.scheduledFrozenTracks.clear();
         }
 
-        accumulatedPosition = newPosition;
+        schedulerSession.accumulatedPosition = newPosition;
         playheadPositionRef.current = newPosition;
 
         const hasArmedTracks = trackStore.value?.tracks.some((t) => t.armed) ?? false;
         if (
             current.punchInEnabled &&
             !current.isRecording &&
-            !punchRecordingActive &&
+            !schedulerSession.punchRecordingActive &&
             hasArmedTracks &&
             current.punchInBeat < current.punchOutBeat &&
             newPosition >= current.punchInBeat
         ) {
-            punchRecordingActive = true;
+            schedulerSession.punchRecordingActive = true;
             const clips = startRecording();
-            punchRecordingClipIds = clips.map((c) => c.id);
+            schedulerSession.punchRecordingClipIds = clips.map((c) => c.id);
             transportStore.set({ ...transportStore.value!, isRecording: true });
 
             const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
@@ -182,67 +188,67 @@ export function startPlayheadScheduler(): void {
             }
         }
 
-        if (punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
+        if (schedulerSession.punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
             stopAudioRecording();
-            stopRecording(punchRecordingClipIds);
-            punchRecordingClipIds = [];
-            punchRecordingActive = false;
+            stopRecording(schedulerSession.punchRecordingClipIds);
+            schedulerSession.punchRecordingClipIds = [];
+            schedulerSession.punchRecordingActive = false;
             transportStore.set({ ...transportStore.value!, isRecording: false });
         }
 
         const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
         const scheduleUpTo = newPosition + lookAheadBeats;
 
-        scheduleMetronome(lastScheduledBeat, scheduleUpTo, accumulatedPosition, current, currentTempo);
+        scheduleMetronome(schedulerSession.lastScheduledBeat, scheduleUpTo, schedulerSession.accumulatedPosition, current, currentTempo);
         await scheduleMidiNotes(
-            lastScheduledBeat,
+            schedulerSession.lastScheduledBeat,
             scheduleUpTo,
-            accumulatedPosition,
-            lastScheduledBeat,
-            activeAudioSources,
+            schedulerSession.accumulatedPosition,
+            schedulerSession.lastScheduledBeat,
+            schedulerSession.activeAudioSources,
             current,
             currentTempo
         );
         scheduleAudioClips(
-            lastScheduledBeat,
+            schedulerSession.lastScheduledBeat,
             scheduleUpTo,
-            accumulatedPosition,
-            scheduledAudioClips,
-            scheduledFrozenTracks,
-            activeAudioSources,
+            schedulerSession.accumulatedPosition,
+            schedulerSession.scheduledAudioClips,
+            schedulerSession.scheduledFrozenTracks,
+            schedulerSession.activeAudioSources,
             current,
             currentTempo
         );
         applyVcaGains();
         applyAutomation(newPosition);
 
-        lastScheduledBeat = scheduleUpTo;
+        schedulerSession.lastScheduledBeat = scheduleUpTo;
 
-        timerId = setTimeout(tick, current.scheduleGrainMs ?? grainMs);
+        schedulerSession.timerId = setTimeout(tick, current.scheduleGrainMs ?? grainMs);
     };
 
-    timerId = setTimeout(tick, grainMs);
+    schedulerSession.timerId = setTimeout(tick, grainMs);
 }
 
 export function stopPlayheadScheduler(): void {
     stopAutomationRecording();
-    if (timerId !== null) {
-        clearTimeout(timerId);
-        timerId = null;
+    if (schedulerSession.timerId !== null) {
+        clearTimeout(schedulerSession.timerId);
+        schedulerSession.timerId = null;
     }
-    if (punchRecordingActive) {
+    if (schedulerSession.punchRecordingActive) {
         stopAudioRecording();
-        stopRecording(punchRecordingClipIds);
-        punchRecordingClipIds = [];
-        punchRecordingActive = false;
+        stopRecording(schedulerSession.punchRecordingClipIds);
+        schedulerSession.punchRecordingClipIds = [];
+        schedulerSession.punchRecordingActive = false;
     }
-    lastTickTime = 0;
-    accumulatedPosition = 0;
-    lastScheduledBeat = -1;
+    schedulerSession.lastTickTime = 0;
+    schedulerSession.accumulatedPosition = 0;
+    schedulerSession.lastScheduledBeat = -1;
     resetMetronomeBeat(0);
-    scheduledAudioClips.clear();
-    scheduledFrozenTracks.clear();
+    schedulerSession.scheduledAudioClips.clear();
+    schedulerSession.scheduledFrozenTracks.clear();
     const ctx = getAudioContext();
-    stopActiveSources(activeAudioSources, ctx);
+    stopActiveSources(schedulerSession.activeAudioSources, ctx);
     stopAllScheduled();
 }
