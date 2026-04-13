@@ -91,13 +91,12 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
 
             if (refs.cpuBar.current) {
                 refs.cpuBar.current.style.width = `${Math.min(100, cpuPct)}%`;
-                refs.cpuBar.current.className = `h-full rounded-full transition-[width] duration-150 ${
-                    cpuPct < 50
-                        ? 'bg-[var(--color-state-success)]'
-                        : cpuPct < 80
-                          ? 'bg-[var(--color-state-warning)]'
-                          : 'bg-[var(--color-state-danger)]'
-                }`;
+                // Toggle only the color class so we don't clobber the
+                // tailwind layout classes each frame (§136.1).
+                const cls = refs.cpuBar.current.classList;
+                cls.toggle('bg-[var(--color-state-success)]', cpuPct < 50);
+                cls.toggle('bg-[var(--color-state-warning)]', cpuPct >= 50 && cpuPct < 80);
+                cls.toggle('bg-[var(--color-state-danger)]', cpuPct >= 80);
             }
             if (refs.cpuText.current) {
                 refs.cpuText.current.textContent = `${cpuPct}%`;

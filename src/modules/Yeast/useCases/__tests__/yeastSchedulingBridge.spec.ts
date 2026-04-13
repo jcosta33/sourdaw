@@ -41,7 +41,7 @@ describe('processYeastMidi', () => {
             sampleRate: 48000,
         } as any);
 
-        const out = processYeastMidi('t1', events, 0, 128);
+        const out = processYeastMidi(events, 0, 128);
 
         expect(out).toBe(events);
     });

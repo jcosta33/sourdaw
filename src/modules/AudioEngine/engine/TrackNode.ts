@@ -188,10 +188,6 @@ export class TrackNode {
 
     public addDevice(deviceId: string, deviceType: string, externalInstanceId?: string): void {
         if (this.strip.deviceNodes.some((d) => d.deviceId === deviceId)) {
-            return;
-        }
-
-        if (this.strip.deviceNodes.find((n) => n.deviceId === deviceId)) {
             logger.warn(`Device ${deviceId} already exists on track ${this.trackId}`);
             return;
         }
@@ -349,6 +345,9 @@ export class TrackNode {
         }
         if (dn.levainControls) {
             dn.levainControls.destroy();
+        }
+        if (dn.grandBouleControls) {
+            dn.grandBouleControls.destroy();
         }
         if (dn.type === 'proof') {
             unregisterProofDevice(deviceId);

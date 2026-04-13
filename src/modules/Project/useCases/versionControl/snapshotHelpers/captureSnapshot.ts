@@ -19,5 +19,8 @@ export function captureSnapshot(): ProjectSnapshot {
         automation: automationStore.value,
         timestamp: Date.now(),
     });
-    return { data, size: new Blob([data]).size };
+    // `new Blob([data]).size` just to measure UTF-8 byte length allocates an
+    // entire Blob — use TextEncoder which is faster and allocation-light.
+    const size = new TextEncoder().encode(data).byteLength;
+    return { data, size };
 }

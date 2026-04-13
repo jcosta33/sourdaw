@@ -4,7 +4,6 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 export function processYeastMidi(
-    _trackId: string,
     events: MidiEvent[],
     blockStartSamples: number,
     blockEndSamples: number
@@ -43,12 +42,13 @@ export function processRealtimeMidiInput(
     velocity: number,
     channel: number,
     isNoteOn: boolean,
-    sampleTime: number
+    sampleTime: number,
+    blockSize: number = 128
 ): MidiEvent[] {
     const event: MidiEvent = {
         timeSamples: sampleTime,
         kind: isNoteOn ? { type: 'noteOn', channel, note, velocity } : { type: 'noteOff', channel, note },
     };
 
-    return processYeastMidi('', [event], sampleTime, sampleTime + 128);
+    return processYeastMidi([event], sampleTime, sampleTime + blockSize);
 }

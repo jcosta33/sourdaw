@@ -3,8 +3,12 @@ import { updateTrack } from '../repositories/track/updateTrack';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { type Clip } from '../stores/trackStore';
 
-// TODO: _minSilenceBeats is accepted but not yet implemented — silent gaps shorter than this value should be merged with adjacent sound regions
-export function stripSilence(clipId: string, thresholdDb: number = -40, _minSilenceBeats: number = 0.5): void {
+/**
+ * Split a clip into regions separated by silence.
+ * Silent gaps shorter than `minSilenceBeats` are merged with their adjacent
+ * sound regions so that short inter-word pauses don't cut the clip.
+ */
+export function stripSilence(clipId: string, thresholdDb: number = -40, minSilenceBeats: number = 0.5): void {
     const state = getTrackState();
     if (!state) {
         return;
@@ -70,10 +74,27 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, _minSile
     const clip = targetClip.clip;
     const beatsPerSample = clipDurationBeats / channelData.length;
 
-    let nextId = Date.now();
-    const newClips = regions.map((region) => ({
+    // Merge adjacent regions whose gap (in beats) is shorter than minSilenceBeats.
+    const mergedRegions: { startSample: number; endSample: number }[] = [];
+    for (const region of regions) {
+        const last = mergedRegions[mergedRegions.length - 1];
+        if (last) {
+            const gapBeats = (region.startSample - last.endSample) * beatsPerSample;
+            if (gapBeats < minSilenceBeats) {
+                last.endSample = region.endSample;
+                continue;
+            }
+        }
+        mergedRegions.push({ ...region });
+    }
+
+    if (mergedRegions.length <= 1) {
+        return;
+    }
+
+    const newClips = mergedRegions.map((region) => ({
         ...clip,
-        id: `clip-strip-${nextId++}`,
+        id: `clip-strip-${crypto.randomUUID()}`,
         startBeat: clip.startBeat + region.startSample * beatsPerSample,
         endBeat: clip.startBeat + region.endSample * beatsPerSample,
     }));

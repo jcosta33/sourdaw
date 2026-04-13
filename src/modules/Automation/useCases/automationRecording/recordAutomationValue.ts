@@ -33,20 +33,21 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
     const laneId = findLaneId(trackId, parameterId);
 
+    // The session-creation branch above always calls `pendingPoints.set(key, [])`
+    // so the entry exists here — push in place rather than allocating a
+    // throwaway `[]` and re-setting (§106.2).
+    const points = pendingPoints.get(key);
+
     if (track.automationMode === 'write') {
         if (laneId) {
             // Clear from recording start to current position (not shifting start)
             clearPointsInRange(laneId, session.startBeat, beat);
         }
-        const points = pendingPoints.get(key) ?? [];
-        points.push(point);
-        pendingPoints.set(key, points);
+        points?.push(point);
         session.lastValue = value;
     } else if (track.automationMode === 'touch' || track.automationMode === 'latch') {
         touchActive.add(key);
-        const points = pendingPoints.get(key) ?? [];
-        points.push(point);
-        pendingPoints.set(key, points);
+        points?.push(point);
         session.lastValue = value;
     }
 }
