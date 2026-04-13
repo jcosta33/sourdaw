@@ -22,16 +22,24 @@ import {
  * Keyed as `lane.id -> device.id -> smoothed` to avoid per-tick template
  * literal string allocation (see audit §155.3).
  */
-const _pluginParamSlew = new Map<string, Map<string, number>>();
 const SLEW_ALPHA = 0.4;
 /** Skip dispatch when the smoothed value has moved less than this per tick. */
 const SLEW_EPSILON = 5e-5;
 
 /**
- * Scratch map reused across ticks to index tracks by id. Rebuilt in place at
- * the start of every call to avoid per-tick Map allocation (see audit §155.2).
+ * §155.1 — Coalesce the per-plugin slew map and the scratch track index
+ * into a single holder so HMR reloads drop a live reference together
+ * (previous bare module-level Maps were independent roots). The scratch
+ * track index is rebuilt in place every tick; the slew map persists
+ * across ticks and is keyed as lane.id → device.id → smoothed (§155.3).
  */
-const _trackIndex = new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>();
+const automationState: {
+    pluginParamSlew: Map<string, Map<string, number>>;
+    trackIndex: Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>;
+} = {
+    pluginParamSlew: new Map<string, Map<string, number>>(),
+    trackIndex: new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>(),
+};
 
 export function applyAutomation(currentBeat: number): void {
     const autoState = automationStore.value;
@@ -43,10 +51,10 @@ export function applyAutomation(currentBeat: number): void {
 
     // Rebuild the track index in place to avoid the O(lanes × tracks)
     // `tracks.find()` scan per tick (§155.2).
-    _trackIndex.clear();
+    automationState.trackIndex.clear();
     if (tracks) {
         for (const t of tracks) {
-            _trackIndex.set(t.id, t);
+            automationState.trackIndex.set(t.id, t);
         }
     }
 
@@ -55,7 +63,7 @@ export function applyAutomation(currentBeat: number): void {
             continue;
         }
 
-        const track = _trackIndex.get(lane.trackId);
+        const track = automationState.trackIndex.get(lane.trackId);
         if (!track || track.automationMode === 'off') {
             continue;
         }
@@ -81,10 +89,10 @@ export function applyAutomation(currentBeat: number): void {
         } else if (lane.parameterId === 'pan') {
             engineSetTrackPan(lane.trackId, value * 100 - 50);
         } else {
-            let laneSlew = _pluginParamSlew.get(lane.id);
+            let laneSlew = automationState.pluginParamSlew.get(lane.id);
             if (!laneSlew) {
                 laneSlew = new Map<string, number>();
-                _pluginParamSlew.set(lane.id, laneSlew);
+                automationState.pluginParamSlew.set(lane.id, laneSlew);
             }
             for (const device of track.devices) {
                 if (device.parameterValues[lane.parameterId] !== undefined) {

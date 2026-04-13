@@ -40,6 +40,13 @@ export const createAutomergeStorage = <TData>(
     const toCrdt = options?.toCrdt;
     let cachedValue: TData | null = null;
     let rafId: number | null = null;
+    /**
+     * §119.2 — Cached canonical JSON of the last hydrate. Lets hydrate()
+     * skip re-stringifying cachedValue on every sync message when the
+     * incoming doc slot hasn't changed (hot path during multi-peer
+     * collaboration).
+     */
+    let lastHydratedJson: string | null = null;
 
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value));
 
@@ -111,17 +118,24 @@ export const createAutomergeStorage = <TData>(
 
             const value = (doc as Record<string, unknown>)[key];
             if (value !== undefined) {
+                // §119.1 — single strip pass via one JSON round-trip (the
+                // Automerge proxy deref + undefined strip are unavoidable).
+                // §119.2 — compare incoming against cached incoming rather
+                // than re-stringifying cachedValue; 2 JSON ops per hydrate
+                // instead of 3–4.
                 const incomingJson = JSON.stringify(value);
+                if (incomingJson === lastHydratedJson) {
+                    return false;
+                }
                 const crdtData = JSON.parse(incomingJson) as TData;
-                const beforeJson = JSON.stringify(cachedValue);
 
                 if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
                     cachedValue = { ...cachedValue, ...crdtData };
-                    return JSON.stringify(cachedValue) !== beforeJson;
                 } else {
                     cachedValue = crdtData;
-                    return incomingJson !== beforeJson;
                 }
+                lastHydratedJson = incomingJson;
+                return true;
             }
 
             if (cachedValue !== null) {

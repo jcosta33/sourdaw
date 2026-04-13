@@ -3,12 +3,40 @@ import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
 import { AUTO_TAG_RULES } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
 
 /**
+ * §69.2 — Identity-keyed memo cache. The full filter+sort pipeline is
+ * invariant when the underlying state object and all filter fields are
+ * unchanged. React re-renders of the sample browser repeatedly call
+ * getFilteredSamples from render, and it's also called during Jaccard
+ * similarity precomputes — caching by (state identity, fingerprint)
+ * short-circuits the hot path.
+ */
+type MemoEntry = {
+    stateRef: NonNullable<typeof sampleDatabaseStore.value>;
+    fingerprint: string;
+    result: SampleEntry[];
+};
+let memo: MemoEntry | null = null;
+
+/**
  * Get filtered, sorted samples based on current search/filter/sort state.
  */
 export function getFilteredSamples(): SampleEntry[] {
     const state = sampleDatabaseStore.value;
     if (!state) {
         return [];
+    }
+
+    const fingerprint = [
+        state.searchQuery,
+        state.activeFilters.join('|'),
+        state.categoryFilter ?? '',
+        state.favoritesOnly ? '1' : '0',
+        state.sortBy,
+        state.sortDirection,
+    ].join('\0');
+
+    if (memo !== null && memo.stateRef === state && memo.fingerprint === fingerprint) {
+        return memo.result;
     }
 
     let results = [...state.samples];
@@ -63,5 +91,6 @@ export function getFilteredSamples(): SampleEntry[] {
         }
     });
 
+    memo = { stateRef: state, fingerprint, result: results };
     return results;
 }
