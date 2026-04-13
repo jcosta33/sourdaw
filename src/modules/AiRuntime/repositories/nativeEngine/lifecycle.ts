@@ -13,7 +13,9 @@ import { llmStatusStore } from '../../stores/llmStatusStore';
 export const SIDECAR_PORT = parseInt((import.meta.env.VITE_LLM_SIDECAR_PORT as string | undefined) ?? '8847', 10);
 export const BASE_URL = `http://127.0.0.1:${String(SIDECAR_PORT)}`;
 
-let nativeEngineReady = false;
+// §67.4 — Wrapped in a holder so the module-level binding can't be
+// reassigned from outside the file.
+const nativeEngineState = { ready: false };
 
 async function checkLlamaServerHealth(): Promise<boolean> {
     try {
@@ -66,7 +68,7 @@ export const initNativeEngine = inject({ logger })(
                 if (unlisten) {
                     unlisten();
                 }
-                nativeEngineReady = true;
+                nativeEngineState.ready = true;
                 logger.info('[Native AI] In-process LLM ready');
                 return;
             }
@@ -75,7 +77,7 @@ export const initNativeEngine = inject({ logger })(
             logger.info('[Native AI] Browser mode — checking if llama-server is running...');
             const healthy = await checkLlamaServerHealth();
             if (healthy) {
-                nativeEngineReady = true;
+                nativeEngineState.ready = true;
                 logger.info(`[Native AI] Connected to llama-server on port ${String(SIDECAR_PORT)}`);
                 return;
             }
@@ -93,11 +95,11 @@ export const stopNativeEngine = inject({ logger })(
             if (isTauri()) {
                 await tauriInvoke('unload_native_llm');
             }
-            nativeEngineReady = false;
+            nativeEngineState.ready = false;
             logger.info('[Native AI] Engine stopped');
         }
 );
 
 export function isNativeEngineReady(): boolean {
-    return nativeEngineReady;
+    return nativeEngineState.ready;
 }
