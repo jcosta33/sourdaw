@@ -303,9 +303,21 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                     // MIDI mini-notes
                     if (clip.type === 'midi' && clip.midiNotes.length > 0) {
-                        const pitches = clip.midiNotes.map((n) => n.pitch);
-                        const minPitch = Math.min(...pitches);
-                        const maxPitch = Math.max(...pitches);
+                        // §70.3 — Single-pass min/max without allocating a
+                        // pitches[] or spreading into Math.min/.max. Per-frame
+                        // per-clip hot path; MIDI clips can have thousands of
+                        // notes and Math.max(...arr) would stack-overflow on
+                        // large spreads.
+                        let minPitch = clip.midiNotes[0]!.pitch;
+                        let maxPitch = minPitch;
+                        for (let i = 1; i < clip.midiNotes.length; i++) {
+                            const p = clip.midiNotes[i]!.pitch;
+                            if (p < minPitch) {
+                                minPitch = p;
+                            } else if (p > maxPitch) {
+                                maxPitch = p;
+                            }
+                        }
                         const pitchRange = Math.max(maxPitch - minPitch, 12);
                         const noteAreaH = clipBottom - clipTop - 10 * dpr;
 

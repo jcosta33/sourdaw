@@ -56,9 +56,20 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, width, height);
 
-        const pitches = notes.map((n) => n.pitch);
-        const minPitch = Math.min(...pitches) - 1;
-        const maxPitch = Math.max(...pitches) + 1;
+        // §70.3 — Single-pass min/max; patterns can contain thousands of
+        // notes and Math.max(...arr) spreads stack-overflow on large inputs.
+        let minPitch = notes[0]!.pitch;
+        let maxPitch = minPitch;
+        for (let i = 1; i < notes.length; i++) {
+            const p = notes[i]!.pitch;
+            if (p < minPitch) {
+                minPitch = p;
+            } else if (p > maxPitch) {
+                maxPitch = p;
+            }
+        }
+        minPitch -= 1;
+        maxPitch += 1;
         const pitchRange = maxPitch - minPitch || 1;
         const pxPerBeat = (width - PREVIEW_PADDING * 2) / lengthBeats;
         const noteHeight = Math.max(2, (height - PREVIEW_PADDING * 2) / pitchRange);
