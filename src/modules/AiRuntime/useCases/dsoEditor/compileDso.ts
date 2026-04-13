@@ -458,6 +458,18 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
     const clipIds = new Set(state?.tracks.flatMap((t) => t.clips.map((c) => c.id)) ?? []);
     const deviceIds = new Set(state?.tracks.flatMap((t) => t.devices.map((d) => d.id)) ?? []);
 
+    // Pre-register IDs injected by resolveDsoNames for add_track DSOs so that
+    // subsequent DSOs in the same batch that target those new tracks are not
+    // incorrectly rejected (the store hasn't been updated yet at validation time).
+    for (const dso of dsos) {
+        if (dso.op === 'add_track') {
+            const injectedId = (dso as Record<string, unknown>).track_id;
+            if (typeof injectedId === 'string') {
+                trackIds.add(injectedId);
+            }
+        }
+    }
+
     for (const dso of dsos) {
         switch (dso.op) {
             case 'remove_track':
