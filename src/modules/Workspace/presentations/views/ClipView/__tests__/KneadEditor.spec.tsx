@@ -65,7 +65,6 @@ vi.mock('#/modules/Knead/useCases/dspAnalysis', () => ({
 describe('KneadEditor', () => {
     const defaultProps = {
         trackId: 'track-1',
-        clipId: 'clip-1',
     };
 
     beforeEach(() => {

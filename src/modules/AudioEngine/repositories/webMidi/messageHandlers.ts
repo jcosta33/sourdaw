@@ -161,9 +161,9 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             deps.eventBus.emit('midi.noteOff', { midiNote: note });
         }
 
-        if ((noteData as { levainDeviceId?: string }).levainDeviceId && getTargetTrackId()) {
+        if (noteData.levainDeviceId && getTargetTrackId()) {
             const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
-            const levainId = (noteData as { levainDeviceId?: string }).levainDeviceId;
+            const levainId = noteData.levainDeviceId;
             const dn = strip?.deviceNodes.find((d) => d.deviceId === levainId);
             if (dn?.levainControls) {
                 dn.levainControls.noteOff(note);
@@ -390,7 +390,7 @@ export const handleNoteOn = inject({
             const dn = strip.deviceNodes.find((d) => d.deviceId === levainDev.id || d.type === 'levain');
             if (dn?.levainControls?.ready) {
                 dn.levainControls.noteOn(note, velocity);
-                (noteData as Record<string, unknown>).levainDeviceId = levainDev.id;
+                noteData.levainDeviceId = levainDev.id;
                 return;
             }
             return;

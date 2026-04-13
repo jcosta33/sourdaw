@@ -9,7 +9,7 @@ import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { Mic } from 'lucide-react';
 import { logger } from '#/infra/logger/appLogger';
 
-export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; clipId: string }): ReactElement => {
+export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const { tracks } = useTracks();
 

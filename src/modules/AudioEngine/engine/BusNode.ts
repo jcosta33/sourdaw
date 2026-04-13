@@ -33,7 +33,7 @@ export class BusNode {
     public getPeakLevel(): number {
         const data = this.strip.meterBuffer;
         if (data) {
-            this.strip.analyserNode.getFloatTimeDomainData(data as any);
+            this.strip.analyserNode.getFloatTimeDomainData(data);
         }
         let peak = 0;
         for (let i = 0; i < data.length; i++) {

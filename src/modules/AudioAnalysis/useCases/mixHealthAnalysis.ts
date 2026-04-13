@@ -20,12 +20,12 @@ export async function mixHealthAnalysis(onToken: (text: string) => void): Promis
         let audioAnalyzed = false;
 
         // Try to analyze the first audio clip
-        const audioClip = track.clips.find((c: any) => c.type === 'audio' && c.audioBufferId);
+        const audioClip = track.clips.find((c) => c.type === 'audio' && c.audioBufferId);
         if (audioClip && audioClip.audioBufferId) {
             const features = summarizeFeatures(audioClip.audioBufferId);
             if (features) {
                 trackSummary += `  - RMS Profile: Peak ${(features.peakRms * 100).toFixed(1)}%, Avg ${(features.avgRms * 100).toFixed(1)}%\\n`;
-                trackSummary += `  - Brigthness: ${features.avgSpectralCentroid.toFixed(0)} Hz\\n`;
+                trackSummary += `  - Brightness: ${features.avgSpectralCentroid.toFixed(0)} Hz\\n`;
                 trackSummary += `  - Tonal vs Noise: ${features.avgSpectralFlatness < 0.3 ? 'Tonal' : 'Noisy'}\\n`;
                 audioAnalyzed = true;
             }
