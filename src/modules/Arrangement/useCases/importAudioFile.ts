@@ -38,7 +38,11 @@ export async function importAudioFile(file: File): Promise<void> {
     // so peers can request it by hash. addLocalAsset is a no-op when null.
     const assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
 
-    const trackSnapshotBefore = structuredClone(trackStore.value);
+    // The track store is immutable-via-set — every .set() yields a new
+    // top-level object, so capturing the reference before/after is
+    // equivalent to structuredClone() but without the O(n) deep-copy hit
+    // that used to block the main thread twice per import (§77.1).
+    const trackSnapshotBefore = trackStore.value;
 
     const track = createTrack({ name, kind: 'audio' });
 
@@ -55,7 +59,7 @@ export async function importAudioFile(file: File): Promise<void> {
         assetHash,
     });
 
-    const trackSnapshotAfter = structuredClone(trackStore.value);
+    const trackSnapshotAfter = trackStore.value;
 
     pushUndo(
         createCallbackUndoEntry(

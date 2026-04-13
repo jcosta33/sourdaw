@@ -19,8 +19,10 @@ export async function importMidiFile(file: File): Promise<void> {
         return;
     }
 
-    const trackSnapshotBefore = structuredClone(trackStore.value);
-    const midiSnapshotBefore = structuredClone(midiStore.value);
+    // §77.1 — stores are immutable-via-set, capture refs instead of
+    // structuredClone (which blocked the main thread for large projects).
+    const trackSnapshotBefore = trackStore.value;
+    const midiSnapshotBefore = midiStore.value;
 
     const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {
         ...(midiStore.value?.notesByClipId ?? {}),
@@ -66,8 +68,8 @@ export async function importMidiFile(file: File): Promise<void> {
         pitchBendByClipId: midiStore.value?.pitchBendByClipId ?? {},
     });
 
-    const trackSnapshotAfter = structuredClone(trackStore.value);
-    const midiSnapshotAfter = structuredClone(midiStore.value);
+    const trackSnapshotAfter = trackStore.value;
+    const midiSnapshotAfter = midiStore.value;
     const importedName =
         parsedTracks.length === 1
             ? (parsedTracks[0]?.name ?? 'MIDI file')

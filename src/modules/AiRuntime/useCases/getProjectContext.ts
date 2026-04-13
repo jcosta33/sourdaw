@@ -48,6 +48,10 @@ export function getProjectContext(): ProjectContext {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const workspaceState = workspaceStore.value;
+    // Read once per call instead of once per clip (§92.1). For a 100-track
+    // project at ~20 clips each that's 2000 store dereferences → 1.
+    const midiState = midiStore.value;
+    const notesByClipId = midiState?.notesByClipId;
 
     const selectedTrackId = trackState?.selectedTrackId ?? null;
     const selectedClipId = workspaceState?.selectedClipId ?? null;
@@ -73,7 +77,7 @@ export function getProjectContext(): ProjectContext {
                 type: c.type ?? 'audio',
                 startBeat: c.startBeat,
                 endBeat: c.endBeat,
-                noteCount: c.type === 'midi' ? (midiStore.value?.notesByClipId[c.id]?.length ?? 0) : 0,
+                noteCount: c.type === 'midi' ? (notesByClipId?.[c.id]?.length ?? 0) : 0,
             })),
             devices: t.devices.map((d) => ({
                 id: d.id,

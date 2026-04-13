@@ -31,9 +31,11 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
         }
 
         if (finalNotes.length > 0) {
-            // Snapshot state before for undo support
-            const trackSnapshotBefore = structuredClone(trackStore.value);
-            const midiSnapshotBefore = structuredClone(midiStore.value);
+            // Snapshot state before for undo support. §77.1 — stores are
+            // immutable-via-set so capturing the reference is equivalent
+            // to structuredClone without the deep-copy jank.
+            const trackSnapshotBefore = trackStore.value;
+            const midiSnapshotBefore = midiStore.value;
 
             const tState = trackStore.value;
             const selectedTrackId = tState?.selectedTrackId;
@@ -79,8 +81,8 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     );
 
                     // Register undo entry for the entire generation
-                    const trackSnapshotAfter = structuredClone(trackStore.value);
-                    const midiSnapshotAfter = structuredClone(midiStore.value);
+                    const trackSnapshotAfter = trackStore.value;
+                    const midiSnapshotAfter = midiStore.value;
 
                     const undoEntry = createCallbackUndoEntry(
                         `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'}`,
