@@ -24,6 +24,17 @@ function lerpStep(a: Step, b: Step, t: number): Step {
 export function morphPatterns(a: Pattern, b: Pattern, t: number): Pattern {
     const clamped = Math.max(0, Math.min(1, t));
 
+    // At the endpoints, morphPatterns was the hot-spot in §62.2 because
+    // sequencerPlayback ticks call it every step with t=0 or t=1, and
+    // this function still allocates a whole new pattern shape for values
+    // that are byte-identical to one of the inputs. Early-return.
+    if (clamped === 0) {
+        return a;
+    }
+    if (clamped === 1) {
+        return b;
+    }
+
     const tracks = a.tracks.map((trackA, ti) => {
         const trackB = b.tracks[ti];
         if (!trackB) {

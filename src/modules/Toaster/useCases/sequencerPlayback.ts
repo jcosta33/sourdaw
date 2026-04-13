@@ -14,14 +14,21 @@ import { getFirstToasterDeviceId } from './toasterParamBridge/getFirstToasterDev
 import { morphPatterns } from './patternMorph';
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 
-let running = false;
-let fillActive = false;
-let playCount = 0;
-let nextTickTime = 0; // AudioContext time of next step
-let timeoutId: ReturnType<typeof setTimeout> | null = null;
+// §62.1 — Coalesce 5 module-level mutables into a single holder so the
+// playback session lives behind one named handle. Mutation still happens
+// through named setters, so importers can't reassign \`running = true\`
+// from outside this module.
+const sequencerState = {
+    running: false,
+    fillActive: false,
+    playCount: 0,
+    /** AudioContext time of the next step tick. */
+    nextTickTime: 0,
+    timeoutId: null as ReturnType<typeof setTimeout> | null,
+};
 
 export function setFillActive(active: boolean): void {
-    fillActive = active;
+    sequencerState.fillActive = active;
 }
 
 function shouldTrigger(step: Step, loopIndex: number): boolean {
@@ -31,12 +38,12 @@ function shouldTrigger(step: Step, loopIndex: number): boolean {
 
     switch (step.condition) {
         case 'fill':
-            if (!fillActive) {
+            if (!sequencerState.fillActive) {
                 return false;
             }
             break;
         case 'not-fill':
-            if (fillActive) {
+            if (sequencerState.fillActive) {
                 return false;
             }
             break;
@@ -62,7 +69,7 @@ function shouldTrigger(step: Step, loopIndex: number): boolean {
 }
 
 function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
-    if (!running) {
+    if (!sequencerState.running) {
         return;
     }
 
@@ -96,7 +103,7 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         if (!step) {
             continue;
         }
-        if (!shouldTrigger(step, playCount)) {
+        if (!shouldTrigger(step, sequencerState.playCount)) {
             continue;
         }
 
@@ -155,33 +162,33 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
     const stepDurationSec = stepDurationMs / 1000;
     const nextStep = (currentStep + 1) % totalSteps;
     if (nextStep === 0) {
-        playCount++;
+        sequencerState.playCount++;
     }
 
-    nextTickTime += stepDurationSec;
+    sequencerState.nextTickTime += stepDurationSec;
     const now = getAudioTime();
-    const delayMs = Math.max(1, (nextTickTime - now) * 1000);
+    const delayMs = Math.max(1, (sequencerState.nextTickTime - now) * 1000);
 
-    timeoutId = setTimeout(() => tick(nextStep, bpm, stepsPerBeat), delayMs);
+    sequencerState.timeoutId = setTimeout(() => tick(nextStep, bpm, stepsPerBeat), delayMs);
 }
 
 export function startSequencer(bpm: number, stepsPerBeat: number = 4): void {
     stopSequencer();
-    running = true;
-    playCount = 0;
-    nextTickTime = getAudioTime();
+    sequencerState.running = true;
+    sequencerState.playCount = 0;
+    sequencerState.nextTickTime = getAudioTime();
     tick(0, bpm, stepsPerBeat);
 }
 
 export function stopSequencer(): void {
-    running = false;
-    if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
+    sequencerState.running = false;
+    if (sequencerState.timeoutId !== null) {
+        clearTimeout(sequencerState.timeoutId);
+        sequencerState.timeoutId = null;
     }
     const state = toasterStore.value;
     if (state) {
         toasterStore.set({ ...state, isPlaying: false, currentStep: 0 });
     }
-    playCount = 0;
+    sequencerState.playCount = 0;
 }
