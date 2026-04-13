@@ -12,7 +12,7 @@ describe('animationScheduler', () => {
             return 1;
         });
         vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
-        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
     });
 
     afterEach(() => {
@@ -51,6 +51,6 @@ describe('animationScheduler', () => {
         animationScheduler.register('good', good);
         await Promise.resolve();
         expect(good).toHaveBeenCalledOnce();
-        expect(console.error).toHaveBeenCalled();
+        expect(console.warn).toHaveBeenCalled();
     });
 });

@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import type { EventBus, EventMap } from './types';
 import { createSubscriptionRegistry } from './internal/createSubscriptionRegistry';
 
@@ -35,7 +36,7 @@ export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> =>
                         promises.push(result);
                     }
                 } catch (handlerError) {
-                    console.error(`Error in event handler for ${event}:`, handlerError);
+                    logger.warn(`Error in event handler for ${event}:`, handlerError);
                 }
             }
 
@@ -46,7 +47,7 @@ export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> =>
                         promises.push(result);
                     }
                 } catch (handlerError) {
-                    console.error(`Error in wildcard event handler for ${event}:`, handlerError);
+                    logger.warn(`Error in wildcard event handler for ${event}:`, handlerError);
                 }
             }
 

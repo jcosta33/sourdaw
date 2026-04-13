@@ -1,4 +1,6 @@
 import { type ComponentProps, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+
+import { logger } from '#/infra/logger/appLogger';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginInsetCard } from '#/components/daw/DawPluginInsetCard';
@@ -282,7 +284,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 <SectionCard title="IR tray" detail="Cabinet-free">
                     <IrBrowser
                         onIrLoaded={(data, channels) => {
-                            console.log(`[ProofChamber] IR loaded: ${data.length} samples, ${channels}ch`);
+                            logger.info(`[ProofChamber] IR loaded: ${data.length} samples, ${channels}ch`);
                         }}
                     />
                 </SectionCard>

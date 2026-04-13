@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type DocId } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
 import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 import { getSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
@@ -78,7 +79,7 @@ export const createAutomergeStorage = <TData>(
                     try {
                         writeToCrdt(cachedValue);
                     } catch (error) {
-                        console.error('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
+                        logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
                     }
                 });
             }

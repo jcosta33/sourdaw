@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+
 type FrameCallback = (time: DOMHighResTimeStamp, delta: number) => void;
 
 class AnimationScheduler {
@@ -29,7 +31,7 @@ class AnimationScheduler {
                 try {
                     cb(time, delta);
                 } catch (e) {
-                    console.error(`[AnimationScheduler] Callback "${id}" threw:`, e);
+                    logger.warn(`[AnimationScheduler] Callback "${id}" threw:`, e);
                 }
             }
 
