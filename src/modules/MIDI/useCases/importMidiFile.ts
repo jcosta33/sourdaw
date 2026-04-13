@@ -7,177 +7,45 @@ type ParsedTrack = {
     endTick: number;
 };
 
-class MidiReader {
-    private data: DataView;
-    private pos = 0;
+type WorkerResponse =
+    | { type: 'parsed'; tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number }
+    | { type: 'error'; message: string };
 
-    constructor(buffer: ArrayBuffer) {
-        this.data = new DataView(buffer);
-    }
-
-    readUint8(): number {
-        return this.data.getUint8(this.pos++);
-    }
-
-    readUint16(): number {
-        const v = this.data.getUint16(this.pos);
-        this.pos += 2;
-        return v;
-    }
-
-    readUint32(): number {
-        const v = this.data.getUint32(this.pos);
-        this.pos += 4;
-        return v;
-    }
-
-    readString(len: number): string {
-        let s = '';
-        for (let i = 0; i < len; i++) {
-            s += String.fromCharCode(this.readUint8());
-        }
-        return s;
-    }
-
-    readVarLen(): number {
-        let value = 0;
-        let byte: number;
-        do {
-            byte = this.readUint8();
-            value = (value << 7) | (byte & 0x7f);
-        } while (byte & 0x80);
-        return value;
-    }
-
-    skip(n: number): void {
-        this.pos += n;
-    }
-
-    get position(): number {
-        return this.pos;
-    }
-
-    get length(): number {
-        return this.data.byteLength;
-    }
-}
-
-function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } {
-    const reader = new MidiReader(buffer);
-
-    const headerChunk = reader.readString(4);
-    if (headerChunk !== 'MThd') {
-        throw createMidiError('Not a valid MIDI file');
-    }
-
-    reader.readUint32(); // header length
-    const format = reader.readUint16();
-    const numTracks = reader.readUint16();
-    const ticksPerBeat = reader.readUint16();
-
-    if (format > 1) {
-        throw createMidiError(`MIDI format ${format} not supported`);
-    }
-
-    let globalTempo = 120;
-    const parsedTracks: ParsedTrack[] = [];
-
-    for (let t = 0; t < numTracks; t++) {
-        const chunkType = reader.readString(4);
-        const chunkLength = reader.readUint32();
-
-        if (chunkType !== 'MTrk') {
-            reader.skip(chunkLength);
-            continue;
-        }
-
-        const chunkEnd = reader.position + chunkLength;
-        let trackName = `Track ${t + 1}`;
-        const activeNotes = new Map<number, { tick: number; velocity: number }>();
-        const notes: MidiNote[] = [];
-        let tick = 0;
-        let runningStatus = 0;
-
-        while (reader.position < chunkEnd) {
-            const delta = reader.readVarLen();
-            tick += delta;
-
-            let statusByte = reader.readUint8();
-
-            if (statusByte === 0xff) {
-                const metaType = reader.readUint8();
-                const metaLen = reader.readVarLen();
-                const metaStart = reader.position;
-
-                if (metaType === 0x03) {
-                    trackName = reader.readString(metaLen);
-                } else if (metaType === 0x51 && metaLen === 3) {
-                    const microsPerBeat = (reader.readUint8() << 16) | (reader.readUint8() << 8) | reader.readUint8();
-                    globalTempo = Math.round(60_000_000 / microsPerBeat);
-                }
-
-                reader.skip(Math.max(0, metaLen - (reader.position - metaStart)));
-                continue;
-            }
-
-            if (statusByte === 0xf0 || statusByte === 0xf7) {
-                const sysexLen = reader.readVarLen();
-                reader.skip(sysexLen);
-                continue;
-            }
-
-            let data1: number;
-            let data2: number;
-
-            if (statusByte >= 0x80) {
-                runningStatus = statusByte;
-                data1 = reader.readUint8();
-            } else {
-                data1 = statusByte;
-                statusByte = runningStatus;
-            }
-
-            const eventType = statusByte & 0xf0;
-
-            if (eventType === 0xc0 || eventType === 0xd0) {
-                data2 = 0;
-            } else {
-                data2 = reader.readUint8();
-            }
-
-            if (eventType === 0x90 && data2 > 0) {
-                activeNotes.set(data1, { tick, velocity: data2 });
-            } else if (eventType === 0x80 || (eventType === 0x90 && data2 === 0)) {
-                const start = activeNotes.get(data1);
-                if (start) {
-                    const startBeat = start.tick / ticksPerBeat;
-                    const duration = (tick - start.tick) / ticksPerBeat;
-                    notes.push({
-                        id: crypto.randomUUID(),
-                        pitch: data1,
-                        startBeat,
-                        duration: Math.max(0.01, duration),
-                        velocity: start.velocity,
-                    });
-                    activeNotes.delete(data1);
-                }
-            }
-        }
-
-        if (notes.length > 0) {
-            parsedTracks.push({ name: trackName, notes, endTick: tick });
-        }
-    }
-
-    return { tracks: parsedTracks, ticksPerBeat, tempo: globalTempo };
-}
-
+/**
+ * §159.1 — .mid parsing runs in a dedicated Web Worker so large files don't
+ * block the main thread. A fresh worker is spawned per call and terminated
+ * after the result arrives; the parse is a one-shot so worker reuse would
+ * only add lifecycle complexity.
+ */
 export async function readMidiFile(file: File): Promise<ParsedTrack[]> {
     const buffer = await file.arrayBuffer();
-    // Yield to the event loop before the synchronous parse so that any pending
-    // UI work (e.g. a drag-and-drop visual update) can complete first.
-    // The parse itself remains on the main thread; a Web Worker is the full fix.
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    const { tracks: parsedTracks } = parseMidiFile(buffer);
-    return parsedTracks;
+
+    return new Promise<ParsedTrack[]>((resolve, reject) => {
+        const worker = new Worker(new URL('../workers/midiImportWorker.ts', import.meta.url), {
+            type: 'module',
+        });
+
+        const cleanup = (): void => {
+            worker.onmessage = null;
+            worker.onerror = null;
+            worker.terminate();
+        };
+
+        worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+            const msg = event.data;
+            if (msg.type === 'parsed') {
+                cleanup();
+                resolve(msg.tracks);
+            } else if (msg.type === 'error') {
+                cleanup();
+                reject(createMidiError(msg.message));
+            }
+        };
+        worker.onerror = (err) => {
+            cleanup();
+            reject(createMidiError(err.message || 'MIDI import worker crashed'));
+        };
+
+        worker.postMessage({ type: 'parse', buffer }, [buffer]);
+    });
 }

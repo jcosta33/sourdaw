@@ -52,8 +52,16 @@ export class AutomergeSync {
 
     /** Start syncing: subscribe to local document changes. */
     start(): void {
-        this.unsubscribeFromChanges = subscribeToCrdtChanges(() => {
-            this.sendSyncToAllPeers();
+        this.unsubscribeFromChanges = subscribeToCrdtChanges((docId) => {
+            // §138.1 — If the repository tells us which doc changed,
+            // skip the per-peer generateSyncMessage for every other
+            // doc and only sync the one that actually moved. Bulk
+            // operations (no hint) still fall back to the full sweep.
+            if (docId !== undefined) {
+                this.sendDocSyncToAllPeers(docId);
+            } else {
+                this.sendSyncToAllPeers();
+            }
         });
     }
 
@@ -175,6 +183,18 @@ export class AutomergeSync {
     private sendSyncToAllPeers(): void {
         for (const peerId of this.peerManager.getConnectedPeerIds()) {
             this.sendSyncToPeer(peerId);
+        }
+    }
+
+    /**
+     * §138.1 — Fast path for single-doc mutations: only invoke
+     * generateSyncMessage for the doc that actually changed, across all
+     * connected peers. Cuts per-edit work from O(peers × docs) to
+     * O(peers × 1).
+     */
+    private sendDocSyncToAllPeers(docId: string): void {
+        for (const peerId of this.peerManager.getConnectedPeerIds()) {
+            this.sendDocSyncToPeer({ peerId, docId });
         }
     }
 }

@@ -64,7 +64,13 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
 }
 
 /** Callback invoked after any document change for projection. */
-type ChangeListener = () => void;
+/**
+ * Change listener. The optional `docId` is a hint: when present, only that
+ * document changed; when absent, the caller modified multiple documents
+ * (bulk load / merge / snapshot) and the listener must re-sync everything.
+ * Consumers use the hint to narrow per-doc work (§138.1).
+ */
+type ChangeListener = (docId?: DocId) => void;
 
 /**
  * Singleton repository managing all live Automerge documents for the current project.
@@ -155,7 +161,7 @@ class AutomergeRepository {
 
         const updated = message ? Automerge.change(doc, { message }, changeFn) : Automerge.change(doc, changeFn);
         this.docs.set(id, updated as Automerge.Doc<AnyDoc>);
-        this.notifyListeners();
+        this.notifyListeners(id);
     }
 
     /**
@@ -164,7 +170,7 @@ class AutomergeRepository {
      */
     replaceDoc(id: DocId, doc: Automerge.Doc<unknown>): void {
         this.docs.set(id, doc as Automerge.Doc<AnyDoc>);
-        this.notifyListeners();
+        this.notifyListeners(id);
     }
 
     /**
@@ -182,7 +188,7 @@ class AutomergeRepository {
             this.docs.set(id, incoming);
         }
 
-        this.notifyListeners();
+        this.notifyListeners(id);
     }
 
     /** Serialize a single document to binary (full snapshot). */
@@ -393,10 +399,10 @@ class AutomergeRepository {
         return Automerge.getHeads(doc);
     }
 
-    private notifyListeners(): void {
+    private notifyListeners(docId?: DocId): void {
         for (const listener of this.changeListeners) {
             try {
-                listener();
+                listener(docId);
             } catch (error) {
                 logger.warn('[AutomergeRepository] Listener error:', error);
             }

@@ -151,7 +151,13 @@ const startBranchSync = (isHost: boolean): void => {
     });
 
     // Project incoming __branches__ doc changes back into branchStore.
-    sessionState.unsubscribeAutomergeChanges = subscribeToCrdtChanges(() => {
+    sessionState.unsubscribeAutomergeChanges = subscribeToCrdtChanges((docId) => {
+        // §138.1 — Skip the projection entirely when the hint tells us a
+        // different doc changed. Only undefined (bulk) or DOC_ID_BRANCHES
+        // can affect the branch projection.
+        if (docId !== undefined && docId !== DOC_ID_BRANCHES) {
+            return;
+        }
         const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_ID_BRANCHES);
         if (!doc?.branches) {
             return;
