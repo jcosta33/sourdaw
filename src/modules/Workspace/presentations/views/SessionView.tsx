@@ -3,48 +3,51 @@
  * Ableton-style vertical grid of clip slots with scene triggers.
  * Each track has a column of clip slots; each row is a scene.
  */
-import { type ReactElement, useState } from 'react';
+import { type ReactElement } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { DawSideRail } from '#/components/daw/DawSideRail';
+import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 import { Button } from '#/components/ui/button';
 import { Play, Square, Plus } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { type Track } from '../../models/TrackViewTypes';
+import { sessionLaunchStore, type SessionLaunchState } from '../../stores/sessionLaunchStore';
 
 const SCENE_COUNT = 8;
+const emptyState: SessionLaunchState = { activeSlots: {} };
 
 export const SessionView = (): ReactElement => {
     const { tracks } = useTracks();
-    const [activeSlots, setActiveSlots] = useState<Map<string, number>>(new Map());
+    // §83.2 — state lives in a module-level store so panel close/reopen
+    // no longer discards which clips are launched.
+    const state = useStore(sessionLaunchStore, emptyState);
+    const activeSlots = state.activeSlots;
 
     const handleLaunchSlot = (trackId: string, sceneIndex: number): void => {
-        setActiveSlots((prev) => {
-            const next = new Map(prev);
-            if (next.get(trackId) === sceneIndex) {
-                next.delete(trackId);
-            } else {
-                next.set(trackId, sceneIndex);
-            }
-            return next;
-        });
+        const current = sessionLaunchStore.value ?? emptyState;
+        const next = { ...current.activeSlots };
+        if (next[trackId] === sceneIndex) {
+            delete next[trackId];
+        } else {
+            next[trackId] = sceneIndex;
+        }
+        sessionLaunchStore.set({ activeSlots: next });
     };
 
     const handleLaunchScene = (sceneIndex: number): void => {
-        setActiveSlots((prev) => {
-            const next = new Map(prev);
-            for (const t of tracks) {
-                next.set(t.id, sceneIndex);
-            }
-            return next;
-        });
+        const next: Record<string, number> = {};
+        for (const t of tracks) {
+            next[t.id] = sceneIndex;
+        }
+        sessionLaunchStore.set({ activeSlots: next });
     };
 
     const handleStopAll = (): void => {
-        setActiveSlots(new Map());
+        sessionLaunchStore.set({ activeSlots: {} });
     };
 
     // Map clips to scenes: each track's clips are distributed across scene slots
@@ -119,7 +122,7 @@ export const SessionView = (): ReactElement => {
 
                                 {Array.from({ length: SCENE_COUNT }, (_, sceneIndex) => {
                                     const clipId = getClipForSlot(track.id, sceneIndex);
-                                    const isActive = activeSlots.get(track.id) === sceneIndex;
+                                    const isActive = activeSlots[track.id] === sceneIndex;
 
                                     return (
                                         <div

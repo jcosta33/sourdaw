@@ -3,35 +3,37 @@
  * Grid-based UI for connecting track outputs to buses, sends, and sidechain inputs.
  * Rows = source tracks, Columns = destination buses/tracks.
  */
-import { type ReactElement, useState } from 'react';
+import { type ReactElement } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
+import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 import { useTracks } from '../hooks/useTracks';
 import { type Track } from '../../models/TrackViewTypes';
+import {
+    routingConnectionKey,
+    routingMatrixStore,
+    type RoutingMatrixState,
+} from '../../stores/routingMatrixStore';
 
-type RoutingConnection = {
-    sourceId: string;
-    destId: string;
-    level: number; // 0-1
-};
+const emptyState: RoutingMatrixState = { connections: {} };
 
 export const RoutingMatrix = (): ReactElement => {
     const { tracks } = useTracks();
-    const [connections, setConnections] = useState<Map<string, RoutingConnection>>(new Map());
-
-    const getKey = (srcId: string, destId: string): string => `${srcId}→${destId}`;
+    // §83.1 — state lives in a module-level store so closing and reopening
+    // the panel no longer silently discards every route the user configured.
+    const state = useStore(routingMatrixStore, emptyState);
+    const connections = state.connections;
 
     const toggleConnection = (srcId: string, destId: string): void => {
-        const key = getKey(srcId, destId);
-        setConnections((prev) => {
-            const next = new Map(prev);
-            if (next.has(key)) {
-                next.delete(key);
-            } else {
-                next.set(key, { sourceId: srcId, destId, level: 1.0 });
-            }
-            return next;
-        });
+        const key = routingConnectionKey(srcId, destId);
+        const current = routingMatrixStore.value ?? emptyState;
+        const next = { ...current.connections };
+        if (key in next) {
+            delete next[key];
+        } else {
+            next[key] = { sourceId: srcId, destId, level: 1.0 };
+        }
+        routingMatrixStore.set({ connections: next });
     };
 
     // Separate buses from regular tracks
@@ -79,8 +81,8 @@ export const RoutingMatrix = (): ReactElement => {
                                     {src.name}
                                 </td>
                                 {destinations.map((dest) => {
-                                    const key = getKey(src.id, dest.id);
-                                    const isConnected = connections.has(key);
+                                    const key = routingConnectionKey(src.id, dest.id);
+                                    const isConnected = key in connections;
                                     const isSelf = src.id === dest.id;
 
                                     return (
