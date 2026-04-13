@@ -56,7 +56,7 @@ ONLY output raw JSON, no markdown blocks.`;
     await streamCloudChatCompletion(
         [
             { role: 'system', content: 'You are a world-class generative MIDI AI.' },
-            { role: 'user', content: `${projectContext}\\n\\n${prompt}` },
+            { role: 'user', content: `${projectContext}\n\n${prompt}` },
         ],
         (token: string) => {
             responseStr += token;

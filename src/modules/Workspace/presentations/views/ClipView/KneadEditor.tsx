@@ -1,6 +1,5 @@
 import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 import { kneadStore, updateTrackKneadState } from '#/modules/Knead/stores';
-import { ingestDspAnalysis } from '#/modules/Knead/useCases';
 import { useStore } from '#/infra/store/useStore';
 import { useTracks } from '../../hooks/useTracks';
 import { addDevice } from '#/modules/Arrangement/useCases';
@@ -8,6 +7,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { Mic } from 'lucide-react';
+import { logger } from '#/infra/logger/appLogger';
 
 export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; clipId: string }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -24,40 +24,16 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
     });
     const kneadState = kneadStoreState.tracks[trackId];
 
-    // Auto-analyze mock hook when enabled
+    // TODO(knead): Wire the real DSP pitch-analysis pipeline (WASM pitch detection)
+    // to `ingestDspAnalysis(trackId, ...)` here. The previous implementation
+    // injected a fixed A3/E4/C4 pitch-blob dataset on a 600ms timer, which
+    // presented fabricated analysis output to users regardless of the clip's
+    // actual audio content. That mock has been removed (audit §124.1).
     useEffect(() => {
         if (hasKnead && (!kneadState || kneadState.blobs.length === 0)) {
-            // Mock automatic analysis simulating a WASM pitch detection pass
-            const timer = setTimeout(() => {
-                ingestDspAnalysis(trackId, [
-                    // A3 (needs >5 frames)
-                    { time: 0.5, f0: 220.0, periodicity: 0.9 },
-                    { time: 0.6, f0: 221.0, periodicity: 0.9 },
-                    { time: 0.7, f0: 220.5, periodicity: 0.9 },
-                    { time: 0.8, f0: 219.0, periodicity: 0.9 },
-                    { time: 0.9, f0: 220.0, periodicity: 0.9 },
-                    { time: 1.0, f0: 220.1, periodicity: 0.9 },
-                    { time: 1.1, f0: 219.5, periodicity: 0.9 },
-                    { time: 1.2, f0: null, periodicity: 0.1 },
-                    // E4
-                    { time: 1.5, f0: 329.63, periodicity: 0.9 },
-                    { time: 1.6, f0: 330.0, periodicity: 0.9 },
-                    { time: 1.7, f0: 331.0, periodicity: 0.9 },
-                    { time: 1.8, f0: 329.0, periodicity: 0.9 },
-                    { time: 1.9, f0: 329.5, periodicity: 0.9 },
-                    { time: 2.0, f0: 330.5, periodicity: 0.9 },
-                    { time: 2.1, f0: null, periodicity: 0.1 },
-                    // C4
-                    { time: 2.5, f0: 261.63, periodicity: 0.9 },
-                    { time: 2.6, f0: 262.0, periodicity: 0.9 },
-                    { time: 2.7, f0: 261.0, periodicity: 0.9 },
-                    { time: 2.8, f0: 261.5, periodicity: 0.9 },
-                    { time: 2.9, f0: 262.5, periodicity: 0.9 },
-                    { time: 3.0, f0: 261.0, periodicity: 0.9 },
-                    { time: 3.1, f0: null, periodicity: 0.1 },
-                ]);
-            }, 600); // give it a slightly satisfying "thinking" pause
-            return () => clearTimeout(timer);
+            logger.warn(
+                `[KneadEditor] Real DSP pitch analysis is not wired up yet for track ${trackId}; blob list will remain empty until the WASM pitch pipeline is connected.`
+            );
         }
     }, [hasKnead, kneadState, trackId]);
 

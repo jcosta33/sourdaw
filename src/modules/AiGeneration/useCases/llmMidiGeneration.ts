@@ -7,6 +7,7 @@ import {
     resolveBackend,
 } from '#/modules/AiRuntime/useCases';
 import { type MidiGenerationNote } from '#/modules/AudioEngine/useCases';
+import { logger } from '#/infra/logger/appLogger';
 
 // ── System prompt for music generation ──
 
@@ -45,37 +46,6 @@ export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, 
     const backend = resolveBackend();
     let rawResponse: string;
 
-    function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
-        const q = promptText.toLowerCase();
-
-        const matched =
-            filterTemplates({ query: q })[0] ??
-            PATTERN_TEMPLATES.find(
-                (t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q)
-            );
-
-        if (matched) {
-            const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
-            return notes.map((note) => ({
-                pitch: note.pitch,
-                velocity: note.velocity,
-                start_beat: note.startBeat,
-                duration_beats: note.durationBeats,
-            }));
-        }
-
-        return [
-            { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 0.5 },
-            { pitch: 64, velocity: 75, start_beat: 0.5, duration_beats: 0.5 },
-            { pitch: 67, velocity: 70, start_beat: 1, duration_beats: 0.5 },
-            { pitch: 72, velocity: 75, start_beat: 1.5, duration_beats: 0.5 },
-            { pitch: 67, velocity: 70, start_beat: 2, duration_beats: 0.5 },
-            { pitch: 64, velocity: 75, start_beat: 2.5, duration_beats: 0.5 },
-            { pitch: 60, velocity: 80, start_beat: 3, duration_beats: 0.5 },
-            { pitch: 64, velocity: 75, start_beat: 3.5, duration_beats: 0.5 },
-        ];
-    }
-
     if (backend === 'none') {
         return fallbackToPatternMatch(prompt);
     }
@@ -83,6 +53,11 @@ export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, 
     if (backend === 'native' && isNativeEngineReady()) {
         rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     } else if (backend === 'cloud') {
+        // Cloud MIDI generation is not yet wired up — surface the degradation
+        // so callers (and log aggregation) can tell the cloud path was not used.
+        logger.warn(
+            '[llmMidiGeneration] Cloud backend selected but no cloud MIDI generation is implemented; falling back to local pattern match.'
+        );
         return fallbackToPatternMatch(prompt);
     } else {
         rawResponse = await generateWebLlmCompletion(MIDI_SYSTEM_PROMPT, userMessage);
@@ -95,6 +70,37 @@ export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, 
     }
 
     return notes;
+}
+
+function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
+    const q = promptText.toLowerCase();
+
+    const matched =
+        filterTemplates({ query: q })[0] ??
+        PATTERN_TEMPLATES.find(
+            (t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q)
+        );
+
+    if (matched) {
+        const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
+        return notes.map((note) => ({
+            pitch: note.pitch,
+            velocity: note.velocity,
+            start_beat: note.startBeat,
+            duration_beats: note.durationBeats,
+        }));
+    }
+
+    return [
+        { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 0.5 },
+        { pitch: 64, velocity: 75, start_beat: 0.5, duration_beats: 0.5 },
+        { pitch: 67, velocity: 70, start_beat: 1, duration_beats: 0.5 },
+        { pitch: 72, velocity: 75, start_beat: 1.5, duration_beats: 0.5 },
+        { pitch: 67, velocity: 70, start_beat: 2, duration_beats: 0.5 },
+        { pitch: 64, velocity: 75, start_beat: 2.5, duration_beats: 0.5 },
+        { pitch: 60, velocity: 80, start_beat: 3, duration_beats: 0.5 },
+        { pitch: 64, velocity: 75, start_beat: 3.5, duration_beats: 0.5 },
+    ];
 }
 
 // ── Helpers ──

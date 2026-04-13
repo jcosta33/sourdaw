@@ -4,25 +4,10 @@
  */
 
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
-
-export type DrumPatternStyle =
-    | 'four-on-floor'
-    | 'breakbeat'
-    | 'trap'
-    | 'jazz'
-    | 'latin'
-    | 'rock'
-    | 'dnb'
-    | 'half-time'
-    | 'blues'
-    | 'reggae'
-    | 'lofi'
-    | 'house'
-    | 'techno'
-    | 'synthwave'
-    | 'afrobeat'
-    | 'metal'
-    | 'punk';
+// See `AiGeneration/models/GenerationStyles.ts` — shared to avoid a
+// circular dep with `AiRuntime/useCases/dsoEditor` (audit §11.2).
+import type { DrumPatternStyle } from '../../models/GenerationStyles';
+export type { DrumPatternStyle };
 
 export type GenerateDrumPatternOptions = {
     style: DrumPatternStyle;
