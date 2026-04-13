@@ -1,13 +1,31 @@
 import { automationStore } from '../../stores/automationStore';
 import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
 
+type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
+
+/**
+ * Lane-by-id index cache. Rebuilt only when the underlying `lanes` array
+ * reference changes — otherwise the per-tick scheduler call reuses the map.
+ * Avoids the O(lanes) `state.lanes.find()` scan on every tick per lane
+ * (see audit §158.1 follow-up note).
+ */
+let _lastLanesRef: readonly AutomationLane[] | null = null;
+const _laneByIdCache = new Map<string, AutomationLane>();
+
 export function getAutomationValueAtBeat(laneId: string, beat: number): number | null {
     const state = automationStore.value;
     if (!state) {
         return null;
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    if (state.lanes !== _lastLanesRef) {
+        _lastLanesRef = state.lanes;
+        _laneByIdCache.clear();
+        for (const candidate of state.lanes) {
+            _laneByIdCache.set(candidate.id, candidate);
+        }
+    }
+    const lane = _laneByIdCache.get(laneId);
     if (!lane || lane.points.length === 0) {
         return null;
     }

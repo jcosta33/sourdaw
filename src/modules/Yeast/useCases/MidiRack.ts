@@ -11,7 +11,15 @@ import { type MidiProcessor, ScheduledEventQueue } from '../models/MidiProcessor
 export class MidiRack {
     private processors: MidiProcessor[] = [];
     private scheduled = new ScheduledEventQueue();
-    private activeNotes: Map<string, MidiEvent> = new Map();
+    // Numeric key = (channel << 7) | note avoids per-event template-literal
+    // string allocation in AudioWorkletGlobalScope (§149.2).
+    private activeNotes: Map<number, MidiEvent> = new Map();
+    // Scratch buffers reused across blocks to avoid per-processor array
+    // allocation (§149.1). Ping-pong between scratchA / scratchB during the
+    // processor chain loop. `separateOutput` is the persistent return buffer.
+    private scratchA: MidiEvent[] = [];
+    private scratchB: MidiEvent[] = [];
+    private separateOutput: MidiEvent[] = [];
 
     /** Add a processor to the end of the chain. */
     addProcessor(processor: MidiProcessor): void {
@@ -42,46 +50,65 @@ export class MidiRack {
         blockEndSamples: number,
         transport: TransportInfo
     ): MidiEvent[] {
-        // 1. Drain scheduled events for this block
-        const scheduled = this.scheduled.drainRange(blockStartSamples, blockEndSamples);
+        // 1. Drain scheduled events directly into scratchA — avoids the
+        // intermediate `drained` + spread-merge allocation (§149.1).
+        const current0 = this.scratchA;
+        current0.length = 0;
+        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0);
 
-        // 2. Merge with input events, sorted by time
-        let current: MidiEvent[] = [...inputEvents, ...scheduled];
-        current.sort((a, b) => a.timeSamples - b.timeSamples);
-
-        // 3. Run through processor chain
-        for (const processor of this.processors) {
-            if (processor.isBypassed()) {continue;}
-
-            const output: MidiEvent[] = [];
-            processor.processMidi(current, output, transport);
-            current = output;
+        // 2. Merge with input events.
+        for (let i = 0; i < inputEvents.length; i++) {
+            current0.push(inputEvents[i]!);
         }
+        current0.sort((a, b) => a.timeSamples - b.timeSamples);
+
+        // 3. Run through processor chain — ping-pong between scratchA/scratchB
+        // so each hop reuses the same two buffers (§149.1).
+        let input: MidiEvent[] = current0;
+        let output: MidiEvent[] = this.scratchB;
+        for (const processor of this.processors) {
+            if (processor.isBypassed()) {
+                continue;
+            }
+            output.length = 0;
+            processor.processMidi(input, output, transport);
+            const tmp = input;
+            input = output;
+            output = tmp;
+        }
+        const current = input;
 
         // 4. Sort final output
         current.sort((a, b) => a.timeSamples - b.timeSamples);
 
-        // 5. Track active notes for panic
+        // 5. Track active notes for panic. Numeric key avoids a per-event
+        // template literal allocation in the worklet (§149.2).
         for (const event of current) {
-            const key = `${event.kind.type === 'noteOn' || event.kind.type === 'noteOff' ? event.kind.channel : 0}:${event.kind.type === 'noteOn' || event.kind.type === 'noteOff' ? event.kind.note : 0}`;
             if (event.kind.type === 'noteOn') {
+                const key = (event.kind.channel << 7) | event.kind.note;
                 this.activeNotes.set(key, event);
             } else if (event.kind.type === 'noteOff') {
+                const key = (event.kind.channel << 7) | event.kind.note;
                 this.activeNotes.delete(key);
             }
         }
 
-        // 6. Separate: events in this block go to output, future events go to scheduled queue
-        const output: MidiEvent[] = [];
+        // 6. Separate: events in this block go to output, future events go to
+        // the scheduled queue. `separateOutput` is a persistent scratch buffer;
+        // the caller consumes it synchronously before the next processBlock
+        // call (yeastWorkletProcessor posts it via structuredClone, and the
+        // main-thread fallback iterates it before returning).
+        const finalOutput = this.separateOutput;
+        finalOutput.length = 0;
         for (const event of current) {
             if (event.timeSamples < blockEndSamples) {
-                output.push(event);
+                finalOutput.push(event);
             } else {
                 this.scheduled.push(event);
             }
         }
 
-        return output;
+        return finalOutput;
     }
 
     /** Panic: send Note Off for all active notes. */
