@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { exportStems, renderOffline } from '../offlineRender';
+import { exportStems } from '../exportStems';
+import { renderOffline } from '../renderOffline';
 
 const offlineRenderMocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(() => null),

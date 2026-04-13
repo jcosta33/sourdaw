@@ -106,7 +106,11 @@ not `Map<>`, so React ref-equality works; fixes data-loss on panel close/reopen)
 §187.1 (Rules of Hooks violation in `GenerativeAiPanel.tsx` — two `useStore` calls hoisted above the early return),
 §183.1 / §196.1 (4 `window.confirm()` callers replaced with new async `ConfirmDialog` system: `ConfirmPayload` event, `confirmUser()` helper, `ConfirmDialog` component subscribed to `'ui.confirm'` mounted in AppShell)
 
-**Stale audit entries:** §213.1 (`src/helpers/Store/` — directory doesn't exist), §213.2 (`src/utils/` — heavily referenced, audit was wrong)
+**Stale audit entries:** §213.1 (`src/helpers/Store/` — directory doesn't exist), §213.2 (`src/utils/` — heavily referenced, audit was wrong), §16.1 (`handlers/` is already formally documented in AGENTS.md §98–§100)
+
+**Non-reactive store reads (batch 1):** §197.1 (`gainEnvelopeStore` Map→`Store<State>`), §201.1 (RoutingGraph sidechain subscription), §202.1 (`vcaGroupStore` bare let→`Store<State>`), §211.1 (NearbyMarkerColorMenu marker subscription), §195.3 (WaveformEditor `trackStore.value?` render-time read), §198.1 (TrackNotesSection `useState(track.notes)` captured once at mount)
+
+**§3.8 `offlineRender.ts` split:** 980-line file with `renderOffline` + `exportStems` + 10 intertwined helpers → `useCases/offlineRender/` subdirectory with one-function-per-file helpers (`constants`, `types`, `yieldToMain`, `hasToasterDevice`, `shouldCreateOfflineStrip`, `createOfflineTrackStrip`, `createOfflineBusStrip`, `schedulePendingSuspends`, `scheduleTrackClips`, `renderWithTimeout`, `exportCancellation` holder, `resolveRenderContext`). Top-level `renderOffline.ts` and `exportStems.ts` are now lean drivers. `deps:validate` baseline moved 447→452 warnings (all pre-existing cross-module `no-circular` warnings newly attributed to the split files — no new architectural violations).
 
 ---
 
@@ -152,25 +156,6 @@ here so future audits don't re-flag them as oversights.
 ## Still open
 
 ### Structural / architectural (decisions or spec needed)
-
-#### §3.8 `offlineRender.ts` — 974 lines, multiple exports
-**File:** `src/modules/AudioEngine/useCases/offlineRender.ts`
-
-Single file exports `renderOffline` AND `exportStems`, violating the
-AGENTS.md "One Function Per File" rule. Contains ~320-line
-`scheduleTrackClips` function plus ~10 intertwined internal helpers
-(cancellation state, strip builders, render driver). Proper split is
-5–7 new files (scheduleTrackClips to `services/`, renderOffline +
-exportStems to separate useCase files, cancellation + graph setup to
-helpers). Low-risk if done methodically — every seam is visible from
-the code itself.
-
-#### §16.1 `handlers/` layer not in AGENTS.md taxonomy
-14 modules use a `handlers/` directory for `AppAction → ActionHandler`
-maps. AGENTS.md mentions it as "legacy `useCases/*Handlers.ts` until
-migrated" but doesn't formally define it. Either: (a) formalise
-`handlers/` in AGENTS.md alongside `services/`, or (b) complete the
-migration to `useCases/*Handlers.ts`. Pick one.
 
 #### §10.1 `createAutomergeStorage.ts` — infra → domain import
 **File:** `src/infra/store/storage/createAutomergeStorage.ts`
