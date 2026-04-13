@@ -32,12 +32,21 @@ export type { AudioRecordingState } from '../../stores/audioRecordingStore';
 const RING_FLOATS = 524_288;
 const SAB_BYTES = 4 + RING_FLOATS * Float32Array.BYTES_PER_ELEMENT; // 4-byte writeHead + ring
 
-// ── Module-level recording state ─────────────────────────────────────────────
-let mediaStream: MediaStream | null = null;
-let sourceNode: MediaStreamAudioSourceNode | null = null;
-let recordingNode: AudioWorkletNode | null = null;
-let recordingWorker: Worker | null = null;
-let onRecordingComplete: ((buffer: AudioBuffer) => void) | null = null;
+// §35.1 — Coalesce 5 module-level mutables into a single holder so the
+// recording session lives behind one named handle.
+const recordingSession: {
+    mediaStream: MediaStream | null;
+    sourceNode: MediaStreamAudioSourceNode | null;
+    recordingNode: AudioWorkletNode | null;
+    recordingWorker: Worker | null;
+    onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
+} = {
+    mediaStream: null,
+    sourceNode: null,
+    recordingNode: null,
+    recordingWorker: null,
+    onRecordingComplete: null,
+};
 
 /**
  * Pre-request microphone permission so the browser prompt fires on page load
@@ -79,39 +88,39 @@ export const startAudioRecording = inject({ logger })(
                     audioConstraints.deviceId = { exact: selectedInputId };
                 }
 
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                recordingSession.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
                 const ctx = audioEngine.context;
-                sourceNode = ctx.createMediaStreamSource(mediaStream);
+                recordingSession.sourceNode = ctx.createMediaStreamSource(recordingSession.mediaStream);
 
                 // Monitor via the track strip (same as before).
                 const strip = audioEngine.ensureTrackStrip(trackId);
-                sourceNode.connect(strip.gainNode);
+                recordingSession.sourceNode.connect(strip.gainNode);
 
-                onRecordingComplete = onComplete;
+                recordingSession.onRecordingComplete = onComplete;
 
                 // ── SAB ring ─────────────────────────────────────────────────────────
                 const sab = new SharedArrayBuffer(SAB_BYTES);
 
                 // ── AudioWorkletNode (recording-processor) ───────────────────────────
                 // numberOfOutputs: 0 — sink node, no destination connection needed.
-                recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
+                recordingSession.recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
                     numberOfInputs: 1,
                     numberOfOutputs: 0,
                     channelCount: 1,
                     channelCountMode: 'explicit',
                     channelInterpretation: 'discrete',
                 });
-                recordingNode.port.postMessage({ type: 'init', sab });
-                sourceNode.connect(recordingNode);
+                recordingSession.recordingNode.port.postMessage({ type: 'init', sab });
+                recordingSession.sourceNode.connect(recordingSession.recordingNode);
 
                 // ── OPFS Worker ──────────────────────────────────────────────────────
-                recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
+                recordingSession.recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
                     type: 'module',
                 });
 
                 // Wire up the PCM-complete handler before sending 'start'.
-                recordingWorker.onmessage = ({ data }: MessageEvent): void => {
+                recordingSession.recordingWorker.onmessage = ({ data }: MessageEvent): void => {
                     const msg = data as
                         | { type: 'ready' }
                         | { type: 'pcm'; samples: Float32Array; sampleRate: number }
@@ -119,8 +128,8 @@ export const startAudioRecording = inject({ logger })(
 
                     if (msg.type === 'ready') {
                         // Both sides are initialised — begin capture.
-                        recordingNode?.port.postMessage({ type: 'start' });
-                        recordingWorker?.postMessage({ type: 'start' });
+                        recordingSession.recordingNode?.port.postMessage({ type: 'start' });
+                        recordingSession.recordingWorker?.postMessage({ type: 'start' });
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
                     } else if (msg.type === 'pcm') {
                         // Worker has flushed OPFS → build AudioBuffer on the main thread.
@@ -132,13 +141,13 @@ export const startAudioRecording = inject({ logger })(
                     }
                 };
 
-                recordingWorker.onerror = (e): void => {
+                recordingSession.recordingWorker.onerror = (e): void => {
                     logger.error(new Error('Recording worker crashed', { cause: e }));
                     cleanupNodes();
                     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
                 };
 
-                recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
+                recordingSession.recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
 
                 return true;
             } catch (error) {
@@ -151,11 +160,11 @@ export const startAudioRecording = inject({ logger })(
 
 export function stopAudioRecording(): void {
     // Tell the worklet to stop writing — it will ack with 'stopped' (ignored).
-    recordingNode?.port.postMessage({ type: 'stop' });
+    recordingSession.recordingNode?.port.postMessage({ type: 'stop' });
 
     // Tell the OPFS worker to do a final drain and send back the PCM.
     // The 'pcm' handler in startAudioRecording delivers the AudioBuffer.
-    recordingWorker?.postMessage({ type: 'stop' });
+    recordingSession.recordingWorker?.postMessage({ type: 'stop' });
 
     // Disconnect audio nodes immediately so monitoring stops.
     cleanupNodes();
@@ -166,8 +175,8 @@ export function stopAudioRecording(): void {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildAndDeliver(samples: Float32Array, sampleRate: number, ctx: AudioContext): void {
-    const cb = onRecordingComplete;
-    onRecordingComplete = null;
+    const cb = recordingSession.onRecordingComplete;
+    recordingSession.onRecordingComplete = null;
 
     if (!cb || samples.length === 0) {
         terminateWorker();
@@ -182,21 +191,23 @@ function buildAndDeliver(samples: Float32Array, sampleRate: number, ctx: AudioCo
 }
 
 function terminateWorker(): void {
-    recordingWorker?.terminate();
-    recordingWorker = null;
+    recordingSession.recordingWorker?.terminate();
+    recordingSession.recordingWorker = null;
 }
 
 function cleanupNodes(): void {
-    if (recordingNode) {
-        recordingNode.disconnect();
-        recordingNode = null;
+    if (recordingSession.recordingNode) {
+        recordingSession.recordingNode.disconnect();
+        recordingSession.recordingNode = null;
     }
-    if (sourceNode) {
-        sourceNode.disconnect();
-        sourceNode = null;
+    if (recordingSession.sourceNode) {
+        recordingSession.sourceNode.disconnect();
+        recordingSession.sourceNode = null;
     }
-    if (mediaStream) {
-        for (const t of mediaStream.getTracks()) {t.stop();}
-        mediaStream = null;
+    if (recordingSession.mediaStream) {
+        for (const t of recordingSession.mediaStream.getTracks()) {
+            t.stop();
+        }
+        recordingSession.mediaStream = null;
     }
 }

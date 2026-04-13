@@ -7,7 +7,9 @@ import { saveIncrementalToIdb } from '../repositories/crdtPersistence/saveIncrem
 import { clearIncrementalsFromIdb } from '../repositories/crdtPersistence/clearIncrementalsFromIdb';
 import { isNativeCrdtAvailable } from '../repositories/nativeCrdtPersistence/isNativeCrdtAvailable';
 
-let incrementalSaveCount = 0;
+// §121.1 — Holder object instead of a raw module-level \`let\` so the
+// compaction counter isn't externally writable.
+const compactionState = { incrementalSaveCount: 0 };
 const COMPACTION_THRESHOLD = 50;
 
 /**
@@ -42,10 +44,10 @@ export const persistCrdtProject = async (): Promise<void> => {
     const chunk = automergeRepository.saveDocIncremental(DOC_PREFIX_ROOT);
     if (chunk && chunk.length > 0) {
         await saveIncrementalToIdb(DOC_PREFIX_ROOT, chunk);
-        incrementalSaveCount++;
+        compactionState.incrementalSaveCount++;
     }
 
-    if (incrementalSaveCount >= COMPACTION_THRESHOLD) {
+    if (compactionState.incrementalSaveCount >= COMPACTION_THRESHOLD) {
         await compactProject();
     }
 };
@@ -58,7 +60,7 @@ export const compactProject = async (): Promise<void> => {
     const bundle = automergeRepository.saveAll();
     await saveAllToIdb(bundle);
     await clearIncrementalsFromIdb(DOC_PREFIX_ROOT);
-    incrementalSaveCount = 0;
+    compactionState.incrementalSaveCount = 0;
 };
 
 /**
