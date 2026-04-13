@@ -37,15 +37,19 @@ export type PolyphonicAudioToMidiResult = {
 };
 
 // ── Model singleton ─────────────────────────────────────────────────────
-
-let basicPitchModel: BasicPitch | null = null;
+//
+// §64.2 — Wrap the lazy-loaded Basic Pitch model in a holder object so it
+// lives behind a single mutation surface and cannot be reassigned from
+// outside this file. The previous `let basicPitchModel` was an exported
+// mutable binding pattern we've been systematically retiring.
+const modelHolder: { instance: BasicPitch | null } = { instance: null };
 
 function getBasicPitchModel(): BasicPitch {
-    if (!basicPitchModel) {
+    if (!modelHolder.instance) {
         logger.info(`[Basic Pitch] Loading model from ${basicPitchModelUrl}`);
-        basicPitchModel = new BasicPitch(basicPitchModelUrl);
+        modelHolder.instance = new BasicPitch(basicPitchModelUrl);
     }
-    return basicPitchModel;
+    return modelHolder.instance;
 }
 
 // ── Core conversion ─────────────────────────────────────────────────────

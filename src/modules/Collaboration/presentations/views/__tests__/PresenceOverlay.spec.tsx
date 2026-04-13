@@ -20,31 +20,30 @@ describe('PresenceOverlay', () => {
     });
 
     it('should render without crashing', () => {
-        vi.mocked(usePresence).mockReturnValue(new Map());
+        vi.mocked(usePresence).mockReturnValue([]);
         const { container } = render(<PresenceOverlay {...defaultProps} />);
         expect(container.firstChild).toBeTruthy();
     });
 
     it('should render collaborator cursors', () => {
-        const mockPresence = new Map();
-        mockPresence.set('peer-1', {
-            peerId: 'peer-1',
-            name: 'Alice',
-            color: '#ff0000',
-            playheadBeat: 10,
-            cursorBeat: 20,
-            cursorTrackId: 'track-1',
-        });
-        mockPresence.set('peer-2', {
-            peerId: 'peer-2',
-            name: 'Bob',
-            color: '#00ff00',
-            playheadBeat: null,
-            cursorBeat: 40,
-            cursorTrackId: null,
-        });
-
-        vi.mocked(usePresence).mockReturnValue(mockPresence);
+        vi.mocked(usePresence).mockReturnValue([
+            {
+                peerId: 'peer-1',
+                name: 'Alice',
+                color: '#ff0000',
+                playheadBeat: 10,
+                cursorBeat: 20,
+                cursorTrackId: 'track-1',
+            },
+            {
+                peerId: 'peer-2',
+                name: 'Bob',
+                color: '#00ff00',
+                playheadBeat: null,
+                cursorBeat: 40,
+                cursorTrackId: null,
+            },
+        ]);
         render(<PresenceOverlay {...defaultProps} />);
         
         // Cursors are rendered by PresenceMarker which usually shows the name

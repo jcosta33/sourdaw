@@ -14,13 +14,30 @@
 
 import { type DrumVoiceType } from '../models/DrumSynthTypes';
 
+// §157.1 — Cache noise buffers per (ctx, durationSec) so we don't allocate
+// and re-seed a Float32Array on every drum note. The buffer content is
+// white noise; reusing the same buffer for multiple voices is perceptually
+// indistinguishable from a fresh one because each BufferSource starts at
+// a different point in time.
+const noiseBufferCache = new WeakMap<BaseAudioContext, Map<number, AudioBuffer>>();
+
 function createNoiseBuffer(ctx: BaseAudioContext, durationSec: number): AudioBuffer {
+    let ctxMap = noiseBufferCache.get(ctx);
+    if (!ctxMap) {
+        ctxMap = new Map();
+        noiseBufferCache.set(ctx, ctxMap);
+    }
+    const existing = ctxMap.get(durationSec);
+    if (existing) {
+        return existing;
+    }
     const length = Math.ceil(ctx.sampleRate * durationSec);
     const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < length; i++) {
         data[i] = Math.random() * 2 - 1;
     }
+    ctxMap.set(durationSec, buffer);
     return buffer;
 }
 

@@ -19,9 +19,14 @@ import { type SourceWithFade } from '../playheadScheduler';
 
 const MICRO_FADE_SECONDS = 0.003;
 
-/** Hashes for which we have already sent a peer request this session.
- *  Prevents spamming requestAsset() every scheduler tick while waiting. */
-const requestedAssets = new Set<string>();
+/**
+ * §109.1 — Holder-wrapped dedup Set. Hashes for which we have already
+ * sent a peer request this session. Prevents spamming requestAsset()
+ * every scheduler tick while waiting.
+ */
+const assetRequestState: { requestedAssets: Set<string> } = {
+    requestedAssets: new Set<string>(),
+};
 
 export function scheduleAudioClips(
     fromBeat: number,
@@ -84,8 +89,8 @@ export function scheduleAudioClips(
                 if (!isRecordingClip) {
                     const inSession = collaborationStore.value?.isEnabled ?? false;
                     if (inSession && clip.assetHash) {
-                        if (!requestedAssets.has(clip.assetHash)) {
-                            requestedAssets.add(clip.assetHash);
+                        if (!assetRequestState.requestedAssets.has(clip.assetHash)) {
+                            assetRequestState.requestedAssets.add(clip.assetHash);
                             getAssetTransfer()?.requestAsset(clip.assetHash);
                         }
                     } else {
