@@ -2,7 +2,8 @@
  * Chorus/Phaser/Flanger Layout — LFO visualization, all controls visible.
  */
 import { type ReactElement } from 'react';
-import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { SectionHeader } from '../SectionHeader';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ModulationLFO } from '../../../components/ModulationLFO';
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';

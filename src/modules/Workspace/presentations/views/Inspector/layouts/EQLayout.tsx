@@ -4,7 +4,8 @@
  */
 import { type ReactElement } from 'react';
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
-import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { SectionHeader } from '../SectionHeader';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';

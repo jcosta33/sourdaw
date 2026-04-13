@@ -16,9 +16,6 @@ export {
 } from './faustEngine/compilerEngine';
 export type { FaustModule, FaustParamDescriptor } from './faustEngine/compilerEngine';
 
-export type { ModulatorPreset } from './modulatorLibrary';
-export { MODULATOR_PRESETS } from './modulatorLibrary';
-
 export { toggleNodeView } from './nodeView/toggleNodeView';
 
 export { createTrackForPlugin } from './pluginBrowserActions/createTrackForPlugin';

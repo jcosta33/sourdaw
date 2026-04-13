@@ -9,7 +9,8 @@ import {
 } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { timelineViewStore, setScrollX, markerStore, chordTrackStore } from '#/modules/Arrangement/stores';
+import { timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import {
     TimelineSurface,

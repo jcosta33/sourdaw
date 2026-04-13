@@ -11,7 +11,7 @@ import { useStore } from '#/infra/store/useStore';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
-import { chordTrackStore } from '#/modules/Arrangement/stores';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 import {
     addChordEvent,
     removeChordEvent,

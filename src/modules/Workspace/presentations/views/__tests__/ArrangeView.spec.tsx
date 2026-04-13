@@ -47,8 +47,9 @@ vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
     markerStore: { value: { markers: [], sections: [] } },
 }));
 
-vi.mock('#/modules/Arrangement/stores/chordTrackStore', () => ({
+vi.mock('#/modules/MIDI/stores/chordTrackStore', () => ({
     chordTrackStore: { value: { enabled: false, events: [] } },
+    defaultChordTrackState: { enabled: false, events: [] },
 }));
 
 vi.mock('#/modules/Transport/stores/transportStore', () => ({

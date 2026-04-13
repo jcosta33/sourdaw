@@ -8,6 +8,7 @@ import {
 } from '#/modules/AiRuntime/useCases';
 import { type MidiGenerationNote } from '#/modules/AudioEngine/useCases';
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 // ── System prompt for music generation ──
 
@@ -53,10 +54,16 @@ export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, 
     if (backend === 'native' && isNativeEngineReady()) {
         rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     } else if (backend === 'cloud') {
-        // Cloud MIDI generation is not yet wired up — surface the degradation
-        // so callers (and log aggregation) can tell the cloud path was not used.
+        // §127.2 — Cloud MIDI generation is not yet wired up. Previously this
+        // silently returned a pattern-match result, which looked like the
+        // cloud backend was working. Surface the degradation to both logs
+        // and the user so the misconfiguration is visible.
         logger.warn(
             '[llmMidiGeneration] Cloud backend selected but no cloud MIDI generation is implemented; falling back to local pattern match.'
+        );
+        notifyUser(
+            'Cloud AI is selected but cloud MIDI generation is not wired up yet — using local pattern match instead. Switch to the Browser or Native backend for full MIDI generation.',
+            'warning'
         );
         return fallbackToPatternMatch(prompt);
     } else {

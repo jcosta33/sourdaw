@@ -1,4 +1,4 @@
-import { chordTrackStore } from '#/modules/Arrangement/stores';
+import { chordTrackStore } from '../../stores/chordTrackStore';
 
 export function toggleChordTrack(enabled?: boolean): void {
     const state = chordTrackStore.value;

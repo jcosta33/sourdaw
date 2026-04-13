@@ -6,3 +6,6 @@ export type { MidiMappingTargetType, MidiMapping, LearningTarget, MidiLearnState
 
 export { midiStore } from './midiStore';
 export type { MidiStoreState } from './midiStore';
+
+export { chordTrackStore, defaultChordTrackState } from './chordTrackStore';
+export type { ChordTrackState } from './chordTrackStore';

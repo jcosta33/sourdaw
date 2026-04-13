@@ -1,10 +1,12 @@
 import { createStore } from '#/infra/store/createStore';
-import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
+import { type ChordEvent } from '../models/ChordEvent';
 
 export type ChordTrackState = {
     enabled: boolean;
     events: ChordEvent[];
 };
+
+export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
 const loadFromStorage = (): ChordTrackState => {
     try {
@@ -15,7 +17,7 @@ const loadFromStorage = (): ChordTrackState => {
     } catch {
         // Fallback
     }
-    return { enabled: false, events: [] };
+    return defaultChordTrackState;
 };
 
 export const chordTrackStore = createStore<ChordTrackState>({

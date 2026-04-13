@@ -9,7 +9,6 @@ import {
     Guitar,
     Bug,
     GitBranch,
-    Sliders,
 } from 'lucide-react';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import {
@@ -45,8 +44,8 @@ import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from './SidebarTypes';
-import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2, SoonBadge } from './effectsTabHelpers';
-import { MODULATOR_PRESETS, MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
+import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2 } from './effectsTabHelpers';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
 
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
 
@@ -248,12 +247,8 @@ export const EffectsTab = ({
         const filteredEffects = effects.filter(
             (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
         );
-        const filteredModulators = MODULATOR_PRESETS.filter(
-            (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
-        );
         const filteredMidi = MIDI_EFFECT_FACTORIES.filter((m) => m.name.toLowerCase().includes(query));
-        const total =
-            filteredEffects.length + filteredFxPresets.length + filteredModulators.length + filteredMidi.length;
+        const total = filteredEffects.length + filteredFxPresets.length + filteredMidi.length;
 
         return (
             <div className="flex flex-col gap-1 animate-in fade-in duration-150">
@@ -341,15 +336,7 @@ export const EffectsTab = ({
         );
     }
 
-    if (currentRoute.id === 'effects-modulators') {
-        return (
-            <div className="flex flex-col gap-[2px] animate-in fade-in duration-100">
-                <EmptyState message="Modulators coming soon." />
-            </div>
-        );
-    }
-
-    if (currentRoute.id.startsWith('effects-audiofx-')) {
+if (currentRoute.id.startsWith('effects-audiofx-')) {
         const groupId = currentRoute.id.replace('effects-audiofx-', '');
         const items = groupId === 'other' ? uncategorized : (groupedEffects.get(groupId) ?? []);
 
@@ -447,17 +434,6 @@ export const EffectsTab = ({
                 className="mb-1 mt-3 px-1"
                 labelClassName="text-muted-foreground/50"
                 lineClassName="bg-border/15"
-            />
-
-            <NavCard
-                icon={Sliders}
-                label="Modulators"
-                description="LFO, envelope, random & macro sources"
-                count={MODULATOR_PRESETS.length}
-                color="bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]"
-                dimmed
-                badge={<SoonBadge />}
-                onClick={() => pushRoute({ id: 'effects-modulators', title: 'Modulators' })}
             />
 
             <NavCard

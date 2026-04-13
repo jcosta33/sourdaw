@@ -3,7 +3,8 @@
  */
 import { type ReactElement } from 'react';
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
-import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { SectionHeader } from '../SectionHeader';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';

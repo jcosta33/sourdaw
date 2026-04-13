@@ -3,7 +3,8 @@
  * semantic parameter grouping, and collapsible advanced sections.
  */
 import { type ReactElement } from 'react';
-import { type DeviceLayoutProps, SectionHeader, registerPrefixLayout } from '../deviceLayoutRegistry';
+import { type DeviceLayoutProps, registerPrefixLayout } from '../deviceLayoutRegistry';
+import { SectionHeader } from '../SectionHeader';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';

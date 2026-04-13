@@ -1,4 +1,4 @@
-import { chordTrackStore } from '#/modules/Arrangement/stores';
+import { chordTrackStore } from '../../stores/chordTrackStore';
 
 export function removeChordEvent(eventId: string): void {
     const state = chordTrackStore.value;

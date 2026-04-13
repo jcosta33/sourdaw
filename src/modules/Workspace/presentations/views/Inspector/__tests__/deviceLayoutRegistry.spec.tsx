@@ -5,9 +5,9 @@ import {
     registerPrefixLayout,
     resolveDeviceLayout,
     filterParams,
-    SectionHeader,
 } from '../deviceLayoutRegistry';
 import type { DeviceLayoutProps } from '../deviceLayoutRegistry';
+import { SectionHeader } from '../SectionHeader';
 
 // Mock external dependencies
 vi.mock('#/components/daw/DawHeaderBand', () => ({

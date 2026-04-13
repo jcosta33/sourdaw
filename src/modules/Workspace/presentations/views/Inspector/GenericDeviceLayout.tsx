@@ -13,7 +13,8 @@ import { type ReactElement, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
-import { type DeviceLayoutProps, SectionHeader } from './deviceLayoutRegistry';
+import { type DeviceLayoutProps } from './deviceLayoutRegistry';
+import { SectionHeader } from './SectionHeader';
 import { DeviceParameterControl } from './DeviceParameterControl';
 
 type DeviceParam = DeviceLayoutProps['parameters'][number];

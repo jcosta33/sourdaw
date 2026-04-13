@@ -1,4 +1,4 @@
-import { chordTrackStore } from '#/modules/Arrangement/stores';
+import { chordTrackStore } from '../../stores/chordTrackStore';
 
 export function clearChordTrack(): void {
     const state = chordTrackStore.value;

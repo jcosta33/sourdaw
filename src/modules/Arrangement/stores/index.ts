@@ -1,9 +1,6 @@
 // Arrangement/stores — public contract surface for cross-module store access.
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
-export { chordTrackStore } from './chordTrackStore';
-export type { ChordTrackState } from './chordTrackStore';
-
 export { markerStore } from './markerStore';
 export type { MarkerStoreState } from './markerStore';
 

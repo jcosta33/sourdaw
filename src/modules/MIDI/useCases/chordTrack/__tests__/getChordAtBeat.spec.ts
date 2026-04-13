@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { chordTrackStore } from '#/modules/Arrangement/stores';
+import { chordTrackStore } from '../../../stores/chordTrackStore';
 
 import { getChordAtBeat } from '../getChordAtBeat';
 
