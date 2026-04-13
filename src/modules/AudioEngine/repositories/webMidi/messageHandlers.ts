@@ -128,11 +128,24 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             let toasterChildPad: number | null = null;
 
             if (track && track.devices.length === 0 && track.parentId && trackState) {
-                const parent = trackState.tracks.find((t) => t.id === track.parentId);
+                // Single pass: find parent + child pad index, instead of
+                // `find()` + `filter()` + `findIndex()` (§80.4).
+                let parent: typeof track | undefined;
+                let padIdx = 0;
+                for (const t of trackState.tracks) {
+                    if (t.id === track.parentId) {
+                        parent = t;
+                    } else if (t.parentId === track.parentId) {
+                        if (t.id === track.id) {
+                            toasterChildPad = padIdx;
+                        }
+                        padIdx++;
+                    }
+                }
                 if (parent?.devices.some((d) => d.type === 'toaster')) {
                     instrumentTrackId = parent.id;
-                    const children = trackState.tracks.filter((t) => t.parentId === parent.id);
-                    toasterChildPad = children.findIndex((t) => t.id === track.id);
+                } else {
+                    toasterChildPad = null;
                 }
             }
 
@@ -274,12 +287,24 @@ export const handleNoteOn = inject({
         let toasterChildPad: number | null = null;
 
         if (track && track.parentId && trackState) {
-            const parent = trackState.tracks.find((t) => t.id === track.parentId);
+            // Single pass instead of find() + filter() + findIndex() (§80.4).
+            let parent: typeof track | undefined;
+            let padIdx = 0;
+            for (const t of trackState.tracks) {
+                if (t.id === track.parentId) {
+                    parent = t;
+                } else if (t.parentId === track.parentId) {
+                    if (t.id === track.id) {
+                        toasterChildPad = padIdx;
+                    }
+                    padIdx++;
+                }
+            }
             if (parent?.devices.some((d) => d.type === 'toaster')) {
                 instrumentTrackId = parent.id;
                 instrumentTrack = parent;
-                const children = trackState.tracks.filter((t) => t.parentId === parent.id);
-                toasterChildPad = children.findIndex((t) => t.id === track.id);
+            } else {
+                toasterChildPad = null;
             }
         }
 
