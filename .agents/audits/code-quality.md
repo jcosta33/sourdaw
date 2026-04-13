@@ -102,6 +102,12 @@ not `Map<>`, so React ref-equality works; fixes data-loss on panel close/reopen)
 
 **Architecture docs:** §3.7 (`services/` formally documented in AGENTS.md as a private-internal layer: pure stateless helpers on domain types, no I/O, no store mutation, no orchestration, module-private)
 
+**React + UI bugs:**
+§187.1 (Rules of Hooks violation in `GenerativeAiPanel.tsx` — two `useStore` calls hoisted above the early return),
+§183.1 / §196.1 (4 `window.confirm()` callers replaced with new async `ConfirmDialog` system: `ConfirmPayload` event, `confirmUser()` helper, `ConfirmDialog` component subscribed to `'ui.confirm'` mounted in AppShell)
+
+**Stale audit entries:** §213.1 (`src/helpers/Store/` — directory doesn't exist), §213.2 (`src/utils/` — heavily referenced, audit was wrong)
+
 ---
 
 ## Decided against (out of scope / wrong fix)
@@ -415,13 +421,9 @@ future session by grepping for the filenames.
 §174.1 (mutated Float32Array never re-fires `useEffect`),
 §178.1 (O(tracks × clips) store write on drag),
 §179.1 (orphaned OfflineAudioContext),
-§183.1 + §196.1 (`window.confirm()` blocks audio thread — 4 callers),
 §186.1 (`stop()` doesn't stop oscillator),
-§187.1 (**High severity** — Rules of Hooks violation in `GenerativeAiPanel.tsx`: two `useStore` after early return),
 §188.1 (stale closure in finally block),
-§209.1 / §212.1 (`useStore(store, store.value!)` non-null assertion anti-pattern),
-§213.1 (dead `src/helpers/Store/` files — safe to delete),
-§213.2 (dead `src/utils/` files — verify imports first)
+§209.1 / §212.1 (`useStore(store, store.value!)` non-null assertion anti-pattern)
 
 These appendix findings together represent roughly 40–60 additional
 items. A fresh session can grind through them — most are 1-line canvas
@@ -431,15 +433,16 @@ fixes or the same holder-object pattern applied elsewhere in this file.
 
 If picking where to resume:
 
-1. **§187.1** — High-severity Rules of Hooks violation. Could cause
-   state corruption. Fix first.
-2. **§183.1 / §196.1** — Four `window.confirm()` callers blocking the
-   audio thread. Real audible dropouts in production. Easy fix (async
-   dialog).
-3. **§213.1 / §213.2** — Dead code deletion. Zero risk, clean win.
-4. **§3.8** — offlineRender.ts split. Big but mechanical; the seams
+1. **§3.8** — offlineRender.ts split. Big but mechanical; the seams
    are visible in the code itself.
-5. **§16.1** — handlers/ layer taxonomy decision. Unblocks future
+2. **§16.1** — handlers/ layer taxonomy decision. Unblocks future
    structural work.
+3. **§209.1 / §212.1** — `useStore(store, store.value!)` non-null
+   assertion anti-pattern (5 instances). Crashes if store is null at
+   mount. Quick fix.
+4. **§174.1** — Mutated `Float32Array` never re-fires `useEffect` in
+   tonal balance display. Live meter is frozen at mount. Real bug.
+5. **§178.1** — O(tracks × clips) full store write per drag-move
+   pointermove event. ~3000 allocs per drag event.
 6. The §160–§213 canvas perf cluster — repetitive, can be done in
    parallel by a dedicated agent since each file is independent.
