@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { Cpu, Power } from 'lucide-react';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { onMidiNoteOn } from '../../useCases/midiEventSubscribers/onMidiNoteOn';
 import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff';
 import { onMidiPedalCc } from '../../useCases/midiEventSubscribers/onMidiPedalCc';
@@ -117,7 +118,12 @@ const TEMPERAMENT_OPTIONS = [
 ] as const;
 
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId });
+    // §52.1 — Derive the engine handle from a subscribed track list so the
+    // React Compiler can memoize this across the many per-note re-renders
+    // (setActiveNotes fires on every MIDI noteOn). Previously: full
+    // getAllTracks().find() scan per render.
+    const trackState = useStore(trackStore, defaultTrackState);
+    const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId, tracks: trackState.tracks });
     // §209.1 — Typed default instead of non-null assertion on live value.
     const state = useStore(grandBouleStore, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());

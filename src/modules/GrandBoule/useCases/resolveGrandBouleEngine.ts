@@ -1,4 +1,5 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { type Track } from '#/modules/Arrangement/models/Track';
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 import {
     createDisconnectedGrandBouleEngineHandle,
@@ -7,12 +8,19 @@ import {
 
 type ResolveGrandBouleEngineInput = {
     deviceId: string;
+    /**
+     * §52.1 — Render-time callers must pass the subscribed track list so
+     * the React Compiler can memoize this derivation against the track
+     * store. Non-render callers can omit this; we fall back to a live read.
+     */
+    tracks?: readonly Track[];
 };
 
 export type ResolvedGrandBouleEngine = GrandBouleEngineHandle;
 
 export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): ResolvedGrandBouleEngine {
-    const track = getAllTracks().find((t) => t.devices.some((d) => d.id === input.deviceId));
+    const tracks = input.tracks ?? getAllTracks();
+    const track = tracks.find((t) => t.devices.some((d) => d.id === input.deviceId));
     if (track === undefined) {
         return createDisconnectedGrandBouleEngineHandle();
     }

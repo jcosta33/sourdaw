@@ -50,15 +50,10 @@ export const SessionView = (): ReactElement => {
         sessionLaunchStore.set({ activeSlots: {} });
     };
 
-    // Map clips to scenes: each track's clips are distributed across scene slots
-    const getClipForSlot = (trackId: string, sceneIndex: number): string | null => {
-        const track = tracks.find((t: Track) => t.id === trackId);
-        if (!track || !track.clips) {
-            return null;
-        }
-        const clipArray = Object.values(track.clips) as Array<{ id: string }>;
-        return clipArray[sceneIndex]?.id ?? null;
-    };
+    // §142.1 — pre-compute the clip-per-slot map once per track during the
+    // outer tracks.map rather than re-scanning `tracks` inside the scene
+    // inner loop. The previous getClipForSlot(trackId, sceneIndex) did a
+    // full tracks.find() per rendered cell → O(tracks × scenes × tracks).
 
     return (
         <DawPanelSurface>
@@ -110,7 +105,16 @@ export const SessionView = (): ReactElement => {
                             ))}
                         </DawSideRail>
 
-                        {tracks.map((track: Track) => (
+                        {tracks.map((track: Track) => {
+                            const trackClipIds: Array<string | null> = Array.from(
+                                { length: SCENE_COUNT },
+                                (_, i) => {
+                                    const clips = track.clips ? (Object.values(track.clips) as Array<{ id: string }>) : [];
+                                    return clips[i]?.id ?? null;
+                                }
+                            );
+
+                            return (
                             <div key={track.id} className="flex w-24 shrink-0 flex-col border-r border-border-hairline">
                                 <DawGridHeaderCell
                                     className="h-6 truncate px-1"
@@ -121,7 +125,7 @@ export const SessionView = (): ReactElement => {
                                 </DawGridHeaderCell>
 
                                 {Array.from({ length: SCENE_COUNT }, (_, sceneIndex) => {
-                                    const clipId = getClipForSlot(track.id, sceneIndex);
+                                    const clipId = trackClipIds[sceneIndex] ?? null;
                                     const isActive = activeSlots[track.id] === sceneIndex;
 
                                     return (
@@ -173,7 +177,8 @@ export const SessionView = (): ReactElement => {
                                     );
                                 })}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

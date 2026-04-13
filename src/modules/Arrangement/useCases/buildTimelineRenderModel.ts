@@ -12,6 +12,81 @@ function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
 }
 
+// §143.1 — During recording, buildTimelineRenderModel is called on every
+// rAF but only the recording clips' `endBeat` actually changes. Previously
+// the whole track array was rebuilt per frame. Cache a pre-cloned overlay
+// keyed on (cachedModel identity, recClips identity) so each rAF only
+// mutates the endBeat field of the affected clip refs (which this module
+// owns exclusively — they are never handed back to the shared cached
+// model).
+type OverlayClipHandle = {
+    clip: { endBeat: number; startBeat: number };
+    minEnd: number;
+};
+const recordingOverlayCache: {
+    sourceModel: TimelineRenderModel | null;
+    recClips: readonly string[] | null;
+    tracks: TimelineRenderModel['tracks'] | null;
+    handles: OverlayClipHandle[];
+} = {
+    sourceModel: null,
+    recClips: null,
+    tracks: null,
+    handles: [],
+};
+
+function applyRecordingOverlay(
+    cachedModel: TimelineRenderModel,
+    recClips: readonly string[]
+): TimelineRenderModel {
+    const liveEnd = playheadPositionRef.current;
+
+    if (
+        recordingOverlayCache.sourceModel !== cachedModel ||
+        recordingOverlayCache.recClips !== recClips ||
+        recordingOverlayCache.tracks === null
+    ) {
+        const recIds = new Set(recClips);
+        const handles: OverlayClipHandle[] = [];
+        const tracks = cachedModel.tracks.map((track) => {
+            let hasRecClip = false;
+            for (const clip of track.clips) {
+                if (recIds.has(clip.id)) {
+                    hasRecClip = true;
+                    break;
+                }
+            }
+            if (!hasRecClip) {
+                return track;
+            }
+            const clonedClips = track.clips.map((clip) => {
+                if (!recIds.has(clip.id)) {
+                    return clip;
+                }
+                const cloned = { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) };
+                handles.push({ clip: cloned, minEnd: clip.startBeat });
+                return cloned;
+            });
+            return { ...track, clips: clonedClips };
+        });
+
+        recordingOverlayCache.sourceModel = cachedModel;
+        recordingOverlayCache.recClips = recClips;
+        recordingOverlayCache.tracks = tracks;
+        recordingOverlayCache.handles = handles;
+    } else {
+        // Fast path: reuse the pre-cloned overlay and just nudge the
+        // endBeat of the recording clips we already cloned. Safe because
+        // those clip objects are owned by this cache — they were never
+        // returned to the shared cachedModel.
+        for (const handle of recordingOverlayCache.handles) {
+            handle.clip.endBeat = Math.max(handle.minEnd, liveEnd);
+        }
+    }
+
+    return { ...cachedModel, tracks: recordingOverlayCache.tracks!, dataDirty: true };
+}
+
 // §74.1 — Coalesce 7 module-level mutables into a single memoization
 // holder. This is a render-model cache: every field is an identity
 // snapshot of the corresponding store at the moment \`cachedModel\` was
@@ -146,22 +221,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
 
     const recClips = activeRecordingRef.current;
     if (recClips.length > 0) {
-        const liveEnd = playheadPositionRef.current;
-        const recIds = new Set(recClips);
-        // Only rebuild tracks that actually contain a recording clip
-        const recTracks = cachedModel.tracks.map((track) => {
-            const hasRecClip = track.clips.some((clip) => recIds.has(clip.id));
-            if (!hasRecClip) {
-                return track;
-            }
-            return {
-                ...track,
-                clips: track.clips.map((clip) =>
-                    recIds.has(clip.id) ? { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) } : clip
-                ),
-            };
-        });
-        return { ...cachedModel, tracks: recTracks, dataDirty: true };
+        return applyRecordingOverlay(cachedModel, recClips);
     }
 
     const preview = clipDragPreviewRef.current;
