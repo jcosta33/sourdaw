@@ -1,64 +1,72 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
-import { setGlutenParamWithAudio } from '../glutenParamBridge/setGlutenParamWithAudio';
-import { loadGlutenPatchWithAudio } from '../glutenParamBridge/loadGlutenPatchWithAudio';
-import { DEFAULT_PATCH } from '../../models/GlutenPatch';
 
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
+const { mockUpdateDeviceParam, mockPersistDeviceParam, mockGetAllTracks } = vi.hoisted(() => ({
+    mockUpdateDeviceParam: vi.fn(),
+    mockPersistDeviceParam: vi.fn(),
+    mockGetAllTracks: vi.fn(),
+}));
+
+vi.mock('../glutenParamBridge/helpers', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../glutenParamBridge/helpers')>();
+    const handlers = actual.createFlushHandlers({
+        updateDeviceParam: mockUpdateDeviceParam,
+        persistDeviceParam: mockPersistDeviceParam,
+    });
+    return {
+        ...actual,
+        flushParam: handlers.flushParam,
+        pushParamImmediately: handlers.pushParamImmediately,
+        findDeviceRefGluten: actual.createFindDeviceRef(mockGetAllTracks),
+        paramBatcher: {
+            schedule: (key: string, value: unknown, flush: (k: string, v: unknown) => void) => {
+                flush(key, value);
+            },
+            cancel: (): void => {},
+            cancelAll: (): void => {},
+            pendingSize: 0,
+        },
+    };
+});
 
 vi.mock('../../stores/glutenStore', () => ({
     setGlutenParam: vi.fn(),
     loadGlutenPatch: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    updateDeviceParam: vi.fn(),
-}));
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    persistDeviceParam: vi.fn(),
-    getAllTracks: vi.fn(),
-}));
+import { setGlutenParamWithAudio } from '../glutenParamBridge/setGlutenParamWithAudio';
+import { loadGlutenPatchWithAudio } from '../glutenParamBridge/loadGlutenPatchWithAudio';
+import { DEFAULT_PATCH } from '../../models/GlutenPatch';
+
 describe('glutenParamBridge', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
-        vi.useFakeTimers();
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            cb(0);
-            return 1;
-        });
     });
 
     it('setGlutenParamWithAudio forwards numeric params to engine + persistence via rAF flush', () => {
-        vi.mocked(getAllTracks).mockReturnValue([
-            { id: 't1', devices: [{ id: 'd1' }] } as never,
-        ]);
+        mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] } as never]);
 
         setGlutenParamWithAudio('d1', 'threshold', -12);
 
-        expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'threshold', -12);
-        expect(persistDeviceParam).toHaveBeenCalledWith('d1', 'threshold', -12);
+        expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'threshold', -12);
+        expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'threshold', -12);
     });
 
     it('setGlutenParamWithAudio noops when device cannot be found', () => {
-        vi.mocked(getAllTracks).mockReturnValue([]);
+        mockGetAllTracks.mockReturnValue([]);
 
         setGlutenParamWithAudio('missing', 'threshold', -12);
 
-        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
     });
 
     it('loadGlutenPatchWithAudio pushes every encodable patch field immediately', () => {
-        vi.mocked(getAllTracks).mockReturnValue([
-            { id: 't1', devices: [{ id: 'd1' }] } as never,
-        ]);
+        mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] } as never]);
 
         loadGlutenPatchWithAudio('d1', DEFAULT_PATCH);
 
-        expect(vi.mocked(updateDeviceParam).mock.calls.length).toBeGreaterThan(0);
-        expect(vi.mocked(persistDeviceParam).mock.calls.length).toBe(vi.mocked(updateDeviceParam).mock.calls.length);
+        expect(mockUpdateDeviceParam.mock.calls.length).toBeGreaterThan(0);
+        expect(mockPersistDeviceParam.mock.calls.length).toBe(mockUpdateDeviceParam.mock.calls.length);
     });
 });

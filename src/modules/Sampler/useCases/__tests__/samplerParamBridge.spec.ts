@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setSamplerParamImmediate } from '../samplerParamBridge/setSamplerParamImmediate';
-import { setSamplerParamThrottled } from '../samplerParamBridge/setSamplerParamThrottled';
 
 const mocks = vi.hoisted(() => ({
     setSamplerParam: vi.fn(),
@@ -14,6 +12,23 @@ vi.mock('../../repositories/samplerBridge', () => ({
 vi.mock('../../stores/samplerStore', () => ({
     samplerStore: mocks.samplerStore,
 }));
+
+// §57.1 / §33.2 — createRafBatcher schedules through rAF, which jsdom
+// doesn't run synchronously. Replace the factory with one that flushes
+// immediately so test assertions can observe the side effect.
+vi.mock('#/utils/DOM/createRafBatcher', () => ({
+    createRafBatcher: () => ({
+        schedule: (key: string, value: unknown, flush: (k: string, v: unknown) => void) => {
+            flush(key, value);
+        },
+        cancel: (): void => {},
+        cancelAll: (): void => {},
+        pendingSize: 0,
+    }),
+}));
+
+import { setSamplerParamImmediate } from '../samplerParamBridge/setSamplerParamImmediate';
+import { setSamplerParamThrottled } from '../samplerParamBridge/setSamplerParamThrottled';
 
 describe('samplerParamBridge', () => {
     beforeEach(() => {
