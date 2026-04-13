@@ -5,6 +5,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
+import { dbToYLiveAnalyser as dbToY, freqToLogX } from '#/components/daw/spectrumMath';
 import { getMasterAnalyser, getTrackAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -80,7 +81,7 @@ export const SpectrumAnalyzer = ({
             ctx.setLineDash([2, 4]);
             const freqMarks = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
             for (const f of freqMarks) {
-                const x = freqToX(f, width, sampleRate);
+                const x = freqToLogX(f, width, Math.min(22_000, sampleRate / 2));
                 if (x > 0 && x < width) {
                     ctx.beginPath();
                     ctx.moveTo(x, 0);
@@ -107,7 +108,7 @@ export const SpectrumAnalyzer = ({
             ctx.fillStyle = 'rgba(255,255,255,0.18)';
             ctx.textAlign = 'center';
             for (const f of [100, 1000, 10000]) {
-                const x = freqToX(f, width, sampleRate);
+                const x = freqToLogX(f, width, Math.min(22_000, sampleRate / 2));
                 const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
                 ctx.fillText(label, x, height - 2);
             }
@@ -130,7 +131,7 @@ export const SpectrumAnalyzer = ({
                     continue;
                 }
 
-                const x = freqToX(freq, width, sampleRate);
+                const x = freqToLogX(freq, width, Math.min(22_000, sampleRate / 2));
                 const db = Math.max(-80, freqData[i]!);
                 // Perceptual tilt: +3dB/octave above 1kHz
                 const tiltedDb = db + 3 * Math.log2(Math.max(1, freq / 1000));
@@ -156,7 +157,7 @@ export const SpectrumAnalyzer = ({
                     continue;
                 }
 
-                const x = freqToX(freq, width, sampleRate);
+                const x = freqToLogX(freq, width, Math.min(22_000, sampleRate / 2));
                 const db = Math.max(-80, freqData[i]!);
                 const tiltedDb = db + 3 * Math.log2(Math.max(1, freq / 1000));
                 const y = dbToY(tiltedDb, height);
@@ -182,7 +183,7 @@ export const SpectrumAnalyzer = ({
                     continue;
                 }
 
-                const x = freqToX(freq, width, sampleRate);
+                const x = freqToLogX(freq, width, Math.min(22_000, sampleRate / 2));
                 const db = Math.max(-80, freqData[i]!);
                 const tiltedDb = db + 3 * Math.log2(Math.max(1, freq / 1000));
                 const y = dbToY(tiltedDb, height);
@@ -218,16 +219,3 @@ export const SpectrumAnalyzer = ({
     );
 };
 
-// Logarithmic frequency to X position
-function freqToX(freq: number, width: number, sampleRate: number): number {
-    const minFreq = 20;
-    const maxFreq = Math.min(22000, sampleRate / 2);
-    return (Math.log10(freq / minFreq) / Math.log10(maxFreq / minFreq)) * width;
-}
-
-// dB to Y position (-80 to 0 dB range)
-function dbToY(db: number, height: number): number {
-    const minDb = -80;
-    const maxDb = 6;
-    return height - ((db - minDb) / (maxDb - minDb)) * height;
-}

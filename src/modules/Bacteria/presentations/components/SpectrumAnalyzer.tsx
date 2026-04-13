@@ -7,6 +7,8 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 
+import { freqToLogX } from '#/components/daw/spectrumMath';
+
 type SpectrumAnalyzerProps = {
     width: number;
     height: number;
@@ -27,12 +29,6 @@ const HEATMAP_TRAIL = 120;
 // because `draw()` is synchronous and only one instance paints at a time on
 // the main thread. Avoids `new Array(NUM_BARS).fill(0)` per render (§150.3).
 const _barDataScratch = new Float32Array(NUM_BARS);
-
-function freqToX(freq: number, width: number): number {
-    const minLog = Math.log10(20);
-    const maxLog = Math.log10(20000);
-    return ((Math.log10(Math.max(20, freq)) - minLog) / (maxLog - minLog)) * width;
-}
 
 type HeatmapRing = { rows: Float32Array[]; head: number; count: number };
 
@@ -78,7 +74,7 @@ export const SpectrumAnalyzer = ({
         ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 1;
         for (const freq of [100, 1000, 10000]) {
-            const x = freqToX(freq, width);
+            const x = freqToLogX(freq, width);
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, height);
@@ -187,7 +183,7 @@ export const SpectrumAnalyzer = ({
 
         // Crossover lines
         for (let i = 0; i < Math.min(bandCount - 1, crossoverFreqs.length); i++) {
-            const x = freqToX(crossoverFreqs[i]!, width);
+            const x = freqToLogX(crossoverFreqs[i]!, width);
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
