@@ -97,7 +97,6 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         const notes: MidiNote[] = [];
         let tick = 0;
         let runningStatus = 0;
-        let noteId = 0;
 
         while (reader.position < chunkEnd) {
             const delta = reader.readVarLen();
@@ -154,7 +153,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
                     const startBeat = start.tick / ticksPerBeat;
                     const duration = (tick - start.tick) / ticksPerBeat;
                     notes.push({
-                        id: `imp-${t}-${noteId++}`,
+                        id: crypto.randomUUID(),
                         pitch: data1,
                         startBeat,
                         duration: Math.max(0.01, duration),

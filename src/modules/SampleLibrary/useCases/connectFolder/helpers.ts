@@ -35,7 +35,10 @@ function createSampleRecord(rootId: string, relativePath: string, filename: stri
     const folder = relativePath.includes('/') ? relativePath.substring(0, relativePath.lastIndexOf('/')) : '';
 
     return {
-        id: `${rootId}:${relativePath}`,
+        // §139.4 — NUL separator is the one byte guaranteed not to appear
+        // in a POSIX filename. The previous ":" delimiter collided when a
+        // folder name legally contained a colon.
+        id: `${rootId}\u0000${relativePath}`,
         libraryRootId: rootId,
         relativePath,
         displayName,
@@ -78,7 +81,9 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
             if (batch.length >= 100) {
                 addSamples([...batch]);
                 batch.length = 0;
-                setScanProgress(true, Math.min(0.95, totalFound / Math.max(totalFound + 20, 1)));
+                // Asymptotic approach to 1.0; the finally block snaps to an actual 1.0.
+// The previous 0.95 cap made the bar plateau visibly for mid-size scans.
+setScanProgress(true, totalFound / (totalFound + 20));
             }
         }
 
@@ -131,7 +136,9 @@ async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
                         if (batch.length >= 100) {
                             addSamples([...batch]);
                             batch.length = 0;
-                            setScanProgress(true, Math.min(0.95, totalFound / Math.max(totalFound + 20, 1)));
+                            // Asymptotic approach to 1.0; the finally block snaps to an actual 1.0.
+// The previous 0.95 cap made the bar plateau visibly for mid-size scans.
+setScanProgress(true, totalFound / (totalFound + 20));
                         }
                     }
                 }
