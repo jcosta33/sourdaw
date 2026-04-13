@@ -267,18 +267,20 @@ export type ArrangementStoreState = {
 
 export const defaultArrangementId = 'default-arrangement';
 
+export const defaultArrangementStoreState: ArrangementStoreState = {
+    arrangements: [
+        {
+            id: defaultArrangementId,
+            name: 'Arrangement 1',
+            tracks: { tracks: [], selectedTrackId: null },
+            automation: { lanes: [] },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+        },
+    ],
+    activeArrangementId: defaultArrangementId,
+};
+
 export const arrangementStore = createStore<ArrangementStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'arrangements'),
-    initialData: {
-        arrangements: [
-            {
-                id: defaultArrangementId,
-                name: 'Arrangement 1',
-                tracks: { tracks: [], selectedTrackId: null },
-                automation: { lanes: [] },
-                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-            },
-        ],
-        activeArrangementId: defaultArrangementId,
-    },
+    initialData: defaultArrangementStoreState,
 });

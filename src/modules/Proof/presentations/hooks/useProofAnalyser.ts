@@ -10,6 +10,16 @@ import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/use
 
 export function useProofAnalyser(): {
     fftData: Float32Array<ArrayBuffer> | null;
+    /**
+     * Monotonic counter bumped each time `fftData` is refreshed (§174.1).
+     *
+     * The underlying `Float32Array` is mutated in place so its reference
+     * is stable across ticks; consumers that pass `fftData` through a
+     * `useEffect` deps array MUST also include `fftVersion` or the effect
+     * will only fire once at mount and the live analyser output becomes
+     * a static snapshot.
+     */
+    fftVersion: number;
     sampleRate: number;
     fftSize: number;
 } {
@@ -68,9 +78,9 @@ export function useProofAnalyser(): {
         };
     }, []);
 
-    tick; // trigger re-render when FFT data updates
     return {
         fftData: dataRef.current,
+        fftVersion: tick,
         sampleRate: getAudioSampleRate(),
         fftSize: 4096,
     };

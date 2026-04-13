@@ -5,7 +5,7 @@ import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuP
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { arrangementStore } from '../../stores/arrangementStore';
+import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { switchArrangement } from '../../useCases/arrangement/switchArrangement';
 import { createArrangement } from '../../useCases/arrangement/createArrangement';
 import { duplicateArrangement } from '../../useCases/arrangement/duplicateArrangement';
@@ -19,7 +19,8 @@ export const ArrangementSelector = (): ReactElement | null => {
     const menuRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const state = useStore(arrangementStore, arrangementStore.value!);
+    // §212.1 — Typed default instead of non-null assertion on live value.
+    const state = useStore(arrangementStore, defaultArrangementStoreState);
 
     useEffect(() => {
         if (!open) {

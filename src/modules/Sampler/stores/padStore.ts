@@ -18,12 +18,14 @@ export type PadState = {
     selectedPadIndex: number;
 };
 
+export const defaultPadState: PadState = {
+    pads: Array.from({ length: DEFAULT_PAD_COUNT }, (_, i) => createDefaultPad(i)),
+    channelStrips: Array.from({ length: DEFAULT_PAD_COUNT }, () => createDefaultChannelStrip()),
+    selectedPadIndex: 0,
+};
+
 export const padStore = createStore<PadState>({
-    initialData: {
-        pads: Array.from({ length: DEFAULT_PAD_COUNT }, (_, i) => createDefaultPad(i)),
-        channelStrips: Array.from({ length: DEFAULT_PAD_COUNT }, () => createDefaultChannelStrip()),
-        selectedPadIndex: 0,
-    },
+    initialData: defaultPadState,
 });
 
 export function selectPad(index: number): void {

@@ -800,7 +800,7 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
     const { patch } = state;
     const targetLufs = TARGET_LUFS[patch.target] ?? -14;
     const delta = state.integratedLufs > -100 ? state.integratedLufs - targetLufs : 0;
-    const { fftData, sampleRate, fftSize } = useProofAnalyser();
+    const { fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 
     return (
         <div className="flex-1 flex min-h-0 overflow-hidden">
@@ -827,6 +827,7 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                     </span>
                     <TonalBalance
                         fftData={fftData}
+                        fftVersion={fftVersion}
                         sampleRate={sampleRate}
                         fftSize={fftSize}
                         genre={patch.target === 'club' ? 'edm' : undefined}

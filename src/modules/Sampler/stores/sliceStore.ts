@@ -12,12 +12,14 @@ export type SliceState = {
     autoDetected: boolean;
 };
 
+export const defaultSliceState: SliceState = {
+    markers: [],
+    activeSliceIndex: 0,
+    autoDetected: false,
+};
+
 export const sliceStore = createStore<SliceState>({
-    initialData: {
-        markers: [],
-        activeSliceIndex: 0,
-        autoDetected: false,
-    },
+    initialData: defaultSliceState,
 });
 
 export function setMarkers(markers: SliceMarker[], autoDetected: boolean): void {

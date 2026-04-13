@@ -13,6 +13,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { midiNoteToName } from '../../models/SamplerTypes';
 import {
+    defaultSamplerState,
     samplerStore,
     setFilterParams,
     setMasterGain,
@@ -20,8 +21,8 @@ import {
     setTune,
     updateEnvelope,
 } from '../../stores/samplerStore';
-import { padStore, reorderPad, selectPad } from '../../stores/padStore';
-import { sliceStore, setActiveSlice } from '../../stores/sliceStore';
+import { defaultPadState, padStore, reorderPad, selectPad } from '../../stores/padStore';
+import { defaultSliceState, sliceStore, setActiveSlice } from '../../stores/sliceStore';
 import { setSamplerParamThrottled } from '../../useCases/samplerParamBridge/setSamplerParamThrottled';
 import { switchSamplerMode } from '../../useCases/setSamplerMode';
 import { triggerPadOn } from '../../useCases/triggerPad/triggerPadOn';
@@ -60,9 +61,10 @@ const SectionCard = ({
 );
 
 export const SamplerPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useStore(samplerStore, samplerStore.value!);
-    const pads = useStore(padStore, padStore.value!);
-    const slices = useStore(sliceStore, sliceStore.value!);
+    // §209.1 — Typed defaults instead of non-null assertion on live values.
+    const state = useStore(samplerStore, defaultSamplerState);
+    const pads = useStore(padStore, defaultPadState);
+    const slices = useStore(sliceStore, defaultSliceState);
 
     // Create / destroy sampler engine instance on mount/unmount.
     useEffect(() => {

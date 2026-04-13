@@ -59,6 +59,13 @@ const GENRE_ADJUSTMENTS: Record<string, Array<{ freq: number; db: number }>> = {
 type Props = {
     /** Float32Array of FFT magnitude data from analyser node. */
     fftData: Float32Array<ArrayBuffer> | null;
+    /**
+     * Monotonic counter bumped each time \`fftData\` is refreshed (§174.1).
+     * Needed because the underlying array is mutated in place, so its
+     * reference is stable — without a version tag the redraw \`useEffect\`
+     * would only fire once at mount and the display would freeze.
+     */
+    fftVersion: number;
     sampleRate: number;
     fftSize: number;
     genre?: string;
@@ -66,7 +73,7 @@ type Props = {
     height: number;
 };
 
-export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, height }: Props): ReactElement => {
+export const TonalBalance = ({ fftData, fftVersion, sampleRate, fftSize, genre, width, height }: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -237,7 +244,8 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
         ctx.font = '7px system-ui';
         ctx.textAlign = 'left';
         ctx.fillText('Harman Target', 4, 10);
-    }, [fftData, sampleRate, fftSize, genre, width, height]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fftVersion is the reactive signal; fftData is the (stable-identity) backing buffer
+    }, [fftData, fftVersion, sampleRate, fftSize, genre, width, height]);
 
     return (
         <canvas

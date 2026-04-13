@@ -10,7 +10,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { grandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
+import { defaultGrandBouleState, grandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
 import { panicGrandBoule } from '../../useCases/panicGrandBoule';
@@ -118,7 +118,8 @@ const TEMPERAMENT_OPTIONS = [
 
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId });
-    const state = useStore(grandBouleStore, grandBouleStore.value!);
+    // §209.1 — Typed default instead of non-null assertion on live value.
+    const state = useStore(grandBouleStore, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
     const [lidPosition, setLidPosition] = useState(1.0);
     const [lastVelocity, setLastVelocity] = useState(0);

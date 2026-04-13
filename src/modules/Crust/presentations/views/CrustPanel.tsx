@@ -9,7 +9,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
-import { crustStore, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
+import { crustStore, defaultCrustState, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
@@ -64,11 +64,13 @@ const MetricTile = ({ label, value, detail }: { label: string; value: string; de
 );
 
 export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useStore(crustStore, crustStore.value!);
+    // §209.1 — Use a typed default instead of the live store value. A
+    // store whose value is null at mount no longer crashes the panel.
+    const state = useStore(crustStore, defaultCrustState);
     const [presetMenuOpen, setPresetMenuOpen] = useState(false);
     const [streamingMenuOpen, setStreamingMenuOpen] = useState(false);
 
-    const patch = state?.patch ?? crustStore.value!.patch;
+    const patch = state?.patch ?? defaultCrustState.patch;
     const grDb = state?.grDb ?? 0;
     const inputDb = state?.inputDb ?? -60;
     const outputDb = state?.outputDb ?? -60;

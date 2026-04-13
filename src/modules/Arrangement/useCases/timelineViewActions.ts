@@ -23,7 +23,6 @@ export { addClip } from './clip/addClip';
 export { removeClip } from './clip/removeClip';
 export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
-export { moveClipPreview } from './clip/moveClipPreview';
 export { moveClip } from './clip/moveClip';
 
 // ── Track: clipboard ──────────────────────────────────────────────

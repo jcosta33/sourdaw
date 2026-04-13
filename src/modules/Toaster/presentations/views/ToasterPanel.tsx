@@ -7,10 +7,10 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { type PadState } from '../../models/ToasterKit';
-import { selectPad, setStepVelocity, toasterStore, toggleStep, updatePad } from '../../stores/toasterStore';
+import { defaultToasterState, selectPad, setStepVelocity, toasterStore, toggleStep, updatePad } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
@@ -79,8 +79,9 @@ const Knob = ({
 );
 
 export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state = useStore(toasterStore, toasterStore.value!);
-    const trackState = useStore(trackStore, trackStore.value!);
+    // §209.1 — Typed defaults instead of non-null assertion on live values.
+    const state = useStore(toasterStore, defaultToasterState);
+    const trackState = useStore(trackStore, defaultTrackState);
     const selectedTrackId = trackState?.selectedTrackId ?? null;
     const [presetQuery, setPresetQuery] = useState('');
     const [eucHits, setEucHits] = useState(4);

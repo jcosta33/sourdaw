@@ -41,7 +41,7 @@ export type SamplerState = {
     modXY: ModXYState;
 };
 
-const INITIAL_STATE: SamplerState = {
+export const defaultSamplerState: SamplerState = {
     instanceId: null,
     mode: 'quick',
     activeSample: null,
@@ -73,7 +73,7 @@ const INITIAL_STATE: SamplerState = {
 };
 
 export const samplerStore = createStore<SamplerState>({
-    initialData: INITIAL_STATE,
+    initialData: defaultSamplerState,
 });
 
 export function setInstanceId(instanceId: string): void {
