@@ -44,6 +44,25 @@ export type ProjectContext = {
     playheadPosition: number;
 };
 
+// §92.2 — Memoize the context by the identity of the four backing store
+// values. Stores use immutable replacement (.set(new object)), so
+// reference equality is enough: if all four have the same identity as
+// the last call, we can return the cached context without rebuilding
+// the entire track/clip/device graph for the AI chat pipeline.
+const contextCache: {
+    track: unknown;
+    transport: unknown;
+    workspace: unknown;
+    midi: unknown;
+    context: ProjectContext | null;
+} = {
+    track: null,
+    transport: null,
+    workspace: null,
+    midi: null,
+    context: null,
+};
+
 export function getProjectContext(): ProjectContext {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
@@ -53,11 +72,21 @@ export function getProjectContext(): ProjectContext {
     const midiState = midiStore.value;
     const notesByClipId = midiState?.notesByClipId;
 
+    if (
+        contextCache.context !== null &&
+        contextCache.track === trackState &&
+        contextCache.transport === transportState &&
+        contextCache.workspace === workspaceState &&
+        contextCache.midi === midiState
+    ) {
+        return contextCache.context;
+    }
+
     const selectedTrackId = trackState?.selectedTrackId ?? null;
     const selectedClipId = workspaceState?.selectedClipId ?? null;
     const selectedClipIds = workspaceState?.selectedClipIds ?? [];
 
-    return {
+    const built: ProjectContext = {
         tempo: transportState?.tempo ?? 120,
         timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
         tracks: (trackState?.tracks ?? []).map((t) => ({
@@ -91,4 +120,11 @@ export function getProjectContext(): ProjectContext {
         activeView: workspaceState?.mode ?? 'arrange',
         playheadPosition: transportState?.playheadPosition ?? 0,
     };
+
+    contextCache.track = trackState;
+    contextCache.transport = transportState;
+    contextCache.workspace = workspaceState;
+    contextCache.midi = midiState;
+    contextCache.context = built;
+    return built;
 }
