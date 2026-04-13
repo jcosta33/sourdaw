@@ -27,7 +27,7 @@ import { resolveBackend } from '../llmOrchestration/backendResolution/helpers';
 import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
-import { getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
+import { getActiveModelId, getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
@@ -368,7 +368,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
 
             return result;
         } catch (constraintError) {
-            const activeModel = (await import('../../repositories/webLlm/engineLifecycle')).getActiveModelId();
+            const activeModel = getActiveModelId();
             throw createAiRuntimeError(
                 `This edit is too complex for the current model. ` +
                     `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +
