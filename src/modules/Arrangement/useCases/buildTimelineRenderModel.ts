@@ -12,13 +12,28 @@ function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
 }
 
-let cachedModel: TimelineRenderModel | null = null;
-let lastTrackState: unknown = null;
-let lastViewState: unknown = null;
-let lastMidiState: unknown = null;
-let lastWsState: unknown = null;
-let lastPrefsState: unknown = null;
-let lastTransportState: unknown = null;
+// §74.1 — Coalesce 7 module-level mutables into a single memoization
+// holder. This is a render-model cache: every field is an identity
+// snapshot of the corresponding store at the moment \`cachedModel\` was
+// built, so the next call can short-circuit when every store value is
+// still the same reference.
+const renderCache: {
+    model: TimelineRenderModel | null;
+    track: unknown;
+    view: unknown;
+    midi: unknown;
+    ws: unknown;
+    prefs: unknown;
+    transport: unknown;
+} = {
+    model: null,
+    track: null,
+    view: null,
+    midi: null,
+    ws: null,
+    prefs: null,
+    transport: null,
+};
 
 export function buildTimelineRenderModel(): TimelineRenderModel {
     const trackState = trackStore.value;
@@ -29,21 +44,21 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     const prefs = preferencesStore.value;
 
     const dataChanged =
-        !cachedModel ||
-        trackState !== lastTrackState ||
-        viewState !== lastViewState ||
-        midiState !== lastMidiState ||
-        ws !== lastWsState ||
-        prefs !== lastPrefsState ||
-        transportState !== lastTransportState;
+        !renderCache.model ||
+        trackState !== renderCache.track ||
+        viewState !== renderCache.view ||
+        midiState !== renderCache.midi ||
+        ws !== renderCache.ws ||
+        prefs !== renderCache.prefs ||
+        transportState !== renderCache.transport;
 
     if (dataChanged) {
-        lastTrackState = trackState;
-        lastViewState = viewState;
-        lastMidiState = midiState;
-        lastWsState = ws;
-        lastPrefsState = prefs;
-        lastTransportState = transportState;
+        renderCache.track = trackState;
+        renderCache.view = viewState;
+        renderCache.midi = midiState;
+        renderCache.ws = ws;
+        renderCache.prefs = prefs;
+        renderCache.transport = transportState;
 
         const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
         const scrollX = viewState?.scrollX ?? 0;
@@ -105,7 +120,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
 
         const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? 'normal'];
 
-        cachedModel = {
+        renderCache.model = {
             dataDirty: true,
             tracks: mappedTracks,
             selectedTrackId: trackState?.selectedTrackId ?? null,
@@ -123,16 +138,18 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             timeSignatureDenominator: transportState?.timeSignatureDenominator ?? 4,
         };
     } else {
-        cachedModel!.dataDirty = false;
-        cachedModel!.playheadPosition = playheadPositionRef.current;
+        renderCache.model!.dataDirty = false;
+        renderCache.model!.playheadPosition = playheadPositionRef.current;
     }
+
+    const cachedModel = renderCache.model!;
 
     const recClips = activeRecordingRef.current;
     if (recClips.length > 0) {
         const liveEnd = playheadPositionRef.current;
         const recIds = new Set(recClips);
         // Only rebuild tracks that actually contain a recording clip
-        const recTracks = cachedModel!.tracks.map((track) => {
+        const recTracks = cachedModel.tracks.map((track) => {
             const hasRecClip = track.clips.some((clip) => recIds.has(clip.id));
             if (!hasRecClip) {
                 return track;
@@ -144,23 +161,23 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                 ),
             };
         });
-        return { ...cachedModel!, tracks: recTracks, dataDirty: true };
+        return { ...cachedModel, tracks: recTracks, dataDirty: true };
     }
 
     const preview = clipDragPreviewRef.current;
     if (!preview || preview.positions.size === 0) {
-        return cachedModel!;
+        return cachedModel;
     }
 
     type CachedClip = TimelineRenderModel['tracks'][0]['clips'][0];
     const clipById = new Map<string, CachedClip>();
-    for (const track of cachedModel!.tracks) {
+    for (const track of cachedModel.tracks) {
         for (const clip of track.clips) {
             clipById.set(clip.id, clip);
         }
     }
 
-    const previewTracks = cachedModel!.tracks.map((track) => {
+    const previewTracks = cachedModel.tracks.map((track) => {
         const clips: CachedClip[] = [];
         for (const [clipId, pos] of preview.positions) {
             if (pos.trackId === track.id) {
@@ -178,5 +195,5 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         return { ...track, clips };
     });
 
-    return { ...cachedModel!, tracks: previewTracks, dataDirty: true };
+    return { ...cachedModel, tracks: previewTracks, dataDirty: true };
 }

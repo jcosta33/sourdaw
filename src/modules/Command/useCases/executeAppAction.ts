@@ -24,10 +24,18 @@ import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/P
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { recordAction } from './macro/recording/recordAction';
 
-/** Built lazily so `getArrangementHandlers` is not invoked while the Arrangement barrel is still
- *  initializing (e.g. `batchFeatureHandlers` imports from `#/modules/Arrangement` and re-enters). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- handlers are type-safe at definition site; the registry erases the action subtype for dynamic dispatch
-let handlerRegistryCache: Record<string, ActionHandler<any>> | null = null;
+/**
+ * Built lazily so `getArrangementHandlers` is not invoked while the Arrangement
+ * barrel is still initializing (e.g. `batchFeatureHandlers` imports from
+ * `#/modules/Arrangement` and re-enters).
+ *
+ * §45.1 — Wrapped in a holder object so the module-level binding can't be
+ * reassigned from outside, and mutation is localised to this file.
+ */
+const handlerRegistryState: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- handlers are type-safe at definition site
+    cache: Record<string, ActionHandler<any>> | null;
+} = { cache: null };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mergeHandlers(...sources: Record<string, ActionHandler<any>>[]): Record<string, ActionHandler<any>> {
@@ -46,8 +54,8 @@ function mergeHandlers(...sources: Record<string, ActionHandler<any>>[]): Record
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getHandlerRegistry(): Record<string, ActionHandler<any>> {
-    if (!handlerRegistryCache) {
-        handlerRegistryCache = mergeHandlers(
+    if (!handlerRegistryState.cache) {
+        handlerRegistryState.cache = mergeHandlers(
             getArrangementHandlers(),
             getTransportHandlers(),
             getWorkspaceHandlers(),
@@ -70,7 +78,7 @@ function getHandlerRegistry(): Record<string, ActionHandler<any>> {
             getDsoSnapshotHandlers(),
         );
     }
-    return handlerRegistryCache;
+    return handlerRegistryState.cache;
 }
 
 export type ExecuteOptions = {
