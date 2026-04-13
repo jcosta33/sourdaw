@@ -34,8 +34,9 @@ export function saveTrackAsTemplate(trackId: string, name: string, category?: st
         color: track.color,
     };
 
-    const templates = ensureCache(loadTrackTemplates);
-    templates.push(template);
+    // Build the new list immutably so callers holding a reference to
+    // the previously-cached array don't see surprise mutations (§78.1).
+    const templates = [...ensureCache(loadTrackTemplates), template];
     saveTrackTemplates(templates);
     templateCache = templates;
 
@@ -69,7 +70,7 @@ export function loadTrackTemplate(templateId: string): void {
     });
 }
 
-export function getTrackTemplates(): TrackTemplate[] {
+export function getTrackTemplates(): readonly TrackTemplate[] {
     return ensureCache(loadTrackTemplates);
 }
 

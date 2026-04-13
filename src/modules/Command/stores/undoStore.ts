@@ -33,20 +33,35 @@ export const undoStore = createStore<UndoStoreState>({
     initialData: loadFromSession(),
 });
 
+// Coalesce persistence writes: prior to this, every pushUndo triggered
+// an immediate full JSON.stringify(trimmed) + sessionStorage write
+// (§85.2). Rapid undo pushes (AI action batches, drag gestures) produced
+// hundreds of writes per second. Defer the write to a microtask flush so
+// successive pushes in the same turn produce exactly one serialize.
+let flushScheduled = false;
 undoStore.subscribe((value) => {
-    if (!value) {
+    if (!value || flushScheduled) {
         return;
     }
-    try {
-        const serializableOnly = (entries: UndoEntry[]) => entries.filter(isActionEntry).slice(-MAX_UNDO_PERSIST);
-        const trimmed: UndoStoreState = {
-            past: serializableOnly(value.past),
-            future: serializableOnly(value.future),
-        };
-        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(trimmed));
-    } catch {
-        /* storage full or unavailable */
-    }
+    flushScheduled = true;
+    queueMicrotask(() => {
+        flushScheduled = false;
+        const current = undoStore.value;
+        if (!current) {
+            return;
+        }
+        try {
+            const serializableOnly = (entries: UndoEntry[]) =>
+                entries.filter(isActionEntry).slice(-MAX_UNDO_PERSIST);
+            const trimmed: UndoStoreState = {
+                past: serializableOnly(current.past),
+                future: serializableOnly(current.future),
+            };
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(trimmed));
+        } catch {
+            /* storage full or unavailable */
+        }
+    });
 });
 
 export function pushUndo(entry: UndoEntry): void {

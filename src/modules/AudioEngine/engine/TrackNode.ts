@@ -15,7 +15,7 @@ export type TrackNodeDeps = {
     getTrackGainNode: (trackId: string) => GainNode | undefined;
     getSendsForTrack: (trackId: string) => SendNode[];
     pendingFaustParams: Map<string, Map<string, number>>;
-    pendingDevicePromises: Set<Promise<any>>;
+    pendingDevicePromises: Set<Promise<unknown>>;
 };
 
 export class TrackNode {

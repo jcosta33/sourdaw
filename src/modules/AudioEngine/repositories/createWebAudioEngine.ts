@@ -17,7 +17,7 @@ class AudioEngineImpl implements AudioEngine {
     private scheduledNodes: AudioScheduledSourceNode[] = [];
     private masterMeterBuffer!: Float32Array;
     private pendingFaustParams = new Map<string, Map<string, number>>();
-    private pendingDevicePromises = new Set<Promise<any>>();
+    private pendingDevicePromises = new Set<Promise<unknown>>();
     private workletReady = false;
     private fallbackMode = false;
 
