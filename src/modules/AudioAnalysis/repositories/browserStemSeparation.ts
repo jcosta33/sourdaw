@@ -21,7 +21,16 @@ type OrtSession = {
     release: () => void;
 };
 
-let cachedSession: OrtSession | null = null;
+// §152.1 — Coalesce the ONNX session cache into a holder so module-level
+// mutation is scoped to this file. HMR still discards the 235MB model
+// on hot reload (the browser Cache API handles persistence across page
+// loads); a full HMR-safe fix requires porting the session into a
+// persistent store, but the 1-line scope reduction at least hides the
+// binding from external writers.
+const ortSession: { cached: OrtSession | null; ort: typeof import('onnxruntime-web') | null } = {
+    cached: null,
+    ort: null,
+};
 
 /**
  * Resample audio using OfflineAudioContext.
@@ -95,11 +104,15 @@ export const separateStemsBrowser = inject({ logger })(
          * Create or return a cached ONNX inference session.
          */
         const getSession = async (): Promise<OrtSession> => {
-            if (cachedSession) {
-                return cachedSession;
+            if (ortSession.cached) {
+                return ortSession.cached;
             }
 
-            const ort = await import('onnxruntime-web');
+            // §152.2 — cache the onnxruntime-web namespace as well so the
+            // second dynamic import in separateStemsBrowser below becomes a
+            // closure-scope hit instead of another import() microtask.
+            ortSession.ort ??= await import('onnxruntime-web');
+            const ort = ortSession.ort;
 
             // Prefer WebGPU, fall back to WASM
             const executionProviders: string[] = [];
@@ -117,9 +130,9 @@ export const separateStemsBrowser = inject({ logger })(
                 graphOptimizationLevel: 'all',
             });
 
-            cachedSession = session as unknown as OrtSession;
+            ortSession.cached = session as unknown as OrtSession;
             logger.info('[Browser Stems] Session ready');
-            return cachedSession;
+            return ortSession.cached;
         };
 
         return async function separateStemsBrowser(
@@ -127,7 +140,8 @@ export const separateStemsBrowser = inject({ logger })(
             requestedStems: string[] = ['all']
         ): Promise<BrowserStemResult> {
             const session = await getSession();
-            const ort = await import('onnxruntime-web');
+            // getSession() above has already populated ortSession.ort.
+            const ort = ortSession.ort!;
 
             // Decode input audio
             const audioContext = new AudioContext();
