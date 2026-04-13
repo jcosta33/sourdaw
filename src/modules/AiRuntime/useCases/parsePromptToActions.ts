@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { type ProjectContext } from './getProjectContext';
 import { validateActions } from './validateActions';
 import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
+import { executeDsoEdit } from './dsoEditor/executeDsoEdit';
 import { type IntentResult } from '../models/IntentResult';
 import {
     tryPresetMatch,
@@ -69,7 +70,6 @@ export const parsePromptToActions = inject({ logger })(
     // Cloud is NOT used for DSO planning (chat only). No model fallback.
     if (isDsoBackendAvailable()) {
         try {
-            const { executeDsoEdit } = await import('./dsoEditor/executeDsoEdit');
             const result = await executeDsoEdit(prompt);
 
             if (signal?.aborted) {
