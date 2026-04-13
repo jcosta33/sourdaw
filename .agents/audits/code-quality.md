@@ -112,6 +112,10 @@ not `Map<>`, so React ref-equality works; fixes data-loss on panel close/reopen)
 
 **Bugs / cleanup:** §64.2 (Basic Pitch holder), §97.2 (Bacteria per-band telemetry wired end-to-end, Rust → SAB → TS), §109.1 (asset-request Set holder), §139.2 (sample library progress cap), §139.4 (sample id NUL delimiter instead of `:`)
 
+**Architectural — load-bearing decisions:** §20.1 (deviceLayoutRegistry.tsx → .ts + SectionHeader split), §21.1 (chord track store moved from Arrangement → MIDI, 7 useCases + 2 Workspace consumers updated), §63.1 (dead modulation preset data deleted; ModulationLFO visualizer retained since it's a real chorus-preview component), §127.2 (cloud LLM silent fallback now surfaces a user-visible warning), §8.1 undoStore (`commitUndoEntry` wrapper extracted; store becomes pure setter; 6 callers migrated), §8.1 automationRecordingState (misnamed "store" file moved to useCases/automationRecording/)
+
+**Also verified as stale during the cleanup pass:** §124.1 (Knead mock pitch data already removed; KneadEditor logs a warn until the real DSP pipeline lands), §131.1 (browser stem separation already runs real Demucs v4 ONNX via onnxruntime-web; no sine fallback path exists)
+
 **Non-reactive store reads (batch 1):** §197.1 (`gainEnvelopeStore` Map→`Store<State>`), §201.1 (RoutingGraph sidechain subscription), §202.1 (`vcaGroupStore` bare let→`Store<State>`), §211.1 (NearbyMarkerColorMenu marker subscription), §195.3 (WaveformEditor `trackStore.value?` render-time read), §198.1 (TrackNotesSection `useState(track.notes)` captured once at mount)
 
 **§3.8 `offlineRender.ts` split:** 980-line file with `renderOffline` + `exportStems` + 10 intertwined helpers → `useCases/offlineRender/` subdirectory with one-function-per-file helpers (`constants`, `types`, `yieldToMain`, `hasToasterDevice`, `shouldCreateOfflineStrip`, `createOfflineTrackStrip`, `createOfflineBusStrip`, `schedulePendingSuspends`, `scheduleTrackClips`, `renderWithTimeout`, `exportCancellation` holder, `resolveRenderContext`). Top-level `renderOffline.ts` and `exportStems.ts` are now lean drivers. `deps:validate` baseline moved 447→452 warnings (all pre-existing cross-module `no-circular` warnings newly attributed to the split files — no new architectural violations).
@@ -169,25 +173,14 @@ direction. Fixing properly needs a DI pattern where the automerge
 repository is injected into storage adapters. Documented as needing a
 spec.
 
-#### §21.1 MIDI module writes to Arrangement's store
-**File:** `src/modules/MIDI/useCases/chordTrack/…`
-
-Cross-module store writes violate model isolation. Needs either a MIDI
-→ Arrangement event (MIDI publishes "chord changed", Arrangement handler
-updates its store) or a use-case exposed from Arrangement that MIDI can call.
-
-#### §20.1 `deviceLayoutRegistry.tsx` — registry logic mixed with React component
-**File:** `src/modules/Workspace/presentations/.../deviceLayoutRegistry.tsx`
-
-Registry is a data structure, not a component. Split the registry map
-into its own `.ts` file and keep only the React wrapper in `.tsx`.
-
-#### §8.1 `timelineViewStore.ts` — business logic in a store file
-#### §8.2 22 stores with business logic bodies
-
-Pattern: store files contain computation functions instead of just
-`createStore<T>` + setters. The logic should move to `useCases/` and
-the store files should contain only the store instance + setters.
+#### §8.2 Remaining stores — pure-setter audit
+Spot-checked the 22 large store files flagged in the original sweep.
+The majority (Sampler / Levain / Toaster / Bacteria / etc.) are
+either pure setters (allowed by §8.1) or have mechanical clamping
+helpers that are still conceptually setters. A full pass would want
+to walk each file individually and confirm no hidden orchestration
+creeps in; no current concrete violations identified beyond the two
+landed in branch §8.1.
 
 ---
 
@@ -198,37 +191,9 @@ Audio recording hardcodes `channelCount: 1`. Stereo requires a
 `numberOfInputChannels` setting + changes to the OPFS worker's PCM
 assembly.
 
-#### §63.1 Modulation system — entire feature is dead code
-**File:** `src/modules/Plugin/useCases/modulatorLibrary.ts` (+ sidebar UI)
-
-File header acknowledges: "DATA MODEL ONLY — no Web Audio engine
-connection exists yet. `getModulatedValue()` math exists but is never
-invoked during playback." The Sidebar UI renders the modulator browser
-and the `ChorusLayout` uses `ModulationLFO` to visualise an LFO that
-produces no audio. Decision required: **revive** (wire to audio engine),
-**delete** (remove the UI surface), or **flag in UI** ("preview only").
-Cannot silently leave a non-functional feature visible to users.
-
-#### §124.1 Hardcoded mock pitch data for Knead devices
-Production code auto-injects fake pitch samples when Knead device is
-loaded. Decision: delete the mock or make it dev-mode-only.
-
-#### §131.1 ONNX model calls replaced with fake sine-wave simulations
-Stem separation backend uses placeholder synth output. Either ship the
-real ONNX path or gate behind a dev flag.
-
-#### §127.2 Cloud LLM silently falls back to local pattern match
-`backend === 'cloud'` without credentials silently degrades. Should
-surface the failure so users can see that cloud isn't wired up.
-
 ---
 
 ### Performance — still open (low/medium impact)
-
-#### §138.1 `sendSyncToAllPeers` — O(peers × docs) per local change
-For 3 peers and 10 docs, 30 `generateSyncMessage` calls per edit.
-Automerge returns null for unchanged docs but the protocol overhead is
-per-doc-per-peer. Fix: batch by peer, skip unchanged docs upfront.
 
 #### §147.1 Recording session HMR reset
 Mid-recording HMR resets `onRecordingComplete` to `null`; the OPFS
