@@ -12,7 +12,7 @@ describe('addTask', () => {
     it('adds a new task with generated id and timestamp', () => {
         const id = addTask({ type: 'audio-generation', status: 'processing' });
         
-        expect(id).toMatch(/^ai-task-1000-.+/);
+        expect(id).toMatch(/^ai-task-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         expect(aiStore.value!.tasks).toHaveLength(1);
         expect(aiStore.value!.tasks[0]).toEqual({
             id,

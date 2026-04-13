@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { useSyncExternalStore } from 'react';
 import { SessionView } from '../SessionView';
+import { useStore } from '#/infra/store/useStore';
+import { sessionLaunchStore } from '../../../stores/sessionLaunchStore';
 
 // Mock hooks
 vi.mock('../../hooks/useTracks', () => ({
@@ -15,6 +18,21 @@ vi.mock('../../hooks/useTracks', () => ({
 describe('SessionView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Reset the real store between tests so click handlers that write
+        // through sessionLaunchStore.set start from a clean slate.
+        sessionLaunchStore.set({ activeSlots: {} });
+        // Override the global useStore mock (setupTests.ts) to actually
+        // read from the real sessionLaunchStore so click handlers that
+        // call sessionLaunchStore.set(...) are reflected in the next
+        // render. The global mock returns a frozen blob which does not
+        // simulate state updates.
+        vi.mocked(useStore).mockImplementation((store: any, defaultValue: any) => {
+            if (store === sessionLaunchStore) {
+                // eslint-disable-next-line react-hooks/rules-of-hooks
+                return useSyncExternalStore(store.subscribeReact, () => store.getSnapshot() ?? defaultValue);
+            }
+            return defaultValue;
+        });
     });
 
     it('should render tracks as columns', () => {
@@ -30,23 +48,20 @@ describe('SessionView', () => {
 
     it('should launch a clip slot when clicked', () => {
         render(<SessionView />);
-        // Audio 1, scene 1 has a clip
         const slot = screen.getByLabelText('Audio 1 scene 1 - clip loaded');
-        fireEvent.click(slot);
-        
-        // After click, it should have a play icon (isActive)
-        // Since we are mocking Play icon, we check for its presence in the slot
-        expect(slot.querySelector('svg')).toBeInTheDocument();
+        act(() => {
+            fireEvent.click(slot);
+        });
+        expect(sessionLaunchStore.value?.activeSlots['track-1']).toBe(0);
     });
 
     it('should launch all tracks in a scene when scene button is clicked', () => {
         render(<SessionView />);
         const sceneButton = screen.getByLabelText('Launch scene 1');
-        fireEvent.click(sceneButton);
-        
-        // Both tracks should now have an active slot in scene 1
-        const slot1 = screen.getByLabelText('Audio 1 scene 1 - clip loaded');
-        expect(slot1.querySelector('svg')).toBeInTheDocument();
+        act(() => {
+            fireEvent.click(sceneButton);
+        });
+        expect(sessionLaunchStore.value?.activeSlots).toEqual({ 'track-1': 0, 'track-2': 0 });
     });
 
     it('should show empty state when no tracks exist', async () => {

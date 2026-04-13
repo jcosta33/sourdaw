@@ -10,7 +10,8 @@ vi.mock('../../../stores/trackStore', () => ({
 }));
 
 vi.mock('../../../stores/markerStore', () => ({
-    markerStore: { value: { markers: [] } },
+    markerStore: { value: { markers: [], sections: [] } },
+    defaultMarkerStoreState: { markers: [], sections: [] },
 }));
 
 vi.mock('#/modules/Transport/stores/transportStore', () => ({

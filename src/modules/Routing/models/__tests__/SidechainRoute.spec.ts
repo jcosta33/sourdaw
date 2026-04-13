@@ -12,7 +12,7 @@ describe('createSidechainRoute', () => {
         expect(a.targetDeviceId).toBe('dev-a');
         expect(a.targetParameterId).toBe('threshold');
         expect(a.gain).toBe(1);
-        expect(a.id).toMatch(/^sidechain-\d+$/);
+        expect(a.id).toMatch(/^sidechain-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
         expect(b.targetParameterId).toBe('ratio');
         expect(b.gain).toBe(0.5);

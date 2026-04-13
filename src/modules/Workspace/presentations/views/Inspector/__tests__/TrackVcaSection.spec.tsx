@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TrackVcaSection } from '../TrackVcaSection';
 import type { Track } from '../../../../models/TrackViewTypes';
+import { useStore } from '#/infra/store/useStore';
+import { vcaGroupStore } from '#/modules/Arrangement/stores';
 
 // Mock external dependencies
 const mockAssignToVca = vi.fn();
@@ -114,7 +116,22 @@ describe('TrackVcaSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockGetVcaGroups.mockReturnValue([]);
+        // §202.1 — component reads groups via useStore(vcaGroupStore).
+        // Override the global useStore mock to route through the real
+        // vcaGroupStore so per-test group fixtures actually show up.
+        vcaGroupStore.set({ groups: [] });
+        vi.mocked(useStore).mockImplementation((store: any, defaultValue: any) => {
+            if (store === vcaGroupStore) {
+                return vcaGroupStore.value ?? defaultValue;
+            }
+            return defaultValue;
+        });
     });
+
+    const setVcaGroups = (groups: Array<{ id: string; name: string; trackIds: string[] }>): void => {
+        mockGetVcaGroups.mockReturnValue(groups);
+        vcaGroupStore.set({ groups });
+    };
 
     it('should render without crashing', () => {
         render(<TrackVcaSection track={mockTrack} />);
@@ -137,7 +154,7 @@ describe('TrackVcaSection', () => {
     });
 
     it('should display available VCA groups', () => {
-        mockGetVcaGroups.mockReturnValue([
+        setVcaGroups([
             { id: 'vca-1', name: 'VCA 1', trackIds: [] },
             { id: 'vca-2', name: 'VCA 2', trackIds: [] },
         ]);
@@ -147,14 +164,14 @@ describe('TrackVcaSection', () => {
     });
 
     it('should call createVcaGroup when create button is clicked', () => {
-        mockGetVcaGroups.mockReturnValue([]);
+        setVcaGroups([]);
         render(<TrackVcaSection track={mockTrack} />);
         fireEvent.click(screen.getByLabelText('Create VCA group'));
         expect(mockCreateVcaGroup).toHaveBeenCalledWith('VCA 1', ['track-1']);
     });
 
     it('should call assignToVca when VCA group is selected', () => {
-        mockGetVcaGroups.mockReturnValue([{ id: 'vca-1', name: 'VCA 1', trackIds: [] }]);
+        setVcaGroups([{ id: 'vca-1', name: 'VCA 1', trackIds: [] }]);
         render(<TrackVcaSection track={mockTrack} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: 'vca-1' } });
@@ -163,7 +180,7 @@ describe('TrackVcaSection', () => {
 
     it('should call removeFromVca when "None" is selected', () => {
         const trackWithVca = { ...mockTrack, vcaGroupId: 'vca-1' };
-        mockGetVcaGroups.mockReturnValue([{ id: 'vca-1', name: 'VCA 1', trackIds: ['track-1'] }]);
+        setVcaGroups([{ id: 'vca-1', name: 'VCA 1', trackIds: ['track-1'] }]);
         render(<TrackVcaSection track={trackWithVca} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: '' } });

@@ -31,7 +31,7 @@ describe('validateActions', () => {
     it('should reject invalid setTempo bpm', () => {
         const actions = [{ type: 'setTempo', payload: { bpm: 5 } }] as unknown as RuntimeAction[];
         expect(validateActions(actions)).toEqual([]);
-        expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Invalid tempo'));
+        expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Invalid payload for action setTempo'));
     });
 
     it('should keep valid actions', () => {

@@ -190,11 +190,24 @@ vi.mock('#/modules/Workspace/presentations/hooks/useWorkspaceState', () => ({
     })),
 }));
 
+// Global useStore mock. Historically returned a hardcoded blob covering
+// the shapes of a handful of specific stores; the branch-2 work that
+// moved many components from `store.value?.x` render-time reads to
+// proper `useStore` subscriptions (§52.1, §142.1, §195.3, §197.1,
+// §201.1, §202.1, §211.1, …) exposed several fields this mock never
+// returned (activeSlots, groups, tracks, selectedTrackId, envelopes,
+// routes, markers, sections, …). The right long-term fix is to drop
+// this global and let each test mock useStore explicitly, but that's a
+// 37-file cleanup for another session; for now, expand the blob with
+// the missing fields so the reactive-store conversions don't fail
+// render-time subscription tests.
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({
+        // MIDI learn store
         mappings: [],
         isLearning: false,
         learningTarget: null,
+        // Levain patch (wrapped in a Proxy to cover arbitrary accesses)
         patch: new Proxy(
             {
                 enabled: true,
@@ -214,15 +227,31 @@ vi.mock('#/infra/store/useStore', () => ({
             {
                 get(target: any, prop: string | symbol) {
                     if (prop in target) return target[prop];
-                    if (typeof prop === "string") {
-                        if (prop === "topology") return "glue"; // Gluten uses glue/punch
-                        if (prop === "algorithm") return "delay";
-                        if (prop === "filter") return { type: "lowpass", cutoff: 1000, resonance: 0 };
-                        if (prop === "pads" || prop === "nodes" || prop === "channels" || prop === "tracks" || prop === "prePedals" || prop === "postPedals" || prop === "micPositions" || prop === "macros" || prop === "macroLabels" || prop === "articulations" || prop === "devices" || prop === "sends" || prop === "clips") return [];
-                        if (prop.includes("Id") || prop === "name" || prop === "label" || prop === "category") return "mock";
+                    if (typeof prop === 'string') {
+                        if (prop === 'topology') return 'glue';
+                        if (prop === 'algorithm') return 'delay';
+                        if (prop === 'filter') return { type: 'lowpass', cutoff: 1000, resonance: 0 };
+                        if (
+                            prop === 'pads' ||
+                            prop === 'nodes' ||
+                            prop === 'channels' ||
+                            prop === 'tracks' ||
+                            prop === 'prePedals' ||
+                            prop === 'postPedals' ||
+                            prop === 'micPositions' ||
+                            prop === 'macros' ||
+                            prop === 'macroLabels' ||
+                            prop === 'articulations' ||
+                            prop === 'devices' ||
+                            prop === 'sends' ||
+                            prop === 'clips'
+                        )
+                            return [];
+                        if (prop.includes('Id') || prop === 'name' || prop === 'label' || prop === 'category')
+                            return 'mock';
                     }
                     return 0;
-                }
+                },
             }
         ),
         engineReady: true,
@@ -241,5 +270,17 @@ vi.mock('#/infra/store/useStore', () => ({
         channels: [],
         past: [],
         future: [],
+        // Reactive-store conversions landed in branch 2 read these fields
+        // directly via useStore. Adding them to the shared blob so that
+        // components migrated from render-time store.value? reads to
+        // proper subscriptions don't crash existing render tests.
+        activeSlots: {}, // SessionLaunchState (§142.1 SessionView)
+        tracks: [], // TrackStoreState (§52.1 GrandBoulePanel, §195.3 WaveformEditor)
+        selectedTrackId: null, // TrackStoreState
+        groups: [], // VcaGroupState (§202.1 TrackVcaSection)
+        routes: [], // SidechainStoreState (§201.1 RoutingGraph)
+        envelopes: {}, // GainEnvelopeStoreState (§197.1 ClipGainEnvelopeSection)
+        markers: [], // MarkerStoreState (§211.1 NearbyMarkerColorMenu)
+        sections: [], // MarkerStoreState
     })),
 }));

@@ -15,7 +15,7 @@ describe('createVersion', () => {
         expect(v.parentId).toBe('parent-1');
         expect(v.tags).toEqual(['t1']);
         expect(v.createdAt).toBe('2024-06-01T12:00:00.000Z');
-        expect(v.id).toMatch(/^ver-\d+$/);
+        expect(v.id).toMatch(/^ver-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         vi.useRealTimers();
     });
 
@@ -30,7 +30,7 @@ describe('createBranch', () => {
         const b = createBranch('feature', 'ver-9');
         expect(b.name).toBe('feature');
         expect(b.headVersionId).toBe('ver-9');
-        expect(b.id).toMatch(/^branch-\d+$/);
+        expect(b.id).toMatch(/^branch-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         expect(b.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 });

@@ -16,6 +16,7 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('../../../stores/arrangementStore', () => ({
     arrangementStore: { name: 'arrangementStore', value: null },
+    defaultArrangementStoreState: { arrangements: [], activeArrangementId: 'default-arrangement' },
 }));
 
 vi.mock('../../../useCases/arrangement/renameArrangement', () => ({
