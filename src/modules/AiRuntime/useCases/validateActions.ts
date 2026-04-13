@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
+import { PAYLOAD_VALIDATORS } from './validateActionPayload';
 
 // `satisfies Record<RuntimeActionType, true>` below forces the compiler to
 // verify this list contains every RuntimeActionType — if a new action is
@@ -248,26 +249,19 @@ export const validateActions = inject({ logger })(
                     return false;
                 }
 
-                if (action.type === 'setTempo') {
-                    const bpm = action.payload.bpm;
-                    if (bpm < 20 || bpm > 300) {
-                        logger.warn(`Invalid tempo rejected: ${bpm}`);
-                        return false;
-                    }
-                }
-
-                if (action.type === 'setMasterGain') {
-                    const gain = action.payload.gain;
-                    if (gain < 0 || gain > 1) {
-                        logger.warn(`Invalid gain rejected: ${gain}`);
-                        return false;
-                    }
-                }
-
-                if (action.type === 'setMetronomeVolume') {
-                    const volume = action.payload.volume;
-                    if (volume < 0 || volume > 1) {
-                        logger.warn(`Invalid metronome volume rejected: ${volume}`);
+                // §91.1 — Per-action payload validation. PAYLOAD_VALIDATORS
+                // is a \`satisfies Record<RuntimeActionType, ...>\` so every
+                // action type is either paired with a real runtime guard
+                // or explicitly marked 'unchecked'. This replaces the
+                // three inline checks that used to cover setTempo,
+                // setMasterGain, and setMetronomeVolume — now each of the
+                // ~230 action types has an explicit, compile-time-enforced
+                // decision about whether its payload is validated.
+                const validator = PAYLOAD_VALIDATORS[action.type];
+                if (validator !== 'unchecked') {
+                    const guard = validator as (p: unknown) => boolean;
+                    if (!guard(action.payload)) {
+                        logger.warn(`Invalid payload for action ${action.type}`);
                         return false;
                     }
                 }
