@@ -20,6 +20,11 @@ export type TrackNodeDeps = {
 
 export class TrackNode {
     public strip: TrackChannelStrip;
+    // §88.3 — async plugin loads each resolve with a rebuildChain() call;
+    // firing multiple of these in the same microtask produced overlapping
+    // disconnect/reconnect sweeps. `_rebuildScheduled` coalesces them so at
+    // most one rebuild runs per microtask turn.
+    private _rebuildScheduled = false;
 
     constructor(
         public trackId: string,
@@ -139,6 +144,18 @@ export class TrackNode {
         }
     }
 
+    /** Coalesce concurrent rebuild requests into a single microtask (§88.3). */
+    public scheduleRebuildChain(): void {
+        if (this._rebuildScheduled) {
+            return;
+        }
+        this._rebuildScheduled = true;
+        queueMicrotask(() => {
+            this._rebuildScheduled = false;
+            this.rebuildChain();
+        });
+    }
+
     public rebuildChain(): void {
         const s = this.strip;
         s.preFaderTap.disconnect();
@@ -243,7 +260,7 @@ export class TrackNode {
                             },
                         };
                         this.strip.deviceNodes[idx] = bridgeDn;
-                        this.rebuildChain();
+                        this.scheduleRebuildChain();
                     }
                 })
                 .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
@@ -270,7 +287,7 @@ export class TrackNode {
                         builtinDn.deviceId = deviceId;
                         builtinDn.type = deviceType;
                         this.strip.deviceNodes[idx] = builtinDn;
-                        this.rebuildChain();
+                        this.scheduleRebuildChain();
 
                         const pending = pendingFaustParams.get(deviceId);
                         if (pending) {
@@ -315,7 +332,7 @@ export class TrackNode {
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {
                             this.strip.deviceNodes[idx] = finalDn;
-                            this.rebuildChain();
+                            this.scheduleRebuildChain();
                         }
                     },
                 });

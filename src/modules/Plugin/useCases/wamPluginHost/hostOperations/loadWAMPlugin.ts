@@ -39,14 +39,15 @@ export async function loadWAMPlugin(
         node = context.createGain();
     }
 
+    const instanceId = `${pluginId}-${crypto.randomUUID().slice(0, 8)}`;
     const instance: WAMInstance = {
+        instanceId,
         descriptor,
         audioNode: node,
         initialized: true,
         groupId,
     };
 
-    const instanceId = `${pluginId}-${crypto.randomUUID().slice(0, 8)}`;
     instances.set(instanceId, instance);
     return instance;
 }

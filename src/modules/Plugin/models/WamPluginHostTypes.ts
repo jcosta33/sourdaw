@@ -11,6 +11,8 @@ export type WAMDescriptor = {
 };
 
 export type WAMInstance = {
+    /** Unique instance ID — returned by loadWAMPlugin, passed to unloadWAMPlugin. */
+    instanceId: string;
     descriptor: WAMDescriptor;
     audioNode: AudioNode;
     initialized: boolean;
