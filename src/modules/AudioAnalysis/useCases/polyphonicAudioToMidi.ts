@@ -11,6 +11,10 @@
 
 import { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } from '@spotify/basic-pitch';
 import { type NoteEventTime } from '@spotify/basic-pitch';
+// Vite `?url` import emits the asset into the production bundle and returns
+// its resolved URL. Using a raw `new URL(..., import.meta.url)` pointed at
+// `node_modules/` works in dev but leaves the file unbundled in production.
+import basicPitchModelUrl from '@spotify/basic-pitch/model/model.json?url';
 
 import { logger } from '#/infra/logger/appLogger';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -38,9 +42,8 @@ let basicPitchModel: BasicPitch | null = null;
 
 function getBasicPitchModel(): BasicPitch {
     if (!basicPitchModel) {
-        const modelUrl = new URL('../../../node_modules/@spotify/basic-pitch/model/model.json', import.meta.url).href;
-        logger.info(`[Basic Pitch] Loading model from ${modelUrl}`);
-        basicPitchModel = new BasicPitch(modelUrl);
+        logger.info(`[Basic Pitch] Loading model from ${basicPitchModelUrl}`);
+        basicPitchModel = new BasicPitch(basicPitchModelUrl);
     }
     return basicPitchModel;
 }

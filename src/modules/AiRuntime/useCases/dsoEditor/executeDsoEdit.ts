@@ -7,9 +7,11 @@
  * 3. Invoke LLM with schema constraint (Constraint::JsonSchema)
  * 4. Stream response with progressive UI updates
  * 5. Parse EditPlan from response
- * 6. Validate DSOs against current state
- * 7. Classify safety (auto-apply / preview / confirmation)
- * 8. Execute with full undo support
+ * 6. Handle moderation / empty-plan early exits
+ * 7. Resolve LLM-emitted names to store IDs
+ * 8. Validate DSOs against current state
+ * 9. Classify safety (auto-apply / preview / confirmation)
+ * 10. Execute with full undo support
  */
 import { inject } from '#/infra/di/inject';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
@@ -142,7 +144,7 @@ export const executeDsoEdit = inject({ logger })(({ logger }) =>
             return { success: false, plan, summaries: [], error: errorText };
         }
 
-        // 8. Classify and execute
+        // 9. Classify and execute
         const classification = classifyEditPlan(plan);
 
         if (classification === 'confirmation_required') {
@@ -158,7 +160,7 @@ export const executeDsoEdit = inject({ logger })(({ logger }) =>
             return { success: true, plan, summaries };
         }
 
-        // 9. Execute with undo support
+        // 10. Execute with undo support
         const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
 
         finish();

@@ -24,57 +24,19 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { humanizeNotes } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
-// Synced from AiGeneration — keep in sync manually until circular dep is resolved.
-// These must match the VALID_* sets in generationHandlerHelpers.ts, which are the
-// runtime validation gates. Values not in those sets are silently rejected.
-type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
-type ScaleType =
-    | 'major'
-    | 'minor'
-    | 'pentatonic'
-    | 'minor-pentatonic'
-    | 'blues'
-    | 'dorian'
-    | 'mixolydian'
-    | 'lydian'
-    | 'phrygian'
-    | 'locrian'
-    | 'harmonic-minor'
-    | 'melodic-minor'
-    | 'whole-tone'
-    | 'chromatic';
-type ChordProgressionStyle =
-    | 'pop'
-    | 'jazz'
-    | 'classical'
-    | 'edm'
-    | 'blues'
-    | 'rnb'
-    | 'folk'
-    | 'cinematic'
-    | 'neo-soul'
-    | 'gospel'
-    | 'rock'
-    | 'lofi';
-type ChordVoicing = 'close' | 'open' | 'spread' | 'power';
-type DrumPatternStyle =
-    | 'four-on-floor'
-    | 'breakbeat'
-    | 'trap'
-    | 'jazz'
-    | 'latin'
-    | 'rock'
-    | 'dnb'
-    | 'half-time'
-    | 'blues'
-    | 'reggae'
-    | 'lofi'
-    | 'house'
-    | 'techno'
-    | 'synthwave'
-    | 'afrobeat'
-    | 'metal'
-    | 'punk';
+// Shared style unions live in `AiGeneration/models/GenerationStyles` — a leaf
+// module with no runtime imports. Using `import type` keeps this file free of
+// any runtime dependency on `AiGeneration/useCases`, which would otherwise
+// close a module-init circular dependency (audit §11.2). The unions are the
+// single source of truth for both the algorithms in `AiGeneration` and the
+// Record-based lookup maps below.
+import type {
+    ChordProgressionStyle,
+    ChordVoicing,
+    DrumPatternStyle,
+    MelodyStyle,
+    ScaleType,
+} from '#/modules/AiGeneration/models/GenerationStyles';
 
 // ── Safe enum mapping ────────────────────────────────────────────────────────
 
@@ -205,11 +167,18 @@ function toDrumStyle(s: string): DrumPatternStyle {
 }
 
 /**
- * Tracks the ID of the most recently inserted device within a single DSO plan execution.
- * When the LLM emits `device_id: "latest"`, this is resolved to this value.
- * Reset at the start of each `executeDsos()` call.
+ * Per-execution context for a single `executeDsos()` call.
+ * Tracks the ID of the most recently inserted device so that the LLM's
+ * `device_id: "latest"` sentinel can be resolved to a concrete ID.
+ *
+ * Held in a local variable inside `executeDsos()` rather than at module
+ * scope so concurrent plan executions (e.g. an AI chat response that
+ * triggers while a prior AI edit is still mid-execution) cannot clobber
+ * each other's in-flight device references.
  */
-let lastInsertedDeviceId: string | null = null;
+type DsoExecContext = {
+    lastInsertedDeviceId: string | null;
+};
 
 // ── Name resolution ──────────────────────────────────────────────────────────
 // The LLM outputs human-readable names (e.g. "Drums", "Vocal Clip").
@@ -592,7 +561,7 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
  *  skipUndo: the batch undo entry is managed by executeDsoEdit, not per-operation. */
 const DSO_EXEC_OPTIONS = { skipUndo: true, source: 'ai' as const };
 
-async function executeSingleDso(dso: Dso): Promise<void> {
+async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void> {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -754,7 +723,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             if (updatedTrack && updatedTrack.devices.length > deviceCountBefore) {
                 const newDevice = updatedTrack.devices[updatedTrack.devices.length - 1];
                 if (newDevice) {
-                    lastInsertedDeviceId = newDevice.id;
+                    context.lastInsertedDeviceId = newDevice.id;
                 }
             }
             break;
@@ -804,7 +773,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
 
         case 'set_device_param': {
             // Resolve "latest" to the tracked ID from the most recent insert_device in this plan
-            const resolvedId = dso.device_id === 'latest' ? lastInsertedDeviceId : dso.device_id;
+            const resolvedId = dso.device_id === 'latest' ? context.lastInsertedDeviceId : dso.device_id;
             if (!resolvedId) {
                 break;
             }
@@ -909,12 +878,12 @@ async function executeSingleDso(dso: Dso): Promise<void> {
  * Returns human-readable summaries of each applied operation.
  */
 export async function executeDsos(dsos: Dso[]): Promise<string[]> {
-    lastInsertedDeviceId = null;
+    const context: DsoExecContext = { lastInsertedDeviceId: null };
     const summaries: string[] = [];
 
     for (const dso of dsos) {
         try {
-            await executeSingleDso(dso);
+            await executeSingleDso(dso, context);
             summaries.push(describeDso(dso));
         } catch (error) {
             logger.warn(`Failed to execute DSO ${dso.op}:`, error);

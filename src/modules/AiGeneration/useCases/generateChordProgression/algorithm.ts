@@ -4,22 +4,10 @@
  */
 
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
-
-export type ChordProgressionStyle =
-    | 'pop'
-    | 'jazz'
-    | 'classical'
-    | 'edm'
-    | 'blues'
-    | 'rnb'
-    | 'folk'
-    | 'cinematic'
-    | 'neo-soul'
-    | 'gospel'
-    | 'rock'
-    | 'lofi';
-
-export type ChordVoicing = 'close' | 'open' | 'spread' | 'power';
+// See `AiGeneration/models/GenerationStyles.ts` — shared to avoid a
+// circular dep with `AiRuntime/useCases/dsoEditor` (audit §11.2).
+import type { ChordProgressionStyle, ChordVoicing } from '../../models/GenerationStyles';
+export type { ChordProgressionStyle, ChordVoicing };
 
 export type GenerateChordProgressionOptions = {
     style: ChordProgressionStyle;
