@@ -12,13 +12,15 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { saveProject } from '#/modules/Project';
 import { workspaceStore } from '../../stores/workspaceStore';
 
-import { toggleChatPanel } from '../../useCases/togglePanel/panelToggles/toggleChatPanel';
-import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
-import { toggleInspector } from '../../useCases/togglePanel/panelToggles/toggleInspector';
-import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
-import { toggleTrackList } from '../../useCases/togglePanel/panelToggles/toggleTrackList';
-import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
-import { clearClipSelection } from '../../useCases/togglePanel/panelToggles/clearClipSelection';
+import {
+    clearClipSelection,
+    toggleChatPanel,
+    toggleInspector,
+    toggleMixer,
+    toggleSidebar,
+    toggleTrackList,
+    toggleVirtualKeyboard,
+} from '../../useCases/togglePanel/panelToggles';
 
 type ShortcutCallbacks = {
     onOpenExport: () => void;
