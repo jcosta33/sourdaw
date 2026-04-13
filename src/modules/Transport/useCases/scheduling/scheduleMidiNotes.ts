@@ -101,47 +101,10 @@ export function resolveDrumKitDef(
     return getDrumKitDefByIndex(kitIndex);
 }
 
-/**
- * Dispatch noteOn/noteOff to a worklet synth device (fermenter, grand-boule, levain).
- * Returns true if a matching device was found (even if controls were not yet ready).
- * This avoids repeating the same find-device → find-node → call-controls pattern
- * for each worklet synth type.
- */
-type NoteControls = {
-    noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
-    noteOff: (note: number, sampleFrame?: number) => void;
+/** Toaster parent-device note controls shape (local — cross-module model isolation). */
+type ToasterControls = {
+    noteOn: (pad: number, velocity: number, pitchNote: number, sampleFrame?: number) => void;
 };
-
-type DeviceNodeLike = {
-    deviceId: string;
-    fermenterControls?: NoteControls;
-    grandBouleControls?: NoteControls;
-    levainControls?: NoteControls;
-};
-
-function dispatchWorkletSynth(
-    devices: { type: string; id: string }[],
-    deviceNodes: DeviceNodeLike[],
-    pitch: number,
-    velocity: number | undefined,
-    sampleFrame: number,
-    endSampleFrame: number
-): boolean {
-    const device = devices.find((d) => d.type in WORKLET_SYNTH_DEVICES);
-    if (!device) {
-        return false;
-    }
-    const entry = WORKLET_SYNTH_DEVICES[device.type]!;
-    const dn = deviceNodes.find((d) => d.deviceId === device.id);
-    const controls = dn?.[entry.controlsKey];
-    if (controls) {
-        const rawVel = velocity ?? 100;
-        const vel = entry.velocityTransform ? entry.velocityTransform(rawVel) : rawVel;
-        controls.noteOn(pitch, vel, sampleFrame);
-        controls.noteOff(pitch, endSampleFrame);
-    }
-    return true;
-}
 
 export function scheduleFrozenTrack(
     track: { id: string; frozenBufferId?: string },
@@ -294,21 +257,48 @@ export async function scheduleMidiNotes(
                               yeastTransport
                           );
 
+                    // §154.1 — Build a per-note index of noteOff events so the
+                    // noteOn → noteOff match is O(1) instead of O(N) per noteOn.
+                    // Events within `processed` are time-ordered by construction,
+                    // so a single forward pass produces stacks of pending-off
+                    // timeSamples per pitch. A noteOn then pops the earliest
+                    // noteOff whose time > startTime.
+                    const noteOffsByPitch = new Map<number, number[]>();
+                    for (const evt of processed) {
+                        if (evt.kind.type === 'noteOff') {
+                            const existing = noteOffsByPitch.get(evt.kind.note);
+                            if (existing) {
+                                existing.push(evt.timeSamples);
+                            } else {
+                                noteOffsByPitch.set(evt.kind.note, [evt.timeSamples]);
+                            }
+                        }
+                    }
+                    const noteOffCursor = new Map<number, number>();
+
                     const transformedNotes: NonNullable<(typeof midiState.notesByClipId)[string]> = [];
                     for (const evt of processed) {
                         if (evt.kind.type === 'noteOn') {
                             const evtNote = evt.kind.note;
                             const evtVel = evt.kind.velocity;
                             const startBeat = (evt.timeSamples * spb) / yeastSr - clip.startBeat;
-                            const offEvt = processed.find((e) => {
-                                if (e.kind.type !== 'noteOff') {
-                                    return false;
+
+                            const offs = noteOffsByPitch.get(evtNote);
+                            let offTime: number | null = null;
+                            if (offs) {
+                                let cursor = noteOffCursor.get(evtNote) ?? 0;
+                                while (cursor < offs.length && offs[cursor]! <= evt.timeSamples) {
+                                    cursor++;
                                 }
-                                return e.kind.note === evtNote && e.timeSamples > evt.timeSamples;
-                            });
-                            const endBeat = offEvt
-                                ? (offEvt.timeSamples * spb) / yeastSr - clip.startBeat
-                                : startBeat + 0.25;
+                                if (cursor < offs.length) {
+                                    offTime = offs[cursor]!;
+                                    noteOffCursor.set(evtNote, cursor + 1);
+                                } else {
+                                    noteOffCursor.set(evtNote, cursor);
+                                }
+                            }
+                            const endBeat =
+                                offTime !== null ? (offTime * spb) / yeastSr - clip.startBeat : startBeat + 0.25;
                             transformedNotes.push({
                                 ...notes![0]!,
                                 pitch: evtNote,
@@ -327,6 +317,63 @@ export async function scheduleMidiNotes(
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
             const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+            const strip = ensureTrackStrip(track.id);
+            const ctx = getAudioContext();
+            const sr = ctx.sampleRate;
+
+            // §154.2 — Hoist parent-track + sibling-pad resolution out of the
+            // per-note loop. These are functions of (track, tracks) only and
+            // never change while we iterate notes.
+            // §154.3 — Pre-resolve the per-track dispatch decision so the
+            // note loop is a single switch instead of 4+ device array scans
+            // per note (drumKitDef | drumKit | toasterChild | workletSynth |
+            // faust | default synth).
+            let toasterRoute: {
+                controls: ToasterControls;
+                pad: number;
+                pitchFallback: number;
+            } | null = null;
+            if (track.parentId) {
+                const toasterParentTrack = tracks.find((t) => t.id === track.parentId);
+                const toasterDevice = toasterParentTrack?.devices.find((d) => d.type === 'toaster');
+                if (toasterParentTrack && toasterDevice) {
+                    const parentStrip = ensureTrackStrip(toasterParentTrack.id);
+                    const dn = parentStrip?.deviceNodes.find(
+                        (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
+                    );
+                    if (dn?.toasterControls) {
+                        let pad = -1;
+                        let childIdx = 0;
+                        for (const t of tracks) {
+                            if (t.parentId === toasterParentTrack.id) {
+                                if (t.id === track.id) {
+                                    pad = childIdx;
+                                    break;
+                                }
+                                childIdx++;
+                            }
+                        }
+                        toasterRoute = { controls: dn.toasterControls, pad, pitchFallback: 60 };
+                    }
+                }
+            }
+
+            const workletSynthDevice = toasterRoute
+                ? null
+                : track.devices.find((d) => d.type in WORKLET_SYNTH_DEVICES);
+            const workletSynthEntry = workletSynthDevice
+                ? WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null
+                : null;
+            const workletSynthNode = workletSynthDevice
+                ? (strip.deviceNodes.find((d) => d.deviceId === workletSynthDevice.id) ?? null)
+                : null;
+            const workletSynthControls =
+                workletSynthEntry && workletSynthNode ? workletSynthNode[workletSynthEntry.controlsKey] ?? null : null;
+
+            const faustDevice =
+                toasterRoute || drumKitDef || drumKit || workletSynthControls
+                    ? null
+                    : track.devices.find((d) => d.type.startsWith('faust-'));
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
@@ -358,66 +405,28 @@ export async function scheduleMidiNotes(
                         const noteBeatsPerSecond = noteTempo / 60;
                         const beatOffset = noteStartBeat - accumulatedPosition;
                         const time = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
-                        const sr = getAudioContext().sampleRate;
                         const sampleFrame = Math.round(time * sr);
                         const noteEndBeat = Math.min(noteStartBeat + note.duration, clip.endBeat);
                         const duration = (noteEndBeat - noteStartBeat) / noteBeatsPerSecond;
                         const endSampleFrame = Math.round((time + duration) * sr);
 
-                        const strip = ensureTrackStrip(track.id);
-
-                        let isToasterChild = false;
-                        let toasterParentTrack = null;
-
-                        if (track.parentId) {
-                            toasterParentTrack = tracks.find((t) => t.id === track.parentId);
-                            if (toasterParentTrack?.devices.some((d) => d.type === 'toaster')) {
-                                isToasterChild = true;
-                            }
-                        }
-
-                        if (isToasterChild && toasterParentTrack) {
-                            const toasterDevice = toasterParentTrack.devices.find((d) => d.type === 'toaster');
-                            const parentStrip = ensureTrackStrip(toasterParentTrack.id);
-                            if (toasterDevice && parentStrip) {
-                                const dn = parentStrip.deviceNodes.find(
-                                    (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
-                                );
-                                if (dn?.toasterControls) {
-                                    // Single-pass: find this track's index among siblings
-                                    // instead of allocating a filtered array per note.
-                                    let pad = -1;
-                                    {
-                                        let childIdx = 0;
-                                        for (const t of tracks) {
-                                            if (t.parentId === toasterParentTrack!.id) {
-                                                if (t.id === track.id) {
-                                                    pad = childIdx;
-                                                    break;
-                                                }
-                                                childIdx++;
-                                            }
-                                        }
-                                    }
-                                    let pitchNote = pitch;
-
-                                    if (pad === -1) {
-                                        pad = pitch - 36;
-                                        if (pad >= 24 && pad <= 39) {
-                                            pad = pad - 24;
-                                        }
-                                        pitchNote = 60;
-                                    }
-
-                                    if (pad >= 0 && pad < 16) {
-                                        const safeVelocity = note.velocity ?? 100;
-                                        dn.toasterControls.noteOn(pad, safeVelocity, pitchNote, sampleFrame);
-                                    }
+                        if (toasterRoute) {
+                            let pad = toasterRoute.pad;
+                            let pitchNote = pitch;
+                            if (pad === -1) {
+                                pad = pitch - 36;
+                                if (pad >= 24 && pad <= 39) {
+                                    pad = pad - 24;
                                 }
+                                pitchNote = toasterRoute.pitchFallback;
+                            }
+                            if (pad >= 0 && pad < 16) {
+                                const safeVelocity = note.velocity ?? 100;
+                                toasterRoute.controls.noteOn(pad, safeVelocity, pitchNote, sampleFrame);
                             }
                         } else if (drumKitDef) {
                             scheduleDrumKitNote(
-                                getAudioContext(),
+                                ctx,
                                 strip.gainNode,
                                 drumKitDef,
                                 pitch,
@@ -427,7 +436,7 @@ export async function scheduleMidiNotes(
                             );
                         } else if (drumKit) {
                             scheduleKitNote(
-                                getAudioContext(),
+                                ctx,
                                 strip.gainNode,
                                 drumKit,
                                 pitch,
@@ -436,41 +445,41 @@ export async function scheduleMidiNotes(
                                 note.velocity,
                                 clip.gain
                             );
-                        } else if (
-                            dispatchWorkletSynth(track.devices, strip.deviceNodes, pitch, note.velocity, sampleFrame, endSampleFrame)
-                        ) {
-                            // Handled by worklet synth lookup (fermenter / grand-boule / levain).
+                        } else if (workletSynthControls && workletSynthEntry) {
+                            const rawVel = note.velocity ?? 100;
+                            const vel = workletSynthEntry.velocityTransform
+                                ? workletSynthEntry.velocityTransform(rawVel)
+                                : rawVel;
+                            workletSynthControls.noteOn(pitch, vel, sampleFrame);
+                            workletSynthControls.noteOff(pitch, endSampleFrame);
+                        } else if (faustDevice) {
+                            scheduleFaustNote(
+                                track.id,
+                                faustDevice.id,
+                                pitch,
+                                time,
+                                duration,
+                                note.velocity,
+                                clip.gain
+                            );
                         } else {
-                            const faustDevice = track.devices.find((d) => d.type.startsWith('faust-'));
-                            if (faustDevice) {
-                                scheduleFaustNote(
-                                    track.id,
-                                    faustDevice.id,
-                                    pitch,
-                                    time,
-                                    duration,
-                                    note.velocity,
-                                    clip.gain
-                                );
-                            } else {
-                                const mpe =
-                                    note.pressure !== undefined ||
-                                    note.slide !== undefined ||
-                                    note.pitchBend !== undefined
-                                        ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
-                                        : undefined;
-                                scheduleNote(
-                                    getAudioContext(),
-                                    strip.gainNode,
-                                    pitch,
-                                    time,
-                                    duration,
-                                    note.velocity,
-                                    synthParams!,
-                                    mpe,
-                                    clip.gain
-                                );
-                            }
+                            const mpe =
+                                note.pressure !== undefined ||
+                                note.slide !== undefined ||
+                                note.pitchBend !== undefined
+                                    ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
+                                    : undefined;
+                            scheduleNote(
+                                ctx,
+                                strip.gainNode,
+                                pitch,
+                                time,
+                                duration,
+                                note.velocity,
+                                synthParams!,
+                                mpe,
+                                clip.gain
+                            );
                         }
                     }
                 }
