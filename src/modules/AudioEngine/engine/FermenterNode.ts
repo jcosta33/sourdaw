@@ -6,28 +6,9 @@
  */
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
-
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-let cachedWasmBytes: ArrayBuffer | null = null;
-
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let promise = workletRegistrations.get(ctx);
-    if (!promise) {
-        promise = ctx.audioWorklet.addModule(fermenterProcessorUrl);
-        workletRegistrations.set(ctx, promise);
-    }
-    return promise;
-}
-
-async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) {return cachedWasmBytes;}
-    const response = await fetch(url);
-    if (!response.ok) {throw new Error(`Failed to fetch Fermenter WASM: ${response.status}`);}
-    cachedWasmBytes = await response.arrayBuffer();
-    return cachedWasmBytes;
-}
 
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
@@ -56,7 +37,7 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         await ctx.resume();
     }
 
-    await ensureWorkletRegistered(ctx);
+    await ensureWorkletRegistered(ctx, fermenterProcessorUrl);
 
     const node = new AudioWorkletNode(ctx, 'fermenter-processor', {
         numberOfInputs: 0,
@@ -67,28 +48,12 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
     });
 
     let bypassed = false;
-    let settled = false;
 
-    const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('FermenterNode init timeout (10s)'));
-            }
-        }, 10_000);
-        node.port.onmessage = (e: MessageEvent) => {
-            if (settled) {return;}
-            if (e.data.type === 'ready') {
-                settled = true;
-                clearTimeout(timeout);
-                resolve();
-            } else if (e.data.type === 'error') {
-                settled = true;
-                clearTimeout(timeout);
-                reject(new Error(e.data.message));
-            }
-        };
-    });
+    const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
+    node.port.onmessage = (e: MessageEvent) => {
+        handshake.onMessage(e);
+    };
+    const readyPromise = handshake.promise;
 
     const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);

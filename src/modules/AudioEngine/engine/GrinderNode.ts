@@ -5,24 +5,17 @@
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
 import { logger } from '#/infra/logger/appLogger';
+import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let promise = workletRegistrations.get(ctx);
-    if (!promise) {
-        promise = ctx.audioWorklet.addModule(grinderProcessorUrl);
-        workletRegistrations.set(ctx, promise);
-    }
-    return promise;
-}
-
-async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    // Always fetch fresh bytes so rebuilt local WASM is picked up after a
-    // plugin reload or app restart instead of getting stuck on stale cached
-    // worklet data.
+/**
+ * Grinder intentionally bypasses the shared WASM binary cache: we always
+ * fetch fresh bytes (`cache: 'no-store'`) so rebuilt local WASM is picked up
+ * after a plugin reload or app restart instead of getting stuck on stale
+ * cached worklet data.
+ */
+async function fetchGrinderWasm(url: string): Promise<ArrayBuffer> {
     const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) {
         throw new Error(`Failed to fetch Grinder WASM: ${response.status}`);
@@ -63,7 +56,7 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
         await ctx.resume();
     }
 
-    await ensureWorkletRegistered(ctx);
+    await ensureWorkletRegistered(ctx, grinderProcessorUrl);
 
     const node = new AudioWorkletNode(ctx, 'grinder-processor', {
         numberOfInputs: 1,
@@ -73,7 +66,6 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
         channelCountMode: 'explicit',
     });
 
-    let settled = false;
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
 
@@ -81,33 +73,16 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
-    const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('GrinderNode init timeout (10s)'));
-            }
-        }, 10_000);
-        node.port.onmessage = (e: MessageEvent) => {
-            if (e.data.type === 'ready') {
-                if (!settled) {
-                    settled = true;
-                    clearTimeout(timeout);
-                    resolve();
-                }
-            } else if (e.data.type === 'error') {
-                if (!settled) {
-                    settled = true;
-                    clearTimeout(timeout);
-                    reject(new Error(e.data.message));
-                } else {
-                    logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', e.data.message);
-                }
-            }
-        };
-    });
+    const handshake = createReadyHandshake({ pluginName: 'GrinderNode' });
+    node.port.onmessage = (e: MessageEvent) => {
+        const outcome = handshake.onMessage(e);
+        if (outcome === 'late' && e.data?.type === 'error') {
+            logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', e.data.message);
+        }
+    };
+    const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
+    const wasmBytes = await fetchGrinderWasm(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 

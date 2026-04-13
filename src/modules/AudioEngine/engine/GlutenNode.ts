@@ -9,32 +9,9 @@
 
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 import { telemetryAllocator, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/gluten/gluten_bg.wasm';
-
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-let cachedWasmBytes: ArrayBuffer | null = null;
-
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let promise = workletRegistrations.get(ctx);
-    if (!promise) {
-        promise = ctx.audioWorklet.addModule(glutenProcessorUrl);
-        workletRegistrations.set(ctx, promise);
-    }
-    return promise;
-}
-
-async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) {
-        return cachedWasmBytes;
-    }
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Gluten WASM: ${response.status}`);
-    }
-    cachedWasmBytes = await response.arrayBuffer();
-    return cachedWasmBytes;
-}
 
 export type GlutenMeterData = {
     grDb: number;
@@ -65,7 +42,7 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
         await ctx.resume();
     }
 
-    await ensureWorkletRegistered(ctx);
+    await ensureWorkletRegistered(ctx, glutenProcessorUrl);
 
     const node = new AudioWorkletNode(ctx, 'gluten-processor', {
         numberOfInputs: 2, // Input 0: main audio, Input 1: external sidechain
@@ -75,7 +52,6 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
         channelCountMode: 'explicit',
     });
 
-    let settled = false;
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
 
@@ -83,27 +59,11 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
-    const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('GlutenNode init timeout (10s)'));
-            }
-        }, 10_000);
-        node.port.onmessage = (e: MessageEvent) => {
-            if (e.data.type === 'ready') {
-                if (!settled) {
-                    settled = true;
-                    clearTimeout(timeout);
-                    resolve();
-                }
-            } else if (e.data.type === 'error' && !settled) {
-                settled = true;
-                clearTimeout(timeout);
-                reject(new Error(e.data.message));
-            }
-        };
-    });
+    const handshake = createReadyHandshake({ pluginName: 'GlutenNode' });
+    node.port.onmessage = (e: MessageEvent) => {
+        handshake.onMessage(e);
+    };
+    const readyPromise = handshake.promise;
 
     const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);

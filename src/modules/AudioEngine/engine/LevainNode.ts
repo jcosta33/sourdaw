@@ -9,32 +9,9 @@
 import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
 import { autoLoadLevainSamples } from '#/modules/Levain/useCases';
 import { logger } from '#/infra/logger/appLogger';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
-
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-let cachedWasmBytes: ArrayBuffer | null = null;
-
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let promise = workletRegistrations.get(ctx);
-    if (!promise) {
-        promise = ctx.audioWorklet.addModule(levainProcessorUrl);
-        workletRegistrations.set(ctx, promise);
-    }
-    return promise;
-}
-
-async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) {
-        return cachedWasmBytes;
-    }
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Levain WASM: ${response.status}`);
-    }
-    cachedWasmBytes = await response.arrayBuffer();
-    return cachedWasmBytes;
-}
 
 export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
@@ -65,7 +42,7 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         await ctx.resume();
     }
 
-    await ensureWorkletRegistered(ctx);
+    await ensureWorkletRegistered(ctx, levainProcessorUrl);
 
     const node = new AudioWorkletNode(ctx, 'levain-processor', {
         numberOfInputs: 0,
@@ -76,33 +53,15 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
     });
 
     let bypassed = false;
-    let settled = false;
 
-    const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('LevainNode init timeout (10s)'));
-            }
-        }, 10_000);
-        node.port.onmessage = (e: MessageEvent) => {
-            if (e.data.type === 'ready') {
-                if (!settled) {
-                    settled = true;
-                    clearTimeout(timeout);
-                    resolve();
-                }
-            } else if (e.data.type === 'error') {
-                if (!settled) {
-                    settled = true;
-                    clearTimeout(timeout);
-                    reject(new Error(e.data.message));
-                } else {
-                    logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', e.data.message);
-                }
-            }
-        };
-    });
+    const handshake = createReadyHandshake({ pluginName: 'LevainNode' });
+    node.port.onmessage = (e: MessageEvent) => {
+        const outcome = handshake.onMessage(e);
+        if (outcome === 'late' && e.data?.type === 'error') {
+            logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', e.data.message);
+        }
+    };
+    const readyPromise = handshake.promise;
 
     // Fetch WASM and initialize the processor.
     const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);

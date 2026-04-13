@@ -5,6 +5,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { LCG_MAX, nextLcg } from '../../models/lcgRandom';
 
 type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
 
@@ -73,8 +74,8 @@ export class Humanizer extends BaseMidiProcessor {
     }
 
     private nextRandom(): number {
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
-        return this.rngState / 0x7fffffff;
+        this.rngState = nextLcg(this.rngState);
+        return this.rngState / LCG_MAX;
     }
 
     reset(): void {

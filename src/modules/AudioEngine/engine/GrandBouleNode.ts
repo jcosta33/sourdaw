@@ -13,37 +13,32 @@
  */
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
+import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
-
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-let cachedWasmBytes: ArrayBuffer | null = null;
 
 /** Ring buffer: 8192 stereo frames ≈ 170 ms at 48 kHz. */
 const RING_FRAMES = 8192;
 const HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT; // writeHead + readHead
 const SAB_BYTES = HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
 
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let promise = workletRegistrations.get(ctx);
-    if (!promise) {
-        promise = ctx.audioWorklet.addModule(grandBouleProcessorUrl);
-        workletRegistrations.set(ctx, promise);
-    }
-    return promise;
-}
-
-async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) {
-        return cachedWasmBytes;
+/**
+ * Grand Boule uses its own fetcher (not the shared cache) because it appends
+ * a DEV-only cache-buster query string to pick up freshly-rebuilt WASM during
+ * hot development of the physical-modeling engine.
+ */
+let cachedGrandBouleWasm: ArrayBuffer | null = null;
+async function fetchGrandBouleWasm(url: string): Promise<ArrayBuffer> {
+    if (cachedGrandBouleWasm) {
+        return cachedGrandBouleWasm;
     }
     const fetchUrl = import.meta.env.DEV ? `${url}?t=${Date.now()}` : url;
     const response = await fetch(fetchUrl);
     if (!response.ok) {
         throw new Error(`Failed to fetch Grand Boule WASM: ${response.status}`);
     }
-    cachedWasmBytes = await response.arrayBuffer();
-    return cachedWasmBytes;
+    cachedGrandBouleWasm = await response.arrayBuffer();
+    return cachedGrandBouleWasm;
 }
 
 export type GrandBouleNodeResult = {
@@ -74,7 +69,7 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
         await ctx.resume();
     }
 
-    await ensureWorkletRegistered(ctx);
+    await ensureWorkletRegistered(ctx, grandBouleProcessorUrl);
 
     const node = new AudioWorkletNode(ctx, 'grand-boule-processor', {
         numberOfInputs: 0,
@@ -101,34 +96,19 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
     });
 
     let bypassed = false;
-    let settled = false;
 
-    const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('GrandBouleNode init timeout (10s)'));
-            }
-        }, 10_000);
-
-        engineWorker.onmessage = (e: MessageEvent) => {
-            if (settled) {return;}
-            if (e.data.type === 'ready') {
-                settled = true;
-                clearTimeout(timeout);
-                // Now init the worklet side with the same SAB.
-                node.port.postMessage({ type: 'init', sab });
-                resolve();
-            } else if (e.data.type === 'error') {
-                settled = true;
-                clearTimeout(timeout);
-                reject(new Error(e.data.message));
-            }
-        };
-    });
+    const handshake = createReadyHandshake({ pluginName: 'GrandBouleNode' });
+    engineWorker.onmessage = (e: MessageEvent) => {
+        const outcome = handshake.onMessage(e);
+        if (outcome === 'ready') {
+            // Now init the worklet side with the same SAB.
+            node.port.postMessage({ type: 'init', sab });
+        }
+    };
+    const readyPromise = handshake.promise;
 
     // Send WASM bytes + SAB to the engine worker.
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
+    const wasmBytes = await fetchGrandBouleWasm(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     engineWorker.postMessage({ type: 'init', wasmBytes: copy, sab, sampleRate: ctx.sampleRate }, [copy]);
 
