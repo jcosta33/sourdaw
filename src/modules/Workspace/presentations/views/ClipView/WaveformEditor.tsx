@@ -15,7 +15,8 @@ import { cn } from '#/utils/Styles/cn';
 import { resolveToken } from '#/utils/UI/resolveToken';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { useStore } from '#/infra/store/useStore';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import {
     replaceClipAudioBuffer,
     normalizeClip,
@@ -51,6 +52,9 @@ type WaveformEditorProps = {
 };
 
 export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement => {
+    // §195.3 — reactive subscription; component used to read trackStore.value
+    // during render and show stale data after clip/track mutations.
+    const trackState = useStore(trackStore, defaultTrackState);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
@@ -311,8 +315,8 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     };
 
     const realClipId =
-        trackStore.value?.tracks.flatMap((t) => t.clips).find((c) => c.audioBufferId === clipId || c.id === clipId)
-            ?.id ?? clipId;
+        trackState.tracks.flatMap((t) => t.clips).find((c) => c.audioBufferId === clipId || c.id === clipId)?.id ??
+        clipId;
 
     return (
         <div className="flex flex-1 flex-col overflow-hidden">

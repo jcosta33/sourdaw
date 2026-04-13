@@ -79,19 +79,7 @@ export const LevainPanel = (): ReactElement => {
     const [search, setSearch] = useState('');
     const [family, setFamily] = useState('All');
 
-    const patch = state?.patch ?? levainStore.value?.patch;
-    if (!patch) {
-        return (
-            <div className="flex h-full items-center justify-center text-xs italic text-muted-foreground/40">
-                Warming up the starter...
-            </div>
-        );
-    }
-
-    const activeVoices = state?.activeVoices ?? 0;
-    const currentArt = state?.currentArticulationDisplay ?? 'Long';
-    const engineReady = state?.engineReady ?? false;
-    const sampleLoadProgress = state?.sampleLoadProgress ?? null;
+    const { patch, activeVoices, currentArticulationDisplay: currentArt, engineReady, sampleLoadProgress } = state;
 
     const instLabel =
         INSTRUMENTS.find((instrument) => instrument.id === patch.instrumentId)?.label ?? patch.instrumentId;

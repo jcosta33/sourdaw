@@ -9,8 +9,26 @@ type TrackNotesSectionProps = {
     track: Track;
 };
 
+// §198.1 — notes editor derives its draft from `track.notes` on every render
+// so external mutations (undo, collab sync, track switch) are reflected
+// immediately. The previous `useState(track.notes)` captured the value once
+// at mount and then silently diverged from the store.
+type NotesDraft = { trackId: string; lastSeen: string; value: string };
+
 export const TrackNotesSection = ({ track }: TrackNotesSectionProps): ReactElement => {
-    const [notesValue, setNotesValue] = useState(track.notes);
+    const [draft, setDraft] = useState<NotesDraft>({
+        trackId: track.id,
+        lastSeen: track.notes,
+        value: track.notes,
+    });
+
+    // Resync when the selected track changes or when the persisted notes
+    // value moves underneath us (undo / external write).
+    if (draft.trackId !== track.id || draft.lastSeen !== track.notes) {
+        setDraft({ trackId: track.id, lastSeen: track.notes, value: track.notes });
+    }
+
+    const notesValue = draft.value;
 
     return (
         <InsetPanel
@@ -27,7 +45,9 @@ export const TrackNotesSection = ({ track }: TrackNotesSectionProps): ReactEleme
                 className="min-h-[60px] flex-1 resize-y"
                 placeholder="Add notes…"
                 value={notesValue}
-                onChange={(e) => setNotesValue(e.target.value)}
+                onChange={(e) =>
+                    setDraft({ trackId: track.id, lastSeen: track.notes, value: e.target.value })
+                }
                 onBlur={() => {
                     if (notesValue !== track.notes) {
                         setTrackNotes(track.id, notesValue);
