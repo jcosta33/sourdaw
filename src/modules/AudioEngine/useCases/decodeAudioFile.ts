@@ -39,7 +39,7 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
             if (decoded) {
                 const ctx = audioEngine.context;
                 const buffer = samplesToAudioBuffer(decoded, ctx);
-                const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                const id = `audio-${crypto.randomUUID()}`;
                 audioBufferCache.set(id, buffer);
                 return { id, buffer };
             }
@@ -54,7 +54,7 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
     const ctx = audioEngine.context;
     try {
         const buffer = await ctx.decodeAudioData(arrayBuffer);
-        const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const id = `audio-${crypto.randomUUID()}`;
         audioBufferCache.set(id, buffer);
         return { id, buffer };
     } catch {
@@ -67,7 +67,7 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
         throw createDecodeError(`Unable to decode "${file.name}" — format not supported.`);
     }
     const buffer = wasmDecodedToAudioBuffer(wasmDecoded, ctx);
-    const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = `audio-${crypto.randomUUID()}`;
     audioBufferCache.set(id, buffer);
     return { id, buffer };
 }

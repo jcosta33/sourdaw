@@ -17,7 +17,7 @@ export function useNotificationQueue(): {
     useEffect(() => {
         return onNotification(({ message, level }) => {
             const notification: AppNotification = {
-                id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                id: `notif-${crypto.randomUUID()}`,
                 message,
                 level,
                 timestamp: Date.now(),

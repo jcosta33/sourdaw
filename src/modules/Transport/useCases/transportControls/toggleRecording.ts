@@ -25,7 +25,7 @@ function beginActualRecording(): void {
         if (track.kind === 'audio') {
             const recClip = clips.find((c) => c.trackId === track.id);
             startAudioRecording(track.id, (buffer) => {
-                const bufferId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                const bufferId = `rec-${crypto.randomUUID()}`;
                 audioBufferCache.set(bufferId, buffer);
 
                 if (recClip) {

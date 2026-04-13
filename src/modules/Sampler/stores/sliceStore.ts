@@ -27,7 +27,7 @@ export function setMarkers(markers: SliceMarker[], autoDetected: boolean): void 
 export function addMarker(framePosition: number): void {
     sliceStore.update((s) => {
         if (!s) {return s;}
-        const id = `slice-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const id = `slice-${crypto.randomUUID()}`;
         const marker: SliceMarker = {
             id,
             framePosition,

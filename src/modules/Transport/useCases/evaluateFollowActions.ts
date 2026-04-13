@@ -1,5 +1,22 @@
 import { type Clip, type Track } from '#/modules/Arrangement/models/Track';
 
+/**
+ * Deterministic pseudo-random number from a clip id + position seed.
+ * Replaces Math.random() so that play_random follow actions replay
+ * identically across sessions (§55.3).
+ */
+function seededRandom(clipId: string, position: number): number {
+    let h = 2166136261;
+    for (let i = 0; i < clipId.length; i++) {
+        h ^= clipId.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    h ^= Math.floor(position * 1e4) | 0;
+    h = Math.imul(h, 16777619);
+    // Fold to [0, 1).
+    return ((h >>> 0) % 1_000_000) / 1_000_000;
+}
+
 export type FollowActionResult = {
     jumpToPosition: number | null;
     shouldStop: boolean;
@@ -91,7 +108,7 @@ export function evaluateFollowActions(
                         }
                     }
                     if (count > 0) {
-                        let target = Math.floor(Math.random() * count);
+                        let target = Math.floor(seededRandom(clip.id, prevPosition) * count);
                         for (const c of track.clips) {
                             if (c.id !== clip.id) {
                                 if (target === 0) {

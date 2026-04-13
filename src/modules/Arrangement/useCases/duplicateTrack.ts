@@ -32,7 +32,7 @@ export function duplicateTrack(trackId: string): void {
             if (sourceNotes && sourceNotes.length > 0) {
                 const copiedNotes: MidiNote[] = sourceNotes.map((n) => ({
                     ...n,
-                    id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    id: `note-${crypto.randomUUID()}`,
                 }));
                 const currentMidi = midiStore.value;
                 midiStore.set({
@@ -52,7 +52,7 @@ export function duplicateTrack(trackId: string): void {
             ...t,
             devices: [
                 ...t.devices,
-                { ...device, id: `device-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` },
+                { ...device, id: `device-dup-${crypto.randomUUID()}` },
             ],
         }));
     }
