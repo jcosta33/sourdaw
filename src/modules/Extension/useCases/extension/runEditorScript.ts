@@ -1,6 +1,12 @@
 import { extensionStore } from '../../stores/extension';
 import { appendLog, createDawApi } from '../../services/scripting';
 
+// SECURITY: this evaluator uses `new Function(code)` which runs the script in
+// the global scope. It is NOT sandboxed — the script can access `window`,
+// `document`, `fetch`, etc. via globals. Only pass editor content the current
+// user authored themselves. Do not execute scripts received from a CRDT sync
+// peer, imported projects, or any third-party source without first moving
+// evaluation into a Web Worker or iframe with CSP.
 export function runEditorScript(): void {
     const state = extensionStore.value;
     if (!state) {

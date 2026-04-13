@@ -28,6 +28,13 @@ function freqToX(freq: number, width: number): number {
     return ((Math.log10(Math.max(20, freq)) - minLog) / (maxLog - minLog)) * width;
 }
 
+// Hoisted scratch buffers — shared across all SpectrumAnalyzer instances, safe
+// because `draw()` is synchronous and only one instance paints at a time on the
+// main thread. Avoids per-render `new Array(NUM_BARS).fill(0)` and the
+// spread-copy in §150.3.
+const _barDataScratch = new Float32Array(NUM_BARS);
+const HEATMAP_TRAIL = 120;
+
 export const SpectrumAnalyzer = ({
     width,
     height,
@@ -38,12 +45,19 @@ export const SpectrumAnalyzer = ({
     showHeatmap = false,
 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const heatmapRef = useRef<number[][]>([]);
+    // Ring buffer of barData snapshots, indexed by (head - row) mod HEATMAP_TRAIL.
+    // `head` points to the slot written last; `count` is the number of valid
+    // rows. Avoids Array#shift O(n) cost (§150.3).
+    const heatmapRef = useRef<{ rows: Float32Array[]; head: number; count: number }>({
+        rows: [],
+        head: 0,
+        count: 0,
+    });
     const frameRef = useRef(0);
 
     useEffect(() => {
         draw();
-    });
+    }, [fftData, width, height, crossoverFreqs, bandCount, showHeatmap]);
 
     const draw = (): void => {
         const canvas = canvasRef.current;

@@ -56,19 +56,33 @@ export class ScheduledEventQueue {
     /** Drain all events whose time falls within [start, end). Returns sorted. */
     drainRange(startSamples: number, endSamples: number): MidiEvent[] {
         const drained: MidiEvent[] = [];
-        const remaining: MidiEvent[] = [];
+        this.drainRangeInto(startSamples, endSamples, drained);
+        return drained;
+    }
 
-        for (const e of this.events) {
+    /**
+     * Drain all events whose time falls within [start, end) into `out`,
+     * appending to whatever is already there and returning `out` sorted by
+     * time. Partitions `this.events` in place to avoid the `remaining` array
+     * allocation in `drainRange` (§149.1).
+     */
+    drainRangeInto(startSamples: number, endSamples: number, out: MidiEvent[]): MidiEvent[] {
+        const src = this.events;
+        let writeIdx = 0;
+        // Callers always pass an empty `out`; we assert that and sort the
+        // whole array afterwards to stay allocation-free.
+        for (let i = 0; i < src.length; i++) {
+            const e = src[i]!;
             if (e.timeSamples >= startSamples && e.timeSamples < endSamples) {
-                drained.push(e);
+                out.push(e);
             } else {
-                remaining.push(e);
+                src[writeIdx++] = e;
             }
         }
+        src.length = writeIdx;
 
-        this.events = remaining;
-        drained.sort((a, b) => a.timeSamples - b.timeSamples);
-        return drained;
+        out.sort((a, b) => a.timeSamples - b.timeSamples);
+        return out;
     }
 
     /** Flush all scheduled events as immediate Note Offs. */
