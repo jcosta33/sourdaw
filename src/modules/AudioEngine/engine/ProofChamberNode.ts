@@ -4,32 +4,9 @@
  */
 
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
-
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-let cachedWasmBytes: ArrayBuffer | null = null;
-
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let promise = workletRegistrations.get(ctx);
-    if (!promise) {
-        promise = ctx.audioWorklet.addModule(proofChamberProcessorUrl);
-        workletRegistrations.set(ctx, promise);
-    }
-    return promise;
-}
-
-async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) {
-        return cachedWasmBytes;
-    }
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Dutch Oven WASM: ${response.status}`);
-    }
-    cachedWasmBytes = await response.arrayBuffer();
-    return cachedWasmBytes;
-}
 
 export type ProofChamberNodeResult = {
     workletNode: AudioWorkletNode;
@@ -50,7 +27,7 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
         await ctx.resume();
     }
 
-    await ensureWorkletRegistered(ctx);
+    await ensureWorkletRegistered(ctx, proofChamberProcessorUrl);
 
     const node = new AudioWorkletNode(ctx, 'proof-chamber-processor', {
         numberOfInputs: 1,
@@ -60,29 +37,11 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
         channelCountMode: 'explicit',
     });
 
-    let settled = false;
-
-    const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('ProofChamberNode init timeout'));
-            }
-        }, 10_000);
-        node.port.onmessage = (e: MessageEvent) => {
-            if (!settled) {
-                if (e.data.type === 'ready') {
-                    settled = true;
-                    clearTimeout(timeout);
-                    resolve();
-                } else if (e.data.type === 'error') {
-                    settled = true;
-                    clearTimeout(timeout);
-                    reject(new Error(e.data.message));
-                }
-            }
-        };
-    });
+    const handshake = createReadyHandshake({ pluginName: 'ProofChamberNode' });
+    node.port.onmessage = (e: MessageEvent) => {
+        handshake.onMessage(e);
+    };
+    const readyPromise = handshake.promise;
 
     const wasmBytes = await fetchWasmBinary(DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);

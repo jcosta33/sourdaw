@@ -9,32 +9,9 @@
 
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 import { telemetryAllocator, PROOF_IDX } from './telemetryAllocator';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
-
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-let cachedWasmBytes: ArrayBuffer | null = null;
-
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let promise = workletRegistrations.get(ctx);
-    if (!promise) {
-        promise = ctx.audioWorklet.addModule(proofProcessorUrl);
-        workletRegistrations.set(ctx, promise);
-    }
-    return promise;
-}
-
-async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) {
-        return cachedWasmBytes;
-    }
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Proof WASM: ${response.status}`);
-    }
-    cachedWasmBytes = await response.arrayBuffer();
-    return cachedWasmBytes;
-}
 
 export type ProofMeterData = {
     inputLufs: number;
@@ -68,7 +45,7 @@ export function isProofDevice(deviceType: string): boolean {
 }
 
 export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<ProofNodeResult> {
-    await ensureWorkletRegistered(ctx);
+    await ensureWorkletRegistered(ctx, proofProcessorUrl);
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
@@ -81,63 +58,52 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
     });
 
     let bypassed = false;
-    let settled = false;
     let meterCallback: ((data: ProofMeterData) => void) | null = null;
     let sabSlot = telemetryAllocator.allocateSlot();
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-    const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('ProofNode init timeout (10s)'));
-            }
-        }, 10_000);
-        node.port.onmessage = (e: MessageEvent) => {
-            if (e.data.type === 'ready' && !settled) {
-                settled = true;
-                clearTimeout(timeout);
-                if (sabSlot) {
-                    node.port.postMessage({ type: 'init-sab', sab: sabSlot.sab, byteOffset: sabSlot.byteOffset });
-                    const view = sabSlot.view;
-                    pollInterval = setInterval(() => {
-                        if (meterCallback) {
-                            meterCallback({
-                                inputLufs: view[PROOF_IDX.inputLufs]!,
-                                outputLufs: view[PROOF_IDX.outputLufs]!,
-                                outputStLufs: view[PROOF_IDX.outputStLufs]!,
-                                integratedLufs: view[PROOF_IDX.integratedLufs]!,
-                                truePeakDb: view[PROOF_IDX.truePeakDb]!,
-                                lra: view[PROOF_IDX.lra]!,
-                                correlation: view[PROOF_IDX.correlation]!,
-                                limiterGrDb: view[PROOF_IDX.limiterGrDb]!,
-                                dynGr: [
-                                    view[PROOF_IDX.dynGr0]!,
-                                    view[PROOF_IDX.dynGr1]!,
-                                    view[PROOF_IDX.dynGr2]!,
-                                    view[PROOF_IDX.dynGr3]!,
-                                ],
-                                tapPeaks: [
-                                    { peakL: view[PROOF_IDX.tap0PeakL]!, peakR: view[PROOF_IDX.tap0PeakR]! },
-                                    { peakL: view[PROOF_IDX.tap1PeakL]!, peakR: view[PROOF_IDX.tap1PeakR]! },
-                                    { peakL: view[PROOF_IDX.tap2PeakL]!, peakR: view[PROOF_IDX.tap2PeakR]! },
-                                    { peakL: view[PROOF_IDX.tap3PeakL]!, peakR: view[PROOF_IDX.tap3PeakR]! },
-                                    { peakL: view[PROOF_IDX.tap4PeakL]!, peakR: view[PROOF_IDX.tap4PeakR]! },
-                                    { peakL: view[PROOF_IDX.tap5PeakL]!, peakR: view[PROOF_IDX.tap5PeakR]! },
-                                ],
-                                latency: view[PROOF_IDX.latency]!,
-                            });
-                        }
-                    }, 16);
+    const handshake = createReadyHandshake({ pluginName: 'ProofNode' });
+    node.port.onmessage = (e: MessageEvent) => {
+        const outcome = handshake.onMessage(e);
+        if (outcome !== 'ready') {
+            return;
+        }
+        // On ready: wire up SAB telemetry polling (§90.2 — see worklet note).
+        if (sabSlot) {
+            node.port.postMessage({ type: 'init-sab', sab: sabSlot.sab, byteOffset: sabSlot.byteOffset });
+            const view = sabSlot.view;
+            pollInterval = setInterval(() => {
+                if (meterCallback) {
+                    meterCallback({
+                        inputLufs: view[PROOF_IDX.inputLufs]!,
+                        outputLufs: view[PROOF_IDX.outputLufs]!,
+                        outputStLufs: view[PROOF_IDX.outputStLufs]!,
+                        integratedLufs: view[PROOF_IDX.integratedLufs]!,
+                        truePeakDb: view[PROOF_IDX.truePeakDb]!,
+                        lra: view[PROOF_IDX.lra]!,
+                        correlation: view[PROOF_IDX.correlation]!,
+                        limiterGrDb: view[PROOF_IDX.limiterGrDb]!,
+                        dynGr: [
+                            view[PROOF_IDX.dynGr0]!,
+                            view[PROOF_IDX.dynGr1]!,
+                            view[PROOF_IDX.dynGr2]!,
+                            view[PROOF_IDX.dynGr3]!,
+                        ],
+                        tapPeaks: [
+                            { peakL: view[PROOF_IDX.tap0PeakL]!, peakR: view[PROOF_IDX.tap0PeakR]! },
+                            { peakL: view[PROOF_IDX.tap1PeakL]!, peakR: view[PROOF_IDX.tap1PeakR]! },
+                            { peakL: view[PROOF_IDX.tap2PeakL]!, peakR: view[PROOF_IDX.tap2PeakR]! },
+                            { peakL: view[PROOF_IDX.tap3PeakL]!, peakR: view[PROOF_IDX.tap3PeakR]! },
+                            { peakL: view[PROOF_IDX.tap4PeakL]!, peakR: view[PROOF_IDX.tap4PeakR]! },
+                            { peakL: view[PROOF_IDX.tap5PeakL]!, peakR: view[PROOF_IDX.tap5PeakR]! },
+                        ],
+                        latency: view[PROOF_IDX.latency]!,
+                    });
                 }
-                resolve();
-            } else if (e.data.type === 'error' && !settled) {
-                settled = true;
-                clearTimeout(timeout);
-                reject(new Error(e.data.message));
-            }
-        };
-    });
+            }, 16);
+        }
+    };
+    const readyPromise = handshake.promise;
 
     const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
