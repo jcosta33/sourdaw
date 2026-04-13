@@ -1,25 +1,13 @@
 import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState } from 'react';
 import { LaunchScreen } from '../components/LaunchScreen';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
+import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
-import { onPanelShowFermenter } from '../../useCases/panels/devicePanels/onPanelShowFermenter';
-import { onPanelShowToaster } from '../../useCases/panels/devicePanels/onPanelShowToaster';
-import { onPanelShowLevain } from '../../useCases/panels/devicePanels/onPanelShowLevain';
-import { onPanelShowDutchOven } from '../../useCases/panels/devicePanels/onPanelShowDutchOven';
-import { onPanelShowGluten } from '../../useCases/panels/devicePanels/onPanelShowGluten';
-import { onPanelShowBacteria } from '../../useCases/panels/devicePanels/onPanelShowBacteria';
-import { onPanelShowGrinder } from '../../useCases/panels/devicePanels/onPanelShowGrinder';
-import { onPanelShowProof } from '../../useCases/panels/devicePanels/onPanelShowProof';
-import { onPanelShowYeast } from '../../useCases/panels/devicePanels/onPanelShowYeast';
-import { onPanelShowScoring } from '../../useCases/panels/devicePanels/onPanelShowScoring';
-import { onPanelShowCrust } from '../../useCases/panels/devicePanels/onPanelShowCrust';
-import { onPanelShowCrumbs } from '../../useCases/panels/devicePanels/onPanelShowCrumbs';
-import { onPanelShowGrandBoule } from '../../useCases/panels/devicePanels/onPanelShowGrandBoule';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
 import { clamp } from '#/utils/Math/clamp';
 import { TransportBar } from './TransportBar';
@@ -138,19 +126,25 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
         'mixer'
     );
-    const [fermenterDeviceId, setFermenterDeviceId] = useState<string | null>(null);
-    const [toasterDeviceId, setToasterDeviceId] = useState<string | null>(null);
-    const [levainOpen, setLevainOpen] = useState(false);
-    const [proofChamberDeviceId, setProofChamberDeviceId] = useState<string | null>(null);
-    const [glutenDeviceId, setGlutenDeviceId] = useState<string | null>(null);
-    const [bacteriaDeviceId, setBacteriaDeviceId] = useState<string | null>(null);
-    const [grinderDeviceId, setGrinderDeviceId] = useState<string | null>(null);
-    const [scoringDeviceId, setScoringDeviceId] = useState<string | null>(null);
-    const [proofDeviceId, setProofDeviceId] = useState<string | null>(null);
-    const [yeastOpen, setYeastOpen] = useState(false);
-    const [crustDeviceId, setCrustDeviceId] = useState<string | null>(null);
-    const [samplerDeviceId, setSamplerDeviceId] = useState<string | null>(null);
-    const [grandBouleDeviceId, setGrandBouleDeviceId] = useState<string | null>(null);
+    // One unified "active device panel" slot instead of 13 independent useState
+    // slots + 13 near-identical useEffect subscriptions (audit §3.1 / §4.2 /
+    // §47.1). The "only one panel open at a time" invariant is enforced by
+    // the discriminated union type; adding a new plugin requires one line
+    // in useActiveDevicePanel.ts instead of three touch-points in AppShell.
+    const { activePanel, closeActivePanel } = useActiveDevicePanel();
+    const fermenterDeviceId = activePanel?.kind === 'fermenter' ? activePanel.deviceId : null;
+    const toasterDeviceId = activePanel?.kind === 'toaster' ? activePanel.deviceId : null;
+    const levainOpen = activePanel?.kind === 'levain';
+    const proofChamberDeviceId = activePanel?.kind === 'proofChamber' ? activePanel.deviceId : null;
+    const glutenDeviceId = activePanel?.kind === 'gluten' ? activePanel.deviceId : null;
+    const bacteriaDeviceId = activePanel?.kind === 'bacteria' ? activePanel.deviceId : null;
+    const grinderDeviceId = activePanel?.kind === 'grinder' ? activePanel.deviceId : null;
+    const scoringDeviceId = activePanel?.kind === 'scoring' ? activePanel.deviceId : null;
+    const proofDeviceId = activePanel?.kind === 'proof' ? activePanel.deviceId : null;
+    const yeastOpen = activePanel?.kind === 'yeast';
+    const crustDeviceId = activePanel?.kind === 'crust' ? activePanel.deviceId : null;
+    const samplerDeviceId = activePanel?.kind === 'sampler' ? activePanel.deviceId : null;
+    const grandBouleDeviceId = activePanel?.kind === 'grandBoule' ? activePanel.deviceId : null;
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -193,126 +187,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }
         });
     }, [mixerOpen]);
-
-    // ─── Shared state helpers ───
-    const closeAllDevicePanels = () => {
-        setFermenterDeviceId(null);
-        setToasterDeviceId(null);
-        setLevainOpen(false);
-        setProofChamberDeviceId(null);
-        setGlutenDeviceId(null);
-        setBacteriaDeviceId(null);
-        setGrinderDeviceId(null);
-        setScoringDeviceId(null);
-        setProofDeviceId(null);
-        setYeastOpen(false);
-        setCrustDeviceId(null);
-        setSamplerDeviceId(null);
-        setGrandBouleDeviceId(null);
-    };
-
-    // Listen for fermenter panel open (from inspector device click)
-    useEffect(() => {
-        return onPanelShowFermenter((payload) => {
-            closeAllDevicePanels();
-            setFermenterDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for toaster panel open (from inspector device click)
-    useEffect(() => {
-        return onPanelShowToaster((payload) => {
-            closeAllDevicePanels();
-            setToasterDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for levain panel open (from inspector device click)
-    useEffect(() => {
-        return onPanelShowLevain(() => {
-            closeAllDevicePanels();
-            setLevainOpen(true);
-        });
-    }, []);
-
-    // Listen for Dutch Oven panel open (from inspector device click)
-    useEffect(() => {
-        return onPanelShowDutchOven((payload) => {
-            closeAllDevicePanels();
-            setProofChamberDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Gluten panel open (from inspector device click)
-    useEffect(() => {
-        return onPanelShowGluten((payload) => {
-            closeAllDevicePanels();
-            setGlutenDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Bacteria panel open
-    useEffect(() => {
-        return onPanelShowBacteria((payload) => {
-            closeAllDevicePanels();
-            setBacteriaDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Grinder panel open
-    useEffect(() => {
-        return onPanelShowGrinder((payload) => {
-            closeAllDevicePanels();
-            setGrinderDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Proof mastering suite panel open
-    useEffect(() => {
-        return onPanelShowProof((payload) => {
-            closeAllDevicePanels();
-            setProofDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Yeast MIDI FX panel open
-    useEffect(() => {
-        return onPanelShowYeast(() => {
-            closeAllDevicePanels();
-            setYeastOpen(true);
-        });
-    }, []);
-
-    useEffect(() => {
-        return onPanelShowScoring((payload) => {
-            closeAllDevicePanels();
-            setScoringDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Crust limiter panel open
-    useEffect(() => {
-        return onPanelShowCrust((payload) => {
-            closeAllDevicePanels();
-            setCrustDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Crumbs panel open
-    useEffect(() => {
-        return onPanelShowCrumbs((payload) => {
-            closeAllDevicePanels();
-            setSamplerDeviceId(payload.deviceId);
-        });
-    }, []);
-
-    // Listen for Grand Boule panel open (from sidebar instrument click)
-    useEffect(() => {
-        return onPanelShowGrandBoule((payload) => {
-            closeAllDevicePanels();
-            setGrandBouleDeviceId(payload.deviceId);
-        });
-    }, []);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
     const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
@@ -440,7 +314,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-lavender)]/20"
                                 height={fermenterHeight}
                                 onResize={setFermenterHeight}
-                                onClose={() => setFermenterDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <FermenterPanel deviceId={fermenterDeviceId} />
                             </InstrumentBottomPanel>
@@ -453,7 +327,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-peach)]/20"
                                 height={toasterHeight}
                                 onResize={setToasterHeight}
-                                onClose={() => setToasterDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <ToasterPanel deviceId={toasterDeviceId} />
                             </InstrumentBottomPanel>
@@ -466,7 +340,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-amber-500/20"
                                 height={levainHeight}
                                 onResize={setLevainHeight}
-                                onClose={() => setLevainOpen(false)}
+                                onClose={closeActivePanel}
                             >
                                 <LevainPanel />
                             </InstrumentBottomPanel>
@@ -479,7 +353,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-cyan)]/20"
                                 height={proofChamberHeight}
                                 onResize={setProofChamberHeight}
-                                onClose={() => setProofChamberDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <ProofChamberPanel deviceId={proofChamberDeviceId} />
                             </InstrumentBottomPanel>
@@ -492,7 +366,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-peach)]/20"
                                 height={glutenHeight}
                                 onResize={setGlutenHeight}
-                                onClose={() => setGlutenDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <GlutenPanel deviceId={glutenDeviceId} />
                             </InstrumentBottomPanel>
@@ -505,7 +379,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-rose-500/20"
                                 height={bacteriaHeight}
                                 onResize={setBacteriaHeight}
-                                onClose={() => setBacteriaDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <BacteriaPanel deviceId={bacteriaDeviceId} />
                             </InstrumentBottomPanel>
@@ -518,7 +392,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-amber-600/20"
                                 height={grinderHeight}
                                 onResize={setGrinderHeight}
-                                onClose={() => setGrinderDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <GrinderPanel deviceId={grinderDeviceId} />
                             </InstrumentBottomPanel>
@@ -531,7 +405,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-mint)]/20"
                                 height={proofHeight}
                                 onResize={setProofHeight}
-                                onClose={() => setProofDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <ProofPanel deviceId={proofDeviceId} />
                             </InstrumentBottomPanel>
@@ -544,7 +418,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-mint)]/20"
                                 height={scoringHeight}
                                 onResize={setScoringHeight}
-                                onClose={() => setScoringDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <ScoringPanel deviceId={scoringDeviceId} />
                             </InstrumentBottomPanel>
@@ -557,7 +431,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-peach)]/20"
                                 height={yeastHeight}
                                 onResize={setYeastHeight}
-                                onClose={() => setYeastOpen(false)}
+                                onClose={closeActivePanel}
                             >
                                 <YeastPanel />
                             </InstrumentBottomPanel>
@@ -570,7 +444,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-cyan)]/20"
                                 height={crustHeight}
                                 onResize={setCrustHeight}
-                                onClose={() => setCrustDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <CrustPanel deviceId={crustDeviceId} />
                             </InstrumentBottomPanel>
@@ -583,7 +457,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-[var(--color-accent-peach)]/20"
                                 height={samplerHeight}
                                 onResize={setSamplerHeight}
-                                onClose={() => setSamplerDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <SamplerPanel deviceId={samplerDeviceId} />
                             </InstrumentBottomPanel>
@@ -596,7 +470,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 borderColor="border-amber-500/20"
                                 height={grandBouleHeight}
                                 onResize={setGrandBouleHeight}
-                                onClose={() => setGrandBouleDeviceId(null)}
+                                onClose={closeActivePanel}
                             >
                                 <GrandBoulePanel deviceId={grandBouleDeviceId} />
                             </InstrumentBottomPanel>
