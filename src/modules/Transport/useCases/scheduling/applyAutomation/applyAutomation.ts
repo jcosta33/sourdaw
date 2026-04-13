@@ -31,7 +31,7 @@ const SLEW_EPSILON = 5e-5;
  * Scratch map reused across ticks to index tracks by id. Rebuilt in place at
  * the start of every call to avoid per-tick Map allocation (see audit §155.2).
  */
-const _trackIndex = new Map<string, NonNullable<(typeof trackStore.value)>['tracks'][number]>();
+const _trackIndex = new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>();
 
 export function applyAutomation(currentBeat: number): void {
     const autoState = automationStore.value;

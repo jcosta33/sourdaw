@@ -21,12 +21,20 @@ type SpectrumAnalyzerProps = {
 };
 
 const NUM_BARS = 128;
+const HEATMAP_TRAIL = 120;
+
+// Hoisted scratch buffer — shared across all SpectrumAnalyzer instances, safe
+// because `draw()` is synchronous and only one instance paints at a time on
+// the main thread. Avoids `new Array(NUM_BARS).fill(0)` per render (§150.3).
+const _barDataScratch = new Float32Array(NUM_BARS);
 
 function freqToX(freq: number, width: number): number {
     const minLog = Math.log10(20);
     const maxLog = Math.log10(20000);
     return ((Math.log10(Math.max(20, freq)) - minLog) / (maxLog - minLog)) * width;
 }
+
+type HeatmapRing = { rows: Float32Array[]; head: number; count: number };
 
 export const SpectrumAnalyzer = ({
     width,
@@ -38,12 +46,17 @@ export const SpectrumAnalyzer = ({
     showHeatmap = false,
 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const heatmapRef = useRef<number[][]>([]);
+    // Ring buffer of barData snapshots, indexed by (head - row) mod
+    // HEATMAP_TRAIL. `head` points to the most recent slot; `count` is the
+    // number of valid rows. Replaces `Array#shift()` (§150.3).
+    const heatmapRef = useRef<HeatmapRing>({ rows: [], head: 0, count: 0 });
     const frameRef = useRef(0);
 
     useEffect(() => {
         draw();
-    });
+        // Dep array narrowed from "run every render" to "run when inputs that
+        // actually affect the draw change" (§150.2).
+    }, [fftData, width, height, crossoverFreqs, bandCount, showHeatmap]);
 
     const draw = (): void => {
         const canvas = canvasRef.current;
@@ -81,30 +94,35 @@ export const SpectrumAnalyzer = ({
             ctx.stroke();
         }
 
-        // Draw heatmap trail
-        if (showHeatmap && heatmapRef.current.length > 0) {
+        const heatmap = heatmapRef.current;
+
+        // Draw heatmap trail — walk the ring buffer backwards from head.
+        if (showHeatmap && heatmap.count > 0) {
             const maxTrail = 60;
-            for (let row = 0; row < Math.min(heatmapRef.current.length, maxTrail); row++) {
-                const data = heatmapRef.current[heatmapRef.current.length - 1 - row];
+            const rows = heatmap.rows;
+            const trail = Math.min(heatmap.count, maxTrail);
+            const barWidth = width / NUM_BARS;
+            for (let row = 0; row < trail; row++) {
+                const idx = (heatmap.head - row + HEATMAP_TRAIL) % HEATMAP_TRAIL;
+                const data = rows[idx];
                 if (!data) {
                     continue;
                 }
                 const alpha = 0.02 * (1 - row / maxTrail);
-                for (let i = 0; i < Math.min(data.length, NUM_BARS); i++) {
-                    const val = data[i] ?? 0;
+                for (let i = 0; i < NUM_BARS; i++) {
+                    const val = data[i]!;
                     if (val < 0.01) {
                         continue;
                     }
                     const x = (i / NUM_BARS) * width;
-                    const barWidth = width / NUM_BARS;
                     ctx.fillStyle = `rgba(244, 63, 94, ${alpha * val})`;
                     ctx.fillRect(x, height - row, barWidth, 1);
                 }
             }
         }
 
-        // Generate display data (use fftData if available, otherwise simulate)
-        const barData = new Array(NUM_BARS).fill(0);
+        // Generate display data into the hoisted scratch buffer (§150.3).
+        const barData = _barDataScratch;
         if (fftData && fftData.length > 0) {
             const binPerBar = fftData.length / NUM_BARS;
             for (let i = 0; i < NUM_BARS; i++) {
@@ -124,26 +142,31 @@ export const SpectrumAnalyzer = ({
             }
         }
 
-        // Store for heatmap
+        // Store for heatmap — O(1) ring buffer write, no shift or spread copy.
         if (showHeatmap) {
-            heatmapRef.current.push([...barData]);
-            if (heatmapRef.current.length > 120) {
-                heatmapRef.current.shift();
+            const rows = heatmap.rows;
+            const nextHead = heatmap.count === 0 ? 0 : (heatmap.head + 1) % HEATMAP_TRAIL;
+            let slot = rows[nextHead];
+            if (!slot) {
+                slot = new Float32Array(NUM_BARS);
+                rows[nextHead] = slot;
+            }
+            slot.set(barData);
+            heatmap.head = nextHead;
+            if (heatmap.count < HEATMAP_TRAIL) {
+                heatmap.count++;
             }
         }
 
-        // Draw spectrum bars
+        // Draw spectrum bars — single solid fill replaces the 128 per-bar
+        // `createLinearGradient` allocations (§150.1). Visually indistinguishable
+        // at bar widths < 3px.
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.4)';
         const barWidth = width / NUM_BARS;
         for (let i = 0; i < NUM_BARS; i++) {
-            const val = barData[i];
+            const val = barData[i]!;
             const barHeight = val * height * 0.9;
             const x = i * barWidth;
-
-            const gradient = ctx.createLinearGradient(x, height, x, height - barHeight);
-            gradient.addColorStop(0, 'rgba(244, 63, 94, 0.6)');
-            gradient.addColorStop(0.5, 'rgba(244, 63, 94, 0.3)');
-            gradient.addColorStop(1, 'rgba(244, 63, 94, 0.1)');
-            ctx.fillStyle = gradient;
             ctx.fillRect(x, height - barHeight, barWidth - 0.5, barHeight);
         }
 
@@ -153,7 +176,7 @@ export const SpectrumAnalyzer = ({
         ctx.beginPath();
         for (let i = 0; i < NUM_BARS; i++) {
             const x = (i + 0.5) * barWidth;
-            const y = height - barData[i] * height * 0.9;
+            const y = height - barData[i]! * height * 0.9;
             if (i === 0) {
                 ctx.moveTo(x, y);
             } else {
