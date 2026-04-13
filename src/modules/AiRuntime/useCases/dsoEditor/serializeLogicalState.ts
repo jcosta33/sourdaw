@@ -71,23 +71,31 @@ export type ProjectSummary = {
     recent_edits: string[];
 };
 
-// ── Revision ─────────────────────────────────────────────────────────────────
+// ── Revision + recent edits log ──────────────────────────────────────────────
+// Held in a closure so the only way to mutate is via the exported functions.
+// HMR resets are acceptable here: the LLM-facing revision counter only needs
+// to be monotonic within a session, and recent-edits is a 5-entry history
+// that can safely start empty after a reload.
 
-let revisionCounter = 0;
+const editLog: { revision: number; entries: string[] } = { revision: 0, entries: [] };
 
 export function getRevision(): number {
-    return revisionCounter;
+    return editLog.revision;
 }
 
-// ── Recent edits log ─────────────────────────────────────────────────────────
-
-const recentEdits: string[] = [];
-
 export function logEdit(summary: string): void {
-    recentEdits.push(summary);
-    if (recentEdits.length > 5) {
-        recentEdits.shift();
+    editLog.entries.push(summary);
+    if (editLog.entries.length > 5) {
+        editLog.entries.shift();
     }
+}
+
+function bumpRevision(): number {
+    return ++editLog.revision;
+}
+
+function getRecentEdits(): string[] {
+    return [...editLog.entries];
 }
 
 // ── Serialization ────────────────────────────────────────────────────────────
@@ -110,7 +118,7 @@ export function serializeLogicalState(options?: {
 
     const scopeSet = options?.scopeTrackIds ? new Set(options.scopeTrackIds) : null;
 
-    revisionCounter++;
+    const revision = bumpRevision();
 
     const tracks: Record<string, LogicalTrack> = {};
     const trackOrder: string[] = [];
@@ -168,7 +176,7 @@ export function serializeLogicalState(options?: {
     }
 
     return {
-        project_revision: revisionCounter,
+        project_revision: revision,
         transport: {
             tempo: transportState?.tempo ?? 120,
             time_signature: [
@@ -197,13 +205,13 @@ export function buildProjectSummary(): ProjectSummary {
     const workspaceState = workspaceStore.value;
 
     return {
-        project_revision: revisionCounter,
+        project_revision: editLog.revision,
         track_count: trackState?.tracks.length ?? 0,
         selected_tracks: trackState?.selectedTrackId ? [trackState.selectedTrackId] : [],
         selected_clips: [...(workspaceState?.selectedClipIds ?? [])],
         tempo: transportState?.tempo ?? 120,
         routing_summary: buildRoutingSummary(),
-        recent_edits: [...recentEdits],
+        recent_edits: getRecentEdits(),
     };
 }
 
