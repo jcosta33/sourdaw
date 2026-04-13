@@ -1,19 +1,15 @@
 /**
- * useProjectState — local re-implementation using projectStore (contract).
+ * useProjectState — subscribe to the canonical projectStore.
+ *
+ * §12.2 — previously redeclared a local ProjectViewState type that had
+ * to be kept in sync by hand. Use the canonical \`ProjectStoreState\`
+ * re-exported from \`#/modules/Project\` so any store-side shape change
+ * reaches this consumer automatically.
  */
 import { useStore } from '#/infra/store/useStore';
-import { projectStore } from '#/modules/Project';
+import { projectStore, type ProjectStoreState } from '#/modules/Project';
 
-type ProjectViewState = {
-    name: string;
-    createdAt: number;
-    updatedAt: number;
-    dirty: boolean;
-    loading: boolean;
-    initialized: boolean;
-};
-
-const defaultState: ProjectViewState = {
+const defaultState: ProjectStoreState = {
     name: 'Untitled Project',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -22,6 +18,6 @@ const defaultState: ProjectViewState = {
     initialized: false,
 };
 
-export const useProjectState = (): ProjectViewState => {
+export const useProjectState = (): ProjectStoreState => {
     return useStore(projectStore, defaultState);
 };

@@ -1,25 +1,14 @@
 /**
- * useTransportState — local re-implementation using transportStore (contract).
+ * useTransportState — subscribe to the canonical transportStore.
+ *
+ * §12.2 — previously declared a local TransportViewState that had to be
+ * hand-synced with TransportState. Use the canonical type from
+ * \`#/modules/Transport\` so any field addition/rename propagates.
  */
 import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState } from '#/modules/Transport/useCases';
+import { defaultTransportState, type TransportState } from '#/modules/Transport/useCases';
 
-type TransportViewState = {
-    isPlaying: boolean;
-    isRecording: boolean;
-    isLooping: boolean;
-    overdubEnabled: boolean;
-    metronomeEnabled: boolean;
-    metronomeVolume: number;
-    punchInEnabled: boolean;
-    countInEnabled: boolean;
-    countInBars: number;
-    tempo: number;
-    timeSignatureNumerator: number;
-    timeSignatureDenominator: number;
-};
-
-export const useTransportState = (): TransportViewState => {
+export const useTransportState = (): TransportState => {
     return useStore(transportStore, defaultTransportState);
 };
