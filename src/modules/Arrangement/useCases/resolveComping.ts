@@ -45,7 +45,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
         });
     }
 
-    const sortedRegions = [...lane.activeCompRegions].sort((a, b) => a.startBeat - b.startBeat);
+    // §79.2 — setCompRegion.ts is the only writer and already sorts on
+    // insert, so activeCompRegions is always already sorted. Use the
+    // array directly instead of allocating a fresh \`[...x].sort(...)\`
+    // copy on every comping resolution call.
+    const sortedRegions = lane.activeCompRegions;
 
     for (const clip of clips) {
         const gaps: { start: number; end: number }[] = [];
