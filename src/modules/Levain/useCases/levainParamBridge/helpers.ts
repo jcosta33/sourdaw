@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 import { type LevainPatch } from '../../models/LevainPatch';
 import { levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
@@ -25,34 +26,22 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     let activePort: MessagePort | null = null;
     let activeDeviceId: string | null = null;
 
-    const latestValues = new Map<string, number>();
-    const pendingUpdates = new Map<string, number>();
+    // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
+    // coalesced into one flush per animation frame.
+    const paramBatcher = createRafBatcher<number>();
 
-    function flushParam(key: string): void {
-        pendingUpdates.delete(key);
-        const value = latestValues.get(key);
-        if (value === undefined) {
-            return;
-        }
-        latestValues.delete(key);
-
+    function flushParam(rustKey: string, value: number): void {
         const device = getDevice();
         if (device) {
-            device.setParam(key, value);
+            device.setParam(rustKey, value);
         }
         if (activeDeviceId) {
-            deps.persistDeviceParam(activeDeviceId, key, value);
+            deps.persistDeviceParam(activeDeviceId, rustKey, value);
         }
     }
 
     function queueParam(rustKey: string, value: number): void {
-        latestValues.set(rustKey, value);
-        if (!pendingUpdates.has(rustKey)) {
-            pendingUpdates.set(
-                rustKey,
-                requestAnimationFrame(() => flushParam(rustKey))
-            );
-        }
+        paramBatcher.schedule(rustKey, value, flushParam);
     }
 
     function getDevice(): LevainDevice | null {
@@ -103,11 +92,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     function unregisterLevainDevice(): void {
         activeDevice = null;
         activePort = null;
-        for (const rafId of pendingUpdates.values()) {
-            cancelAnimationFrame(rafId);
-        }
-        pendingUpdates.clear();
-        latestValues.clear();
+        paramBatcher.cancelAll();
     }
 
     function setLevainParamWithAudio<K extends keyof LevainPatch>(key: K, value: LevainPatch[K]): void {

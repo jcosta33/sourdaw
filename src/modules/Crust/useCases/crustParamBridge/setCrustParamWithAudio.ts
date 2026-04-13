@@ -5,8 +5,7 @@ import {
     encodeCrustValue,
     findDeviceRefCrust,
     flushCrustParam,
-    latestValues,
-    pendingUpdates,
+    paramBatcher,
 } from './helpers';
 
 export function setCrustParamWithAudio<K extends keyof CrustPatch>(
@@ -27,8 +26,5 @@ export function setCrustParamWithAudio<K extends keyof CrustPatch>(
     }
 
     const compositeKey = `${deviceId}:${key}`;
-    latestValues.set(compositeKey, encodedValue);
-    if (!pendingUpdates.has(compositeKey)) {
-        pendingUpdates.set(compositeKey, requestAnimationFrame(() => flushCrustParam(deviceId, ref, key)));
-    }
+    paramBatcher.schedule(compositeKey, { ref, key, value: encodedValue }, flushCrustParam);
 }

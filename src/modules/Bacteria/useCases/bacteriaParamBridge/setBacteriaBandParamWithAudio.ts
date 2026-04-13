@@ -7,8 +7,7 @@ import {
     createFindDeviceRef,
     createFlushParam,
     encodePatchValue,
-    latestValues,
-    pendingUpdates,
+    paramBatcher,
 } from './helpers';
 
 /**
@@ -39,13 +38,7 @@ export const setBacteriaBandParamWithAudio = inject(bacteriaParamBridgeDependenc
             if (!ref) {return;}
 
             const compositeKey = `${deviceId}:${prefixedKey}`;
-            latestValues.set(compositeKey, encodedValue);
-            if (!pendingUpdates.has(compositeKey)) {
-                pendingUpdates.set(
-                    compositeKey,
-                    requestAnimationFrame(() => flushParam(deviceId, ref, prefixedKey))
-                );
-            }
+            paramBatcher.schedule(compositeKey, { ref, key: prefixedKey, value: encodedValue }, flushParam);
         };
     }
 );

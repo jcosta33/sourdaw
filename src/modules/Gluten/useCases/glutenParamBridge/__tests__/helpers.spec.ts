@@ -1,19 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import {
-    createFindDeviceRef,
-    createFlushHandlers,
-    encodeGlutenValue,
-    latestValues,
-    pendingUpdates,
-} from '../helpers';
+import { createFindDeviceRef, createFlushHandlers, encodeGlutenValue } from '../helpers';
 
 describe('glutenParamBridge helpers', () => {
-    beforeEach(() => {
-        pendingUpdates.clear();
-        latestValues.clear();
-    });
-
     describe('createFindDeviceRef', () => {
         it('should return track and device ids when the device exists', () => {
             const find = createFindDeviceRef(() => [
@@ -31,33 +20,16 @@ describe('glutenParamBridge helpers', () => {
     });
 
     describe('createFlushHandlers', () => {
-        it('should flush latestValues into update and persist when a value exists', () => {
+        it('should flush the entry into update and persist', () => {
             const updateDeviceParam = vi.fn();
             const persistDeviceParam = vi.fn();
             const { flushParam } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
             const ref = { trackId: 't1', deviceId: 'dev' };
 
-            latestValues.set('dev:gain', 0.75);
-            pendingUpdates.set('dev:gain', 1);
+            flushParam('dev:gain', { ref, key: 'gain', value: 0.75 });
 
-            flushParam('dev', ref, 'gain');
-
-            expect(pendingUpdates.has('dev:gain')).toBe(false);
-            expect(latestValues.has('dev:gain')).toBe(false);
             expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'dev', 'gain', 0.75);
             expect(persistDeviceParam).toHaveBeenCalledWith('dev', 'gain', 0.75);
-        });
-
-        it('should not call deps when there is no staged value', () => {
-            const updateDeviceParam = vi.fn();
-            const persistDeviceParam = vi.fn();
-            const { flushParam } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
-            const ref = { trackId: 't1', deviceId: 'dev' };
-
-            flushParam('dev', ref, 'gain');
-
-            expect(updateDeviceParam).not.toHaveBeenCalled();
-            expect(persistDeviceParam).not.toHaveBeenCalled();
         });
 
         it('should push immediately through update and persist', () => {

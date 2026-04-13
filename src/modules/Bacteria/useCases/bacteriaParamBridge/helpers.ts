@@ -1,13 +1,16 @@
 import { persistDeviceParam } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
+import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
 export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
 
-export const pendingUpdates = new Map<string, number>();
-export const latestValues = new Map<string, number>();
+// §33.2 — Shared rAF-batch primitive; replaces the per-bridge
+// pendingUpdates / latestValues Map pair.
+export type BacteriaBatchEntry = { ref: DeviceRef; key: string; value: number };
+export const paramBatcher: RafBatcher<BacteriaBatchEntry> = createRafBatcher<BacteriaBatchEntry>();
 
 export const DISTORTION_MODE_INDEX = {
     'soft-clip': 0,
@@ -50,14 +53,9 @@ export function createFlushParam(
     updateDeviceParamFn: UpdateDeviceParamFn,
     persistDeviceParamFn: PersistDeviceParamFn
 ) {
-    return function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
-        const compositeKey = `${deviceId}:${key}`;
-        pendingUpdates.delete(compositeKey);
-        const value = latestValues.get(compositeKey);
-        if (value === undefined) {return;}
-        latestValues.delete(compositeKey);
-        updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
-        persistDeviceParamFn(ref.deviceId, key, value);
+    return function flushParam(_compositeKey: string, entry: BacteriaBatchEntry): void {
+        updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
+        persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);
     };
 }
 

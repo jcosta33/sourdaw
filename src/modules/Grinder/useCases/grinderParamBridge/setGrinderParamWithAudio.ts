@@ -1,4 +1,5 @@
 import { inject } from '#/infra/di/inject';
+import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 import { type GrinderPatch } from '../../models/GrinderPatch';
 import { setGrinderParam } from '../../stores/grinderStore';
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
@@ -28,21 +29,17 @@ const BOOLEAN_PATCH_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
     'limiterEnabled',
 ]);
 
-const pendingUpdates = new Map<string, number>();
-const latestValues = new Map<string, number>();
+// §33.2 — Shared rAF-batch primitive.
+type GrinderBatchEntry = { ref: DeviceRef; key: string; value: number };
+const paramBatcher = createRafBatcher<GrinderBatchEntry>();
 
 function createFlushParam(
     updateDeviceParamFn: UpdateDeviceParamFn,
     persistDeviceParamFn: PersistDeviceParamFn
 ) {
-    return function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
-        const compositeKey = `${deviceId}:${key}`;
-        pendingUpdates.delete(compositeKey);
-        const value = latestValues.get(compositeKey);
-        if (value === undefined) {return;}
-        latestValues.delete(compositeKey);
-        updateDeviceParamFn(ref.trackId, ref.deviceId, key, value);
-        persistDeviceParamFn(ref.deviceId, key, value);
+    return function flushParam(_compositeKey: string, entry: GrinderBatchEntry): void {
+        updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
+        persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);
     };
 }
 
@@ -106,13 +103,7 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)(
             if (!ref) {return;}
 
             const compositeKey = `${deviceId}:${key}`;
-            latestValues.set(compositeKey, value);
-            if (!pendingUpdates.has(compositeKey)) {
-                pendingUpdates.set(
-                    compositeKey,
-                    requestAnimationFrame(() => flushParam(deviceId, ref, key))
-                );
-            }
+            paramBatcher.schedule(compositeKey, { ref, key, value }, flushParam);
         };
     }
 );

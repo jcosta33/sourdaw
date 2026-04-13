@@ -1,10 +1,13 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
+import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
 export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
-export const pendingUpdates = new Map<string, number>();
-export const latestValues = new Map<string, number>();
+
+// §33.2 — Shared rAF-batch primitive.
+export type CrustBatchEntry = { ref: DeviceRef; key: string; value: number };
+export const paramBatcher: RafBatcher<CrustBatchEntry> = createRafBatcher<CrustBatchEntry>();
 
 export type BridgeDeps = {
     updateDeviceParam: typeof updateDeviceParam;
@@ -12,16 +15,9 @@ export type BridgeDeps = {
 };
 
 export function createFlushHandlers(deps: BridgeDeps) {
-    function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
-        const compositeKey = `${deviceId}:${key}`;
-        pendingUpdates.delete(compositeKey);
-        const value = latestValues.get(compositeKey);
-        if (value === undefined) {
-            return;
-        }
-        latestValues.delete(compositeKey);
-        deps.updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-        deps.persistDeviceParam(ref.deviceId, key, value);
+    function flushParam(_compositeKey: string, entry: CrustBatchEntry): void {
+        deps.updateDeviceParam(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
+        deps.persistDeviceParam(entry.ref.deviceId, entry.key, entry.value);
     }
 
     function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {

@@ -5,8 +5,7 @@ import {
     encodeGlutenValue,
     findDeviceRefGluten,
     flushParam,
-    latestValues,
-    pendingUpdates,
+    paramBatcher,
 } from './helpers';
 
 export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
@@ -27,8 +26,5 @@ export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
     }
 
     const compositeKey = `${deviceId}:${key}`;
-    latestValues.set(compositeKey, encodedValue);
-    if (!pendingUpdates.has(compositeKey)) {
-        pendingUpdates.set(compositeKey, requestAnimationFrame(() => flushParam(deviceId, ref, key)));
-    }
+    paramBatcher.schedule(compositeKey, { ref, key, value: encodedValue }, flushParam);
 }
