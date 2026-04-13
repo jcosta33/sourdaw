@@ -33,7 +33,10 @@ export class BusNode {
     public getPeakLevel(): number {
         const data = this.strip.meterBuffer;
         if (data) {
-            this.strip.analyserNode.getFloatTimeDomainData(data);
+            // `Float32Array<ArrayBuffer>` is what the Web Audio DOM lib type
+            // requires; our model stores the default `Float32Array<ArrayBufferLike>`.
+            // Both are compatible at runtime — the cast is purely structural.
+            this.strip.analyserNode.getFloatTimeDomainData(data as Float32Array<ArrayBuffer>);
         }
         let peak = 0;
         for (let i = 0; i < data.length; i++) {
