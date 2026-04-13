@@ -29,19 +29,33 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
         const worker = getCrdtWorker();
         const id = _crdtWorkerNextId++;
+        const cleanup = (): void => {
+            worker.removeEventListener('message', handler);
+            worker.removeEventListener('error', errorHandler);
+            worker.removeEventListener('messageerror', errorHandler);
+        };
         const handler = (e: MessageEvent): void => {
             const data = e.data as WorkerResponse;
             if (data.id !== id) {
                 return;
             }
-            worker.removeEventListener('message', handler);
+            cleanup();
             if (data.type === 'error') {
                 reject(new Error(data.message));
             } else {
                 resolve(data);
             }
         };
+        // §71.3: if the worker crashes or the message cannot be deserialised,
+        // without these listeners the returned Promise would hang forever.
+        const errorHandler = (e: ErrorEvent | MessageEvent): void => {
+            cleanup();
+            const msg = e instanceof ErrorEvent ? e.message : 'crdt worker postMessage failed';
+            reject(new Error(`crdtWorker crashed: ${msg}`));
+        };
         worker.addEventListener('message', handler);
+        worker.addEventListener('error', errorHandler);
+        worker.addEventListener('messageerror', errorHandler);
         worker.postMessage({ ...msg, id });
     });
 }
@@ -59,7 +73,11 @@ class AutomergeRepository {
     private docs = new Map<DocId, Automerge.Doc<AnyDoc>>();
     private rootId: DocId = DOC_PREFIX_ROOT;
     private changeListeners = new Set<ChangeListener>();
-    private actorId: string = Automerge.getActorId(Automerge.init()).toString();
+    // Automerge's actor ID must be a hex string with an even length; the
+    // default shape it uses is a 16-byte (32-char) hex. `crypto.randomUUID()`
+    // without hyphens gives us 32 hex chars for free and avoids allocating
+    // (then discarding) a full Automerge document just to read its actor ID.
+    private actorId: string = crypto.randomUUID().replace(/-/g, '');
 
     /** Get the root document ID. */
     getRootId(): DocId {
