@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { importMidiFile } from '#/modules/Arrangement/useCases';
 import { saveProject, newProject } from '#/modules/Project';
 import { undo, redo } from '#/modules/Command/useCases';
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import { onDialogOpenExport } from '../../useCases/dialogs/onDialogOpenExport';
 import { onDialogOpenPreferences } from '../../useCases/dialogs/onDialogOpenPreferences';
 import { onProjectSave } from '../../useCases/appEventSubscribers/onProjectSave';
@@ -25,11 +26,19 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
             onDialogOpenPreferences(() => onOpenPreferences()),
             onProjectSave(() => saveProject()),
             onProjectNew(() => {
-                if (!window.confirm('Create a new project? Any unsaved changes will be lost.')) {
-                    return;
-                }
-                newProject();
-                window.location.reload();
+                void (async () => {
+                    const ok = await confirmUser({
+                        title: 'New project',
+                        message: 'Create a new project? Any unsaved changes will be lost.',
+                        confirmLabel: 'New project',
+                        variant: 'danger',
+                    });
+                    if (!ok) {
+                        return;
+                    }
+                    newProject();
+                    window.location.reload();
+                })();
             }),
             onCommandUndo(() => {
                 undo();

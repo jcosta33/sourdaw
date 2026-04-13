@@ -47,6 +47,7 @@ import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/t
 import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
 
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { NotificationToast } from '../components/NotificationToast';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
@@ -648,6 +649,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <VoiceCommandOverlay />
                 <AiChangeToast />
                 <NotificationToast />
+                <ConfirmDialog />
                 <AiActionHistoryPanel />
                 <MixAnalysisPanel />
                 <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />

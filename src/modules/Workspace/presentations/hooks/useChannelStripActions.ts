@@ -16,6 +16,7 @@ import {
     removeTrackFromVCA,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation';
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import { type Track } from '../../models/TrackViewTypes';
 
 export type ChannelStripActions = {
@@ -62,9 +63,17 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         setColor: (color) => setTrackColor(track.id, color),
         rename: (name) => renameTrack(track.id, name),
         removeWithConfirm: () => {
-            if (window.confirm('Are you sure you want to delete this track? This action cannot be undone.')) {
-                removeTrack(track.id);
-            }
+            void (async () => {
+                const ok = await confirmUser({
+                    title: `Delete "${track.name}"?`,
+                    message: 'This action cannot be undone.',
+                    confirmLabel: 'Delete',
+                    variant: 'danger',
+                });
+                if (ok) {
+                    removeTrack(track.id);
+                }
+            })();
         },
         toggleVca: (groupId) => toggleVcaMembership(track.id, groupId),
         createVcaAndAssign: () => createAndAssignVcaGroup(track.id),

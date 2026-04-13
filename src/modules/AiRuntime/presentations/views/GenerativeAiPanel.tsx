@@ -63,7 +63,14 @@ const DesktopOnlyNotice = ({ feature }: { feature: string }): ReactElement => (
 );
 
 export const GenerativeAiPanel = (): ReactElement | null => {
+    // §187.1 — All hooks MUST run in the same order on every render. The
+    // previous implementation placed two \`useStore\` calls (selection reads
+    // for stem separation) after the \`if (!state.isPanelOpen) return null\`
+    // early exit, so toggling the panel changed the hook count between
+    // renders and corrupted React's per-component hook state.
     const state = useStore<GenerativeAiState>(aiStore, { isPanelOpen: false, tasks: [] });
+    const workspaceState = useStore<GenerativePanelWorkspaceState | null>(workspaceStore, null);
+    const trackState = useStore<GenerativePanelTrackState | null>(trackStore, null);
     const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
@@ -103,10 +110,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
         setPrompt('');
     };
 
-    // Get selected audio clip for stem separation
-    const workspaceState = useStore<GenerativePanelWorkspaceState | null>(workspaceStore, null);
+    // Get selected audio clip for stem separation — reads the already-subscribed
+    // store values (see the hook block at the top of the component).
     const selectedClipId = workspaceState?.selectedClipId ?? null;
-    const trackState = useStore<GenerativePanelTrackState | null>(trackStore, null);
     const tracks = trackState?.tracks ?? [];
     const selectedClip =
         tracks.flatMap((t) => t.clips).find((c) => c.id === selectedClipId && c.type === 'audio') ?? null;

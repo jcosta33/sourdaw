@@ -1,4 +1,5 @@
 import { type ReactElement, type MouseEvent, type ReactNode, useState, useRef } from 'react';
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
@@ -162,10 +163,18 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: 'Delete Track',
             action: () => {
-                if (window.confirm('Are you sure you want to delete this track? This action cannot be undone.')) {
-                    removeTrack(track.id);
-                }
                 close();
+                void (async () => {
+                    const ok = await confirmUser({
+                        title: `Delete "${track.name}"?`,
+                        message: 'This action cannot be undone.',
+                        confirmLabel: 'Delete',
+                        variant: 'danger',
+                    });
+                    if (ok) {
+                        removeTrack(track.id);
+                    }
+                })();
             },
             destructive: true,
         },

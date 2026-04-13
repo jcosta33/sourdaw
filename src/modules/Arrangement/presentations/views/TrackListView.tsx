@@ -8,6 +8,7 @@ import {
     useLayoutEffect,
 } from 'react';
 import { useStore } from '#/infra/store/useStore';
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -156,8 +157,18 @@ export const TrackListView = ({
             if (selectedTrackId) {
                 e.preventDefault();
                 const track = visibleTracks.find((t) => t.id === selectedTrackId);
-                if (track && window.confirm(`Delete track "${track.name}"?`)) {
-                    removeTrack(selectedTrackId);
+                if (track) {
+                    void (async () => {
+                        const ok = await confirmUser({
+                            title: `Delete "${track.name}"?`,
+                            message: 'This action cannot be undone.',
+                            confirmLabel: 'Delete',
+                            variant: 'danger',
+                        });
+                        if (ok) {
+                            removeTrack(selectedTrackId);
+                        }
+                    })();
                 }
             }
         }

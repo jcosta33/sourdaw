@@ -8,6 +8,7 @@ import {
     type ShowDevicePanelGenericPayload,
     type VoidPayload,
     type NotifyPayload,
+    type ConfirmPayload,
     type ZoomToSelectionPayload,
     type ToggleVoiceCommandPayload,
     type ImportMidiPayload,
@@ -69,6 +70,7 @@ export type AppEvents = {
 
     // Notifications
     'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
 
     // Shortcut engine
     'shortcut.fired': { action: string };

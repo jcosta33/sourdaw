@@ -3,6 +3,7 @@ export type {
     ShowDevicePanelGenericPayload,
     VoidPayload,
     NotifyPayload,
+    ConfirmPayload,
     ZoomToSelectionPayload,
     ToggleVoiceCommandPayload,
     ImportMidiPayload,
