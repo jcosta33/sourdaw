@@ -10,9 +10,8 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 import { removeProjectJson } from '../../repositories/project/storageOperations';
+import { setAutoSaveHandle, stopActiveAutoSave } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
-
-let stopAutoSave: (() => void) | null = null;
 
 export function newProject(name = 'Untitled Project'): void {
     // Stop any in-flight playback and tear down the previous project's audio
@@ -61,8 +60,6 @@ export function newProject(name = 'Untitled Project'): void {
     clearUndoHistory();
 
     // Start debounced incremental auto-save for the new project.
-    if (stopAutoSave) {
-        stopAutoSave();
-    }
-    stopAutoSave = startCrdtAutoSave();
+    stopActiveAutoSave();
+    setAutoSaveHandle(startCrdtAutoSave());
 }

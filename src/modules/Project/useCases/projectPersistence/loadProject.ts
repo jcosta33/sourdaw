@@ -8,8 +8,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { projectStore } from '../../stores/projectStore';
-
-let stopAutoSave: (() => void) | null = null;
+import { setAutoSaveHandle, stopActiveAutoSave } from './helpers/autoSaveHandle';
 
 export async function loadProject(): Promise<boolean> {
     const current = projectStore.value;
@@ -43,10 +42,8 @@ export async function loadProject(): Promise<boolean> {
 
     // Start debounced incremental auto-save so edits survive browser crashes.
     // Stop any previous auto-save loop first (e.g. if loadProject is called again).
-    if (stopAutoSave) {
-        stopAutoSave();
-    }
-    stopAutoSave = startCrdtAutoSave();
+    stopActiveAutoSave();
+    setAutoSaveHandle(startCrdtAutoSave());
 
     return true;
 }
