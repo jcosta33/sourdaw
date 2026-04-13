@@ -158,140 +158,115 @@ here so future audits don't re-flag them as oversights.
 - **§120.1 CRDT semantic context race:** Already behind set/clear API.
   The remaining "race" is inherent to any thread-local pattern without
   AsyncLocalStorage — a spec-level change, not a refactor.
+- **§104.1 `restoreLibrary` passthrough:** Matches the §3.3 / §19.1
+  rationale — the useCase layer is load-bearing architecture regardless
+  of whether the current repository implementation happens to be a
+  pure passthrough.
+- **§117.1 Unreachable `Drop` classification branch:** Reviewed against
+  the current `songStructureDetection.ts`; both the Drop branch
+  (`isHigh && progress > 0.5`) and the Chorus fallthrough (`isHigh`)
+  are reachable given non-high and non-last segments. Stale audit
+  entry, not a real dead case.
 
 ---
 
 ## Still open
 
-### Structural / architectural (decisions or spec needed)
+Only entries that remain genuinely actionable and unlanded. Anything
+previously in this section that was verified stale, already fixed, or
+deliberately skipped has been moved to **Resolved findings** or
+**Decided against** above.
+
+### Needs a spec (not a refactor)
 
 #### §10.1 `createAutomergeStorage.ts` — infra → domain import
 **File:** `src/infra/store/storage/createAutomergeStorage.ts`
 
-`infra/` imports from `#/modules/CrdtDocument`, inverting the dependency
-direction. Fixing properly needs a DI pattern where the automerge
-repository is injected into storage adapters. Documented as needing a
-spec.
-
-#### §8.2 Remaining stores — pure-setter audit
-Spot-checked the 22 large store files flagged in the original sweep.
-The majority (Sampler / Levain / Toaster / Bacteria / etc.) are
-either pure setters (allowed by §8.1) or have mechanical clamping
-helpers that are still conceptually setters. A full pass would want
-to walk each file individually and confirm no hidden orchestration
-creeps in; no current concrete violations identified beyond the two
-landed in branch §8.1.
+`infra/` imports from `#/modules/CrdtDocument`, inverting the
+dependency direction. The fix shape is clear (inject the automerge
+repository into storage adapters via the existing `inject({...})`
+DI), but the sequencing touches every `createStore({ storage:
+createAutomergeStorage(...) })` call site — on the order of 30+
+stores. Design-doc-first refactor, not a single-session edit.
 
 ---
 
-### Feature work (product decisions, not refactors)
+### Feature work (not a refactor)
 
 #### §35.2 Mono-only recording
 Audio recording hardcodes `channelCount: 1`. Stereo requires a
-`numberOfInputChannels` setting + changes to the OPFS worker's PCM
-assembly.
+`numberOfInputChannels` setting, changes to the OPFS worker's PCM
+assembly, and input-channel UI. Real product scope.
 
 ---
 
-### Performance — still open (low/medium impact)
+### Low-impact open bugs
+
+#### §61.2 `HighEndPluginProcessor` silent passthrough GainNode
+Silent degradation — caller receives `initialized: true` but gets a
+no-op GainNode. Throw or log at warn level so consumers know the
+worklet isn't registered. 5-line fix, deprioritised because the
+fallback path is rare.
+
+#### §114.3 Branch `JSON.stringify` double-serialization
+CRDT branch equality check serialises twice. Use a content hash once.
+Meaningful only at branch-heavy collab sessions.
 
 #### §147.1 Recording session HMR reset
 Mid-recording HMR resets `onRecordingComplete` to `null`; the OPFS
-worker completes and silently discards the audio. Fix: save the
-callback elsewhere or store the session behind a holder that survives
-module replacement.
+worker completes and silently discards the audio. A proper fix
+requires genuinely HMR-persistent state (`import.meta.hot.data` or
+similar) — the codebase's current holder-object pattern is about
+encapsulation, not HMR persistence. New infrastructure, not an
+audit-item refactor.
 
 #### §70.2 `Meyda.sampleRate` / `bufferSize` — global state mutation
-Meyda's module-level singleton config is written during analysis calls.
-Unavoidable given Meyda's API — document or wrap in a pure helper that
-saves/restores.
+Meyda's module-level singleton config is written during analysis
+calls. Unavoidable given the library API — document or wrap in a
+save/restore helper.
 
-#### §76.2 `shortcutStore.value` read per keydown
-**Resolved** — the shortcut engine already caches Object.entries via a
-store subscription and gates on target tag name before any store read.
-
----
-
-### Bugs — still open (low-impact unless noted)
-
-#### §58.3 `compilerEngine.ts` side-effect module initializer at line 269
+#### §58.3 `compilerEngine.ts` side-effect at module load
 The code explicitly documents "side-effect at module load is required
 because nothing imports the registry directly from the host side".
 Design decision, not a bug — flagged for future revisit if the plugin
 loader layer gets a bootstrap entry point.
 
-#### §61.2 `HighEndPluginProcessor` falls back to passthrough `GainNode`
-Silent degradation — caller receives `initialized: true` but gets a
-no-op GainNode. Throw or log at warn level so consumers know the
-worklet isn't registered.
-
-#### §114.3 Branch `JSON.stringify` double-serialization
-CRDT branch equality check serialises twice. Use a content hash once.
-
-#### §117.1 Unreachable `Drop` classification branch
-**Reviewed — stale.** Both the Drop branch (`isHigh && progress > 0.5`)
-and the Chorus fallthrough (`isHigh`) are reachable given non-high and
-non-last segments; the classifier is correct.
-
-#### §104.1 `restoreLibrary` passthrough
-**Decided against.** Matches the §3.3 / §19.1 rationale — the useCase
-layer is load-bearing architecture regardless of whether the current
-repository implementation happens to be a pure passthrough.
+#### §8.2 Remaining-stores pure-setter confirmation pass
+Spot-checked the 22 large store files flagged in the original sweep.
+Most are pure setters (allowed by §8.1) or mechanical clamping
+helpers that are still conceptually setters. No concrete offenders
+spotted beyond the two landed in branch §8.1 (undoStore,
+automationRecordingState). A full individual walk would be
+confirmation work, not fix work.
 
 ---
 
-### Recent appendix findings (§160–§213)
+### Appendix findings not individually addressed (§160–§213)
 
-The following findings were added after the original audit sweep and
-have not been individually addressed. They follow the same patterns as
-the earlier sections (canvas perf / HMR mutables / unstable effect
-deps / `console.*` bypassing logger / etc.) and can be triaged in a
-future session by grepping for the filenames.
+The original sweep added a long tail of findings that follow
+well-known patterns already landed in branch 2. They have not been
+individually walked; a parallel-agent sweep is a good fit because each
+file is independent and the patterns are now well-established.
 
-**Canvas + rAF perf (same §181.1 / §182.1 / §141.2 / §150.3 / §194.1 patterns):**
+**Canvas + rAF perf** (same §181.1 / §182.1 / §141.2 / §150.3 / §194.1 patterns):
 §181.1 (MiniMasterSpectrum), §182.1–§182.4 (BeatRulerBar),
 §184.x (LevelMeter), §185.x (TrackLevelIndicator),
 §189.1 / §190.1 / §191.1 / §192.1 (Oscilloscope / Goniometer / SpectrumAnalyzer),
 §193.1 (Spectrogram / PhaseCorrelationDisplay),
 §194.1 (PhaseCorrelationDisplay getComputedStyle in rAF),
-§195.x / §199.x / §200.x / §204.x / §205.x / §206.x / §207.x / §208.x / §210.x
+§199.x / §200.x / §204.x / §205.x / §206.x / §207.x / §208.x / §210.x.
 
-**Non-reactive store reads during render:**
-§195.3, §197.1, §198.1, §201.1, §202.1, §203.1, §206.4, §211.1
+**Non-reactive store reads during render (batch 2):**
+§203.1, §206.4 (the render-time cluster not covered by the §195.3 /
+§197.1 / §198.1 / §201.1 / §202.1 / §211.1 work already landed).
 
 **Ring buffer `shift()` / boxed IPC allocation:**
-§160.x, §161.x, §162.x, §163.x, §164.x, §165.x, §166.x, §173.x
+§160.x, §161.x, §162.x, §163.x, §164.x, §165.x, §166.x, §173.x.
 
-**HMR-unsafe module state (same §14.1 pattern):**
-§167.x, §168.x, §169.x, §170.x, §171.x, §172.x, §176.1, §177.1
+**HMR-unsafe module state** (same §14.1 pattern):
+§167.x, §168.x, §169.x, §170.x, §171.x, §172.x, §176.1, §177.1.
 
 **Miscellaneous bugs + UX:**
-§174.1 (mutated Float32Array never re-fires `useEffect`),
-§178.1 (O(tracks × clips) store write on drag),
 §179.1 (orphaned OfflineAudioContext),
 §186.1 (`stop()` doesn't stop oscillator),
-§188.1 (stale closure in finally block),
-§209.1 / §212.1 (`useStore(store, store.value!)` non-null assertion anti-pattern)
-
-These appendix findings together represent roughly 40–60 additional
-items. A fresh session can grind through them — most are 1-line canvas
-fixes or the same holder-object pattern applied elsewhere in this file.
-
-### Priority for the next session
-
-All items 1–5 from the previous priority list landed this session
-(§3.8, §16.1, §209.1/§212.1, §174.1, §178.1). What's left on the bug
-and perf tracks is genuinely low-impact (§61.2 silent passthrough
-fallback, §114.3 double-serialise branch equality, §147.1 HMR recording
-reset, §70.2 Meyda global) — see the "Still open" sections above.
-
-If picking where to resume, the high-value work is now in the
-spec-level items (§10.1 infra→domain dependency, §21.1 MIDI→Arrangement
-cross-store write, §8.1/§8.2 store business logic cleanup, §20.1
-deviceLayoutRegistry split) and the feature-decision items (§63.1 dead
-modulation system, §124.1 mock pitch data, §131.1 ONNX fake fallback,
-§127.2 silent cloud LLM degrade).
-
-The §160–§213 canvas perf cluster is still outstanding and remains a
-good candidate for a parallel-agent sweep — each file is independent,
-and the patterns are well-established by the work shipped this session.
+§188.1 (stale closure in finally block).
