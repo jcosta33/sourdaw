@@ -36,10 +36,17 @@ export const GRINDER_IDX = Object.freeze({
     neuralWarmupProgress: 9,
 });
 
+/**
+ * Bacteria telemetry slot layout. The 6 band level scalars immediately
+ * follow the fixed header so the worklet can blit them with a single
+ * `.set(Float32Array)` copy from the Rust engine's `band_levels` array.
+ */
+export const BACTERIA_BAND_COUNT = 6;
 export const BACTERIA_IDX = Object.freeze({
     inputDb: 0,
     outputDb: 1,
     latency: 2,
+    bandLevelsBase: 3,
 });
 
 export const GLUTEN_IDX = Object.freeze({

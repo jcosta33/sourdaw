@@ -122,6 +122,12 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     this._sabView[0] = inst.get_input_db();
                     this._sabView[1] = inst.get_output_db();
                     this._sabView[2] = inst.get_latency_samples();
+                    // Blit the Rust engine's 6-element peak-level array directly into
+                    // the SAB slot starting at index 3 (bandLevelsBase). Peak levels
+                    // are linear amplitude; consumers convert to dB.
+                    const bandPtr = inst.get_band_levels_ptr();
+                    const bandView = new Float32Array(mem, bandPtr, 6);
+                    this._sabView.set(bandView, 3);
                 }
             }
         } catch (err) {

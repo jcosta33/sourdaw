@@ -6,8 +6,16 @@
  */
 
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
-import { telemetryAllocator, BACTERIA_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { telemetryAllocator, BACTERIA_IDX, BACTERIA_BAND_COUNT, type TelemetrySlot } from './telemetryAllocator';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+
+/** Linear amplitude → dB with a -100 dB floor (matches input/output dB range). */
+function linearToDb(linear: number): number {
+    if (linear <= 1e-5) {
+        return -100;
+    }
+    return 20 * Math.log10(linear);
+}
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -83,10 +91,15 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             if (!slot) {return;}
             const view = slot.view;
             const poll = () => {
+                const bandLevels = new Array<number>(BACTERIA_BAND_COUNT);
+                for (let i = 0; i < BACTERIA_BAND_COUNT; i++) {
+                    const linear = view[BACTERIA_IDX.bandLevelsBase + i] ?? 0;
+                    bandLevels[i] = linearToDb(linear);
+                }
                 cb({
                     inputDb: view[BACTERIA_IDX.inputDb] ?? 0,
                     outputDb: view[BACTERIA_IDX.outputDb] ?? 0,
-                    bandLevels: [],
+                    bandLevels,
                     latency: view[BACTERIA_IDX.latency] ?? 0,
                 });
                 meterRafId = requestAnimationFrame(poll);
