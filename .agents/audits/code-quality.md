@@ -106,7 +106,11 @@ not `Map<>`, so React ref-equality works; fixes data-loss on panel close/reopen)
 §187.1 (Rules of Hooks violation in `GenerativeAiPanel.tsx` — two `useStore` calls hoisted above the early return),
 §183.1 / §196.1 (4 `window.confirm()` callers replaced with new async `ConfirmDialog` system: `ConfirmPayload` event, `confirmUser()` helper, `ConfirmDialog` component subscribed to `'ui.confirm'` mounted in AppShell)
 
-**Stale audit entries:** §213.1 (`src/helpers/Store/` — directory doesn't exist), §213.2 (`src/utils/` — heavily referenced, audit was wrong), §16.1 (`handlers/` is already formally documented in AGENTS.md §98–§100)
+**Stale audit entries:** §213.1 (`src/helpers/Store/` — directory doesn't exist), §213.2 (`src/utils/` — heavily referenced, audit was wrong), §16.1 (`handlers/` is already formally documented in AGENTS.md §98–§100), §76.2 (shortcut engine already caches Object.entries + early-tag-name gate), §97.1 (cachedWasmBytes is already a const Map), §113.1 (lastInsertedDeviceId already threaded via DsoExecContext), §117.1 (Drop branch is reachable), §129.1 (zero `export let` remain in src/), §130.1 (resolved by §3.8 exportCancellation holder), §158.1 (already binary-searched in getAutomationValueAtBeat)
+
+**Perf — scheduler / hot paths:** §3.8 (offlineRender 980-line split), §52.1 (resolveGrandBouleEngine compiler-memoized), §62.3 (getFirstToasterDeviceId identity-cache), §69.2 (getFilteredSamples fingerprint memo), §70.3 (WebGPU + PatternBrowser single-pass pitch min/max), §107.5 (updateClip targeted clone — one track instead of full project), §119.1/§119.2 (hydrate cached-incoming-JSON), §138.1 (single-doc CRDT sync fan-out via change listener hint), §142.1 (SessionView per-track pre-computed slot array), §143.1 (buildTimelineRenderModel recording overlay cache with in-place endBeat mutation), §151.1 (usePresence rewrite — ref + version counter, returns `PresenceData[]`), §154.1/§154.2/§154.3 (Toaster MIDI hot path), §155.1 (applyAutomation holder), §156.1 (Jaccard parallel typed arrays), §157.1 (drum noise buffer WeakMap cache), §159.1 (parseMidiFile → Web Worker), §159.2 (MIDI import note IDs → crypto.randomUUID)
+
+**Bugs / cleanup:** §64.2 (Basic Pitch holder), §97.2 (Bacteria per-band telemetry wired end-to-end, Rust → SAB → TS), §109.1 (asset-request Set holder), §139.2 (sample library progress cap), §139.4 (sample id NUL delimiter instead of `:`)
 
 **Non-reactive store reads (batch 1):** §197.1 (`gainEnvelopeStore` Map→`Store<State>`), §201.1 (RoutingGraph sidechain subscription), §202.1 (`vcaGroupStore` bare let→`Store<State>`), §211.1 (NearbyMarkerColorMenu marker subscription), §195.3 (WaveformEditor `trackStore.value?` render-time read), §198.1 (TrackNotesSection `useState(track.notes)` captured once at mount)
 
@@ -226,154 +230,48 @@ For 3 peers and 10 docs, 30 `generateSyncMessage` calls per edit.
 Automerge returns null for unchanged docs but the protocol overhead is
 per-doc-per-peer. Fix: batch by peer, skip unchanged docs upfront.
 
-#### §151.1 `usePresence.ts` — full Map clone per peer heartbeat
-`new Map(prev)` on every presence update; 5 peers × 10 Hz = 50 Map
-clones/sec. Replace Map with a keyed plain object and use version
-counter + ref for React state.
-
-#### §142.1 SessionView `getClipForSlot` per slot
-Full `tracks.find()` scan per rendered cell. With 20 tracks × 8 scenes =
-160 scans per render. Build a `trackById` Map once per render.
-
-#### §143.1 Recording path builds all tracks×clips every rAF
-`buildTimelineRenderModel` spreads all N tracks × M clips per frame
-while recording — only the active clip's `endBeat` actually changes.
-
 #### §147.1 Recording session HMR reset
 Mid-recording HMR resets `onRecordingComplete` to `null`; the OPFS
 worker completes and silently discards the audio. Fix: save the
 callback elsewhere or store the session behind a holder that survives
 module replacement.
 
-#### §154.1 Yeast `scheduleMidiNotes` — O(N²) noteOff match
-Linear scan for each noteOn. For 100 notes = 20,000 comparisons per
-block. Build a `Map<noteNumber, noteOnIdx>`.
-
-#### §154.2 `tracks.find()` / `tracks.filter()` inside innermost note loop
-Toaster child-track lookup per note. Hoist the parent/children index
-out of the loop.
-
-#### §154.3 Device-type dispatch per note
-4 device types × `.some()` + `.find()` per note = 8 array scans/note.
-Precompute `Map<type, DeviceEntry>` once per track.
-
-#### §155.1 Per-plugin slew `Map` HMR reset
-Module-level slew state drops smoothing buffers on HMR reload. Move
-behind holder object with retained closure.
-
-#### §156.1 Jaccard similarity intermediate allocations
-`findSimilarSamples` path still allocates intermediate arrays per
-comparison. Single-pass version already applied to the top-level
-function (§69.1) — deeper helpers still churn.
-
-#### §157.1 Per-note noise buffer allocation
-Synth scheduleNote allocates a fresh noise Float32Array per note.
-Cache per voice.
-
-#### §158.1 Dual `filter()` over sorted automation points
-Two passes to find before/after points. Binary search in one pass.
-
-#### §159.1 `parseMidiFile` runs synchronously on main thread
-Blocks UI on import. Move to a Worker.
-
-#### §159.2 MIDI import note IDs — sequential per call
-Each parseMidiFile call resets to 1, colliding if two imports run in
-sequence. Use `crypto.randomUUID()`.
-
-#### §52.1 `resolveGrandBouleEngine` — O(n) track scan per render
-Called inside a component render loop. Cache once per track-store update.
-
-#### §62.3 `getFirstToasterDeviceId` per tick
-100 Hz scheduler × O(tracks) track scan. Memoize on track-store identity.
-
-#### §69.2 `getFilteredSamples` full pipeline recomputed per call
-No memoization; runs on every search keystroke. Memoize by store-version
-+ filter fingerprint.
-
 #### §70.2 `Meyda.sampleRate` / `bufferSize` — global state mutation
 Meyda's module-level singleton config is written during analysis calls.
 Unavoidable given Meyda's API — document or wrap in a pure helper that
 saves/restores.
 
-#### §70.3 `Math.max(...frames.map(...))` spread
-Stack-overflow risk on very long analysis buffers. Single-pass for-loop.
-
 #### §76.2 `shortcutStore.value` read per keydown
-Micro-perf: the store read is O(1) but happens on every keystroke.
-Short-circuit via tag name check earlier (already partially done).
-
-#### §107.5 Recording buffer callback clones all tracks×clips
-Full store snapshot per callback invocation. Pass only the minimal
-shape the callback needs.
-
-#### §119.1 / §119.2 `JSON.parse(JSON.stringify(...))` per rAF write / per `hydrate`
-Triple serialisation during store hydration. Use `structuredClone`
-(which is fine at this depth — it's not in a hot loop) or an immutable
-diff.
-
-#### §139.2 Progress formula never reaches 100% during scanning
-`min(0.95, found / (found + 20))`. Cap at 1.0 when the scan actually
-finishes, otherwise this UX bug makes the progress bar look stuck.
-
-#### §139.4 Sample ID colon-delimited path is ambiguous
-`${rootId}:${relativePath}` collides if `relativePath` contains `:`.
-Use a character that can't appear in any POSIX path.
+**Resolved** — the shortcut engine already caches Object.entries via a
+store subscription and gates on target tag name before any store read.
 
 ---
 
 ### Bugs — still open (low-impact unless noted)
 
-#### §97.1 Module-level WASM cache HMR-stale
-`cachedWasmBytes` resets on HMR but running nodes hold old references.
-Same pattern as other HMR holders — wrap the cache in a holder so a
-new cache is created per module instance.
-
-#### §97.2 `bandLevels: number[]` always returns `[]`
-Declared as a real field but the SAB telemetry slot has no band-level
-entries. Remove the field from `BacteriaMeterData` or populate it.
-
-#### §104.1 `restoreLibrary` passthrough
-This specific passthrough adds no transformation; it can be inlined
-at its two callsites. Unlike §3.3 and §19.1, there's no repository
-layer to protect here — `restoreLibraryFromRepo` is already the
-repository.
-
-#### §113.1 `lastInsertedDeviceId` module-level race
-Concurrent AI edits can read each other's `lastInsertedDeviceId`.
-Thread through the call chain instead of sharing a module var.
-
-#### §117.1 Unreachable `Drop` classification branch
-Song-structure detection has a dead case. Remove or fix the
-branch condition.
-
-#### §118.2 WAM plugin `registry` + `instances` Maps — HMR erase
-Module-level Maps. On HMR every registered plugin definition + active
-instance is lost. Wrap in holder or project-level store.
-
-#### §129.1 MIDI mutable exports — HMR resets MIDI state
-`export let` bindings. Convert to getter/setter (other `export let`
-bindings in the codebase were already done).
-
-#### §130.1 Export guard cancel flag + `isRenderingActive` — module level
-Same HMR pattern. Wrap in holder.
-
 #### §58.3 `compilerEngine.ts` side-effect module initializer at line 269
-Module evaluation triggers a side effect that should happen inside an
-explicit init function.
+The code explicitly documents "side-effect at module load is required
+because nothing imports the registry directly from the host side".
+Design decision, not a bug — flagged for future revisit if the plugin
+loader layer gets a bootstrap entry point.
 
 #### §61.2 `HighEndPluginProcessor` falls back to passthrough `GainNode`
 Silent degradation — caller receives `initialized: true` but gets a
 no-op GainNode. Throw or log at warn level so consumers know the
 worklet isn't registered.
 
-#### §64.2 `basicPitchModel` singleton — 10 MB re-download on HMR
-Module-level `let`. Move to a holder or browser Cache API.
-
-#### §109.1 `requestedAssets` Set — HMR resets dedup state
-Module-level Set. Same HMR pattern.
-
 #### §114.3 Branch `JSON.stringify` double-serialization
 CRDT branch equality check serialises twice. Use a content hash once.
+
+#### §117.1 Unreachable `Drop` classification branch
+**Reviewed — stale.** Both the Drop branch (`isHigh && progress > 0.5`)
+and the Chorus fallthrough (`isHigh`) are reachable given non-high and
+non-last segments; the classifier is correct.
+
+#### §104.1 `restoreLibrary` passthrough
+**Decided against.** Matches the §3.3 / §19.1 rationale — the useCase
+layer is load-bearing architecture regardless of whether the current
+repository implementation happens to be a pure passthrough.
 
 ---
 
@@ -416,18 +314,19 @@ fixes or the same holder-object pattern applied elsewhere in this file.
 
 ### Priority for the next session
 
-If picking where to resume:
+All items 1–5 from the previous priority list landed this session
+(§3.8, §16.1, §209.1/§212.1, §174.1, §178.1). What's left on the bug
+and perf tracks is genuinely low-impact (§61.2 silent passthrough
+fallback, §114.3 double-serialise branch equality, §147.1 HMR recording
+reset, §70.2 Meyda global) — see the "Still open" sections above.
 
-1. **§3.8** — offlineRender.ts split. Big but mechanical; the seams
-   are visible in the code itself.
-2. **§16.1** — handlers/ layer taxonomy decision. Unblocks future
-   structural work.
-3. **§209.1 / §212.1** — `useStore(store, store.value!)` non-null
-   assertion anti-pattern (5 instances). Crashes if store is null at
-   mount. Quick fix.
-4. **§174.1** — Mutated `Float32Array` never re-fires `useEffect` in
-   tonal balance display. Live meter is frozen at mount. Real bug.
-5. **§178.1** — O(tracks × clips) full store write per drag-move
-   pointermove event. ~3000 allocs per drag event.
-6. The §160–§213 canvas perf cluster — repetitive, can be done in
-   parallel by a dedicated agent since each file is independent.
+If picking where to resume, the high-value work is now in the
+spec-level items (§10.1 infra→domain dependency, §21.1 MIDI→Arrangement
+cross-store write, §8.1/§8.2 store business logic cleanup, §20.1
+deviceLayoutRegistry split) and the feature-decision items (§63.1 dead
+modulation system, §124.1 mock pitch data, §131.1 ONNX fake fallback,
+§127.2 silent cloud LLM degrade).
+
+The §160–§213 canvas perf cluster is still outstanding and remains a
+good candidate for a parallel-agent sweep — each file is independent,
+and the patterns are well-established by the work shipped this session.
