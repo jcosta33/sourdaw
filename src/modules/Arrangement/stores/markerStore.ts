@@ -23,7 +23,9 @@ export type MarkerStoreState = {
     sections: ArrangementSection[];
 };
 
+export const defaultMarkerStoreState: MarkerStoreState = { markers: [], sections: [] };
+
 export const markerStore = createStore<MarkerStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'markers'),
-    initialData: { markers: [], sections: [] },
+    initialData: defaultMarkerStoreState,
 });

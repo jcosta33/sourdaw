@@ -1,11 +1,11 @@
-import { type GainEnvelopePoint, gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
+import { type GainEnvelopePoint, setEnvelope } from '../../stores/gainEnvelopeStore';
 import { getClipGainEnvelope } from './getClipGainEnvelope';
 
 export type { GainEnvelopePoint };
 
 export const addGainEnvelopePointDeps = {
     getClipGainEnvelope,
-    gainEnvelopeStore,
+    setEnvelope,
 };
 
 export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb: number): GainEnvelopePoint {
@@ -17,12 +17,7 @@ export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb:
     };
 
     const idx = env.points.findIndex((p) => p.beatOffset > beatOffset);
-    if (idx === -1) {
-        env.points.push(point);
-    } else {
-        env.points.splice(idx, 0, point);
-    }
-
-    gainEnvelopeStore.set(clipId, env);
+    const nextPoints = idx === -1 ? [...env.points, point] : [...env.points.slice(0, idx), point, ...env.points.slice(idx)];
+    setEnvelope(clipId, { ...env, points: nextPoints });
     return point;
 }

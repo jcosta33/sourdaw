@@ -1,24 +1,27 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { gainEnvelopeStore } from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import {
+    __resetGainEnvelopesForTest,
+    setEnvelope,
+} from '#/modules/Arrangement/stores/gainEnvelopeStore';
 
 import { getGainAtBeat } from '../getGainAtBeat';
 
 describe('getGainAtBeat', () => {
     beforeEach(() => {
-        gainEnvelopeStore.clear();
+        __resetGainEnvelopesForTest();
     });
 
     it('should return zero when there is no envelope or it is disabled', () => {
         expect(getGainAtBeat('missing', 0)).toBe(0);
-        gainEnvelopeStore.set('c1', { clipId: 'c1', enabled: false, points: [{ id: 'p', beatOffset: 0, gainDb: 3 }] });
+        setEnvelope('c1', { clipId: 'c1', enabled: false, points: [{ id: 'p', beatOffset: 0, gainDb: 3 }] });
         expect(getGainAtBeat('c1', 0)).toBe(0);
-        gainEnvelopeStore.set('c2', { clipId: 'c2', enabled: true, points: [] });
+        setEnvelope('c2', { clipId: 'c2', enabled: true, points: [] });
         expect(getGainAtBeat('c2', 0)).toBe(0);
     });
 
     it('should clamp to the first or last point outside the span', () => {
-        gainEnvelopeStore.set('c3', {
+        setEnvelope('c3', {
             clipId: 'c3',
             enabled: true,
             points: [
@@ -31,7 +34,7 @@ describe('getGainAtBeat', () => {
     });
 
     it('should linearly interpolate between two points', () => {
-        gainEnvelopeStore.set('c4', {
+        setEnvelope('c4', {
             clipId: 'c4',
             enabled: true,
             points: [

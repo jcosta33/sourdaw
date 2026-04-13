@@ -1,16 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { type ClipGainEnvelope, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
+
+import {
+    __resetGainEnvelopesForTest,
+    getEnvelope,
+} from '#/modules/Arrangement/stores/gainEnvelopeStore';
+
 import { resetClipGainEnvelope } from '../resetClipGainEnvelope';
 
 describe('resetClipGainEnvelope', () => {
     beforeEach(() => {
-        gainEnvelopeStore.clear();
+        __resetGainEnvelopesForTest();
     });
 
-    it('writes a default envelope to the injected store', () => {
+    it('writes a default envelope to the store', () => {
         resetClipGainEnvelope('c1');
 
-        expect(gainEnvelopeStore.get('c1')?.enabled).toBe(true);
-        expect(gainEnvelopeStore.get('c1')?.points).toHaveLength(1);
+        expect(getEnvelope('c1')?.enabled).toBe(true);
+        expect(getEnvelope('c1')?.points).toHaveLength(1);
     });
 });

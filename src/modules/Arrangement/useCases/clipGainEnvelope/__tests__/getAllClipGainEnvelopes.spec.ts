@@ -1,13 +1,29 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { type ClipGainEnvelope, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
+
+import {
+    __resetGainEnvelopesForTest,
+    setEnvelope,
+} from '#/modules/Arrangement/stores/gainEnvelopeStore';
+
 import { getAllClipGainEnvelopes } from '../getAllClipGainEnvelopes';
 
 describe('getAllClipGainEnvelopes', () => {
     beforeEach(() => {
-        gainEnvelopeStore.clear();
+        __resetGainEnvelopesForTest();
     });
 
-    it('returns the injected map reference', () => {
-        expect(getAllClipGainEnvelopes()).toBe(gainEnvelopeStore);
+    it('returns all envelopes currently in the store', () => {
+        expect(getAllClipGainEnvelopes()).toEqual([]);
+
+        const env = {
+            clipId: 'c1',
+            enabled: true,
+            points: [{ id: 'p', beatOffset: 0, gainDb: 0 }],
+        };
+        setEnvelope('c1', env);
+
+        const all = getAllClipGainEnvelopes();
+        expect(all).toHaveLength(1);
+        expect(all[0]).toEqual(env);
     });
 });

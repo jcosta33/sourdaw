@@ -1,16 +1,16 @@
-import { type ClipGainEnvelope, gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
+import { type ClipGainEnvelope, getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
 
 export type { ClipGainEnvelope };
 
 export function getClipGainEnvelope(clipId: string): ClipGainEnvelope {
-    let envelope = gainEnvelopeStore.get(clipId);
+    let envelope = getEnvelope(clipId);
     if (!envelope) {
         envelope = {
             clipId,
             points: [{ id: `gep-${crypto.randomUUID().slice(0, 6)}`, beatOffset: 0, gainDb: 0 }],
             enabled: true,
         };
-        gainEnvelopeStore.set(clipId, envelope);
+        setEnvelope(clipId, envelope);
     }
     return envelope;
 }

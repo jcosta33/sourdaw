@@ -28,3 +28,9 @@ export { trackStore, defaultTrackState } from './trackStore';
 export type { TrackStoreState } from './trackStore';
 
 export type { AdjustmentEffectType } from './adjustmentLayer';
+
+export { vcaGroupStore, defaultVcaGroupState } from './vcaGroupStore';
+export type { VcaGroupState } from './vcaGroupStore';
+
+export { gainEnvelopeStore, defaultGainEnvelopeStoreState } from './gainEnvelopeStore';
+export type { GainEnvelopeStoreState, ClipGainEnvelope, GainEnvelopePoint } from './gainEnvelopeStore';

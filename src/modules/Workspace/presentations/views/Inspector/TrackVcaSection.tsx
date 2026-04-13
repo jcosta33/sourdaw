@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
@@ -6,9 +7,9 @@ import { Plus } from 'lucide-react';
 import {
     assignToVca,
     removeFromVca,
-    getVcaGroups,
     createVcaGroup,
 } from '#/modules/Arrangement/useCases';
+import { defaultVcaGroupState, vcaGroupStore } from '#/modules/Arrangement/stores';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
@@ -17,6 +18,11 @@ type TrackVcaSectionProps = {
 };
 
 export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement => {
+    // §202.1 — subscribe reactively so VCA creation/rename shows up
+    // immediately in the dropdown options.
+    const vcaState = useStore(vcaGroupStore, defaultVcaGroupState);
+    const groups = vcaState.groups;
+
     return (
         <div>
             <DawHeaderBand
@@ -28,7 +34,7 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                         variant="ghost"
                         size="icon-xs"
                         onClick={() => {
-                            const name = `VCA ${getVcaGroups().length + 1}`;
+                            const name = `VCA ${groups.length + 1}`;
                             createVcaGroup(name, [track.id]);
                         }}
                         aria-label="Create VCA group"
@@ -55,7 +61,7 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                             aria-label="VCA group"
                         >
                             <option value="">None</option>
-                            {getVcaGroups().map((g) => (
+                            {groups.map((g) => (
                                 <option key={g.id} value={g.id}>
                                     {g.name}
                                 </option>

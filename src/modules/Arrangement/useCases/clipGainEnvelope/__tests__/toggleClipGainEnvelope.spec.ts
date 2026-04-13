@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { type ClipGainEnvelope, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
-import { toggleClipGainEnvelope } from '../toggleClipGainEnvelope';
+
+import {
+    type ClipGainEnvelope,
+    __resetGainEnvelopesForTest,
+    getEnvelope,
+} from '#/modules/Arrangement/stores/gainEnvelopeStore';
+
 import { getClipGainEnvelope } from '../getClipGainEnvelope';
+import { toggleClipGainEnvelope } from '../toggleClipGainEnvelope';
 
 vi.mock('../getClipGainEnvelope', () => ({
     getClipGainEnvelope: vi.fn(),
@@ -9,7 +15,7 @@ vi.mock('../getClipGainEnvelope', () => ({
 
 describe('toggleClipGainEnvelope', () => {
     beforeEach(() => {
-        gainEnvelopeStore.clear();
+        __resetGainEnvelopesForTest();
         vi.clearAllMocks();
     });
 
@@ -22,6 +28,6 @@ describe('toggleClipGainEnvelope', () => {
         vi.mocked(getClipGainEnvelope).mockReturnValue(env);
 
         expect(toggleClipGainEnvelope('c1')).toBe(false);
-        expect(gainEnvelopeStore.get('c1')!.enabled).toBe(false);
+        expect(getEnvelope('c1')!.enabled).toBe(false);
     });
 });

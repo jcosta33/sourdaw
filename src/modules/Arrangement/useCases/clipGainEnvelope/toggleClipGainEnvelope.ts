@@ -1,14 +1,14 @@
-import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
+import { setEnvelope } from '../../stores/gainEnvelopeStore';
 import { getClipGainEnvelope } from './getClipGainEnvelope';
 
 export const toggleClipGainEnvelopeDeps = {
     getClipGainEnvelope,
-    gainEnvelopeStore,
+    setEnvelope,
 };
 
 export function toggleClipGainEnvelope(clipId: string): boolean {
     const env = getClipGainEnvelope(clipId);
-    env.enabled = !env.enabled;
-    gainEnvelopeStore.set(clipId, env);
-    return env.enabled;
+    const next = { ...env, enabled: !env.enabled };
+    setEnvelope(clipId, next);
+    return next.enabled;
 }

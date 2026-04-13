@@ -1,4 +1,5 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
@@ -10,6 +11,7 @@ import {
     removeGainEnvelopePoint,
     resetClipGainEnvelope,
 } from '#/modules/Arrangement/useCases';
+import { defaultGainEnvelopeStoreState, gainEnvelopeStore } from '#/modules/Arrangement/stores';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
 
@@ -19,8 +21,10 @@ type ClipGainEnvelopeSectionProps = {
 };
 
 export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSectionProps): ReactElement => {
-    const [envKey, setEnvKey] = useState(0);
-    envKey; // used to force re-render when envelope mutates
+    // §197.1 — subscribe to the canonical store so undo/redo, collab
+    // sync, and external mutations trigger re-renders. The \`envKey\`
+    // counter hack has been removed.
+    useStore(gainEnvelopeStore, defaultGainEnvelopeStoreState);
 
     const envelope = getClipGainEnvelope(clipId);
 
@@ -42,10 +46,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                         <Button
                             variant="ghost"
                             size="icon-xs"
-                            onClick={() => {
-                                toggleClipGainEnvelope(clipId);
-                                setEnvKey((k) => k + 1);
-                            }}
+                            onClick={() => toggleClipGainEnvelope(clipId)}
                             aria-label={envelope.enabled ? 'Disable gain envelope' : 'Enable gain envelope'}
                             title={envelope.enabled ? 'Disable' : 'Enable'}
                         >
@@ -56,10 +57,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                         <Button
                             variant="ghost"
                             size="icon-xs"
-                            onClick={() => {
-                                addGainEnvelopePoint(clipId, duration / 2, 0);
-                                setEnvKey((k) => k + 1);
-                            }}
+                            onClick={() => addGainEnvelopePoint(clipId, duration / 2, 0)}
                             aria-label="Add breakpoint"
                             title="Add breakpoint at midpoint"
                         >
@@ -68,10 +66,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                         <Button
                             variant="ghost"
                             size="icon-xs"
-                            onClick={() => {
-                                resetClipGainEnvelope(clipId);
-                                setEnvKey((k) => k + 1);
-                            }}
+                            onClick={() => resetClipGainEnvelope(clipId)}
                             aria-label="Reset gain envelope"
                             title="Reset to flat 0 dB"
                         >
@@ -94,10 +89,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                                     variant="ghost"
                                     size="icon-xs"
                                     className="h-4 w-4"
-                                    onClick={() => {
-                                        removeGainEnvelopePoint(clipId, pt.id);
-                                        setEnvKey((k) => k + 1);
-                                    }}
+                                    onClick={() => removeGainEnvelopePoint(clipId, pt.id)}
                                     aria-label={`Remove breakpoint at beat ${pt.beatOffset}`}
                                 >
                                     <span className="text-[9px] text-muted-foreground">×</span>

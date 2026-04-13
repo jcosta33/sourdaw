@@ -1,13 +1,13 @@
-import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
+import { getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
 
 export function removeGainEnvelopePoint(clipId: string, pointId: string): void {
-    const env = gainEnvelopeStore.get(clipId);
+    const env = getEnvelope(clipId);
     if (!env) {
         return;
     }
-    env.points = env.points.filter((p) => p.id !== pointId);
-    if (env.points.length === 0) {
-        env.points.push({ id: `gep-${crypto.randomUUID().slice(0, 6)}`, beatOffset: 0, gainDb: 0 });
+    const nextPoints = env.points.filter((p) => p.id !== pointId);
+    if (nextPoints.length === 0) {
+        nextPoints.push({ id: `gep-${crypto.randomUUID().slice(0, 6)}`, beatOffset: 0, gainDb: 0 });
     }
-    gainEnvelopeStore.set(clipId, env);
+    setEnvelope(clipId, { ...env, points: nextPoints });
 }

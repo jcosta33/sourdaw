@@ -1,7 +1,7 @@
-import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
+import { getEnvelope } from '../../stores/gainEnvelopeStore';
 
 export function getGainAtBeat(clipId: string, beatOffset: number): number {
-    const env = gainEnvelopeStore.get(clipId);
+    const env = getEnvelope(clipId);
     if (!env || !env.enabled || env.points.length === 0) {
         return 0;
     }

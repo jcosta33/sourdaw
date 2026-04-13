@@ -4,7 +4,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { selectTrack } from '#/modules/Arrangement/useCases';
-import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
+import { defaultSidechainStoreState, sidechainStore } from '#/modules/Routing/stores';
 import { type Track } from '../../models/TrackViewTypes';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -173,9 +173,12 @@ const ConnectionLine = ({
 
 export const RoutingGraph = (): ReactElement => {
     const state = useStore<RoutingTrackState>(trackStore, defaultTrackState);
+    // §201.1 — subscribe reactively so adding/removing a sidechain
+    // route re-renders the graph instead of showing stale connections.
+    const sidechainState = useStore(sidechainStore, defaultSidechainStoreState);
 
     const { tracks, selectedTrackId } = state;
-    const sidechainRoutes: RoutingSidechainRoute[] = getAllSidechainRoutes();
+    const sidechainRoutes: RoutingSidechainRoute[] = sidechainState.routes;
 
     const { sources, buses, master, width, height } = layoutNodes(tracks);
 

@@ -8,7 +8,9 @@ export type SidechainStoreState = {
     routes: SidechainRoute[];
 };
 
+export const defaultSidechainStoreState: SidechainStoreState = { routes: [] };
+
 export const sidechainStore = createStore<SidechainStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'sidechainRoutes'),
-    initialData: { routes: [] },
+    initialData: defaultSidechainStoreState,
 });

@@ -1,7 +1,7 @@
-import { type ClipGainEnvelope, gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
+import { type ClipGainEnvelope, getAllEnvelopes } from '../../stores/gainEnvelopeStore';
 
 export type { ClipGainEnvelope };
 
-export function getAllClipGainEnvelopes(): Map<string, ClipGainEnvelope> {
-    return gainEnvelopeStore;
+export function getAllClipGainEnvelopes(): ClipGainEnvelope[] {
+    return getAllEnvelopes();
 }

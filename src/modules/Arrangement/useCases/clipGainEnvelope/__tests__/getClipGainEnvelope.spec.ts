@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { type ClipGainEnvelope, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
+import {
+    __resetGainEnvelopesForTest,
+    gainEnvelopeStore,
+} from '../../../stores/gainEnvelopeStore';
 import { getClipGainEnvelope } from '../getClipGainEnvelope';
 
 describe('getClipGainEnvelope', () => {
     beforeEach(() => {
-        gainEnvelopeStore.clear();
+        __resetGainEnvelopesForTest();
     });
 
     it('creates and caches an envelope when missing', () => {
@@ -12,7 +15,7 @@ describe('getClipGainEnvelope', () => {
         const second = getClipGainEnvelope('clip-a');
 
         expect(first.clipId).toBe('clip-a');
-        expect(second).toBe(first);
-        expect(gainEnvelopeStore.size).toBe(1);
+        expect(second).toEqual(first);
+        expect(Object.keys(gainEnvelopeStore.value?.envelopes ?? {})).toHaveLength(1);
     });
 });

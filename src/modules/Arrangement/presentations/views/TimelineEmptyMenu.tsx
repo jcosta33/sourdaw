@@ -1,4 +1,5 @@
 import { type ReactElement, useRef } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
@@ -8,7 +9,7 @@ import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarker
 import { removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations/removeMarker';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { isTauri } from '#/utils/tauriBridge';
-import { markerStore } from '../../stores/markerStore';
+import { defaultMarkerStoreState, markerStore } from '../../stores/markerStore';
 import { trackStore } from '../../stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
@@ -27,8 +28,10 @@ type NearbyMarkerColorMenuProps = {
 };
 
 const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): ReactElement | null => {
-    const markers = markerStore.value?.markers ?? [];
-    const nearby = markers.filter((m) => Math.abs(m.beat - beat) <= 2);
+    // §211.1 — useStore subscription so the menu re-renders when markers
+    // change (rename, add, remove) while the menu is open.
+    const markerState = useStore(markerStore, defaultMarkerStoreState);
+    const nearby = markerState.markers.filter((m) => Math.abs(m.beat - beat) <= 2);
     if (nearby.length === 0) {
         return null;
     }

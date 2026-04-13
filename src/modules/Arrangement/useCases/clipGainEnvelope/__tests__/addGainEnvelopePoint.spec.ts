@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { type ClipGainEnvelope, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
+import {
+    type ClipGainEnvelope,
+    __resetGainEnvelopesForTest,
+    getEnvelope,
+} from '../../../stores/gainEnvelopeStore';
 import { addGainEnvelopePoint } from '../addGainEnvelopePoint';
 import { getClipGainEnvelope } from '../getClipGainEnvelope';
 
@@ -9,7 +13,7 @@ vi.mock('../getClipGainEnvelope', () => ({
 
 describe('addGainEnvelopePoint', () => {
     beforeEach(() => {
-        gainEnvelopeStore.clear();
+        __resetGainEnvelopesForTest();
         vi.clearAllMocks();
     });
 
@@ -23,7 +27,7 @@ describe('addGainEnvelopePoint', () => {
 
         addGainEnvelopePoint('c1', 0.5, -6);
 
-        expect(env.points.map((p) => p.beatOffset)).toEqual([0, 0.5]);
-        expect(gainEnvelopeStore.get('c1')).toBe(env);
+        const stored = getEnvelope('c1');
+        expect(stored?.points.map((p) => p.beatOffset)).toEqual([0, 0.5]);
     });
 });
