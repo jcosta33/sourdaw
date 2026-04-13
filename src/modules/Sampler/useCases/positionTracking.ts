@@ -10,29 +10,38 @@ import { samplerStore } from '../stores/samplerStore';
 
 type PositionListener = (frame: number) => void;
 
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-let rafId: number | null = null;
-let lastPolledFrame = 0;
-let prevPolledFrame = 0;
-let pollTimestamp = 0;
-let interpolatedFrame = 0;
-const listeners = new Set<PositionListener>();
+// §103.1 — Coalesce 6 module-level \`let\`s + the listeners set into one
+// \`pollingSession\` holder so the tracking state lives behind a single
+// named handle.
+const pollingSession = {
+    pollTimer: null as ReturnType<typeof setInterval> | null,
+    rafId: null as number | null,
+    lastPolledFrame: 0,
+    prevPolledFrame: 0,
+    pollTimestamp: 0,
+    interpolatedFrame: 0,
+    listeners: new Set<PositionListener>(),
+};
 
 const POLL_INTERVAL_MS = 33; // ~30Hz
 
 function startPolling(): void {
-    if (pollTimer !== null) {return;}
+    if (pollingSession.pollTimer !== null) {
+        return;
+    }
 
-    pollTimestamp = performance.now();
+    pollingSession.pollTimestamp = performance.now();
 
-    pollTimer = setInterval(async () => {
+    pollingSession.pollTimer = setInterval(async () => {
         const state = samplerStore.value;
-        if (!state?.instanceId) {return;}
+        if (!state?.instanceId) {
+            return;
+        }
 
         try {
-            prevPolledFrame = lastPolledFrame;
-            lastPolledFrame = await getSamplerPosition(state.instanceId);
-            pollTimestamp = performance.now();
+            pollingSession.prevPolledFrame = pollingSession.lastPolledFrame;
+            pollingSession.lastPolledFrame = await getSamplerPosition(state.instanceId);
+            pollingSession.pollTimestamp = performance.now();
         } catch (err) {
             logger.warn('Sampler position poll failed:', err);
         }
@@ -41,47 +50,49 @@ function startPolling(): void {
     // rAF loop for 60fps interpolation.
     function tick(): void {
         const now = performance.now();
-        const elapsed = now - pollTimestamp;
+        const elapsed = now - pollingSession.pollTimestamp;
         const t = Math.min(elapsed / POLL_INTERVAL_MS, 1);
 
         // Linear interpolation between last two polled positions.
-        interpolatedFrame = prevPolledFrame + (lastPolledFrame - prevPolledFrame) * t;
+        pollingSession.interpolatedFrame =
+            pollingSession.prevPolledFrame +
+            (pollingSession.lastPolledFrame - pollingSession.prevPolledFrame) * t;
 
-        for (const listener of listeners) {
-            listener(interpolatedFrame);
+        for (const listener of pollingSession.listeners) {
+            listener(pollingSession.interpolatedFrame);
         }
 
-        rafId = requestAnimationFrame(tick);
+        pollingSession.rafId = requestAnimationFrame(tick);
     }
 
-    rafId = requestAnimationFrame(tick);
+    pollingSession.rafId = requestAnimationFrame(tick);
 }
 
 function stopPolling(): void {
-    if (pollTimer !== null) {
-        clearInterval(pollTimer);
-        pollTimer = null;
+    if (pollingSession.pollTimer !== null) {
+        clearInterval(pollingSession.pollTimer);
+        pollingSession.pollTimer = null;
     }
-    if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
+    if (pollingSession.rafId !== null) {
+        cancelAnimationFrame(pollingSession.rafId);
+        pollingSession.rafId = null;
     }
 }
 
 export function subscribeToPosition(listener: PositionListener): () => void {
-    listeners.add(listener);
-    if (listeners.size === 1) {
+    pollingSession.listeners.add(listener);
+    if (pollingSession.listeners.size === 1) {
         startPolling();
     }
 
     return () => {
-        listeners.delete(listener);
-        if (listeners.size === 0) {
+        pollingSession.listeners.delete(listener);
+        if (pollingSession.listeners.size === 0) {
             stopPolling();
         }
     };
 }
 
 export function getInterpolatedPosition(): number {
-    return interpolatedFrame;
+    return pollingSession.interpolatedFrame;
 }
