@@ -1,6 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
 import { type UndoEntry, isActionEntry } from '../useCases/commandQueries';
-import { recordToTree } from '../useCases/undoTree/recordToTree';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
@@ -64,6 +63,11 @@ undoStore.subscribe((value) => {
     });
 });
 
+/**
+ * Raw setter. Pushes an entry onto the past stack and clears future.
+ * Callers that also need branching-undo-tree mirroring should use
+ * `commitUndoEntry` from `#/modules/Command/useCases` instead.
+ */
 export function pushUndo(entry: UndoEntry): void {
     const state = undoStore.value;
     if (!state) {
@@ -73,7 +77,4 @@ export function pushUndo(entry: UndoEntry): void {
         past: [...state.past, entry],
         future: [],
     });
-
-    // Mirror into branching undo tree when enabled
-    recordToTree(entry);
 }

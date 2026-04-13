@@ -3,8 +3,7 @@ import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
-import { pushUndo } from '#/modules/Command/stores';
-import { createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
@@ -104,7 +103,7 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                         },
                         'ai'
                     );
-                    pushUndo(undoEntry);
+                    commitUndoEntry(undoEntry);
 
                     const ws = workspaceStore.value;
                     if (ws) {

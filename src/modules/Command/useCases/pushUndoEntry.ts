@@ -1,5 +1,5 @@
 import { createCallbackUndoEntry, type UndoSource } from '../models/UndoEntry';
-import { pushUndo } from '../stores/undoStore';
+import { commitUndoEntry } from './commitUndoEntry';
 
 export function pushUndoEntry(
     label: string,
@@ -12,5 +12,5 @@ export function pushUndoEntry(
         entry.groupId = options.groupId;
         entry.groupLabel = options.groupLabel;
     }
-    pushUndo(entry);
+    commitUndoEntry(entry);
 }

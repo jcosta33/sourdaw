@@ -43,5 +43,6 @@ export { recordAction } from './macro/recording/recordAction';
 export type { Macro } from './macro/recording/stopMacroRecording';
 
 export { pushUndoEntry } from './pushUndoEntry';
+export { commitUndoEntry } from './commitUndoEntry';
 
 export { undo, redo, undoToIndex } from './undoRedo';

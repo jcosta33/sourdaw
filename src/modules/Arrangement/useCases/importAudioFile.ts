@@ -6,8 +6,7 @@ import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { trackStore } from '../stores/trackStore';
-import { pushUndo } from '#/modules/Command/stores';
-import { createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 
 export async function importAudioFile(file: File): Promise<void> {
@@ -61,7 +60,7 @@ export async function importAudioFile(file: File): Promise<void> {
 
     const trackSnapshotAfter = trackStore.value;
 
-    pushUndo(
+    commitUndoEntry(
         createCallbackUndoEntry(
             `Import audio: ${name}`,
             () => {

@@ -6,7 +6,7 @@ import {
     pendingPoints,
     touchActive,
     makeKey,
-} from '../../stores/automationRecordingState';
+} from './recordingSessionState';
 
 export function startAutomationRecording(): void {
     activeRecording.clear();

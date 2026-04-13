@@ -8,7 +8,7 @@ import {
     makeKey,
     findLaneId,
     clearPointsInRange,
-} from '../../stores/automationRecordingState';
+} from './recordingSessionState';
 
 export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
     const track = getTrackById(trackId);

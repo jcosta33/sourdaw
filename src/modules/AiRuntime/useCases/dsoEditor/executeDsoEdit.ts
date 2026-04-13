@@ -31,8 +31,7 @@ import { getActiveModelId, getLlmEngine } from '../../repositories/webLlm/engine
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
-import { pushUndo } from '#/modules/Command/stores';
-import { createUndoEntry, generateGroupId } from '#/modules/Command/useCases';
+import { commitUndoEntry, createUndoEntry, generateGroupId } from '#/modules/Command/useCases';
 import { saveSnapshot } from '#/modules/CrdtDocument/useCases';
 
 export type DsoEditResult = {
@@ -268,7 +267,7 @@ async function commitDsos(
     );
     undoEntry.groupId = groupId;
     undoEntry.groupLabel = groupLabel;
-    pushUndo(undoEntry);
+    commitUndoEntry(undoEntry);
 
     // Action history
     pushAiActionGroup({

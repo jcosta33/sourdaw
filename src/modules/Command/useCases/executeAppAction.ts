@@ -3,7 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { setSemanticContext, clearSemanticContext, getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
 import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores';
 import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
-import { pushUndo } from '../stores/undoStore';
+import { commitUndoEntry } from './commitUndoEntry';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace/useCases';
@@ -153,7 +153,7 @@ export const executeAppAction = inject({ logger })(
                         entry.groupId = options.groupId;
                         entry.groupLabel = options.groupLabel;
                     }
-                    pushUndo(entry);
+                    commitUndoEntry(entry);
                 }
             }
         })

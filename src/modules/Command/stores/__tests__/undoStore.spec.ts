@@ -1,23 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { createUndoEntry } from '../../useCases/commandQueries';
 import { pushUndo, undoStore } from '../undoStore';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
-const { recordToTreeMock } = vi.hoisted(() => ({
-    recordToTreeMock: vi.fn(),
-}));
-
-vi.mock('../../useCases/undoTree/recordToTree', () => ({
-    recordToTree: recordToTreeMock,
-}));
-
 describe('undoStore / pushUndo', () => {
     beforeEach(() => {
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         undoStore.set({ past: [], future: [] });
-        recordToTreeMock.mockClear();
     });
 
     afterEach(() => {
@@ -41,23 +32,17 @@ describe('undoStore / pushUndo', () => {
         const entry = createUndoEntry('x', { type: 'setTempo', payload: { bpm: 1 } }, null);
         pushUndo(entry);
         expect(undoStore.value).toBeNull();
-        expect(recordToTreeMock).not.toHaveBeenCalled();
     });
 
-    it('should invoke recordToTree after pushUndo resolves the dynamic import', async () => {
-        const entry = createUndoEntry('r', { type: 'toggleLoop' }, { type: 'toggleLoop' });
-        pushUndo(entry);
-        await vi.waitFor(() => {
-            expect(recordToTreeMock).toHaveBeenCalledWith(entry);
-        });
-    });
-
-    it('should persist action stacks to sessionStorage when state updates', () => {
+    it('should persist action stacks to sessionStorage when state updates', async () => {
         const entry = createUndoEntry('persist', { type: 'setMasterGain', payload: { gain: 0.5 } }, {
             type: 'setMasterGain',
             payload: { gain: 1 },
         });
         pushUndo(entry);
+
+        // Persistence writes are coalesced onto a microtask flush.
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
 
         const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
         expect(raw).not.toBeNull();

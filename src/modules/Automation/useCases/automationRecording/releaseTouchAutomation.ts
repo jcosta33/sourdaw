@@ -1,4 +1,4 @@
-import { touchActive, makeKey, flushPendingPoints } from '../../stores/automationRecordingState';
+import { touchActive, makeKey, flushPendingPoints } from './recordingSessionState';
 
 export function releaseTouchAutomation(trackId: string, parameterId: string): void {
     const key = makeKey(trackId, parameterId);

@@ -1,5 +1,4 @@
-import { pushUndo } from '#/modules/Command/stores';
-import { createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { readMidiFile } from '#/modules/MIDI/useCases';
 import { type Clip, trackStore } from '../stores/trackStore';
@@ -75,7 +74,7 @@ export async function importMidiFile(file: File): Promise<void> {
             ? (parsedTracks[0]?.name ?? 'MIDI file')
             : `${parsedTracks.length} MIDI tracks`;
 
-    pushUndo(
+    commitUndoEntry(
         createCallbackUndoEntry(
             `Import MIDI: ${importedName}`,
             () => {
