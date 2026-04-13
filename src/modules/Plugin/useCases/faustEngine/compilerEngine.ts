@@ -40,15 +40,21 @@ const compilationPromises = new Map<string, Promise<boolean>>();
  */
 const registrationPromises = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
 
-// Compiler singleton (lazy init)
-let compilerPromise: Promise<IFaustCompiler> | null = null;
-let compilerReady = false;
-
-let compilerError: string | null = null;
+// Compiler singleton (lazy init). §128.1 — coalesced into a single holder
+// so the module-level bindings can't be reassigned from outside this file.
+const compilerState: {
+    promise: Promise<IFaustCompiler> | null;
+    ready: boolean;
+    error: string | null;
+} = {
+    promise: null,
+    ready: false,
+    error: null,
+};
 
 async function getCompiler(): Promise<IFaustCompiler> {
-    if (!compilerPromise) {
-        compilerPromise = (async () => {
+    if (!compilerState.promise) {
+        compilerState.promise = (async () => {
             try {
                 // Use origin-relative path so it works with any protocol
                 // (http:// in dev, tauri:// or https://tauri.localhost in production)
@@ -57,27 +63,27 @@ async function getCompiler(): Promise<IFaustCompiler> {
                 const module = await instantiateFaustModuleFromFile(faustPath);
                 const libFaust = new LibFaust(module);
                 const compiler = new FaustCompiler(libFaust);
-                compilerReady = true;
+                compilerState.ready = true;
                 return compiler;
             } catch (error) {
                 const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
-                compilerError = msg;
+                compilerState.error = msg;
                 logger.warn(`[Faust] Compiler initialization failed: ${msg}`);
                 // Re-throw so callers know compilation is impossible
                 throw createFaustError(`Faust compiler unavailable: ${msg}`);
             }
         })();
     }
-    return compilerPromise;
+    return compilerState.promise;
 }
 
 /** Returns the compiler init error message, if any. */
 export function getFaustCompilerError(): string | null {
-    return compilerError;
+    return compilerState.error;
 }
 
 export function isFaustCompilerReady(): boolean {
-    return compilerReady;
+    return compilerState.ready;
 }
 
 export function registerFaustDSP(
@@ -179,7 +185,7 @@ export async function createFaustNode(
 ): Promise<IFaustMonoWebAudioNode | null> {
     const mod = modules.get(moduleId);
     if (!mod?.generator || !mod.compiled) {
-        const reason = compilerError ? `Compiler unavailable: ${compilerError}` : 'Module not compiled';
+        const reason = compilerState.error ? `Compiler unavailable: ${compilerState.error}` : 'Module not compiled';
         logger.warn(`[Faust] Cannot create node for "${moduleId}": ${reason}`);
         return null;
     }
