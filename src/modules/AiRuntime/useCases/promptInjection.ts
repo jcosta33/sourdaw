@@ -9,17 +9,22 @@
  * AiRuntime and Workspace modules can import it.
  */
 
-let injectionListeners: Array<(text: string) => void> = [];
+// §60.1 — Use a Set inside a holder so the binding can't be reassigned
+// from outside this file and the unsubscribe path is O(1) instead of
+// allocating a filtered copy.
+const injectionBus: { listeners: Set<(text: string) => void> } = {
+    listeners: new Set(),
+};
 
 export const onPromptInjection = (cb: (text: string) => void): (() => void) => {
-    injectionListeners.push(cb);
+    injectionBus.listeners.add(cb);
     return () => {
-        injectionListeners = injectionListeners.filter((l) => l !== cb);
+        injectionBus.listeners.delete(cb);
     };
 };
 
 export const injectPromptCommand = (text: string): void => {
-    for (const listener of injectionListeners) {
+    for (const listener of injectionBus.listeners) {
         listener(text);
     }
 };
