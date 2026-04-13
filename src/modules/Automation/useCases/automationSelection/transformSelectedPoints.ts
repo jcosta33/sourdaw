@@ -27,11 +27,19 @@ export function transformSelectedPoints(
         return;
     }
 
-    // Compute bounding box of selection
-    const minBeat = Math.min(...selected.map((p) => p.beat));
-    const maxBeat = Math.max(...selected.map((p) => p.beat));
-    const minVal = Math.min(...selected.map((p) => p.value));
-    const maxVal = Math.max(...selected.map((p) => p.value));
+    // Compute bounding box of selection in a single pass — the prior
+    // 4× `Math.min/max(...selected.map(...))` spread pattern both allocated
+    // temporary arrays and risked stack overflow on large selections.
+    let minBeat = Infinity;
+    let maxBeat = -Infinity;
+    let minVal = Infinity;
+    let maxVal = -Infinity;
+    for (const p of selected) {
+        if (p.beat < minBeat) minBeat = p.beat;
+        if (p.beat > maxBeat) maxBeat = p.beat;
+        if (p.value < minVal) minVal = p.value;
+        if (p.value > maxVal) maxVal = p.value;
+    }
 
     const beatCenter = (minBeat + maxBeat) / 2;
     const valCenter = (minVal + maxVal) / 2;

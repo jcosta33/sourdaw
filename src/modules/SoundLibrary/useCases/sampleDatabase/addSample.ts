@@ -3,7 +3,7 @@ import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabas
 import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
 import {
     autoTagSample,
-    generateFingerprint,
+    generatePathHash,
     getNextSampleId,
 } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
 
@@ -40,7 +40,7 @@ export function addSample(
         rating: 0,
         favorite: false,
         color: null,
-        fingerprint: generateFingerprint(name, path),
+        fingerprint: generatePathHash(name, path),
         addedAt: new Date().toISOString(),
         lastUsedAt: null,
         useCount: 0,

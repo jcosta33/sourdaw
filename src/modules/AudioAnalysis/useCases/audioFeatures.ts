@@ -71,8 +71,13 @@ export function extractFeatures(audioBufferId: string, options: AnalysisOptions 
     Meyda.sampleRate = buffer.sampleRate;
     Meyda.bufferSize = bufferSize;
 
+    // Reuse one window buffer across all hops instead of allocating a new
+    // Float32Array(bufferSize) per iteration (§70.1). At bufferSize=2048
+    // and ~50% overlap that was ~1.5k allocations per second of audio.
+    const window = new Float32Array(bufferSize);
+
     for (let offset = 0; offset + bufferSize <= data.length; offset += hopSize) {
-        const window = data.slice(offset, offset + bufferSize);
+        window.set(data.subarray(offset, offset + bufferSize));
 
         const features = Meyda.extract(
             [

@@ -51,17 +51,21 @@ export function autoTagSample(name: string, path: string): { tags: SampleTag[]; 
 }
 
 /**
- * Generate a simple string fingerprint from name + path.
- * In production this would use an audio perceptual hash.
+ * Deterministic djb2-style hash of a sample's `name:path`, used as a stable
+ * cross-session identity for sample records. This is NOT an audio perceptual
+ * fingerprint — it cannot be used for content-based similarity search
+ * (two files with the same path but different content collide; the same
+ * audio at two paths does not). A real perceptual hash needs to read the
+ * decoded audio (see §137.1 in code-quality audit).
  */
-export function generateFingerprint(name: string, path: string): string {
+export function generatePathHash(name: string, path: string): string {
     let hash = 0;
     const str = `${name}:${path}`;
     for (let i = 0; i < str.length; i++) {
         const char = str.charCodeAt(i);
         hash = ((hash << 5) - hash + char) | 0;
     }
-    return `fp-${Math.abs(hash).toString(36)}`;
+    return `path-${Math.abs(hash).toString(36)}`;
 }
 
 export function getNextSampleId(): string {

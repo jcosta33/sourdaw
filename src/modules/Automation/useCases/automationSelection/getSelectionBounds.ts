@@ -23,10 +23,19 @@ export function getSelectionBounds(
         return null;
     }
 
-    return {
-        minBeat: Math.min(...selected.map((p) => p.beat)),
-        maxBeat: Math.max(...selected.map((p) => p.beat)),
-        minValue: Math.min(...selected.map((p) => p.value)),
-        maxValue: Math.max(...selected.map((p) => p.value)),
-    };
+    // Single pass: 4 prior `Math.min/max(...selected.map(...))` spreads
+    // each allocated a temporary array and risked stack overflow on large
+    // selections (§117.2 pattern).
+    let minBeat = Infinity;
+    let maxBeat = -Infinity;
+    let minValue = Infinity;
+    let maxValue = -Infinity;
+    for (const p of selected) {
+        if (p.beat < minBeat) minBeat = p.beat;
+        if (p.beat > maxBeat) maxBeat = p.beat;
+        if (p.value < minValue) minValue = p.value;
+        if (p.value > maxValue) maxValue = p.value;
+    }
+
+    return { minBeat, maxBeat, minValue, maxValue };
 }
