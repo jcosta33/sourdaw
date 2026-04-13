@@ -189,33 +189,94 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     }, [mixerOpen]);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
-    const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
-    const setInspectorWidth = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ inspectorWidth: fn(inspectorWidth) });
-    const setChatWidth = (fn: (prev: number) => number) => updateWorkspaceState({ chatPanelWidth: fn(chatWidth) });
-    const setAiWidth = (fn: (prev: number) => number) => updateWorkspaceState({ aiPanelWidth: fn(aiWidth) });
-    const setMixerHeight = (fn: (prev: number) => number) => updateWorkspaceState({ mixerHeight: fn(mixerHeight) });
-    const setFermenterHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ fermenterHeight: fn(fermenterHeight) });
-    const setToasterHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ toasterHeight: fn(toasterHeight) });
-    const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
-    const setGlutenHeight = (fn: (prev: number) => number) => updateWorkspaceState({ glutenHeight: fn(glutenHeight) });
-    const setBacteriaHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ bacteriaHeight: fn(bacteriaHeight) });
-    const setGrinderHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ grinderHeight: fn(grinderHeight) });
-    const setProofChamberHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ proofChamberHeight: fn(proofChamberHeight) });
-    const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
-    const setScoringHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ scoringHeight: fn(scoringHeight) });
-    const setYeastHeight = (fn: (prev: number) => number) => updateWorkspaceState({ yeastHeight: fn(yeastHeight) });
-    const setCrustHeight = (fn: (prev: number) => number) => updateWorkspaceState({ crustHeight: fn(crustHeight) });
-    const setSamplerHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ samplerHeight: fn(samplerHeight) });
-    const setGrandBouleHeight = (fn: (prev: number) => number) =>
-        updateWorkspaceState({ grandBouleHeight: fn(grandBouleHeight) });
+    // All 14 setters share the pattern `fn => updateWorkspaceState({ [key]: fn(current) })`
+    // Generic helper keeps the JSX readable without 14 nearly-identical one-liners (§47.4).
+    type DimKey =
+        | 'sidebarWidth'
+        | 'inspectorWidth'
+        | 'chatPanelWidth'
+        | 'aiPanelWidth'
+        | 'mixerHeight'
+        | 'fermenterHeight'
+        | 'toasterHeight'
+        | 'levainHeight'
+        | 'glutenHeight'
+        | 'bacteriaHeight'
+        | 'grinderHeight'
+        | 'proofChamberHeight'
+        | 'proofHeight'
+        | 'scoringHeight'
+        | 'yeastHeight'
+        | 'crustHeight'
+        | 'samplerHeight'
+        | 'grandBouleHeight';
+    const makeDimSetter = (key: DimKey, current: number) => (fn: (prev: number) => number) =>
+        updateWorkspaceState({ [key]: fn(current) });
+
+    const setSidebarWidth = makeDimSetter('sidebarWidth', sidebarWidth);
+    const setInspectorWidth = makeDimSetter('inspectorWidth', inspectorWidth);
+    const setChatWidth = makeDimSetter('chatPanelWidth', chatWidth);
+    const setAiWidth = makeDimSetter('aiPanelWidth', aiWidth);
+    const setMixerHeight = makeDimSetter('mixerHeight', mixerHeight);
+    const setFermenterHeight = makeDimSetter('fermenterHeight', fermenterHeight);
+    const setToasterHeight = makeDimSetter('toasterHeight', toasterHeight);
+    const setLevainHeight = makeDimSetter('levainHeight', levainHeight);
+    const setGlutenHeight = makeDimSetter('glutenHeight', glutenHeight);
+    const setBacteriaHeight = makeDimSetter('bacteriaHeight', bacteriaHeight);
+    const setGrinderHeight = makeDimSetter('grinderHeight', grinderHeight);
+    const setProofChamberHeight = makeDimSetter('proofChamberHeight', proofChamberHeight);
+    const setProofHeight = makeDimSetter('proofHeight', proofHeight);
+    const setScoringHeight = makeDimSetter('scoringHeight', scoringHeight);
+    const setYeastHeight = makeDimSetter('yeastHeight', yeastHeight);
+    const setCrustHeight = makeDimSetter('crustHeight', crustHeight);
+    const setSamplerHeight = makeDimSetter('samplerHeight', samplerHeight);
+    const setGrandBouleHeight = makeDimSetter('grandBouleHeight', grandBouleHeight);
+
+    // §47.3 — Sidebar / Inspector / Chat / Ai panels render symmetrically on
+    // both sides of the main content. Prior to this helper, each panel was
+    // rendered twice (~80 lines of near-identical JSX) with only the handle
+    // side and the border direction differing.
+    const renderSidePanel = (
+        open: boolean,
+        placement: 'left' | 'right',
+        side: 'left' | 'right',
+        panel: ReactNode,
+        onResize: (d: number) => void
+    ): ReactNode => {
+        if (!open || placement !== side) {
+            return null;
+        }
+        const handle = <DragResizeHandle side={side === 'left' ? 'right' : 'left'} onResize={onResize} />;
+        return side === 'left' ? (
+            <>
+                {panel}
+                {handle}
+            </>
+        ) : (
+            <>
+                {handle}
+                {panel}
+            </>
+        );
+    };
+
+    const sidebarNode = <Sidebar style={{ width: sidebarWidth, minWidth: 180 }} />;
+    const inspectorNode = <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />;
+    const chatNode = <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />;
+    const aiNode = (side: 'left' | 'right'): ReactNode => (
+        <div
+            className={`flex flex-col ${
+                side === 'left' ? 'border-r' : 'border-l'
+            } border-border-hairline bg-surface-tray overflow-hidden`}
+            style={{ width: aiWidth, minWidth: 200 }}
+        >
+            <GenerativeAiPanel />
+        </div>
+    );
+    const onSidebarResize = (d: number): void => setSidebarWidth((w) => clamp(w + d, 180, 500));
+    const onInspectorResize = (d: number): void => setInspectorWidth((w) => clamp(w + d, 200, 500));
+    const onChatResize = (d: number): void => setChatWidth((w) => clamp(w + d, 200, 600));
+    const onAiResize = (d: number): void => setAiWidth((w) => clamp(w + d, 200, 500));
 
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). Two effects manage transitions:
@@ -255,50 +316,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 {/* ─── Main horizontal layout ─── */}
                 <div className="flex flex-1 overflow-hidden">
                     {/* Left dynamically placed panels */}
-                    {prefs.panelPlacementSidebar === 'left' && sidebarOpen ? (
-                        <>
-                            <Sidebar style={{ width: sidebarWidth, minWidth: 180 }} />
-                            <DragResizeHandle
-                                side="right"
-                                onResize={(d) => setSidebarWidth((w) => clamp(w + d, 180, 500))}
-                            />
-                        </>
-                    ) : null}
-
-                    {prefs.panelPlacementInspector === 'left' && inspectorOpen ? (
-                        <>
-                            <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />
-                            <DragResizeHandle
-                                side="right"
-                                onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))}
-                            />
-                        </>
-                    ) : null}
-
-                    {prefs.panelPlacementChat === 'left' && chatPanelOpen ? (
-                        <>
-                            <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />
-                            <DragResizeHandle
-                                side="right"
-                                onResize={(d) => setChatWidth((w) => clamp(w + d, 200, 600))}
-                            />
-                        </>
-                    ) : null}
-
-                    {prefs.panelPlacementAi === 'left' && aiPanelOpen ? (
-                        <>
-                            <div
-                                className="flex flex-col border-r border-border-hairline bg-surface-tray overflow-hidden"
-                                style={{ width: aiWidth, minWidth: 200 }}
-                            >
-                                <GenerativeAiPanel />
-                            </div>
-                            <DragResizeHandle
-                                side="right"
-                                onResize={(d) => setAiWidth((w) => clamp(w + d, 200, 500))}
-                            />
-                        </>
-                    ) : null}
+                    {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'left', sidebarNode, onSidebarResize)}
+                    {renderSidePanel(inspectorOpen, prefs.panelPlacementInspector, 'left', inspectorNode, onInspectorResize)}
+                    {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'left', chatNode, onChatResize)}
+                    {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
                     {/* Center: vertical split — arrangement over mixer */}
                     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -604,47 +625,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     </div>
 
                     {/* Right dynamically placed panels */}
-                    {prefs.panelPlacementSidebar === 'right' && sidebarOpen ? (
-                        <>
-                            <DragResizeHandle
-                                side="left"
-                                onResize={(d) => setSidebarWidth((w) => clamp(w + d, 180, 500))}
-                            />
-                            <Sidebar style={{ width: sidebarWidth, minWidth: 180 }} />
-                        </>
-                    ) : null}
-
-                    {prefs.panelPlacementInspector === 'right' && inspectorOpen ? (
-                        <>
-                            <DragResizeHandle
-                                side="left"
-                                onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))}
-                            />
-                            <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />
-                        </>
-                    ) : null}
-
-                    {prefs.panelPlacementChat === 'right' && chatPanelOpen ? (
-                        <>
-                            <DragResizeHandle
-                                side="left"
-                                onResize={(d) => setChatWidth((w) => clamp(w + d, 200, 600))}
-                            />
-                            <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />
-                        </>
-                    ) : null}
-
-                    {prefs.panelPlacementAi === 'right' && aiPanelOpen ? (
-                        <>
-                            <DragResizeHandle side="left" onResize={(d) => setAiWidth((w) => clamp(w + d, 200, 500))} />
-                            <div
-                                className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
-                                style={{ width: aiWidth, minWidth: 200 }}
-                            >
-                                <GenerativeAiPanel />
-                            </div>
-                        </>
-                    ) : null}
+                    {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'right', sidebarNode, onSidebarResize)}
+                    {renderSidePanel(inspectorOpen, prefs.panelPlacementInspector, 'right', inspectorNode, onInspectorResize)}
+                    {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'right', chatNode, onChatResize)}
+                    {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'right', aiNode('right'), onAiResize)}
                 </div>
 
                 <StatusBar />
