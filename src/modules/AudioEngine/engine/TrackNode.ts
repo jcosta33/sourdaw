@@ -205,7 +205,7 @@ export class TrackNode {
 
     public addDevice(deviceId: string, deviceType: string, externalInstanceId?: string): void {
         if (this.strip.deviceNodes.some((d) => d.deviceId === deviceId)) {
-            logger.warn(`Device ${deviceId} already exists on track ${this.trackId}`);
+            logger.debug(`Device ${deviceId} already exists on track ${this.trackId}`);
             return;
         }
 

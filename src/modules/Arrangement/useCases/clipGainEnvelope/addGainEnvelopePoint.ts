@@ -1,15 +1,15 @@
 import { type GainEnvelopePoint, setEnvelope } from '../../stores/gainEnvelopeStore';
-import { getClipGainEnvelope } from './getClipGainEnvelope';
+import { ensureClipGainEnvelope } from './getClipGainEnvelope';
 
 export type { GainEnvelopePoint };
 
 export const addGainEnvelopePointDeps = {
-    getClipGainEnvelope,
+    ensureClipGainEnvelope,
     setEnvelope,
 };
 
 export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb: number): GainEnvelopePoint {
-    const env = getClipGainEnvelope(clipId);
+    const env = ensureClipGainEnvelope(clipId);
     const point: GainEnvelopePoint = {
         id: `gep-${crypto.randomUUID().slice(0, 6)}`,
         beatOffset: Math.max(0, beatOffset),
