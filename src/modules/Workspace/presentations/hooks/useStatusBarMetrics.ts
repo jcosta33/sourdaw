@@ -26,7 +26,13 @@ export type StatusBarMetricRefs = {
 export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
     const idRef = useRef(crypto.randomUUID());
     const lastFrameRef = useRef(0);
-    const cpuSamplesRef = useRef<number[]>([]);
+    // §162.x — ring buffer for CPU samples. 30-entry Array.shift() on
+    // every status-bar tick was O(n); fixed-size Float32Array + head
+    // index gives O(1) push.
+    const CPU_SAMPLE_WINDOW = 30;
+    const cpuSamplesRef = useRef<Float32Array>(new Float32Array(CPU_SAMPLE_WINDOW));
+    const cpuHeadRef = useRef(0);
+    const cpuFilledRef = useRef(0);
     const idleDeadlineRef = useRef(-1);
 
     useEffect(() => {
@@ -79,15 +85,17 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const floor = isPlaying ? 3 : 0;
             const load = Math.max(floor, frameLoad, idleLoad);
             const samples = cpuSamplesRef.current;
-            samples.push(Math.max(0, load));
-            if (samples.length > 30) {
-                samples.shift();
+            samples[cpuHeadRef.current] = Math.max(0, load);
+            cpuHeadRef.current = (cpuHeadRef.current + 1) % CPU_SAMPLE_WINDOW;
+            if (cpuFilledRef.current < CPU_SAMPLE_WINDOW) {
+                cpuFilledRef.current++;
             }
+            const filled = cpuFilledRef.current;
             let sum = 0;
-            for (let i = 0; i < samples.length; i++) {
+            for (let i = 0; i < filled; i++) {
                 sum += samples[i]!;
             }
-            const cpuPct = Math.round(sum / samples.length);
+            const cpuPct = filled > 0 ? Math.round(sum / filled) : 0;
 
             if (refs.cpuBar.current) {
                 refs.cpuBar.current.style.width = `${Math.min(100, cpuPct)}%`;

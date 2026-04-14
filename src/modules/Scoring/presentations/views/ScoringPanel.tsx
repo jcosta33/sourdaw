@@ -437,17 +437,30 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
     return <canvas ref={canvasRef} width={480} height={180} className="h-full w-full" />;
 };
 
+const HISTORY_GRAPH_WINDOW = 300;
+
 const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const historyRef = useRef<number[]>([]);
+    // §163.x — ring buffer for cents history. 300-entry Array.shift() on
+    // every cents update (sung note pitch) was O(n); fixed-size
+    // Float32Array + head/filled counters give O(1) push.
+    const historyBufRef = useRef<Float32Array>(new Float32Array(HISTORY_GRAPH_WINDOW));
+    const historyHeadRef = useRef(0);
+    const historyFilledRef = useRef(0);
 
     useEffect(() => {
         if (active) {
-            historyRef.current.push(cents);
-            if (historyRef.current.length > 300) {
-                historyRef.current.shift();
+            const buf = historyBufRef.current;
+            buf[historyHeadRef.current] = cents;
+            historyHeadRef.current = (historyHeadRef.current + 1) % HISTORY_GRAPH_WINDOW;
+            if (historyFilledRef.current < HISTORY_GRAPH_WINDOW) {
+                historyFilledRef.current++;
             }
         }
+        const historyLength = historyFilledRef.current;
+        const oldestIdx = historyFilledRef.current < HISTORY_GRAPH_WINDOW ? 0 : historyHeadRef.current;
+        const readHistory = (i: number): number =>
+            historyBufRef.current[(oldestIdx + i) % HISTORY_GRAPH_WINDOW]!;
 
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -482,8 +495,7 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
         ctx.lineTo(width, height / 2);
         ctx.stroke();
 
-        const history = historyRef.current;
-        if (history.length < 2) {
+        if (historyLength < 2) {
             return;
         }
 
@@ -493,9 +505,9 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
         ctx.strokeStyle = 'rgba(140,200,220,0.65)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        for (let index = 0; index < history.length; index += 1) {
-            const x = (index / 300) * width;
-            const y = height / 2 - ((history[index] ?? 0) / 50) * (height / 2);
+        for (let index = 0; index < historyLength; index += 1) {
+            const x = (index / HISTORY_GRAPH_WINDOW) * width;
+            const y = height / 2 - (readHistory(index) / 50) * (height / 2);
             if (index === 0) {
                 ctx.moveTo(x, y);
             } else {
@@ -508,9 +520,9 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
         ctx.strokeStyle = 'rgba(140,200,220,0.7)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        for (let index = 0; index < history.length; index += 1) {
-            const x = (index / 300) * width;
-            const y = height / 2 - ((history[index] ?? 0) / 50) * (height / 2);
+        for (let index = 0; index < historyLength; index += 1) {
+            const x = (index / HISTORY_GRAPH_WINDOW) * width;
+            const y = height / 2 - (readHistory(index) / 50) * (height / 2);
             if (index === 0) {
                 ctx.moveTo(x, y);
             } else {

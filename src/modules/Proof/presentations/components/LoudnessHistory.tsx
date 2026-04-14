@@ -29,14 +29,23 @@ export const LoudnessHistory = ({
     height,
 }: LoudnessHistoryProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const historyRef = useRef<number[]>([]);
+    // §160.x — ring buffer for LUFS history. 300-element Array.shift()
+    // was O(n) on every momentaryLufs update (~10 Hz). Fixed-size
+    // Float32Array + head/filled counters gives O(1) push.
+    const historyBufRef = useRef<Float32Array>(new Float32Array(HISTORY_LENGTH));
+    const historyHeadRef = useRef(0);
+    const historyFilledRef = useRef(0);
 
     useEffect(() => {
-        const history = historyRef.current;
-        history.push(momentaryLufs);
-        if (history.length > HISTORY_LENGTH) {
-            history.shift();
+        const buf = historyBufRef.current;
+        buf[historyHeadRef.current] = momentaryLufs;
+        historyHeadRef.current = (historyHeadRef.current + 1) % HISTORY_LENGTH;
+        if (historyFilledRef.current < HISTORY_LENGTH) {
+            historyFilledRef.current++;
         }
+        const historyLength = historyFilledRef.current;
+        const oldestIdx = historyFilledRef.current < HISTORY_LENGTH ? 0 : historyHeadRef.current;
+        const readHistory = (i: number): number => buf[(oldestIdx + i) % HISTORY_LENGTH]!;
 
         const canvas = canvasRef.current;
         if (!canvas) {return;}
@@ -107,20 +116,20 @@ export const LoudnessHistory = ({
         }
 
         // Draw momentary LUFS history as filled area
-        if (history.length > 1) {
+        if (historyLength > 1) {
             const stepX = w / HISTORY_LENGTH;
-            const startX = w - history.length * stepX;
+            const startX = w - historyLength * stepX;
 
             // Fill
             ctx.beginPath();
             ctx.moveTo(startX, h);
-            for (let i = 0; i < history.length; i++) {
+            for (let i = 0; i < historyLength; i++) {
                 const x = startX + i * stepX;
-                const lufs = Math.max(MIN_DB, Math.min(MAX_DB, history[i]!));
+                const lufs = Math.max(MIN_DB, Math.min(MAX_DB, readHistory(i)));
                 const y = ((lufs - MAX_DB) / (MIN_DB - MAX_DB)) * h;
                 ctx.lineTo(x, y);
             }
-            ctx.lineTo(startX + (history.length - 1) * stepX, h);
+            ctx.lineTo(startX + (historyLength - 1) * stepX, h);
             ctx.closePath();
 
             const gradient = ctx.createLinearGradient(0, 0, 0, h);
@@ -132,9 +141,9 @@ export const LoudnessHistory = ({
 
             // Stroke — glow pass
             ctx.beginPath();
-            for (let i = 0; i < history.length; i++) {
+            for (let i = 0; i < historyLength; i++) {
                 const x = startX + i * stepX;
-                const lufs = Math.max(MIN_DB, Math.min(MAX_DB, history[i]!));
+                const lufs = Math.max(MIN_DB, Math.min(MAX_DB, readHistory(i)));
                 const y = ((lufs - MAX_DB) / (MIN_DB - MAX_DB)) * h;
                 if (i === 0) {ctx.moveTo(x, y);}
                 else {ctx.lineTo(x, y);}

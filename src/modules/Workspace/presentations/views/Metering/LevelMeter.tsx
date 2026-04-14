@@ -30,7 +30,12 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
     const id = crypto.randomUUID();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const rmsBufferRef = useRef<number[]>([]);
+    // §160.x — ring buffer for RMS history avoids Array.shift() on every
+    // frame. Fixed-size Float32Array + head index + fill counter gives
+    // O(1) per push and zero allocation on the hot path.
+    const rmsBufferRef = useRef<Float32Array>(new Float32Array(RMS_BUFFER_SIZE));
+    const rmsHeadRef = useRef(0);
+    const rmsFilledRef = useRef(0);
     const peakHoldRef = useRef(0);
     const peakHoldTimeRef = useRef(0);
 
@@ -91,7 +96,9 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             return safe;
         };
 
-        rmsBufferRef.current = [];
+        rmsBufferRef.current.fill(0);
+        rmsHeadRef.current = 0;
+        rmsFilledRef.current = 0;
         peakHoldRef.current = 0;
         peakHoldTimeRef.current = 0;
 
@@ -100,16 +107,18 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
 
             const buf = rmsBufferRef.current;
-            buf.push(rawPeak * rawPeak);
-            if (buf.length > RMS_BUFFER_SIZE) {
-                buf.shift();
+            buf[rmsHeadRef.current] = rawPeak * rawPeak;
+            rmsHeadRef.current = (rmsHeadRef.current + 1) % RMS_BUFFER_SIZE;
+            if (rmsFilledRef.current < RMS_BUFFER_SIZE) {
+                rmsFilledRef.current++;
             }
 
             let sumSquares = 0;
-            for (let i = 0; i < buf.length; i++) {
+            const filled = rmsFilledRef.current;
+            for (let i = 0; i < filled; i++) {
                 sumSquares += buf[i]!;
             }
-            const rawRms = Math.sqrt(sumSquares / buf.length);
+            const rawRms = filled > 0 ? Math.sqrt(sumSquares / filled) : 0;
 
             if (rawPeak >= peakHoldRef.current) {
                 peakHoldRef.current = rawPeak;
