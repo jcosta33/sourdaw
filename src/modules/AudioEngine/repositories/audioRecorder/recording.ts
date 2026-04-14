@@ -18,6 +18,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 import { audioEngine } from '../createWebAudioEngine';
 import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
@@ -32,21 +33,34 @@ export type { AudioRecordingState } from '../../stores/audioRecordingStore';
 const RING_FLOATS = 524_288;
 const SAB_BYTES = 4 + RING_FLOATS * Float32Array.BYTES_PER_ELEMENT; // 4-byte writeHead + ring
 
-// §35.1 — Coalesce 5 module-level mutables into a single holder so the
-// recording session lives behind one named handle.
-const recordingSession: {
+type RecordingSession = {
     mediaStream: MediaStream | null;
     sourceNode: MediaStreamAudioSourceNode | null;
     recordingNode: AudioWorkletNode | null;
     recordingWorker: Worker | null;
     onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
-} = {
-    mediaStream: null,
-    sourceNode: null,
-    recordingNode: null,
-    recordingWorker: null,
-    onRecordingComplete: null,
 };
+
+// §35.1 originally coalesced 5 loose `let`s into this named holder.
+// §147.1 promotes the holder to HMR-persistent state because the OPFS
+// recording worker's `onmessage` handler closes over the same object:
+// if Vite replaces the module mid-recording, a fresh holder would leave
+// the worker's closure pointing at orphaned state, and the final PCM
+// buffer would land on an `onRecordingComplete` that's already been
+// reset to `null`. In dev, `createHmrPersistentState` stashes the
+// session on `import.meta.hot.data` so the new module instance reads
+// back the same object the old one was writing to. In prod the call
+// collapses to a one-shot initializer with no runtime overhead.
+const recordingSession = createHmrPersistentState<RecordingSession>(
+    'audioRecorder.recordingSession',
+    () => ({
+        mediaStream: null,
+        sourceNode: null,
+        recordingNode: null,
+        recordingWorker: null,
+        onRecordingComplete: null,
+    }),
+);
 
 /**
  * Pre-request microphone permission so the browser prompt fires on page load
