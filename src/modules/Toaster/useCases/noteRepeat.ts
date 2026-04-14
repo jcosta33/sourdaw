@@ -7,7 +7,7 @@
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { triggerToasterPad } from './triggerPad';
 
-type NoteRepeatState = {
+type NoteRepeatSession = {
     padIndex: number;
     velocity: number;
     timeoutId: ReturnType<typeof setTimeout>;
@@ -15,7 +15,7 @@ type NoteRepeatState = {
     intervalSec: number;
 };
 
-let activeRepeat: NoteRepeatState | null = null;
+let activeSession: NoteRepeatSession | null = null;
 
 export type NoteRepeatRate = '1/4' | '1/8' | '1/16' | '1/32' | '1/8t' | '1/16t';
 
@@ -38,24 +38,24 @@ function rateToDurationMs(rate: NoteRepeatRate, bpm: number): number {
 }
 
 export function stopNoteRepeat(): void {
-    if (activeRepeat) {
-        clearTimeout(activeRepeat.timeoutId);
-        activeRepeat = null;
+    if (activeSession) {
+        clearTimeout(activeSession.timeoutId);
+        activeSession = null;
     }
 }
 
 function scheduleNextTrigger(): void {
-    if (!activeRepeat) {
+    if (!activeSession) {
         return;
     }
 
-    triggerToasterPad(activeRepeat.padIndex, activeRepeat.velocity);
+    triggerToasterPad(activeSession.padIndex, activeSession.velocity);
 
-    activeRepeat.nextTriggerTime += activeRepeat.intervalSec;
+    activeSession.nextTriggerTime += activeSession.intervalSec;
     const now = getAudioTime();
-    const delayMs = Math.max(1, (activeRepeat.nextTriggerTime - now) * 1000);
+    const delayMs = Math.max(1, (activeSession.nextTriggerTime - now) * 1000);
 
-    activeRepeat.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+    activeSession.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
 }
 
 export function startNoteRepeat(padIndex: number, velocity: number, bpm: number, rate: NoteRepeatRate): void {
@@ -69,11 +69,11 @@ export function startNoteRepeat(padIndex: number, velocity: number, bpm: number,
     const delayMs = Math.max(1, intervalSec * 1000);
     const timeoutId = setTimeout(scheduleNextTrigger, delayMs);
 
-    activeRepeat = { padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
+    activeSession = { padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
 }
 
 export function isNoteRepeating(): boolean {
-    return activeRepeat !== null;
+    return activeSession !== null;
 }
 
 export const NOTE_REPEAT_RATES: NoteRepeatRate[] = ['1/4', '1/8', '1/16', '1/32', '1/8t', '1/16t'];

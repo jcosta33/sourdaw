@@ -3,14 +3,14 @@ import { persistLibraryRoots } from '../../repositories/libraryPersistence/persi
 import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
 import { addSamples, updateLibraryRootStatus, setScanProgress } from '../../stores/libraryStore';
 import { buildFolderTree } from '../buildFolderTree';
-let _scanAbortController: AbortController | null = null;
+let scanAbortController: AbortController | null = null;
 
 export function getScanAbortController(): AbortController | null {
-    return _scanAbortController;
+    return scanAbortController;
 }
 
 export function setScanAbortController(controller: AbortController | null): void {
-    _scanAbortController = controller;
+    scanAbortController = controller;
 }
 
 export async function* traverseBrowserDirectory(

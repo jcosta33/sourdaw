@@ -4,36 +4,31 @@ import { getFirstToasterDeviceId } from './toasterParamBridge/getFirstToasterDev
 
 export type SixteenLevelsTarget = 'velocity' | 'tune' | 'decay' | 'filter';
 
-// §167.x — 16-levels session state wrapped in a holder so HMR reloads
-// drop the whole state atomically. Three independent let-bindings with
-// cross-referenced semantics were the exact footgun §14.1 already
-// addressed elsewhere.
-const sixteenLevelsState: {
-    active: boolean;
-    targetPad: number;
+type SixteenLevelsSession = {
+    padIndex: number;
     target: SixteenLevelsTarget;
-} = {
-    active: false,
-    targetPad: 0,
-    target: 'velocity',
 };
 
+// One nullable binding replaces three loose fields that had to move
+// together: a boolean active flag plus padIndex plus target. A single
+// `Session | null` makes "inactive" the absence of a session, so the
+// active check and the field reads can never disagree.
+let activeSession: SixteenLevelsSession | null = null;
+
 export function enter16Levels(padIndex: number, paramTarget: SixteenLevelsTarget = 'velocity'): void {
-    sixteenLevelsState.active = true;
-    sixteenLevelsState.targetPad = padIndex;
-    sixteenLevelsState.target = paramTarget;
+    activeSession = { padIndex, target: paramTarget };
 }
 
 export function exit16Levels(): void {
-    sixteenLevelsState.active = false;
+    activeSession = null;
 }
 
 export function is16LevelsActive(): boolean {
-    return sixteenLevelsState.active;
+    return activeSession !== null;
 }
 
-export function get16LevelsTarget(): { padIndex: number; target: SixteenLevelsTarget } {
-    return { padIndex: sixteenLevelsState.targetPad, target: sixteenLevelsState.target };
+export function get16LevelsTarget(): SixteenLevelsSession | null {
+    return activeSession;
 }
 
 export const trigger16LevelDependencies = {
@@ -43,14 +38,15 @@ export const trigger16LevelDependencies = {
 } as const;
 
 export function trigger16Level(gridIndex: number): void {
-    if (!sixteenLevelsState.active) {
+    const session = activeSession;
+    if (!session) {
         return;
     }
 
     const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
 
     const deviceId = getFirstToasterDeviceId();
-    const { targetPad, target } = sixteenLevelsState;
+    const { padIndex: targetPad, target } = session;
 
     switch (target) {
         case 'velocity':

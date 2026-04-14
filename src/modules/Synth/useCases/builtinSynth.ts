@@ -12,7 +12,10 @@ import {
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
 
-// Pre-generated noise buffer (§54.1 — avoid per-note AudioBuffer allocation)
+// Pre-generated noise buffer (§54.1 — avoid per-note AudioBuffer allocation).
+// Cached by AudioContext sample rate — reused across every note until the
+// context sample rate changes. Not observable externally, so a plain
+// module-level `let` is the idiomatic shape per docs/03-state-management.md.
 let cachedNoiseBuffer: AudioBuffer | null = null;
 function getNoiseBuffer(ctx: BaseAudioContext): AudioBuffer {
     if (cachedNoiseBuffer && cachedNoiseBuffer.sampleRate === ctx.sampleRate) {
