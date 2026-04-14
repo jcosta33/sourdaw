@@ -19,6 +19,18 @@ export const BeatRulerBar = (): React.ReactElement => {
     const loopDragRef = useRef<{ startBeat: number } | null>(null);
     /** Ephemeral loop preview during drag — avoids flooding transportStore with 60Hz writes. */
     const loopPreviewRef = useRef<{ start: number; end: number } | null>(null);
+    /**
+     * §182.1 — per-canvas cache of last-seen dimensions + the background
+     * gradient for that height, so the rAF draw loop doesn't
+     * re-instantiate the same LinearGradient every frame and doesn't
+     * reset the canvas backing store + DPR scale when nothing changed.
+     */
+    const canvasCacheRef = useRef<{
+        cssWidth: number;
+        cssHeight: number;
+        dpr: number;
+        bgGradient: CanvasGradient;
+    } | null>(null);
 
     const defaultTimelineView: TimelineViewState = {
         scrollX: 0,
@@ -69,14 +81,25 @@ export const BeatRulerBar = (): React.ReactElement => {
         const dpr = window.devicePixelRatio || 1;
         const w = canvas.offsetWidth;
         const h = HEIGHT;
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        ctx.scale(dpr, dpr);
+
+        // §182.1 — only resize the backing store + recompute the DPR
+        // scale + rebuild the background gradient when the dimensions
+        // actually change. Per-frame this is a cache hit.
+        const cache = canvasCacheRef.current;
+        let bgGrad: CanvasGradient;
+        if (!cache || cache.cssWidth !== w || cache.cssHeight !== h || cache.dpr !== dpr) {
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+            bgGrad.addColorStop(0, '#151518');
+            bgGrad.addColorStop(1, '#111114');
+            canvasCacheRef.current = { cssWidth: w, cssHeight: h, dpr, bgGradient: bgGrad };
+        } else {
+            bgGrad = cache.bgGradient;
+        }
 
         // Background — subtle gradient for depth
-        const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-        bgGrad.addColorStop(0, '#151518');
-        bgGrad.addColorStop(1, '#111114');
         ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, w, h);
 

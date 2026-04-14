@@ -33,6 +33,14 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
         let left: Float32Array<ArrayBuffer> | null = null;
         let right: Float32Array<ArrayBuffer> | null = null;
 
+        // §194.1 — resolve CSS tokens once per mount rather than on every
+        // rAF tick. Each resolveToken() call invokes getComputedStyle on
+        // the document root, which triggers a style-read and is expensive
+        // to run at 60 Hz. Tokens don't change mid-animation.
+        const safeColor = resolveToken('--color-meter-safe', '#00CC44');
+        const hotColor = resolveToken('--color-meter-hot', '#CCCC00');
+        const clipColor = resolveToken('--color-meter-clip', '#FF3300');
+
         const draw = (): void => {
             const analyser = getMasterAnalyser();
             const binCount = analyser.frequencyBinCount;
@@ -87,10 +95,10 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             const indicatorX = midX + correlation * (midX - 4);
             const color =
                 correlation > 0.5
-                    ? resolveToken('--color-meter-safe', '#00CC44') // Good mono compatibility
+                    ? safeColor // Good mono compatibility
                     : correlation > 0
-                      ? resolveToken('--color-meter-hot', '#CCCC00') // Moderate
-                      : resolveToken('--color-meter-clip', '#FF3300'); // Phase issues
+                      ? hotColor // Moderate
+                      : clipColor; // Phase issues
 
             // Bar from center to correlation value — with glow
             const barStart = Math.min(midX, indicatorX);

@@ -33,33 +33,36 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
 
         ctx.imageSmoothingEnabled = false;
 
-        const draw = () => {
+        // §181.1 — hoist per-frame allocations outside the rAF loop.
+        // The gradient only needs to be created once per effect run (it
+        // depends on canvas height, which is fixed at mount), and the
+        // fill style is the same for every bar so it can be set once
+        // per frame instead of once per bar.
+        const canvasHeight = canvas.height;
+        const canvasWidth = canvas.width;
+        const gradient = ctx.createLinearGradient(0, canvasHeight, 0, 0);
+        gradient.addColorStop(0, 'rgba(217, 119, 6, 0.4)'); // amber/orange
+        gradient.addColorStop(0.5, 'rgba(234, 179, 8, 0.8)'); // yellow
+        gradient.addColorStop(1, 'rgba(252, 211, 77, 1)'); // bright
+        const barFill: CanvasGradient | string = isSelected ? gradient : 'rgba(255,255,255,0.06)';
+        const barWidth = Math.max(1, (canvasWidth / bufferLength) * 2.5);
+        const innerBarWidth = barWidth - 0.5;
+
+        const draw = (): void => {
             animationRef.current = requestAnimationFrame(draw);
 
             analyser!.getByteFrequencyData(dataArray);
 
-            const width = canvas.width;
-            const height = canvas.height;
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            ctx.fillStyle = barFill;
 
-            ctx.clearRect(0, 0, width, height);
-
-            const barWidth = Math.max(1, (width / bufferLength) * 2.5);
             let x = 0;
-
-            // Define a gradient for the spectrum
-            const gradient = ctx.createLinearGradient(0, height, 0, 0);
-            gradient.addColorStop(0, 'rgba(217, 119, 6, 0.4)'); // amber/orange
-            gradient.addColorStop(0.5, 'rgba(234, 179, 8, 0.8)'); // yellow
-            gradient.addColorStop(1, 'rgba(252, 211, 77, 1)'); // bright
-
             for (let i = 0; i < bufferLength; i += 2) {
-                if (x > width) {break;}
-
-                const barHeight = (dataArray[i]! / 255) * height;
-
-                ctx.fillStyle = isSelected ? gradient : 'rgba(255,255,255,0.06)';
-                ctx.fillRect(x, height - barHeight, barWidth - 0.5, barHeight);
-
+                if (x > canvasWidth) {
+                    break;
+                }
+                const barHeight = (dataArray[i]! / 255) * canvasHeight;
+                ctx.fillRect(x, canvasHeight - barHeight, innerBarWidth, barHeight);
                 x += barWidth;
             }
         };

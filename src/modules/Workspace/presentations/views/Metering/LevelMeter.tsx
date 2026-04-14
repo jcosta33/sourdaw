@@ -48,6 +48,26 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
 
         let w = container.clientWidth;
         let h = container.clientHeight;
+
+        const safe = resolveToken('--color-meter-safe', '#00CC44');
+        const hot = resolveToken('--color-meter-hot', '#CCCC00');
+        const clip = resolveToken('--color-meter-clip', '#FF3300');
+
+        // §184.x — rebuild the meter gradient only when dimensions change,
+        // not on every rAF tick. The stops are derived from fixed dB
+        // thresholds and a fixed color palette.
+        let meterGradient: CanvasGradient | null = null;
+        const rebuildGradient = (): void => {
+            meterGradient = ctx.createLinearGradient(0, h, 0, 0);
+            meterGradient.addColorStop(0, safe);
+            meterGradient.addColorStop(Math.min(1, dbToPercent(-12) / 100), safe);
+            meterGradient.addColorStop(Math.min(1, dbToPercent(-12) / 100 + 0.001), hot);
+            meterGradient.addColorStop(Math.min(1, dbToPercent(-3) / 100), hot);
+            meterGradient.addColorStop(Math.min(1, dbToPercent(-3) / 100 + 0.001), clip);
+            meterGradient.addColorStop(1, clip);
+        };
+        rebuildGradient();
+
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 w = entry.contentRect.width;
@@ -55,14 +75,11 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
                 const dpr = window.devicePixelRatio || 1;
                 canvas.width = w * dpr;
                 canvas.height = h * dpr;
-                ctx.scale(dpr, dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                rebuildGradient();
             }
         });
         resizeObserver.observe(container);
-
-        const safe = resolveToken('--color-meter-safe', '#00CC44');
-        const hot = resolveToken('--color-meter-hot', '#CCCC00');
-        const clip = resolveToken('--color-meter-clip', '#FF3300');
 
         const getMeterColor = (db: number): string => {
             if (db > -3) {
@@ -113,18 +130,11 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
                 ctx.fillStyle = '#050508';
                 ctx.fillRect(0, 0, w, h);
 
-                const grad = ctx.createLinearGradient(0, h, 0, 0);
-                grad.addColorStop(0, safe);
-                grad.addColorStop(Math.min(1, dbToPercent(-12) / 100), safe);
-                grad.addColorStop(Math.min(1, dbToPercent(-12) / 100 + 0.001), hot);
-                grad.addColorStop(Math.min(1, dbToPercent(-3) / 100), hot);
-                grad.addColorStop(Math.min(1, dbToPercent(-3) / 100 + 0.001), clip);
-                grad.addColorStop(1, clip);
-
+                // §184.x — use cached gradient (rebuilt only on resize).
                 // RMS — dimmer background fill
                 const rmsY = h - (h * rmsPct) / 100;
                 ctx.globalAlpha = 0.35;
-                ctx.fillStyle = grad;
+                ctx.fillStyle = meterGradient!;
                 ctx.fillRect(0, rmsY, w, h - rmsY);
 
                 // Peak — bright fill

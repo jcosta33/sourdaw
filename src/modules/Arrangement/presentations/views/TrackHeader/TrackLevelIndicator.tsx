@@ -65,21 +65,27 @@ export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProp
 
         let rafId = 0;
         let smoothedDb = DB_FLOOR;
+        // §185.x — reuse a single Float32Array across frames. The analyser's
+        // fftSize can change over a node's lifetime, so reallocate only when
+        // it actually does.
+        let analyserData: Float32Array<ArrayBuffer> | null = null;
 
         const draw = (): void => {
             const analyser = getTrackAnalyser(trackId);
             let currentDb = DB_FLOOR;
 
             if (analyser) {
-                const data = new Float32Array(analyser.fftSize);
-                analyser.getFloatTimeDomainData(data);
+                if (!analyserData || analyserData.length !== analyser.fftSize) {
+                    analyserData = new Float32Array(analyser.fftSize);
+                }
+                analyser.getFloatTimeDomainData(analyserData);
 
                 // Compute RMS
                 let sum = 0;
-                for (let i = 0; i < data.length; i++) {
-                    sum += data[i]! * data[i]!;
+                for (let i = 0; i < analyserData.length; i++) {
+                    sum += analyserData[i]! * analyserData[i]!;
                 }
-                const rms = Math.sqrt(sum / data.length);
+                const rms = Math.sqrt(sum / analyserData.length);
                 currentDb = rms > 0 ? 20 * Math.log10(rms) : DB_FLOOR;
             }
 
