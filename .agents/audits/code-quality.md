@@ -15,8 +15,12 @@ and **Decided against** blocks below. Full historical text lives in git
 history — search for this file at the commit tagged `audit-original`
 if you need the original wording.
 
-`pnpm typecheck` stays clean and `pnpm deps:validate` stays at the 447-warning
-baseline throughout.
+`pnpm typecheck` stays clean and `pnpm deps:validate` stays at the 452-warning
+baseline (0 errors) throughout branch 2. The 447→452 move happened entirely
+during the §3.8 `offlineRender.ts` split: the new files participate in the
+same pre-existing cross-module `no-circular` cycles that the original single
+file already participated in, so `dependency-cruiser` now attributes the
+same cycle to more files. Zero new architectural violations.
 
 ## Resolved findings
 
@@ -118,6 +122,54 @@ not `Map<>`, so React ref-equality works; fixes data-loss on panel close/reopen)
 
 **Non-reactive store reads (batch 1):** §197.1 (`gainEnvelopeStore` Map→`Store<State>`), §201.1 (RoutingGraph sidechain subscription), §202.1 (`vcaGroupStore` bare let→`Store<State>`), §211.1 (NearbyMarkerColorMenu marker subscription), §195.3 (WaveformEditor `trackStore.value?` render-time read), §198.1 (TrackNotesSection `useState(track.notes)` captured once at mount)
 
+**Continuation pass — appendix cluster landings:**
+
+- **Canvas / rAF perf — per-frame alloc hoisting:** §181.1 (MiniMasterSpectrum),
+  §182.1 (BeatRulerBar), §184.x (LevelMeter), §185.x (TrackLevelIndicator),
+  §194.1 (PhaseCorrelationDisplay `getComputedStyle` in rAF). Commit
+  `31081597`.
+- **Canvas spot-check §§189–§210:** range walked end-to-end. Already-optimised
+  files verified no-op: LUFSMeter, SpectrumAnalyzer, Goniometer, Spectrogram,
+  Oscilloscope, SpectralWaterfall, PhaseCorrelationDisplay. Three holdouts
+  fixed: `StringVibrationView` (hoisted `getContext('2d')` out of rAF loop;
+  replaced `cancelled = true` flag with proper `cancelAnimationFrame`),
+  `PianoModel3D` (vertex scratch array reused across frames; cached growable
+  upload `Float32Array` instead of allocating one per frame),
+  `CrustWaveformDisplay` (hoisted `getContext('2d')`; peak-label list
+  advance+cull now in place via write-pointer, replacing `.map().filter()`
+  two-array alloc per frame). Commit `be2bb645`.
+- **Ring buffer rolling histories:** §160.x / §162.x / §163.x — replaced
+  `Array.shift()` O(n) rolling histories with fixed-size `Float32Array` +
+  head index O(1) writes. Commit `6e9feeb2`.
+- **HMR-unsafe module state (tail):** §167.x — 16-levels holder; §122.1
+  tail — 14 more `let nextXId = 1` counters converted to
+  `crypto.randomUUID()`. Commit `df63cf66`.
+- **Misc bugs:** §179.1 (orphan `OfflineAudioContext`), §186.1 (oscillator
+  `stop()` didn't actually stop), §188.1 (stale closure in `finally` block).
+  Commit `0223e9b2`.
+- **§61.2 `HighEndPluginProcessor` silent passthrough:** now surfaces the
+  plugin-load failure via logger warn. Commit `2b0f8c13`.
+- **§114.3 CRDT branch JSON double-serialisation:** branch projection JSON
+  now cached on the branch record, serialised once. Commit `2b0f8c13`.
+- **§147.1 Recording session HMR reset:** new
+  `src/utils/HMR/createHmrPersistentState.ts` infrastructure utility (Vite
+  `import.meta.hot.data` wrapper that collapses to a plain `factory()` call
+  in prod — zero runtime overhead at ship time). The audioRecorder
+  `recordingSession` is now persisted across HMR reloads so the OPFS
+  worker's closure stays consistent with whatever `stopAudioRecording`
+  later reads. The utility's JSDoc explicitly warns against cargo-culting
+  the pattern across non-closure-captured state. Commit `aaec6510`.
+- **`storageOperations.ts` dead `dbReady` flag:** set in lockstep with
+  `db = await openDB()` and only read as a function-local idempotency
+  guard. Deleted; `initDB` now gates on `db !== null`. Less code, not a
+  new abstraction. Commit `e041a35b`.
+- **Principal-engineering revert pass:** several no-op "holder object"
+  wraps (`const state = { x }` around plain `let x`) that did not meet the
+  multi-field cross-reference threshold were reverted to the documented
+  module-state idioms (`docs/03-state-management.md`:
+  `createStore<T>` for observable state, plain TypeScript otherwise).
+  Commit `c8bdc0c3`.
+
 **§3.8 `offlineRender.ts` split:** 980-line file with `renderOffline` + `exportStems` + 10 intertwined helpers → `useCases/offlineRender/` subdirectory with one-function-per-file helpers (`constants`, `types`, `yieldToMain`, `hasToasterDevice`, `shouldCreateOfflineStrip`, `createOfflineTrackStrip`, `createOfflineBusStrip`, `schedulePendingSuspends`, `scheduleTrackClips`, `renderWithTimeout`, `exportCancellation` holder, `resolveRenderContext`). Top-level `renderOffline.ts` and `exportStems.ts` are now lean drivers. `deps:validate` baseline moved 447→452 warnings (all pre-existing cross-module `no-circular` warnings newly attributed to the split files — no new architectural violations).
 
 ---
@@ -202,24 +254,6 @@ assembly, and input-channel UI. Real product scope.
 
 ### Low-impact open bugs
 
-#### §61.2 `HighEndPluginProcessor` silent passthrough GainNode
-Silent degradation — caller receives `initialized: true` but gets a
-no-op GainNode. Throw or log at warn level so consumers know the
-worklet isn't registered. 5-line fix, deprioritised because the
-fallback path is rare.
-
-#### §114.3 Branch `JSON.stringify` double-serialization
-CRDT branch equality check serialises twice. Use a content hash once.
-Meaningful only at branch-heavy collab sessions.
-
-#### §147.1 Recording session HMR reset
-Mid-recording HMR resets `onRecordingComplete` to `null`; the OPFS
-worker completes and silently discards the audio. A proper fix
-requires genuinely HMR-persistent state (`import.meta.hot.data` or
-similar) — the codebase's current holder-object pattern is about
-encapsulation, not HMR persistence. New infrastructure, not an
-audit-item refactor.
-
 #### §70.2 `Meyda.sampleRate` / `bufferSize` — global state mutation
 Meyda's module-level singleton config is written during analysis
 calls. Unavoidable given the library API — document or wrap in a
@@ -241,32 +275,26 @@ confirmation work, not fix work.
 
 ---
 
-### Appendix findings not individually addressed (§160–§213)
+### Appendix findings — remaining unlanded (§160–§213)
 
-The original sweep added a long tail of findings that follow
-well-known patterns already landed in branch 2. They have not been
-individually walked; a parallel-agent sweep is a good fit because each
-file is independent and the patterns are now well-established.
-
-**Canvas + rAF perf** (same §181.1 / §182.1 / §141.2 / §150.3 / §194.1 patterns):
-§181.1 (MiniMasterSpectrum), §182.1–§182.4 (BeatRulerBar),
-§184.x (LevelMeter), §185.x (TrackLevelIndicator),
-§189.1 / §190.1 / §191.1 / §192.1 (Oscilloscope / Goniometer / SpectrumAnalyzer),
-§193.1 (Spectrogram / PhaseCorrelationDisplay),
-§194.1 (PhaseCorrelationDisplay getComputedStyle in rAF),
-§199.x / §200.x / §204.x / §205.x / §206.x / §207.x / §208.x / §210.x.
+The continuation pass landed the canvas/rAF hoisting cluster, the
+§§189–§210 canvas spot-check range, ring-buffer rolling histories
+§160.x/§162.x/§163.x, HMR cluster §167.x, and misc bugs §179.1/§186.1/
+§188.1 (see Resolved block). The items below remain unlanded and are
+a good fit for a parallel-agent sweep — each file is independent and
+the patterns are well-established.
 
 **Non-reactive store reads during render (batch 2):**
 §203.1, §206.4 (the render-time cluster not covered by the §195.3 /
 §197.1 / §198.1 / §201.1 / §202.1 / §211.1 work already landed).
 
-**Ring buffer `shift()` / boxed IPC allocation:**
-§160.x, §161.x, §162.x, §163.x, §164.x, §165.x, §166.x, §173.x.
+**Ring buffer `shift()` / boxed IPC allocation (remaining):**
+§161.x, §164.x, §165.x, §166.x, §173.x.
 
-**HMR-unsafe module state** (same §14.1 pattern):
-§167.x, §168.x, §169.x, §170.x, §171.x, §172.x, §176.1, §177.1.
-
-**Miscellaneous bugs + UX:**
-§179.1 (orphaned OfflineAudioContext),
-§186.1 (`stop()` doesn't stop oscillator),
-§188.1 (stale closure in finally block).
+**HMR-unsafe module state (remaining — same §14.1 pattern):**
+§168.x, §169.x, §170.x, §171.x, §172.x, §176.1, §177.1. For any of
+these where an external resource (Worker, MediaStream, WebSocket,
+timer) holds a closure reference into the state, the fix is
+`createHmrPersistentState` from `src/utils/HMR/`; otherwise a plain
+`Session | null` holder per `docs/03-state-management.md` is the
+right shape.
