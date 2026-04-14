@@ -1,4 +1,5 @@
 import { type ReactElement, useRef } from 'react';
+import { useStore } from '#/infra/store/useStore';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
@@ -8,7 +9,7 @@ import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarker
 import { removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations/removeMarker';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { isTauri } from '#/utils/tauriBridge';
-import { markerStore } from '../../stores/markerStore';
+import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { trackStore } from '../../stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
@@ -19,6 +20,8 @@ import { importMidiFile } from '../../useCases/importMidiFile';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { MARKER_COLOR_PRESETS } from '../../models/colorPalette';
 
+const defaultMarkerState: MarkerStoreState = { markers: [], sections: [] };
+
 // ── Nearby marker color sub-menu ────────────────────────────────────
 
 type NearbyMarkerColorMenuProps = {
@@ -27,7 +30,8 @@ type NearbyMarkerColorMenuProps = {
 };
 
 const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): ReactElement | null => {
-    const markers = markerStore.value?.markers ?? [];
+    const markerState = useStore(markerStore, defaultMarkerState);
+    const markers = markerState.markers ?? [];
     const nearby = markers.filter((m) => Math.abs(m.beat - beat) <= 2);
     if (nearby.length === 0) {
         return null;

@@ -1,33 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type LoopStationState } from '../../../stores/loopStationStore';
-import { toggleSync } from '../toggleSync';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { loopStationStore } from '../../../stores/loopStationStore';
-
-vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
-}));
-
-function emptyLoopState(): LoopStationState {
-    return {
-        slots: [],
-        sceneCount: 8,
-        activeScene: 0,
-        armed: false,
-        syncToTransport: true,
-        fixedLoopLength: 0,
-    };
-}
+import { toggleSync } from '../toggleSync';
 
 describe('toggleSync', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        loopStationStore.set({
+            slots: [],
+            sceneCount: 8,
+            activeScene: 0,
+            armed: false,
+            syncToTransport: true,
+            fixedLoopLength: 0,
+        });
     });
 
-    it('flips syncToTransport', () => {
-        loopStationStore.value = { ...emptyLoopState(), syncToTransport: true } as any;
-        
+    it('should flip syncToTransport when state exists', () => {
         toggleSync();
-        
-        expect(loopStationStore.set).toHaveBeenCalledWith(expect.objectContaining({ syncToTransport: false }));
+
+        expect(loopStationStore.value?.syncToTransport).toBe(false);
+    });
+
+    it('should not throw when the loop station store is null', () => {
+        loopStationStore.set(null);
+        expect(() => toggleSync()).not.toThrow();
     });
 });

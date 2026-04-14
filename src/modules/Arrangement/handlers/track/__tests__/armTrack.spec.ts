@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
     armTrack: vi.fn(),
 }));
 
-vi.mock('../../../../useCases/recording/armTrack', () => ({
+vi.mock('../../../useCases/recording/armTrack', () => ({
     armTrack: mocks.armTrack,
 }));
 

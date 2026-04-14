@@ -59,9 +59,8 @@ function onStateChange(): void {
     });
 }
 
-const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
-
 export async function initWebMidi(): Promise<boolean> {
+    const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
     const state = getState();
 
     // Subscribe to trackStore here (once, idempotent guard below) so that

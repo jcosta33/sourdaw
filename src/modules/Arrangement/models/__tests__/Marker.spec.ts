@@ -9,7 +9,7 @@ describe('createMarker', () => {
         expect(a.beat).toBe(4);
         expect(a.name).toBe('A');
         expect(a.color).toBe('oklch(0.40 0.07 200)');
-        expect(a.id).toMatch(/^marker-\d+$/);
+        expect(a.id).toMatch(/^marker-[a-f0-9]{8}$/i);
         expect(b.id).not.toBe(a.id);
     });
 });
@@ -21,6 +21,6 @@ describe('createSection', () => {
         expect(s.endBeat).toBe(16);
         expect(s.name).toBe('Intro');
         expect(s.color).toBe('oklch(0.35 0.06 260)');
-        expect(s.id).toMatch(/^section-\d+$/);
+        expect(s.id).toMatch(/^section-[a-f0-9]{8}$/i);
     });
 });

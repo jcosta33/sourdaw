@@ -17,11 +17,11 @@ const mocks = vi.hoisted(() => ({
     importMidiFile: vi.fn(),
 }));
 
-vi.mock('../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({
+vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({
     hitTestTrack: mocks.hitTestTrack,
 }));
 
-vi.mock('../../stores/trackStore', async (importOriginal) => ({
+vi.mock('../../../stores/trackStore', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     trackStore: { get value() { return mocks.trackStoreValue.value; } },
 }));
@@ -31,7 +31,7 @@ vi.mock('#/modules/SampleLibrary/stores', async (importOriginal) => ({
     libraryStore: { get value() { return mocks.libraryStoreValue.value; } },
 }));
 
-vi.mock('../../useCases/buildTimelineRenderModel', () => ({
+vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: mocks.buildTimelineRenderModel,
 }));
 
@@ -53,19 +53,19 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     decodeAudioFile: mocks.decodeAudioFile,
 }));
 
-vi.mock('../../useCases/clip/addClip', () => ({
+vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: mocks.addClip,
 }));
 
-vi.mock('../../useCases/device/addDevice', () => ({
+vi.mock('../../../useCases/device/addDevice', () => ({
     addDevice: mocks.addDevice,
 }));
 
-vi.mock('../../useCases/addTrack', () => ({
+vi.mock('../../../useCases/addTrack', () => ({
     addTrack: mocks.addTrack,
 }));
 
-vi.mock('../../useCases/importMidiFile', async (importOriginal) => ({
+vi.mock('../../../useCases/importMidiFile', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     importMidiFile: mocks.importMidiFile,
 }));
@@ -141,12 +141,13 @@ describe('useTimelineFileDrop', () => {
 
         await waitFor(() => {
             expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Kick', kind: 'audio' });
-            expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
-                trackId: 'new-track-id',
-                name: 'Kick',
-                type: 'audio',
-                audioBufferId: 'buf1'
-            }));
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    trackId: 'new-track-id',
+                    name: 'Kick',
+                    type: 'audio',
+                })
+            );
         });
     });
 

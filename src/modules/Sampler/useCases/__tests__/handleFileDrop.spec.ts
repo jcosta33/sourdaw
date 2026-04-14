@@ -21,7 +21,7 @@ vi.mock('../setSamplerMode', () => ({
     switchSamplerMode: mocks.switchSamplerMode,
 }));
 
-vi.mock('../../stores/samplerStore', () => ({
+vi.mock('../../../stores/samplerStore', () => ({
     samplerStore: mocks.samplerStore,
 }));
 

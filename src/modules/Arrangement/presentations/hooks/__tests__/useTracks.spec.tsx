@@ -10,7 +10,7 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: mocks.useStore,
 }));
 
-vi.mock('../../stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {},
 }));
 

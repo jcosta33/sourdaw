@@ -9,7 +9,7 @@ describe('createWarpMarker', () => {
         expect(m.originalBeat).toBe(0);
         expect(m.warpedBeat).toBe(0);
         expect(n.id).not.toBe(m.id);
-        expect(n.id).toMatch(/^warp-\d+$/);
+        expect(n.id).toMatch(/^warp-[a-f0-9]{8}$/i);
     });
 });
 

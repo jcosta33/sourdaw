@@ -1,22 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ClipContextMenu } from '../ClipContextMenu';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 
-// Mock external dependencies
+// useStore reads via getSnapshot(); workspaceStore must reflect workspaceStore.set() in tests.
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((store: { getSnapshot?: () => unknown; value?: unknown }, defaultValue: unknown) => {
+        const snap = typeof store.getSnapshot === 'function' ? store.getSnapshot() : store.value;
+        return snap ?? defaultValue;
+    }),
 }));
 
-vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
-    workspaceStore: {
-        value: { selectedClipIds: [] },
-    },
-}));
-
-vi.mock('../../../stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/trackStore')>()),
     trackStore: {
-        value: { tracks: [] },
+        value: {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'clip1',
+                            name: 'Test',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                        },
+                    ],
+                },
+            ],
+        },
     },
 }));
 
@@ -66,7 +79,7 @@ describe('ClipContextMenu', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        workspaceStore.value = { selectedClipIds: [] };
+        workspaceStore.set({ ...defaultWorkspaceState, selectedClipIds: [] });
     });
 
     it('should render without crashing', () => {
@@ -97,9 +110,10 @@ describe('ClipContextMenu', () => {
     });
 
     it('should show multi-select info when multiple clips selected', () => {
-        workspaceStore.value = {
+        workspaceStore.set({
+            ...defaultWorkspaceState,
             selectedClipIds: ['clip1', 'clip2', 'clip3'],
-        };
+        });
 
         render(
             <ClipContextMenu

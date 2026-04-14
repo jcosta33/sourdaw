@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
     duplicateTrack: vi.fn(),
 }));
 
-vi.mock('../../../../useCases/duplicateTrack', () => ({
+vi.mock('../../../useCases/duplicateTrack', () => ({
     duplicateTrack: mocks.duplicateTrack,
 }));
 

@@ -47,17 +47,17 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     broadcastPresence: mocks.broadcastPresence
 }));
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { get value() { return mocks.collaborationStoreValue.value; } } }));
-vi.mock('../../stores/timelineViewStore', async (importOriginal) => ({ 
+vi.mock('../../../stores/timelineViewStore', async (importOriginal) => ({ 
     ...(await importOriginal<any>()),
     timelineViewStore: { get value() { return mocks.timelineViewStoreValue.value; } },
     zoomTimeline: mocks.zoomTimeline,
 }));
-vi.mock('../../useCases/timelineInteractions/setPlayheadFromClick', () => ({ setPlayheadFromClick: mocks.setPlayheadFromClick }));
-vi.mock('../../useCases/timelineInteractions/beginClipDrag', () => ({ beginClipDrag: mocks.beginClipDrag }));
-vi.mock('../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: mocks.hitTestClip }));
-vi.mock('../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({ hitTestTrack: mocks.hitTestTrack }));
-vi.mock('../../useCases/timelineInteractions/hitTestClipEdge', () => ({ hitTestClipEdge: mocks.hitTestClipEdge }));
-vi.mock('../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid: mocks.snapToGrid }));
+vi.mock('../../../useCases/timelineInteractions/setPlayheadFromClick', () => ({ setPlayheadFromClick: mocks.setPlayheadFromClick }));
+vi.mock('../../../useCases/timelineInteractions/beginClipDrag', () => ({ beginClipDrag: mocks.beginClipDrag }));
+vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: mocks.hitTestClip }));
+vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({ hitTestTrack: mocks.hitTestTrack }));
+vi.mock('../../../useCases/timelineInteractions/hitTestClipEdge', () => ({ hitTestClipEdge: mocks.hitTestClipEdge }));
+vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid: mocks.snapToGrid }));
 vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     workspaceStore: { get value() { return mocks.workspaceStoreValue.value; } },
@@ -72,7 +72,7 @@ vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
     selectClip: mocks.selectClip,
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));
-vi.mock('../../stores/trackStore', () => ({ trackStore: { get value() { return mocks.trackStoreValue.value; } } }));
+vi.mock('../../../stores/trackStore', () => ({ trackStore: { get value() { return mocks.trackStoreValue.value; } } }));
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     toggleLoop: mocks.toggleLoop,
@@ -88,14 +88,14 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     pushUndoEntry: mocks.pushUndoEntry
 }));
-vi.mock('../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: mocks.selectTrack }));
-vi.mock('../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
-vi.mock('../../useCases/clip/removeClip', () => ({ removeClip: mocks.removeClip }));
-vi.mock('../../useCases/clip/moveClip', () => ({ moveClip: mocks.moveClip }));
-vi.mock('../../useCases/clipEditing/trimClipStart', () => ({ trimClipStart: mocks.trimClipStart }));
-vi.mock('../../useCases/clipEditing/trimClipEnd', () => ({ trimClipEnd: mocks.trimClipEnd }));
-vi.mock('../../useCases/buildTimelineRenderModel', () => ({ buildTimelineRenderModel: mocks.buildTimelineRenderModel }));
-vi.mock('../../useCases/timelineInteractions/getTrackAtY', () => ({ getTrackAtY: mocks.getTrackAtY }));
+vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: mocks.selectTrack }));
+vi.mock('../../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
+vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: mocks.removeClip }));
+vi.mock('../../../useCases/clip/moveClip', () => ({ moveClip: mocks.moveClip }));
+vi.mock('../../../useCases/clipEditing/trimClipStart', () => ({ trimClipStart: mocks.trimClipStart }));
+vi.mock('../../../useCases/clipEditing/trimClipEnd', () => ({ trimClipEnd: mocks.trimClipEnd }));
+vi.mock('../../../useCases/buildTimelineRenderModel', () => ({ buildTimelineRenderModel: mocks.buildTimelineRenderModel }));
+vi.mock('../../../useCases/timelineInteractions/getTrackAtY', () => ({ getTrackAtY: mocks.getTrackAtY }));
 vi.mock('../helpers/timelineMouse', () => ({
     canvasXToBeat: mocks.canvasXToBeat,
     getContentY: mocks.getContentY,
@@ -118,6 +118,9 @@ describe('useTimelineInteractions', () => {
         vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 500 } as any);
         canvasRef = { current: canvas };
         mocks.buildTimelineRenderModel.mockReturnValue({ tracks: [], tempo: 120 });
+        mocks.hitTestClip.mockReturnValue(null);
+        mocks.beginClipDrag.mockReturnValue(undefined);
+        mocks.hitTestClipEdge.mockReturnValue(null);
     });
 
     it('selects a clip on mouse down', () => {

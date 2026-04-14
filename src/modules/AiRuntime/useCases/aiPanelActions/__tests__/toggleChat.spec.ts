@@ -14,8 +14,9 @@ describe('toggleChat', () => {
         vi.clearAllMocks();
     });
 
-    it('calls toggleChatPanel from Workspace module', () => {
+    it('should delegate to toggleChatPanel', () => {
         toggleChat();
+
         expect(mocks.toggleChatPanel).toHaveBeenCalledTimes(1);
     });
 });

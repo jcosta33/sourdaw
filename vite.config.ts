@@ -2,7 +2,7 @@
 import { fileURLToPath, URL } from 'node:url';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
@@ -35,6 +35,8 @@ export default defineConfig({
         environment: 'jsdom',
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
+        /** Local agent worktrees mirror `src/` — exclude so `vitest run` only hits the main tree. */
+        exclude: [...configDefaults.exclude, 'dist/**', '.claude/**'],
         coverage: {
             all: true,
             provider: 'v8',

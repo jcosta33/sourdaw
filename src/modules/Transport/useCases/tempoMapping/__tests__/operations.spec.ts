@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { estimateOnsetsFromClips, applyTempoMap } from '../operations/detectProjectTempo';
+import { estimateOnsetsFromClips, applyTempoMap, detectProjectTempo } from '../operations/detectProjectTempo';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
@@ -84,5 +84,36 @@ describe('applyTempoMap', () => {
         });
 
         expect(updateTransportState).toHaveBeenCalledWith({ tempo: 128 });
+    });
+});
+
+describe('detectProjectTempo', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        trackCell.value = null;
+    });
+
+    it('does not update transport when there are no MIDI onsets', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, tempo: 120 });
+
+        detectProjectTempo();
+
+        expect(updateTransportState).not.toHaveBeenCalled();
+    });
+
+    it('updates tempo when MIDI clips yield a confident tempo map', () => {
+        trackCell.value = {
+            tracks: [
+                {
+                    kind: 'midi',
+                    clips: [{ startBeat: 0, endBeat: 16 }],
+                },
+            ],
+        };
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, tempo: 120 });
+
+        detectProjectTempo();
+
+        expect(updateTransportState).toHaveBeenCalledWith({ tempo: 120 });
     });
 });

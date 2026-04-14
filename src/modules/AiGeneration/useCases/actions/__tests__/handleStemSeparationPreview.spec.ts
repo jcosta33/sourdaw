@@ -6,9 +6,13 @@ const { separateStemsMock, updateTaskMock } = vi.hoisted(() => ({
     updateTaskMock: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases', () => ({
-    separateStems: separateStemsMock,
-}));
+vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>();
+    return {
+        ...actual,
+        separateStems: separateStemsMock,
+    };
+});
 
 vi.mock('../addTask', () => ({
     addTask: vi.fn().mockReturnValue('task-1'),

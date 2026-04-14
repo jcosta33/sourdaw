@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
     transportStoreValue: { value: { isPlaying: false } },
 }));
 
-vi.mock('../../stores/timelineViewStore', () => ({
+vi.mock('../../../stores/timelineViewStore', () => ({
     zoomTimeline: mocks.zoomTimeline,
     scrollTimeline: mocks.scrollTimeline,
     setAutoScroll: mocks.setAutoScroll,
@@ -21,7 +21,7 @@ vi.mock('../../stores/timelineViewStore', () => ({
     timelineViewStore: { get value() { return mocks.timelineViewStoreValue.value; } },
 }));
 
-vi.mock('../../stores/trackStore', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: { get value() { return mocks.trackStoreValue.value; } },
 }));
 

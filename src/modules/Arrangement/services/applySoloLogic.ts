@@ -12,6 +12,10 @@ import { type Track } from '../models/Track';
 
 const savedGains = new Map<string, number>();
 
+export function resetSoloLogic(): void {
+    savedGains.clear();
+}
+
 function isRoutedToSoloedTrack(track: Track, allTracks: Track[], visited = new Set<string>()): boolean {
     if (track.outputId === 'master') {
         return false;

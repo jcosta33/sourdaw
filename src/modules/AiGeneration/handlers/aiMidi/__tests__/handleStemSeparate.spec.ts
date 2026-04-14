@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     separateStems: vi.fn(),
     audioBufferToWav: vi.fn(),
     trackStoreValue: { value: null } as any,
+    notifyUser: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -30,6 +31,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { info: mocks.info, warn: mocks.warn },
 }));
 
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
+
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     separateStems: mocks.separateStems,
 }));
@@ -47,12 +52,14 @@ describe('handleStemSeparate', () => {
     it('bails if clip cannot be found', async () => {
         mocks.trackStoreValue.value = { tracks: [] };
 
-        await handleStemSeparate.execute({
-            type: 'stemSeparate',
-            payload: { clipId: 'missing' },
-        });
+        await expect(
+            handleStemSeparate.execute({
+                type: 'stemSeparate',
+                payload: { clipId: 'missing' },
+            })
+        ).rejects.toThrow('Clip not found');
 
-        expect(mocks.warn).toHaveBeenCalledWith('[Audio AI] Clip not found');
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Stem separation failed: clip not found', 'error');
         expect(mocks.separateStems).not.toHaveBeenCalled();
     });
 
@@ -63,43 +70,67 @@ describe('handleStemSeparate', () => {
                     clips: [
                         { id: 'c1', type: 'midi' },
                         { id: 'c2', type: 'audio', audioBufferId: null },
-                    ]
-                }
-            ]
+                    ],
+                },
+            ],
         };
 
-        await handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } });
-        expect(mocks.warn).toHaveBeenCalledWith('[Audio AI] Clip has no audio buffer');
+        await expect(
+            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })
+        ).rejects.toThrow();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Stem separation failed: clip has no audio buffer',
+            'error'
+        );
 
-        await handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c2' } });
-        expect(mocks.warn).toHaveBeenCalledWith('[Audio AI] Clip has no audio buffer');
+        await expect(
+            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c2' } })
+        ).rejects.toThrow();
     });
 
     it('bails if buffer cannot be loaded from cache', async () => {
         mocks.trackStoreValue.value = {
-            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }]
+            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
         };
         mocks.cacheGet.mockReturnValue(null);
 
-        await handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } });
-        expect(mocks.warn).toHaveBeenCalledWith('[Audio AI] Audio buffer not found in cache');
+        await expect(
+            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })
+        ).rejects.toThrow();
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Stem separation failed: audio buffer not found in cache',
+            'error'
+        );
     });
 
     it('separates stems, creates tracks, and adds clips', async () => {
         mocks.trackStoreValue.value = {
-            tracks: [{ clips: [{ id: 'c1', name: 'Vocals', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 }] }]
+            tracks: [
+                {
+                    clips: [
+                        {
+                            id: 'c1',
+                            name: 'Vocals',
+                            type: 'audio',
+                            audioBufferId: 'buf1',
+                            startBeat: 0,
+                            endBeat: 4,
+                        },
+                    ],
+                },
+            ],
         };
-        
+
         const mockBuffer = {} as AudioBuffer;
         mocks.cacheGet.mockReturnValue(mockBuffer);
         mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
-        
+
         mocks.separateStems.mockResolvedValue({
             vocals: {} as AudioBuffer,
             drums: {} as AudioBuffer,
         });
 
-        // Mock addTrack to return tracks with distinct IDs
         let trackIdCounter = 0;
         mocks.addTrack.mockImplementation(() => ({ id: `t${++trackIdCounter}` }));
 
@@ -114,26 +145,33 @@ describe('handleStemSeparate', () => {
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — drums', kind: 'audio' });
 
         expect(mocks.addClip).toHaveBeenCalledTimes(2);
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
-            trackId: 't1',
-            name: 'vocals',
-        }));
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
-            trackId: 't2',
-            name: 'drums',
-        }));
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                name: 'vocals',
+            })
+        );
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't2',
+                name: 'drums',
+            })
+        );
 
         expect(mocks.info).toHaveBeenCalledWith('[Audio AI] Separated into 2 stems');
     });
 
     it('logs warning if separation throws', async () => {
         mocks.trackStoreValue.value = {
-            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }]
+            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
         };
         mocks.cacheGet.mockReturnValue({} as AudioBuffer);
         mocks.separateStems.mockRejectedValue(new Error('Oops'));
 
-        await handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } });
+        await expect(
+            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })
+        ).rejects.toThrow('Oops');
+
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('Oops'));
     });
 

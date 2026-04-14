@@ -16,8 +16,8 @@ describe('commandQueries (undo helpers)', () => {
         const a = createUndoEntry('Test', action, inverse, 'voice');
         const b = createUndoEntry('Test 2', action, null, 'manual');
 
-        expect(a.id).toMatch(/^undo-\d+$/);
-        expect(b.id).toMatch(/^undo-\d+$/);
+        expect(a.id).toMatch(/^undo-[a-f0-9]{8}$/i);
+        expect(b.id).toMatch(/^undo-[a-f0-9]{8}$/i);
         expect(a.id).not.toBe(b.id);
         expect(a).toMatchObject({
             kind: 'action',
@@ -53,8 +53,8 @@ describe('commandQueries (undo helpers)', () => {
     it('should generate sequential group ids with labels', () => {
         const g1 = generateGroupId('Batch A');
         const g2 = generateGroupId('Batch B');
-        expect(g1.groupId).toMatch(/^group-\d+$/);
-        expect(g2.groupId).toMatch(/^group-\d+$/);
+        expect(g1.groupId).toMatch(/^group-[a-f0-9]{8}$/i);
+        expect(g2.groupId).toMatch(/^group-[a-f0-9]{8}$/i);
         expect(g1.groupId).not.toBe(g2.groupId);
         expect(g1.groupLabel).toBe('Batch A');
         expect(g2.groupLabel).toBe('Batch B');

@@ -1,71 +1,52 @@
 import { describe, it, expect, vi } from 'vitest';
-import { DeviceFactoryRegistry, type AudioDeviceStrategy } from '../AudioDeviceStrategy';
-import { type Device } from '../../../models/TrackViewTypes';
-
-function mockDevice(type: string): Device {
-    return {
-        id: 'dev-1',
-        name: 'Test',
-        type,
-        bypassed: false,
-        parameterValues: {},
-    };
-}
+import { DeviceFactoryRegistry } from '../AudioDeviceStrategy';
 
 describe('DeviceFactoryRegistry', () => {
-    it('should use the first registered matcher that applies', async () => {
+    it('should register and use a string prefix matcher', async () => {
         const registry = new DeviceFactoryRegistry();
-        const first = vi.fn(
-            async (): Promise<AudioDeviceStrategy> =>
-                ({ node: {} as never, setParam: vi.fn() }) as AudioDeviceStrategy
-        );
-        const second = vi.fn(
-            async (): Promise<AudioDeviceStrategy> =>
-                ({ node: {} as never, setParam: vi.fn() }) as AudioDeviceStrategy
-        );
-
-        registry.register('foo', first);
-        registry.register('foobar', second);
-
-        const ctx = {} as BaseAudioContext;
-        await registry.createDevice(ctx, mockDevice('foobar'));
-
-        expect(first).toHaveBeenCalledTimes(1);
-        expect(second).not.toHaveBeenCalled();
-    });
-
-    it('should match device types by string prefix', async () => {
-        const registry = new DeviceFactoryRegistry();
-        const creator = vi.fn(
-            async (): Promise<AudioDeviceStrategy> =>
-                ({ node: {} as never, setParam: vi.fn() }) as AudioDeviceStrategy
-        );
+        const creator = vi.fn().mockResolvedValue('mock-strategy' as any);
+        
         registry.register('builtin-', creator);
-
-        await registry.createDevice({} as BaseAudioContext, mockDevice('builtin-eq'));
-
-        expect(creator).toHaveBeenCalledTimes(1);
+        
+        const result = await registry.createDevice({} as any, { type: 'builtin-gain' } as any);
+        
+        expect(creator).toHaveBeenCalled();
+        expect(result).toBe('mock-strategy');
     });
 
-    it('should match device types using a predicate', async () => {
+    it('should register and use a function matcher', async () => {
         const registry = new DeviceFactoryRegistry();
-        const creator = vi.fn(
-            async (): Promise<AudioDeviceStrategy> =>
-                ({ node: {} as never, setParam: vi.fn() }) as AudioDeviceStrategy
-        );
-        registry.register((type) => type === 'custom-x', creator);
-
-        await registry.createDevice({} as BaseAudioContext, mockDevice('custom-x'));
-
-        expect(creator).toHaveBeenCalledTimes(1);
+        const creator = vi.fn().mockResolvedValue('mock-strategy' as any);
+        const matcher = (type: string) => type.includes('custom');
+        
+        registry.register(matcher, creator);
+        
+        const result = await registry.createDevice({} as any, { type: 'my-custom-device' } as any);
+        
+        expect(creator).toHaveBeenCalled();
+        expect(result).toBe('mock-strategy');
     });
 
-    it('should throw when no factory matches', async () => {
+    it('should throw if no matcher matches', async () => {
         const registry = new DeviceFactoryRegistry();
-        registry.register('only-this-', vi.fn());
+        registry.register('builtin-', vi.fn());
+        
+        await expect(registry.createDevice({} as any, { type: 'vst-plugin' } as any))
+            .rejects.toThrow('No device factory registered for type: vst-plugin');
+    });
 
-        await expect(
-            registry.createDevice({} as BaseAudioContext, mockDevice('other'))
-        ).rejects.toThrow(/No device factory registered/);
+    it('should use the first matching factory', async () => {
+        const registry = new DeviceFactoryRegistry();
+        const c1 = vi.fn().mockResolvedValue('c1' as any);
+        const c2 = vi.fn().mockResolvedValue('c2' as any);
+        
+        registry.register('test-', c1);
+        registry.register('test-specific', c2);
+        
+        const result = await registry.createDevice({} as any, { type: 'test-specific' } as any);
+        
+        expect(result).toBe('c1'); // First one wins
+        expect(c1).toHaveBeenCalled();
+        expect(c2).not.toHaveBeenCalled();
     });
 });

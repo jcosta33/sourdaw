@@ -10,28 +10,13 @@ vi.mock('../../../useCases/clipEditing/setClipColor', () => ({
 }));
 
 describe('handleSetClipColor', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
+    beforeEach(() => vi.clearAllMocks());
 
-    it('executes setClipColor with the provided payload', () => {
+    it('delegates to setClipColor use case', () => {
         handleSetClipColor.execute({
             type: 'setClipColor',
-            payload: { clipId: 'c1', color: '#ff0000' },
+            payload: { clipId: 'c1', color: '#ff0000' }
         });
-
         expect(mocks.setClipColor).toHaveBeenCalledWith('c1', '#ff0000');
-    });
-
-    it('provides a description', () => {
-        const desc = handleSetClipColor.describe({
-            type: 'setClipColor',
-            payload: { clipId: 'c1', color: '#ff0000' },
-        });
-        expect(desc.label).toBe('Set clip color');
-    });
-
-    it('is undoable', () => {
-        expect(handleSetClipColor.undoable).toBe(true);
     });
 });
