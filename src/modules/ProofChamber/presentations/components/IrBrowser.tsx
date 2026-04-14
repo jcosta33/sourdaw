@@ -7,6 +7,7 @@
 import { type ReactElement, useState, useRef, useEffect, type DragEvent } from 'react';
 import { Upload } from 'lucide-react';
 import { logger } from '#/infra/logger/appLogger';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
 type IrBrowserProps = {
     onIrLoaded: (data: Float32Array, channels: number, sampleRate: number) => void;
@@ -35,8 +36,10 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
 
         try {
             const arrayBuffer = await file.arrayBuffer();
-            const ctx = new OfflineAudioContext(2, 44100, 44100);
-            const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+            // §179.1 — decode through the shared AudioContext instead of
+            // instantiating an orphaned OfflineAudioContext that was never
+            // started or cleaned up.
+            const audioBuffer = await getAudioContext().decodeAudioData(arrayBuffer);
 
             const channels = audioBuffer.numberOfChannels;
             const frameCount = audioBuffer.length;

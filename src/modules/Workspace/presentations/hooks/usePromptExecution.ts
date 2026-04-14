@@ -278,6 +278,13 @@ export const usePromptExecution = (): PromptExecutionState => {
         setIsProcessing(true);
         const controller = new AbortController();
         abortRef.current = controller;
+        // §188.1 — track the clear-on-finish decision locally instead of
+        // reading the `preview` state closure from `finally`. The closure
+        // captures the preview value as of when handleSubmit started; any
+        // `setPreview(result)` earlier in the same invocation is invisible
+        // to it, so the previous code cleared the input even when the user
+        // had just been shown a confirmation preview.
+        let shouldClearValue = true;
         try {
             const context = getProjectContext();
             const result = await parsePromptToActions(value, context, controller.signal);
@@ -289,6 +296,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             if (result.requiresConfirmation && result.actions.length > 0) {
                 setPreview(result);
                 setIsProcessing(false);
+                shouldClearValue = false;
                 return;
             }
 
@@ -309,7 +317,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         } finally {
             abortRef.current = null;
             setIsProcessing(false);
-            if (!preview) {
+            if (shouldClearValue) {
                 setValue('');
             }
         }

@@ -10,7 +10,11 @@ export type PreviewHandle = {
 };
 
 export const usePreviewAudio = (): PreviewHandle => {
-    const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+    // §186.1 — broaden the ref type so it can hold either an audio
+    // buffer source or an oscillator. Previously the oscillator path
+    // stashed a dummy BufferSource here, so calling stop() silently
+    // did nothing and the tone played to completion.
+    const sourceRef = useRef<AudioScheduledSourceNode | null>(null);
     const [playingId, setPlayingId] = useState<string | null>(null);
 
     const stop = () => {
@@ -75,8 +79,7 @@ export const usePreviewAudio = (): PreviewHandle => {
         osc.connect(gain);
         gain.connect(ctx.destination);
 
-        const dummySource = ctx.createBufferSource();
-        sourceRef.current = dummySource;
+        sourceRef.current = osc;
         setPlayingId(id);
 
         osc.start();
@@ -85,7 +88,7 @@ export const usePreviewAudio = (): PreviewHandle => {
         osc.onended = () => {
             osc.disconnect();
             gain.disconnect();
-            if (sourceRef.current === dummySource) {
+            if (sourceRef.current === osc) {
                 sourceRef.current = null;
                 setPlayingId(null);
             }
