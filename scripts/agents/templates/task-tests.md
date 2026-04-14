@@ -94,9 +94,9 @@ Be explicit about what you are NOT testing in this session:
 - No real time dependencies: use `vi.useFakeTimers()` or explicit values for `currentTime` / `Date.now()`
 - When extending or rewriting an existing spec, first run it (`pnpm test:run <path>`) to confirm its current state; do not assume green
 - Run `pnpm test:run <path>` after every file — all tests in scope must pass before moving to the next
-- Run `pnpm test:run` on the full suite before handoff — nothing outside your scope should have regressed
-- Run `pnpm deps:validate` before handoff — test work must not introduce architectural violations
-- Run `pnpm typecheck` before handoff — must be clean
+- Run `pnpm test:run` on the full suite before marking the task complete — nothing outside your scope should have regressed
+- Run `pnpm deps:validate` before marking the task complete — test work must not introduce architectural violations
+- Run `pnpm typecheck` before marking the task complete — must be clean
 - **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
@@ -124,7 +124,6 @@ Be explicit about what you are NOT testing in this session:
 - [ ] Self-review: Production code changes answered
 - [ ] Self-review: Completeness answered
 - [ ] Self-review: Mode-specific sections answered (extended/rewrote/deleted/de-flaked — whichever apply)
-- [ ] Handoff written
 
 ---
 
@@ -166,9 +165,9 @@ Concrete starting points for the next session if this one ends incomplete. List 
 
 ## Self-review
 
-Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing these tests as if you didn't write them. You are looking for tests that will rot — flaky tests, tests that re-assert mocks, tests that test the framework instead of the code. Read every spec adversarially.
+Stop. Act as a nitpicky senior engineer reviewing these tests as if you didn't write them. You are looking for tests that will rot — flaky tests, tests that re-assert mocks, tests that test the framework instead of the code. Read every spec adversarially.
 
-> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
+> **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
 ### Verification outputs (paste actual command output — do not paraphrase)
 
@@ -245,18 +244,4 @@ Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing th
 - Can you name the specific source of non-determinism you fixed (real timer, shared mutable state, test ordering dependency, race on async work)?
 - Did you re-run the affected test at least 10 times in a row to confirm it is now stable?
 
-Only when every answer above is written should you write the Handoff.
-
-## Handoff
-
-> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
-
-Summary for the next session or reviewer.
-
-### Done:
-
-### Not done:
-
-### Watch out for:
-
-### Docs updated:
+Only when every answer above is written is this task complete.

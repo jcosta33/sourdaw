@@ -104,7 +104,6 @@ If you cannot find any prior art, state that explicitly — "no existing pattern
 - [ ] Self-review: Open questions answered
 - [ ] Self-review: Consistency answered
 - [ ] Self-review: Integration with existing patterns answered
-- [ ] Handoff written
 
 ---
 
@@ -136,9 +135,9 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
-Before writing the Handoff, stop. A spec that ships with gaps, ambiguities, or unresolved questions will cause a developer to make incorrect assumptions during implementation — and those assumptions compound. Act as a senior engineer who is about to greenlight this spec for implementation and is looking for every reason not to.
+Stop. A spec that ships with gaps, ambiguities, or unresolved questions will cause a developer to make incorrect assumptions during implementation — and those assumptions compound. Act as a senior engineer who is about to greenlight this spec for implementation and is looking for every reason not to.
 
-> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific requirement/section/file for a finding, do not pad the list.
+> **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific requirement/section/file for a finding, do not pad the list.
 
 ### Verification outputs (paste actual command output — do not paraphrase)
 
@@ -174,16 +173,4 @@ Before writing the Handoff, stop. A spec that ships with gaps, ambiguities, or u
 - Did you complete the Pattern survey above? For each major design choice, does it reuse an established helper/primitive/convention, or does it introduce a new one? If new, is the "Deliberate departures" justification defensible? Would a reviewer familiar with the codebase recognize the spec's shape immediately?
   Answer:
 
-Only when every answer above is written should you write the Handoff.
-
-## Handoff
-
-> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
-
-### Spec written at:
-
-### Open questions for stakeholders:
-
-### Follow-up work identified:
-
-### Docs updated:
+Only when every answer above is written is this task complete.

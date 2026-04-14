@@ -18,7 +18,7 @@ Before implementing anything non-trivial:
 
 Full workflow: `docs/agents/03-workflow.md`
 File type definitions: `docs/agents/02-file-types.md`
-Templates: `agents/templates/` (audit, spec, task)
+Templates: `scripts/agents/templates/` (audit, spec, task)
 
 ## Your task file
 
@@ -30,7 +30,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Fill in **Linked docs** with any specs/audits/skills loaded
 - Check off **Progress checklist** steps as you complete them
 - Log **Decisions** and **Findings** as they emerge
-- Fill in **Handoff** before ending the session — never leave it empty
+- Complete **`## Self-review`** before ending the session (every question answered, verification outputs pasted). Task files have no separate Handoff section.
 
 ## Hard rules
 

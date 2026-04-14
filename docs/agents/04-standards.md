@@ -132,22 +132,22 @@ When writing audits, findings go in `## Findings` and `## Open issues`. When wri
 
 ## Handoffs
 
-A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch.
+A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch. Task files do **not** use a dedicated `## Handoff` section — put this information in **Decisions**, **Findings**, **Next steps**, and **`## Self-review`** so each task file is self-contained.
 
-A useful handoff answers these questions:
+Useful closure answers these questions:
 
 - What work is actually complete (not what was planned — what was done and verified)?
 - What is explicitly not done, and why?
 - What should the next session watch out for — fragile areas, known gaps, surprising behaviour?
 - Which durable documents (audits, specs, research) were created or updated?
 
-A handoff that only lists files changed is not useful. A handoff that lists decisions made, assumptions confirmed or invalidated, and specific next steps is.
+A summary that only lists files changed is not useful. Record decisions made, assumptions confirmed or invalidated, and specific next steps in the sections above.
 
 ---
 
 ## Scope discipline
 
-Work only what is assigned. If you discover related work that needs doing, record it — in the audit, the spec's open questions, or the task's handoff — but do not start it.
+Work only what is assigned. If you discover related work that needs doing, record it — in the audit, the spec's open questions, or the task file's Findings / Next steps — but do not start it.
 
 This is not about following rules. It is about the fact that unplanned work in a worktree produces changes that were not specced, not reviewed, and cannot be attributed to the task. The worktree's branch will contain unexpected changes. The audit will not cover them. The spec will not include them.
 

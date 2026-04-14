@@ -13,7 +13,7 @@
 
 ---
 
-> ⚠️ **MIGRATION SESSION** — Run `pnpm deps:validate` after every 10 files. Document every shim contract before moving on. Do not remove a shim until all consumers have migrated and you have confirmed it in the Handoff.
+> ⚠️ **MIGRATION SESSION** — Run `pnpm deps:validate` after every 10 files. Document every shim contract before moving on. Do not remove a shim until all consumers have migrated and you have documented that confirmation in this task file (Decisions or Self-review).
 
 ---
 
@@ -89,7 +89,6 @@ One row per module. Update status as you go: `pending` / `in-progress` / `done`.
 - [ ] Self-review: Architecture answered
 - [ ] Self-review: Shim contracts answered
 - [ ] Self-review: Blast radius answered
-- [ ] Handoff written
 
 ---
 
@@ -119,9 +118,9 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
-Before writing the Handoff, stop. A partial migration is a ticking time bomb — it leaves the codebase in an inconsistent state that quietly breaks things downstream. Act as a senior engineer about to approve this migration for merge.
+Stop. A partial migration is a ticking time bomb — it leaves the codebase in an inconsistent state that quietly breaks things downstream. Act as a senior engineer about to approve this migration for merge.
 
-> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
+> **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
 ### Verification outputs (paste actual command output — do not paraphrase)
 
@@ -142,7 +141,7 @@ Before writing the Handoff, stop. A partial migration is a ticking time bomb —
 
 ### Shim contracts
 
-- Every shim documented with old path, new path, known consumers, and removal condition? All shim targets correct? Is your Handoff unambiguous about which shims are still live?
+- Every shim documented with old path, new path, known consumers, and removal condition? All shim targets correct? Is this task file unambiguous about which shims are still live?
   Answer:
 
 ### Blast radius
@@ -150,18 +149,4 @@ Before writing the Handoff, stop. A partial migration is a ticking time bomb —
 - Did you touch files outside your team scope without documenting why?
   Answer:
 
-Only when every answer above is written should you write the Handoff.
-
-## Handoff
-
-> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
-
-### Done:
-
-### Not done:
-
-### Watch out for:
-
-### Shims still live (consumers must update):
-
-### Docs updated:
+Only when every answer above is written is this task complete.

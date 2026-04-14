@@ -282,9 +282,9 @@ Anything preventing progress.
 ## Next steps
 Concrete starting points for the next session if this one ends incomplete.
 
-## Handoff
-What was done, what was not done, what to watch out for, which docs were updated.
+## Self-review
+Mandatory questions and verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). The task file is self-contained — there is no separate Handoff section. Use Decisions, Findings, and Next steps for narrative the next reader needs.
 ```
 
 **What "done" looks like:**
-The Handoff section is filled in. The Progress checklist reflects what actually happened. Decisions are recorded with rationale. Any findings that belong in audits or specs have been moved there. Blockers are recorded with enough context for the next session.
+Self-review is complete (every question answered with a written trace). The Progress checklist reflects what actually happened. Decisions are recorded with rationale. Any findings that belong in audits or specs have been moved there. Blockers are recorded with enough context for the next session.
