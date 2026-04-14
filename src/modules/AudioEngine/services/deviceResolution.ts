@@ -46,3 +46,11 @@ export const resolveDeviceParam = (
     }
     return null;
 };
+
+const paramScaleMap: Record<string, number> = {
+    'builtin-delay:delay-time': 1 / 1000,
+};
+
+export const resolveDeviceParamScale = (deviceType: string, parameterId: string): number => {
+    return paramScaleMap[`${deviceType}:${parameterId}`] ?? 1;
+};

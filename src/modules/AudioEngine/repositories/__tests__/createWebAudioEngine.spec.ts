@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createMockAudioContext } from '../../../helpers/__tests__/audioContext.mock';
+import { createMockAudioContext } from '../../helpers/__tests__/audioContext.mock';
 
 // Mock TrackNode and BusNode to avoid deep dependencies
 vi.mock('../engine/TrackNode', () => ({

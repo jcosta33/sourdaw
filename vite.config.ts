@@ -12,6 +12,14 @@ const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { ver
 
 export default defineConfig({
     base: './',
+    worker: {
+        // Force IIFE format for all worker bundles so each processor file is
+        // compiled into a single self-contained script. ES module format (the
+        // Rolldown default) creates shared chunks for common dependencies like
+        // daw_dsp.js, and those chunk imports can't be resolved from the
+        // blob URL context used by AudioWorklet.addModule().
+        format: 'iife',
+    },
     server: {
         hmr: process.env.NO_HMR !== '1',
         headers: {

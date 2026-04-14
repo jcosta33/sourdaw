@@ -46,13 +46,15 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
             audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
         };
 
+        newRightClipId = rightClip.id;
+
         return {
             ...t,
             clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
         };
     });
 
-    if (splitOccurred) {
+    if (newRightClipId !== null) {
         setTrackState({
             ...state,
             tracks: newTracks,
