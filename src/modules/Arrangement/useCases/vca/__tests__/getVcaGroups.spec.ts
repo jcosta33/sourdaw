@@ -1,15 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-<<<<<<< HEAD
 import { setVcaGroupsState } from '#/modules/Arrangement/stores/vcaGroupStore';
 
 import { getVcaGroups } from '../getVcaGroups';
-=======
-const mockGetVcaGroupsState = vi.fn();
-vi.mock('../../../stores/vcaGroupStore', () => ({
-    getVcaGroupsState: () => mockGetVcaGroupsState()
-}));
->>>>>>> agent/refactor-code-quality
 
 describe('getVcaGroups', () => {
     beforeEach(() => {
