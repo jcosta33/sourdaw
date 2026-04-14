@@ -42,7 +42,14 @@ describe('glutenStore', () => {
     });
 
     it('should update meter telemetry fields', () => {
-        updateGlutenMeters('d1', -4, -20, -8, 1.2, 0.99, 64);
+        updateGlutenMeters('d1', {
+            grDb: -4,
+            inputDb: -20,
+            outputDb: -8,
+            crest: 1.2,
+            phaseCorr: 0.99,
+            latency: 64,
+        });
         const s = getGlutenState('d1');
         expect(s.grDb).toBe(-4);
         expect(s.inputDb).toBe(-20);
@@ -53,8 +60,15 @@ describe('glutenStore', () => {
     });
 
     it('should preserve prior crest, phaseCorr, and latency when omitted', () => {
-        updateGlutenMeters('d1', -1, -10, -10, 2, 0.5, 32);
-        updateGlutenMeters('d1', -2, -11, -11);
+        updateGlutenMeters('d1', {
+            grDb: -1,
+            inputDb: -10,
+            outputDb: -10,
+            crest: 2,
+            phaseCorr: 0.5,
+            latency: 32,
+        });
+        updateGlutenMeters('d1', { grDb: -2, inputDb: -11, outputDb: -11 });
         const s = getGlutenState('d1');
         expect(s.grDb).toBe(-2);
         expect(s.crest).toBe(2);

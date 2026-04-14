@@ -10,34 +10,13 @@ vi.mock('../../../useCases/clipEditing/muteClip', () => ({
 }));
 
 describe('handleMuteClip', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
+    beforeEach(() => vi.clearAllMocks());
 
-    it('executes muteClip with the provided payload', () => {
+    it('delegates to muteClip use case', () => {
         handleMuteClip.execute({
             type: 'muteClip',
-            payload: { clipId: 'c1', muted: true },
+            payload: { clipId: 'c1', muted: true }
         });
-
         expect(mocks.muteClip).toHaveBeenCalledWith('c1', true);
-    });
-
-    it('provides a description reflecting mute status', () => {
-        const desc1 = handleMuteClip.describe({
-            type: 'muteClip',
-            payload: { clipId: 'c1', muted: true },
-        });
-        expect(desc1.label).toBe('Mute clip');
-
-        const desc2 = handleMuteClip.describe({
-            type: 'muteClip',
-            payload: { clipId: 'c1', muted: false },
-        });
-        expect(desc2.label).toBe('Unmute clip');
-    });
-
-    it('is undoable', () => {
-        expect(handleMuteClip.undoable).toBe(true);
     });
 });

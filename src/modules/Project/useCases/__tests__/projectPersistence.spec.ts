@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // Mock the dependencies of the use cases we are testing
-vi.mock('../../../stores/projectStore', () => ({
+vi.mock('../../stores/projectStore', () => ({
     projectStore: {
         get value() { return mocks.projectStoreValue.value; },
         set: mocks.projectStoreSet,
@@ -41,7 +41,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 // Relative to saveProject.ts: ../../recentProjects/addToRecentProjects
-vi.mock('../../recentProjects/addToRecentProjects', () => ({
+vi.mock('../recentProjects/addToRecentProjects', () => ({
     addToRecentProjects: mocks.addToRecentProjects,
 }));
 

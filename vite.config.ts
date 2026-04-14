@@ -2,7 +2,7 @@
 import { fileURLToPath, URL } from 'node:url';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
@@ -12,6 +12,14 @@ const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { ver
 
 export default defineConfig({
     base: './',
+    worker: {
+        // Force IIFE format for all worker bundles so each processor file is
+        // compiled into a single self-contained script. ES module format (the
+        // Rolldown default) creates shared chunks for common dependencies like
+        // daw_dsp.js, and those chunk imports can't be resolved from the
+        // blob URL context used by AudioWorklet.addModule().
+        format: 'iife',
+    },
     server: {
         hmr: process.env.NO_HMR !== '1',
         headers: {
@@ -35,6 +43,8 @@ export default defineConfig({
         environment: 'jsdom',
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
+        /** Local agent worktrees mirror `src/` — exclude so `vitest run` only hits the main tree. */
+        exclude: [...configDefaults.exclude, 'dist/**', '.claude/**'],
         coverage: {
             all: true,
             provider: 'v8',

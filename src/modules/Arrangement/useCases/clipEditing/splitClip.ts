@@ -10,7 +10,8 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
         return null;
     }
 
-    let newClipId: string | null = null;
+    let newRightClipId: string | null = null;
+
     const newTracks = state.tracks.map((t) => {
         const clip = t.clips.find((c) => c.id === clipId);
         if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
@@ -23,6 +24,9 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
             return t;
         }
 
+        const rightId = getNextClipId();
+        newRightClipId = rightId;
+
         const leftClip: Clip = {
             ...clip,
             endBeat: adjustedSplitBeat,
@@ -30,11 +34,9 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
             fadeOutBeats: 0,
         };
 
-        const rightClipId = getNextClipId();
-        newClipId = rightClipId;
         const rightClip: Clip = {
             ...clip,
-            id: rightClipId,
+            id: rightId,
             name: `${clip.name} (R)`,
             startBeat: adjustedSplitBeat,
             endBeat: clip.endBeat,
@@ -49,12 +51,13 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
         };
     });
 
-    if (newClipId !== null) {
+    if (newRightClipId !== null) {
         setTrackState({
             ...state,
             tracks: newTracks,
         });
+        return newRightClipId;
     }
 
-    return newClipId;
+    return null;
 }

@@ -37,7 +37,8 @@ describe('splitClip', () => {
             ]
         });
 
-        splitClip('c1', 4);
+        const rightId = splitClip('c1', 4);
+        expect(rightId).toBe('new-clip-id');
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
         const newState = mocks.setTrackState.mock.calls[0][0];
@@ -69,8 +70,8 @@ describe('splitClip', () => {
         const mockClip = { id: 'c1', startBeat: 4, endBeat: 8 };
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [mockClip] }] });
 
-        splitClip('c1', 2); // Before
-        splitClip('c1', 9); // After
+        expect(splitClip('c1', 2)).toBeNull(); // Before
+        expect(splitClip('c1', 9)).toBeNull(); // After
 
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });

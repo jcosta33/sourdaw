@@ -5,6 +5,13 @@ import { TimelineEmptyMenu } from '../TimelineEmptyMenu';
 import { addTrack } from '../../../useCases/addTrack';
 
 // Mock external dependencies
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: vi.fn((store: { getSnapshot?: () => unknown; value?: unknown }, defaultValue: unknown) => {
+        const snap = typeof store.getSnapshot === 'function' ? store.getSnapshot() : store.value;
+        return snap ?? defaultValue;
+    }),
+}));
+
 vi.mock('../../../stores/trackStore', () => ({
     trackStore: { value: { tracks: [] } },
 }));

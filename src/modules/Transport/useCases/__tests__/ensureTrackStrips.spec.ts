@@ -76,7 +76,17 @@ describe('ensureTrackStrips', () => {
                     ],
                     sends: [{ busId: 'b1', level: 0.1, preFader: false }],
                 },
-                { id: 'b1', kind: 'bus', gain: 1.0 },
+                {
+                    id: 'b1',
+                    kind: 'bus',
+                    gain: 1.0,
+                    pan: 0,
+                    muted: false,
+                    soloed: false,
+                    outputId: 'main',
+                    devices: [],
+                    sends: [],
+                },
             ]
         } as any;
 

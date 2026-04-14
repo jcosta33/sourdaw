@@ -2,7 +2,7 @@ import { type TempoChange } from '#/modules/Transport/useCases/transportQueries/
 import { type AutomationLane, type AutomationPoint } from '../../models/AutomationViewTypes';
 import { type DeviceNodeEntry } from '../../useCases/buildDeviceChain';
 import { beatToSeconds } from '../../services/beatConversion';
-import { resolveDeviceParam } from '../../services/deviceResolution';
+import { resolveDeviceParam, resolveDeviceParamScale } from '../../services/deviceResolution';
 
 function interpolateValue(p1: AutomationPoint, p2: AutomationPoint, beat: number): number {
     if (p2.beat === p1.beat) {
@@ -107,7 +107,10 @@ export const scheduleTrackAutomation = (
             const paramKey = lane.parameterId.slice(lane.parameterId.indexOf(':') + 1);
             const audioParam = resolveDeviceParam(deviceEntry.deviceType, paramKey, deviceEntry.node);
             if (audioParam) {
-                scheduleAutomationOnParam(audioParam, lane.points, durationSeconds, defaultTempo, changes);
+                const scale = resolveDeviceParamScale(deviceEntry.deviceType, paramKey);
+                const points =
+                    scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
+                scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
             continue;
         }
@@ -118,7 +121,10 @@ export const scheduleTrackAutomation = (
         if (directEntry) {
             const audioParam = resolveDeviceParam(directEntry.deviceType, lane.parameterId, directEntry.node);
             if (audioParam) {
-                scheduleAutomationOnParam(audioParam, lane.points, durationSeconds, defaultTempo, changes);
+                const scale = resolveDeviceParamScale(directEntry.deviceType, lane.parameterId);
+                const points =
+                    scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
+                scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
         }
     }

@@ -11,7 +11,7 @@ describe('createScratchPadSection', () => {
         expect(a.name).toBe('A');
         expect(a.color).toBe('#000');
         expect(a.order).toBe(0);
-        expect(a.id).toMatch(/^scratch-\d+$/);
+        expect(a.id).toMatch(/^scratch-[a-f0-9]{8}$/i);
         expect(b.id).not.toBe(a.id);
     });
 });

@@ -1,50 +1,71 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession, leaveSession } from '../sessionManagement';
 
-const mocks = vi.hoisted(() => ({
-    collaborationStoreValue: { value: {} },
-    collaborationStoreSet: vi.fn(),
-    PeerConnectionManager: vi.fn().mockImplementation(() => ({
-        closeAll: vi.fn(),
-        getConnectedPeerIds: vi.fn(() => []),
-        broadcastCrdtSync: vi.fn(),
-    })),
-    AutomergeSync: vi.fn().mockImplementation(() => ({
-        start: vi.fn(),
-        stop: vi.fn(),
-    })),
-    AssetTransfer: vi.fn(),
-    PermissionManager: vi.fn().mockImplementation(() => ({
-        clear: vi.fn(),
-        grantRole: vi.fn(),
-    })),
-    setupProjectionBridge: vi.fn(() => vi.fn()), 
-    mutateCrdtDoc: vi.fn(),
-    removeCrdtDoc: vi.fn(),
-    createCrdtDoc: vi.fn(),
-    branchStoreValue: { value: { branches: [] } },
-    branchStoreSubscribe: vi.fn(() => vi.fn()),
-    branchStoreSet: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const automergeStart = vi.fn();
+    return {
+        collaborationStoreValue: { value: {} },
+        collaborationStoreSet: vi.fn(),
+        automergeStart,
+        PeerConnectionManager: vi.fn(function PeerConnectionManagerMock(this: Record<string, unknown>) {
+            Object.assign(this, {
+                closeAll: vi.fn(),
+                getConnectedPeerIds: vi.fn(() => []),
+                broadcastCrdtSync: vi.fn(),
+                broadcastPresence: vi.fn(),
+                sendCrdtSync: vi.fn(),
+            });
+        }),
+        AutomergeSync: vi.fn(function AutomergeSyncMock() {
+            return {
+                start: automergeStart,
+                stop: vi.fn(),
+                addPeer: vi.fn(),
+                removePeer: vi.fn(),
+                handlePeerMessage: vi.fn(),
+            };
+        }),
+        AssetTransfer: vi.fn(function AssetTransferMock(this: Record<string, unknown>) {
+            Object.assign(this, {
+                getAsset: vi.fn(),
+                handleMessage: vi.fn(),
+            });
+        }),
+        PermissionManager: vi.fn(function PermissionManagerMock(this: Record<string, unknown>) {
+            Object.assign(this, {
+                clear: vi.fn(),
+                grantRole: vi.fn(),
+                handleMessage: vi.fn(),
+            });
+        }),
+        setupProjectionBridge: vi.fn(() => vi.fn()),
+        mutateCrdtDoc: vi.fn(),
+        removeCrdtDoc: vi.fn(),
+        createCrdtDoc: vi.fn(),
+        branchStoreValue: { value: { branches: [] } },
+        branchStoreSubscribe: vi.fn(() => vi.fn()),
+        branchStoreSet: vi.fn(),
+    };
+});
 
 // Use exact relative paths as in sessionManagement.ts
-vi.mock('../../repositories/peerConnection', () => ({
+vi.mock('../../../repositories/peerConnection', () => ({
     PeerConnectionManager: mocks.PeerConnectionManager,
 }));
 
-vi.mock('../automergeSync', () => ({
+vi.mock('../../automergeSync', () => ({
     AutomergeSync: mocks.AutomergeSync,
 }));
 
-vi.mock('../assetTransfer', () => ({
+vi.mock('../../assetTransfer', () => ({
     AssetTransfer: mocks.AssetTransfer,
 }));
 
-vi.mock('../permissions', () => ({
+vi.mock('../../permissions', () => ({
     PermissionManager: mocks.PermissionManager,
 }));
 
-vi.mock('../../stores/collaborationStore', () => ({
+vi.mock('../../../stores/collaborationStore', () => ({
     collaborationStore: {
         get value() { return mocks.collaborationStoreValue.value; },
         set: mocks.collaborationStoreSet,
@@ -78,7 +99,7 @@ describe('collaboration sessionManagement', () => {
 
         expect(sessionId).toBeDefined();
         expect(mocks.PeerConnectionManager).toHaveBeenCalled();
-        expect(mocks.AutomergeSync).toHaveBeenCalled();
+        expect(mocks.automergeStart).toHaveBeenCalled();
         expect(mocks.setupProjectionBridge).toHaveBeenCalled();
         
         expect(mocks.collaborationStoreSet).toHaveBeenCalledWith(expect.objectContaining({

@@ -15,8 +15,9 @@ export function stopAutomationRecording(): void {
         const track = tracks.find((t) => t.id === session.trackId);
 
         if (track?.automationMode === 'latch' && session.lastValue !== null) {
-            const points = pendingPoints.get(key) ?? [];
-            const lastBeat = points.length > 0 ? points[points.length - 1]!.beat : session.startBeat;
+            const points = pendingPoints.get(key);
+            const lastBeat =
+                points && points.length > 0 ? points[points.length - 1]!.beat : session.startBeat;
             const laneId = findLaneId(session.trackId, session.parameterId);
 
             if (laneId && lastBeat > session.startBeat) {

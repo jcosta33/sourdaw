@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('../../repositories/createWebAudioEngine', () => ({
+vi.mock('../../../repositories/createWebAudioEngine', () => ({
     audioEngine: mocks,
 }));
 

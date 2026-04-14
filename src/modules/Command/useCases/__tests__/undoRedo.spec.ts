@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
 }));
 
-vi.mock('../stores/undoStore', () => ({
+vi.mock('../../stores/undoStore', () => ({
     undoStore: {
         get value() { return mocks.undoStoreValue.value; },
         set: mocks.undoStoreSet,
@@ -16,7 +16,7 @@ vi.mock('../stores/undoStore', () => ({
 
 // Mock executeAppAction from the relative path as used in undoRedo.ts,
 // but using a factory that returns our shared mock.
-vi.mock('../useCases/executeAppAction', () => ({
+vi.mock('../executeAppAction', () => ({
     executeAppAction: mocks.executeAppAction,
 }));
 
@@ -28,7 +28,15 @@ describe('undoRedo', () => {
 
     describe('undo', () => {
         it('executes inverseAction and moves entry to future', async () => {
-            const entry = { type: 'action', action: { type: 'A' }, inverseAction: { type: 'B' }, label: 'Test' };
+            const entry = {
+                kind: 'action' as const,
+                id: 'e1',
+                label: 'Test',
+                timestamp: 0,
+                source: 'manual' as const,
+                action: { type: 'A' },
+                inverseAction: { type: 'B' },
+            };
             mocks.undoStoreValue.value = { past: [entry], future: [] } as any;
 
             await undo();
@@ -41,8 +49,26 @@ describe('undoRedo', () => {
         });
 
         it('undoes a whole group if groupId is present', async () => {
-            const e1 = { id: '1', action: { type: 'A' }, inverseAction: { type: 'A_INV' }, groupId: 'g1' };
-            const e2 = { id: '2', action: { type: 'B' }, inverseAction: { type: 'B_INV' }, groupId: 'g1' };
+            const e1 = {
+                kind: 'action' as const,
+                id: '1',
+                label: 'a',
+                timestamp: 0,
+                source: 'manual' as const,
+                action: { type: 'A' },
+                inverseAction: { type: 'A_INV' },
+                groupId: 'g1',
+            };
+            const e2 = {
+                kind: 'action' as const,
+                id: '2',
+                label: 'b',
+                timestamp: 0,
+                source: 'manual' as const,
+                action: { type: 'B' },
+                inverseAction: { type: 'B_INV' },
+                groupId: 'g1',
+            };
             mocks.undoStoreValue.value = { past: [e1, e2], future: [] } as any;
 
             await undo();
@@ -59,7 +85,15 @@ describe('undoRedo', () => {
 
     describe('redo', () => {
         it('executes action and moves entry back to past', async () => {
-            const entry = { type: 'action', action: { type: 'A' }, inverseAction: { type: 'B' } };
+            const entry = {
+                kind: 'action' as const,
+                id: 'e1',
+                label: 'Test',
+                timestamp: 0,
+                source: 'manual' as const,
+                action: { type: 'A' },
+                inverseAction: { type: 'B' },
+            };
             mocks.undoStoreValue.value = { past: [], future: [entry] } as any;
 
             await redo();

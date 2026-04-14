@@ -21,9 +21,9 @@ class AudioEngineImpl implements AudioEngine {
     private workletReady = false;
     private fallbackMode = false;
 
-    constructor() {
+    constructor(providedContext?: AudioContext) {
         try {
-            this.context = new AudioContext({ latencyHint: 'interactive' });
+            this.context = providedContext ?? new AudioContext({ latencyHint: 'interactive' });
             this.masterGainNode = this.context.createGain();
             this.masterGainNode.gain.value = 0.8;
 
@@ -464,4 +464,8 @@ class AudioEngineImpl implements AudioEngine {
     }
 }
 
-export const audioEngine = new AudioEngineImpl();
+export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
+    return new AudioEngineImpl(providedContext);
+}
+
+export const audioEngine = createAudioEngine();

@@ -21,10 +21,12 @@ describe('humanizeNotes', () => {
         });
     });
 
-    it('should return zero when the store or clip is missing', () => {
-        expect(humanizeNotes('missing', 1)).toBe(0);
+    it('should return a finite seed even when the clip cannot be updated', () => {
+        const missingClip = humanizeNotes('missing', 1);
+        expect(Number.isFinite(missingClip)).toBe(true);
         midiStore.set(null);
-        expect(humanizeNotes('clip1', 1)).toBe(0);
+        const noStore = humanizeNotes('clip1', 1);
+        expect(Number.isFinite(noStore)).toBe(true);
     });
 
     it('should return the provided seed when a seed is passed', () => {

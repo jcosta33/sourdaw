@@ -241,6 +241,18 @@ export async function createFaustNode(
             } catch (retryError) {
                 logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
             }
+        } else if (msg.includes('is not defined in AudioWorkletGlobalScope')) {
+            // Race condition in @grame/faustwasm: two concurrent createNode calls can both
+            // observe gWorkletProcessors.has(shaKey) === false, both call addModule, and
+            // the second AudioWorkletNode constructor fires before registerProcessor() has
+            // run in the worklet scope. A short delay lets the worklet finish evaluation.
+            if (!existingReg) {resolveReg!();}
+            await new Promise<void>((r) => setTimeout(r, 20));
+            try {
+                return await mod.generator.createNode(context);
+            } catch (retryError) {
+                logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
+            }
         } else {
             // Real error, allow other waiters to fail too if they want
             if (!existingReg) {resolveReg!();}

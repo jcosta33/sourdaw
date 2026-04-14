@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn(),
     generateAudio: vi.fn(),
     isAudioGenerationAvailable: vi.fn(),
+    notifyUser: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -24,6 +25,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { info: mocks.info, warn: mocks.warn },
 }));
 
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
+
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     generateAudio: mocks.generateAudio,
     isAudioGenerationAvailable: mocks.isAudioGenerationAvailable,
@@ -37,19 +42,24 @@ describe('handleGenerateAudioAiMidi', () => {
     it('bails if audio generation is unavailable', async () => {
         mocks.isAudioGenerationAvailable.mockReturnValue(false);
 
-        await handleGenerateAudioAiMidi.execute({
-            type: 'generateAudio',
-            payload: { prompt: 'test' },
-        });
+        await expect(
+            handleGenerateAudioAiMidi.execute({
+                type: 'generateAudio',
+                payload: { prompt: 'test' },
+            })
+        ).rejects.toThrow(/Sourdaw desktop/);
 
-        expect(mocks.warn).toHaveBeenCalledWith('[Audio AI] Audio generation requires the Sourdaw desktop app');
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Audio generation requires the Sourdaw desktop app',
+            'warning'
+        );
         expect(mocks.generateAudio).not.toHaveBeenCalled();
     });
 
     it('creates track, generates audio, and creates clip', async () => {
         mocks.isAudioGenerationAvailable.mockReturnValue(true);
         mocks.addTrack.mockReturnValue({ id: 'new-track' });
-        
+
         const mockBuffer = { duration: 4.5, sampleRate: 44100 };
         mocks.generateAudio.mockResolvedValue(mockBuffer);
 
@@ -61,15 +71,16 @@ describe('handleGenerateAudioAiMidi', () => {
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'AI Audio', kind: 'audio' });
         expect(mocks.generateAudio).toHaveBeenCalledWith('epic drum loop', 4);
         expect(mocks.cacheSet).toHaveBeenCalledWith(expect.any(String), mockBuffer);
-        
-        // 4.5 * 2 = 9 beats
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
-            trackId: 'new-track',
-            startBeat: 0,
-            endBeat: 9,
-            name: 'AI: epic drum loop',
-            type: 'audio',
-        }));
+
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 'new-track',
+                startBeat: 0,
+                endBeat: 9,
+                name: 'AI: epic drum loop',
+                type: 'audio',
+            })
+        );
     });
 
     it('uses existing trackId if provided', async () => {
@@ -83,9 +94,11 @@ describe('handleGenerateAudioAiMidi', () => {
         });
 
         expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
-            trackId: 'existing-track',
-        }));
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 'existing-track',
+            })
+        );
     });
 
     it('logs warning if generation throws', async () => {
@@ -93,10 +106,12 @@ describe('handleGenerateAudioAiMidi', () => {
         mocks.addTrack.mockReturnValue({ id: 't' });
         mocks.generateAudio.mockRejectedValue(new Error('API fail'));
 
-        await handleGenerateAudioAiMidi.execute({
-            type: 'generateAudio',
-            payload: { prompt: 'boom' },
-        });
+        await expect(
+            handleGenerateAudioAiMidi.execute({
+                type: 'generateAudio',
+                payload: { prompt: 'boom' },
+            })
+        ).rejects.toThrow('API fail');
 
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('Generation failed'));
     });

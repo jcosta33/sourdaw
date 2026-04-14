@@ -40,9 +40,10 @@ export function detectTempoFromOnsets(onsets: number[]): TempoMapResult {
 
     for (const bpm of bpmEstimates) {
         const binKey = Math.round(bpm / binWidth) * binWidth;
-        const existing = bins.get(binKey) ?? [];
-        existing.push(bpm);
-        bins.set(binKey, existing);
+        if (!bins.has(binKey)) {
+            bins.set(binKey, []);
+        }
+        bins.get(binKey)!.push(bpm);
     }
 
     let maxBin: number[] = [];

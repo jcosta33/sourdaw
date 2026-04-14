@@ -1,3 +1,5 @@
+import { Mp3Encoder } from '@breezystack/lamejs';
+
 type LameEncoder = {
     encodeBuffer(left: Int16Array, right?: Int16Array): Uint8Array;
     flush(): Uint8Array;
@@ -60,7 +62,6 @@ export async function audioBufferToMp3(
     bitRate = 128,
     onProgress?: (frac: number) => void
 ): Promise<Uint8Array> {
-    const { Mp3Encoder } = await import('@breezystack/lamejs');
     const numChannels = Math.min(buffer.numberOfChannels, 2);
     const encoder = new Mp3Encoder(numChannels, buffer.sampleRate, bitRate);
     return await encodePcmToMp3(buffer, encoder, onProgress);

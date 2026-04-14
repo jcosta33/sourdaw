@@ -9,7 +9,7 @@ describe('createTake', () => {
         expect(a.clipId).toBe('clip-1');
         expect(a.name).toBe('T1');
         expect(a.selected).toBe(false);
-        expect(a.id).toMatch(/^take-\d+$/);
+        expect(a.id).toMatch(/^take-[a-f0-9]{8}$/i);
         expect(b.id).not.toBe(a.id);
     });
 });
@@ -20,6 +20,6 @@ describe('createTakeLane', () => {
         expect(lane.trackId).toBe('trk-1');
         expect(lane.takes).toEqual([]);
         expect(lane.activeCompRegions).toEqual([]);
-        expect(lane.id).toMatch(/^take-lane-\d+$/);
+        expect(lane.id).toMatch(/^take-lane-[a-f0-9]{8}$/i);
     });
 });

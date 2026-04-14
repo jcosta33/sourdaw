@@ -9,7 +9,7 @@ describe('createMidiNote', () => {
         expect(note.duration).toBe(0.5);
         expect(note.velocity).toBe(90);
         expect(note.probability).toBe(75);
-        expect(note.id).toMatch(/^note-\d+$/);
+        expect(note.id).toMatch(/^note-[a-f0-9]{8}$/i);
     });
 
     it('should default velocity and probability to 100', () => {

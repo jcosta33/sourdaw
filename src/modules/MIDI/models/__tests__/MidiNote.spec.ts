@@ -9,7 +9,7 @@ describe('createMidiNote', () => {
         expect(a.pitch).toBe(60);
         expect(a.velocity).toBe(100);
         expect(a.probability).toBe(100);
-        expect(a.id).toMatch(/^note-\d+$/);
+        expect(a.id).toMatch(/^note-[a-f0-9]{8}$/i);
         expect(b.velocity).toBe(80);
         expect(b.probability).toBe(50);
         expect(b.id).not.toBe(a.id);
@@ -23,7 +23,7 @@ describe('createMidiCC', () => {
         expect(ev.value).toBe(100);
         expect(ev.beat).toBe(2);
         expect(ev.channel).toBe(0);
-        expect(ev.id).toMatch(/^cc-\d+$/);
+        expect(ev.id).toMatch(/^cc-[a-f0-9]{8}$/i);
     });
 });
 
@@ -33,6 +33,6 @@ describe('createMidiPitchBend', () => {
         expect(ev.value).toBe(0.5);
         expect(ev.beat).toBe(1);
         expect(ev.channel).toBe(2);
-        expect(ev.id).toMatch(/^pb-\d+$/);
+        expect(ev.id).toMatch(/^pb-[a-f0-9]{8}$/i);
     });
 });

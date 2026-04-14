@@ -1,4 +1,4 @@
-import { getTempoAtBeat, type TempoChange } from '#/modules/Transport/useCases';
+import { type TempoChange } from '#/modules/Transport/useCases';
 
 export function beatToSeconds(beat: number, defaultTempo: number, changes: TempoChange[]): number {
     if (changes.length === 0) {
@@ -20,6 +20,6 @@ export function beatToSeconds(beat: number, defaultTempo: number, changes: Tempo
         prevTempo = change.tempo;
     }
 
-    seconds += ((beat - prevBeat) / getTempoAtBeat(sorted, beat, prevTempo)) * 60;
+    seconds += ((beat - prevBeat) / prevTempo) * 60;
     return seconds;
 }
