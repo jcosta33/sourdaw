@@ -13,9 +13,19 @@ const STORE_NAME = 'projects';
 const DB_VERSION = 1;
 const PRIMARY_KEY = 'current';
 
-// In-memory cache for synchronous reads
+// In-memory cache for synchronous reads. Populated from IndexedDB on
+// init, from localStorage during legacy migration, or from in-process
+// writes. Independent of the IDB connection — the cache may be set
+// before or after the DB is open and can serve reads even if IDB is
+// unavailable on this platform.
 let cachedJson: string | null = null;
-let dbReady = false;
+
+// IndexedDB connection. \`null\` means the connection has not been
+// opened yet OR the open attempt failed (e.g. private browsing); the
+// idbGet/idbPut/idbDelete helpers all guard on this and become no-ops
+// when it's null. There is no separate "ready" flag — \`db !== null\`
+// already carries that information, and a separate flag was a
+// footgun waiting to drift out of sync with the actual handle.
 let db: IDBDatabase | null = null;
 
 // ── IndexedDB setup ──────────────────────────────────────────────────────
@@ -35,12 +45,11 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 async function initDB(): Promise<void> {
-    if (dbReady) {
+    if (db !== null) {
         return;
     }
     try {
         db = await openDB();
-        dbReady = true;
 
         // Load current project into cache
         const stored = await idbGet(PRIMARY_KEY);
