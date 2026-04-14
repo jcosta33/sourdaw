@@ -17,18 +17,16 @@ type StringVibrationViewProps = {
 type StringState = { amplitude: number; phase: number; frequency: number };
 
 /** Render a single Canvas2D frame. Called from the component's rAF loop
- *  so activeNotes is always read fresh via ref. */
+ *  so activeNotes is always read fresh via ref. The 2D context is taken
+ *  from the caller — fetching it inside the rAF body would re-resolve
+ *  the same context object on every frame. */
 function runCanvas2DFrame(
     canvas: HTMLCanvasElement,
+    ctx: CanvasRenderingContext2D,
     activeNotes: ReadonlyMap<number, number>,
     states: StringState[],
     frameRef: { current: number }
 ): void {
-    const ctx = canvas.getContext('2d');
-    if (ctx === null) {
-        return;
-    }
-
     const { width, height } = canvas;
     ctx.clearRect(0, 0, width, height);
 
@@ -102,6 +100,10 @@ export const StringVibrationView = ({ activeNotes, className }: StringVibrationV
         if (container === null || canvas === null) {
             return;
         }
+        const ctx = canvas.getContext('2d');
+        if (ctx === null) {
+            return;
+        }
 
         // Match canvas internal resolution to its CSS layout size.
         const observer = new ResizeObserver((entries) => {
@@ -119,18 +121,15 @@ export const StringVibrationView = ({ activeNotes, className }: StringVibrationV
 
         const states = statesRef.current;
         const fRef = frameRef;
-        let cancelled = false;
+        let rafId = 0;
 
         const render = (): void => {
-            if (cancelled) {
-                return;
-            }
-            runCanvas2DFrame(canvas, notesRef.current, states, fRef);
-            requestAnimationFrame(render);
+            runCanvas2DFrame(canvas, ctx, notesRef.current, states, fRef);
+            rafId = requestAnimationFrame(render);
         };
-        requestAnimationFrame(render);
+        rafId = requestAnimationFrame(render);
         return () => {
-            cancelled = true;
+            cancelAnimationFrame(rafId);
             observer.disconnect();
         };
     }, []);

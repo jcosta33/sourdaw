@@ -293,12 +293,16 @@ export const PianoModel3D = ({
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-        let cancelled = false;
+        // Vertex scratch reused across frames. Truncating with `length = 0`
+        // keeps the V8 backing store, so per-frame array growth amortises
+        // to zero allocation once the maximum vertex count is reached.
+        // Same idea for the typed-array upload buffer — only reallocate
+        // when the vertex count exceeds the currently-cached capacity.
+        const vertexScratch: number[] = [];
+        let uploadBuffer: Float32Array | null = null;
+        let rafId = 0;
 
         const render = (): void => {
-            if (cancelled) {
-                return;
-            }
 
             const W = canvas.width;
             const H = canvas.height;
@@ -359,7 +363,8 @@ export const PianoModel3D = ({
             const damperY = stringAreaY + stringAreaH + 2;
             const damperH = bodyH * 0.04;
 
-            const buf: number[] = [];
+            vertexScratch.length = 0;
+            const buf = vertexScratch;
 
             // --- Piano body (skewed trapezoid) ---
             pushSkewQuad(buf, bodyX, bodyY, bodyW, bodyH, skew, ...BODY_COLOR, 1);
@@ -480,17 +485,31 @@ export const PianoModel3D = ({
             pushQuad(buf, bodyX + bodyW - rimW, bodyY, rimW, bodyH, ...rimC, 1);
 
             // --- Upload and draw ---
-            const data = new Float32Array(buf);
+            // Grow the typed-array upload buffer on demand and copy from the
+            // reused scratch array. After a couple of frames the capacity
+            // matches the steady-state vertex count and no further allocation
+            // happens on the hot path.
+            const vertexCount = buf.length;
+            if (uploadBuffer === null || uploadBuffer.length < vertexCount) {
+                uploadBuffer = new Float32Array(vertexCount);
+            }
+            for (let i = 0; i < vertexCount; i += 1) {
+                uploadBuffer[i] = buf[i]!;
+            }
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-            gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-            gl.drawArrays(gl.TRIANGLES, 0, data.length / 6);
+            gl.bufferData(
+                gl.ARRAY_BUFFER,
+                uploadBuffer.subarray(0, vertexCount),
+                gl.DYNAMIC_DRAW
+            );
+            gl.drawArrays(gl.TRIANGLES, 0, vertexCount / 6);
 
-            requestAnimationFrame(render);
+            rafId = requestAnimationFrame(render);
         };
 
-        requestAnimationFrame(render);
+        rafId = requestAnimationFrame(render);
         return () => {
-            cancelled = true;
+            cancelAnimationFrame(rafId);
         };
     }, [activeNotes, sustainPedal]);
 

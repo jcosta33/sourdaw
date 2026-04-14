@@ -79,6 +79,18 @@ export const CrustWaveformDisplay = ({
     const rafRef = useRef(0);
 
     useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return;
+        }
+        const ctxOrNull = canvas.getContext('2d');
+        if (!ctxOrNull) {
+            return;
+        }
+        // Capture into a local that the nested `draw` closure can use
+        // without re-narrowing the union type on every reference.
+        const ctx: CanvasRenderingContext2D = ctxOrNull;
+
         function draw(): void {
             rafRef.current = requestAnimationFrame(draw);
             tickRef.current++;
@@ -107,17 +119,8 @@ export const CrustWaveformDisplay = ({
             lufsBuf.current[pos] = Math.max(-40, Math.min(0, lufs));
             writePos.current++;
 
-            const canvas = canvasRef.current;
-            if (!canvas) {
-                return;
-            }
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                return;
-            }
-
-            const W = canvas.width;
-            const H = canvas.height;
+            const W = canvas!.width;
+            const H = canvas!.height;
             const mid = H * 0.5;
             const colW = W / HISTORY;
 
@@ -226,9 +229,22 @@ export const CrustWaveformDisplay = ({
                     peakLabels.current.push({ gr, x: W - 10, age: 0 });
                 }
             }
-            peakLabels.current = peakLabels.current
-                .map((l) => ({ ...l, x: l.x - colW * frameSkip, age: l.age + 1 }))
-                .filter((l) => l.age < 180 && l.x > 0);
+            // Advance + cull in place — the previous .map().filter() form
+            // allocated two intermediate arrays per frame for a buffer
+            // that holds at most four labels.
+            const labels = peakLabels.current;
+            const labelDelta = colW * frameSkip;
+            let liveCount = 0;
+            for (let i = 0; i < labels.length; i += 1) {
+                const label = labels[i]!;
+                label.x -= labelDelta;
+                label.age += 1;
+                if (label.age < 180 && label.x > 0) {
+                    labels[liveCount] = label;
+                    liveCount += 1;
+                }
+            }
+            labels.length = liveCount;
 
             ctx.font = '9px "JetBrains Mono", "IBM Plex Mono", monospace';
             for (const label of peakLabels.current) {
