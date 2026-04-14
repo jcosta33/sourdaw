@@ -76,6 +76,13 @@ const sessionState: {
      * branchStore triggers branchStore.subscribe, which must not write back.
      */
     isProjectingBranches: boolean;
+    /**
+     * §114.3 — Cached canonical JSON of the last branches array projected
+     * into branchStore. Lets the projection short-circuit when the
+     * incoming Automerge doc hasn't actually changed, avoiding a full
+     * re-stringify of the current branchStore state on every CRDT tick.
+     */
+    lastProjectedBranchesJson: string | null;
 } = {
     peerManager: null,
     automergeSync: null,
@@ -89,6 +96,7 @@ const sessionState: {
     unsubscribeBranchStore: null,
     unsubscribeAutomergeChanges: null,
     isProjectingBranches: false,
+    lastProjectedBranchesJson: null,
 };
 
 /** Cleanup timers for peers that disconnected without sending peer-leave. */
@@ -165,10 +173,12 @@ const startBranchSync = (isHost: boolean): void => {
         const current = branchStore.value;
         const incomingBranches = Array.from(doc.branches);
         const activeBranchId = current?.activeBranchId ?? MAIN_BRANCH_ID;
-        // Only update if the branches list actually changed (avoid spurious writes).
-        const currentJson = JSON.stringify(current?.branches ?? []);
+        // §114.3 — Compare the incoming JSON against the canonical JSON we
+        // cached on the last successful projection. If they match, skip the
+        // diff entirely. This avoids re-stringifying `current?.branches` on
+        // every CRDT tick that fires without an actual branches change.
         const incomingJson = JSON.stringify(incomingBranches);
-        if (currentJson === incomingJson) {
+        if (incomingJson === sessionState.lastProjectedBranchesJson) {
             return;
         }
         sessionState.isProjectingBranches = true;
@@ -178,6 +188,7 @@ const startBranchSync = (isHost: boolean): void => {
                 ? activeBranchId
                 : MAIN_BRANCH_ID;
             branchStore.set({ branches: incomingBranches, activeBranchId: validActiveBranchId });
+            sessionState.lastProjectedBranchesJson = incomingJson;
         } finally {
             sessionState.isProjectingBranches = false;
         }
@@ -209,6 +220,7 @@ const stopBranchSync = (): void => {
         }
         sessionState.branchStoreSnapshot = null;
     }
+    sessionState.lastProjectedBranchesJson = null;
 
     // Persist without the __branches__ doc so IDB stays clean.
     persistCrdtProject().catch((error) => {

@@ -2,6 +2,7 @@ import { type WAMInstance } from '../../../models/WamPluginHostTypes';
 import { findPluginLoader } from '../../../services/pluginLoaderRegistry';
 import { instances, registry } from './helpers';
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export async function loadWAMPlugin(
     pluginId: string,
@@ -19,12 +20,20 @@ export async function loadWAMPlugin(
     const customLoader = findPluginLoader(pluginId);
     if (customLoader) {
         const customNode = await customLoader(pluginId, context);
-        if (customNode) {
-            node = customNode;
-        } else {
-            logger.warn(`[WAM] Custom loader returned null for ${pluginId}, using passthrough`);
-            node = context.createGain();
+        if (!customNode) {
+            // §61.2 — previously fell back to a no-op GainNode and returned
+            // `initialized: true`, so the caller thought the plugin was
+            // alive while it silently passed audio through unprocessed.
+            // Surface the failure both to logs and to the user and return
+            // null so the caller can treat it as a load error.
+            logger.warn(`[WAM] Custom loader returned null for ${pluginId}`);
+            notifyUser(
+                `Plugin "${descriptor.name}" failed to load — its custom loader returned no audio node.`,
+                'error'
+            );
+            return null;
         }
+        node = customNode;
     } else if (descriptor.isHighEnd) {
         try {
             node = new AudioWorkletNode(context, 'HighEndPluginProcessor', {
@@ -32,10 +41,19 @@ export async function loadWAMPlugin(
                 numberOfOutputs: 1,
             });
         } catch (e) {
+            // §61.2 — HighEndPluginProcessor worklet not registered. Return
+            // null (not a silent passthrough) so callers can fall back or
+            // alert the user rather than silently routing unprocessed audio.
             logger.warn(`[WAM] HighEndPluginProcessor not registered for ${pluginId}`, e);
-            node = context.createGain();
+            notifyUser(
+                `Plugin "${descriptor.name}" failed to load — the HighEnd audio worklet isn't registered in this context.`,
+                'error'
+            );
+            return null;
         }
     } else {
+        // Vanilla pass-through plugins intentionally use a GainNode — this
+        // is the expected "untouched audio" path, not a silent failure.
         node = context.createGain();
     }
 
