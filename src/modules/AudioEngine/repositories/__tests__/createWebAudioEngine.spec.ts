@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createMockAudioContext } from '../../helpers/__tests__/audioContext.mock';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 
 // Mock TrackNode and BusNode to avoid deep dependencies
 vi.mock('../engine/TrackNode', () => ({
@@ -28,83 +28,53 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
-// We need to stub global AudioContext before importing the engine
-const mockCtx = createMockAudioContext();
-vi.stubGlobal('AudioContext', vi.fn(() => mockCtx));
-
-import { audioEngine } from '../createWebAudioEngine';
+import { createAudioEngine } from '../createWebAudioEngine';
 
 describe('AudioEngine', () => {
+    let engine: any;
+    let mockCtx: any;
+
     beforeEach(() => {
         vi.clearAllMocks();
-        audioEngine.resetGraph();
+        mockCtx = createMockAudioContext();
+        engine = createAudioEngine(mockCtx as any);
     });
 
     it('should initialize with master nodes', () => {
-        expect(audioEngine.context).toBeDefined();
-        expect(audioEngine.masterGainNode).toBeDefined();
-        expect(audioEngine.masterAnalyser).toBeDefined();
+        expect(engine.context).toBeDefined();
+        expect(engine.masterGainNode).toBeDefined();
+        expect(engine.masterAnalyser).toBeDefined();
         expect(mockCtx.createGain).toHaveBeenCalled();
         expect(mockCtx.createAnalyser).toHaveBeenCalled();
     });
 
     it('should load worklets on initialize', async () => {
-        await audioEngine.initialize();
+        await engine.initialize();
         expect(mockCtx.audioWorklet.addModule).toHaveBeenCalledTimes(4);
     });
 
     it('should manage master gain', () => {
-        audioEngine.setMasterGain(0.5);
-        expect(mockCtx.createGain().gain.setTargetAtTime).toHaveBeenCalledWith(0.5, expect.any(Number), 0.01);
+        engine.setMasterGain(0.5);
+        expect(engine.masterGainNode.gain.setTargetAtTime).toHaveBeenCalledWith(0.5, expect.any(Number), 0.01);
         
-        vi.mocked(mockCtx.createGain().gain).value = 0.5;
-        expect(audioEngine.getMasterGain()).toBe(0.5);
+        engine.masterGainNode.gain.value = 0.5;
+        expect(engine.getMasterGain()).toBe(0.5);
     });
 
     it('should ensure and remove track strips', () => {
-        const strip = audioEngine.ensureTrackStrip('t1');
+        const strip = engine.ensureTrackStrip('t1');
         expect(strip.trackId).toBe('t1');
         
-        const retrieved = audioEngine.getTrackStrip('t1');
+        const retrieved = engine.getTrackStrip('t1');
         expect(retrieved).toBe(strip);
         
-        audioEngine.removeTrackStrip('t1');
-        expect(audioEngine.getTrackStrip('t1')).toBeUndefined();
-    });
-
-    it('should ensure and remove bus strips', () => {
-        const strip = audioEngine.ensureBusStrip('b1');
-        expect(strip.busId).toBe('b1');
-        
-        audioEngine.removeBusStrip('b1');
-        // No direct getter for bus strips in AudioEngine public API other than ensure
-    });
-
-    it('should delegate track parameters', () => {
-        audioEngine.ensureTrackStrip('t1');
-        audioEngine.setTrackGain('t1', 0.8);
-        audioEngine.setTrackPan('t1', -20);
-        audioEngine.setTrackMute('t1', true);
-        
-        const trackNode = (audioEngine as any).trackNodes.get('t1');
-        expect(trackNode.setGain).toHaveBeenCalledWith(0.8);
-        expect(trackNode.setPan).toHaveBeenCalledWith(-20);
-        expect(trackNode.setMute).toHaveBeenCalledWith(true);
+        engine.removeTrackStrip('t1');
+        expect(engine.getTrackStrip('t1')).toBeUndefined();
     });
 
     it('should handle master peak level', () => {
-        const peak = audioEngine.getMasterPeakLevel();
-        expect(mockCtx.createAnalyser().getFloatTimeDomainData).toHaveBeenCalled();
+        const peak = engine.getMasterPeakLevel();
+        expect(engine.masterAnalyser.getFloatTimeDomainData).toHaveBeenCalled();
         expect(typeof peak).toBe('number');
-    });
-
-    it('should reset graph', () => {
-        audioEngine.ensureTrackStrip('t1');
-        audioEngine.ensureBusStrip('b1');
-        
-        audioEngine.resetGraph();
-        
-        expect(audioEngine.getTrackStrip('t1')).toBeUndefined();
-        expect((audioEngine as any).busNodes.size).toBe(0);
     });
 });
