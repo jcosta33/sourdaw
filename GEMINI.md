@@ -39,6 +39,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Module internals (`models/`, `repositories/`, `engine/`, `presentations/components/`) are strictly private
 - No barrel files except each module’s root `index.ts`, which may only re-export from `useCases/`, `events/`, `stores/`, and `presentations/views/` — do not `export type` from `useCases/` for other modules (`AGENTS.md`)
 - Audio thread: no allocation, no blocking, no mutex locks
+- **TypeScript soundness:** Follow `AGENTS.md` (React — **TypeScript — soundness**). No `any` or assertion escapes to silence errors, no lazy test assertions, no suppression comments without justification.
 
 ## Safety rules (bypass-permissions mode is active)
 

@@ -2,6 +2,8 @@
 
 Writing and execution standards for all agents working in this repo.
 
+This file is about **documentation** (specs, audits, tasks, research). Rules for **TypeScript and implementation code** (sound typing, tests, assertions) are canonical in **`AGENTS.md`** (repo root) and summarized for humans in **`docs/07-conventions.md`**.
+
 ---
 
 ## Clarity

@@ -38,6 +38,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Do not use `useMemo`, `useCallback`, or `React.memo` — the React Compiler handles memoization.
 - Do not use `forwardRef` — `ref` is a regular prop in React 19.
 - Prefer `type` over `interface`. Prefer `as const` over `enum`.
+- **TypeScript soundness:** Follow `AGENTS.md` (React — **TypeScript — soundness**). No `any` or assertion escapes to silence errors, no lazy test assertions, no suppression comments without justification.
 - Never render with `&&` — use ternaries or early returns.
 - All audio-thread code: no allocation, no mutex locks, no blocking.
 

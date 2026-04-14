@@ -6,6 +6,7 @@ applyTo: "**/*.{ts,tsx}"
 
 ## Rules
 
+- Follow repository **`AGENTS.md`** (section **TypeScript — soundness**): no `any` or type assertions to silence errors; no lazy test assertions (`toBeDefined` / `toBeTruthy` without checking the real contract); no `@ts-expect-error` / `@ts-ignore` without a short justification.
 - methods with more than 2 parameters should use object input and destructuring.
 
 ---
