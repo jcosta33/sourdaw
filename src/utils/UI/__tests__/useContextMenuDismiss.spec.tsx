@@ -1,49 +1,66 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { useRef, type ReactElement } from 'react';
-
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createRef } from 'react';
+import { renderHook } from '@testing-library/react';
 import { useContextMenuDismiss } from '../useContextMenuDismiss';
 
-function MenuHarness({ onClose }: { onClose: () => void }): ReactElement {
-    const ref = useRef<HTMLDivElement>(null);
-    useContextMenuDismiss(ref, onClose);
-    return (
-        <div ref={ref} data-testid="menu">
-            Menu
-        </div>
-    );
-}
-
 describe('useContextMenuDismiss', () => {
+    beforeEach(() => {
+        document.body.replaceChildren();
+    });
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
     it('should call onClose when Escape is pressed', () => {
         const onClose = vi.fn();
-        render(<MenuHarness onClose={onClose} />);
+        const ref = createRef<HTMLDivElement>();
+        const menu = document.createElement('div');
+        document.body.append(menu);
+        ref.current = menu;
 
-        fireEvent.keyDown(document, { key: 'Escape' });
+        const { unmount } = renderHook(() => useContextMenuDismiss(ref, onClose));
 
-        expect(onClose).toHaveBeenCalledTimes(1);
-    });
-
-    it('should call onClose when mousedown happens outside the menu', () => {
-        const onClose = vi.fn();
-        render(
-            <div>
-                <MenuHarness onClose={onClose} />
-                <button type="button">Outside</button>
-            </div>
-        );
-
-        fireEvent.mouseDown(screen.getByRole('button', { name: 'Outside' }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
         expect(onClose).toHaveBeenCalledTimes(1);
+        unmount();
     });
 
-    it('should not call onClose when mousedown is inside the menu', () => {
+    it('should call onClose when mousedown happens outside the menu element', () => {
         const onClose = vi.fn();
-        render(<MenuHarness onClose={onClose} />);
+        const ref = createRef<HTMLDivElement>();
+        const menu = document.createElement('div');
+        const outside = document.createElement('button');
+        document.body.append(menu, outside);
+        ref.current = menu;
 
-        fireEvent.mouseDown(screen.getByTestId('menu'));
+        const { unmount } = renderHook(() => useContextMenuDismiss(ref, onClose));
+
+        const ev = new MouseEvent('mousedown', { bubbles: true });
+        Object.defineProperty(ev, 'target', { value: outside, enumerable: true });
+        document.dispatchEvent(ev);
+
+        expect(onClose).toHaveBeenCalledTimes(1);
+        unmount();
+    });
+
+    it('should not call onClose when mousedown target is inside the menu', () => {
+        const onClose = vi.fn();
+        const ref = createRef<HTMLDivElement>();
+        const menu = document.createElement('div');
+        const inner = document.createElement('span');
+        menu.append(inner);
+        document.body.append(menu);
+        ref.current = menu;
+
+        const { unmount } = renderHook(() => useContextMenuDismiss(ref, onClose));
+
+        const ev = new MouseEvent('mousedown', { bubbles: true });
+        Object.defineProperty(ev, 'target', { value: inner, enumerable: true });
+        document.dispatchEvent(ev);
 
         expect(onClose).not.toHaveBeenCalled();
+        unmount();
     });
 });

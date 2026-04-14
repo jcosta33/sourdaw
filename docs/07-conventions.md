@@ -2,6 +2,10 @@
 
 This guide defines coding conventions and patterns for clarity, consistency, and maintainability.
 
+## TypeScript soundness
+
+Agent-enforced rules for typing and tests — no `any` escapes, lazy assertions, or suppression comments without justification — are **canonical in `AGENTS.md`** under *React 19 & Coding Conventions* → **TypeScript — soundness**. Follow that section for implementation; this document does not repeat it.
+
 ## Prefer explicit control flow
 
 All control flow must be explicit. Use guard clauses for early returns and always use block statements (`{...}`) for conditionals. Avoid clever shortcuts like short-circuit invocations (`&&`) or collapsed `if` statements. This practice improves readability and reduces the chance of logical errors.

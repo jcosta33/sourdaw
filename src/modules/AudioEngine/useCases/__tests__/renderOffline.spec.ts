@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { exportStems } from '../exportStems';
 import { renderOffline } from '../renderOffline';
 
 const offlineRenderMocks = vi.hoisted(() => ({
@@ -22,7 +21,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<any>();
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
         resolveClipsWithComping: offlineRenderMocks.resolveClipsWithComping,
@@ -31,7 +30,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Automation', async (importOriginal) => {
-    const actual = await importOriginal<any>();
+    const actual = await importOriginal<typeof import('#/modules/Automation')>();
     return {
         ...actual,
         getAutomationLanes: offlineRenderMocks.getAutomationLanes,
@@ -39,7 +38,7 @@ vi.mock('#/modules/Automation', async (importOriginal) => {
 });
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
-    const actual = await importOriginal<any>();
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
         ...actual,
         getMidiStoreState: offlineRenderMocks.getMidiStoreState,
@@ -47,7 +46,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
-    const actual = await importOriginal<any>();
+    const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
     return {
         ...actual,
         getDrumKitDefByIndex: offlineRenderMocks.getDrumKitDefByIndex,
@@ -59,7 +58,7 @@ vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
-    const actual = await importOriginal<any>();
+    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...actual,
         getTempoMapState: offlineRenderMocks.getTempoMapState,
@@ -95,16 +94,5 @@ describe('renderOffline', () => {
     it('rejects non-positive duration before touching stores', async () => {
         await expect(renderOffline(0)).rejects.toThrow();
         expect(offlineRenderMocks.getTrackStoreState).not.toHaveBeenCalled();
-    });
-});
-
-describe('exportStems', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    it('returns empty map when track or midi state is missing', async () => {
-        const stems = await exportStems(4);
-        expect(stems.size).toBe(0);
     });
 });

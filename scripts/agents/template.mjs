@@ -131,7 +131,8 @@ Describe the task here.
 ## Notes
 -
 
-## Handoff
--
+## Self-review
+
+Complete the Self-review section (copied from the appropriate \`task-*.md\` template) before declaring this task done — tasks are self-contained and do not use a separate handoff section.
 `;
 }

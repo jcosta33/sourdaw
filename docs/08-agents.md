@@ -135,7 +135,7 @@ ashow fix-auth-redirect-loop
 
 ## The task file
 
-When you create a sandbox, `agents/tasks/<slug>.md` is created from the template in `agents/templates/task.md`. Open it and fill in **Objective** before you hand the task to the agent — it's the most important context you can give.
+When you create a sandbox, `.agents/tasks/<slug>.md` is created from the template in `scripts/agents/templates/task.md`. Open it and fill in **Objective** before you hand the task to the agent — it's the most important context you can give.
 
 ```markdown
 # Fix auth redirect loop
@@ -164,12 +164,12 @@ stack in src/modules/Auth and fix the redirect logic.
 
 - Might be related to the recent session middleware refactor (commit 97c46d0)
 
-## Handoff
+## Self-review
 
--
+_(Complete before ending the session — see `scripts/agents/templates/task.md`.)_
 ```
 
-The metadata block is managed automatically. Your content in Objective, Notes, and Handoff is never touched by the tool.
+The metadata block is managed automatically. Your body content (Objective, Plan, Notes, Self-review, etc.) outside `## Metadata` is preserved by the tool except when you explicitly overwrite the file.
 
 To append a note without opening the file:
 

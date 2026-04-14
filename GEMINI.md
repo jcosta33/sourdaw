@@ -18,7 +18,7 @@ Before implementing anything non-trivial:
 
 Full workflow: `docs/agents/03-workflow.md`
 File type definitions: `docs/agents/02-file-types.md`
-Templates: `agents/templates/` (audit, spec, task)
+Templates: `scripts/agents/templates/` (audit, spec, task)
 
 ## Your task file
 
@@ -30,7 +30,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Fill in **Linked docs** with any specs/audits/skills loaded
 - Check off **Progress checklist** steps as you complete them
 - Log **Decisions** and **Findings** as they emerge
-- Fill in **Handoff** before ending the session — never leave it empty
+- Complete **`## Self-review`** before ending the session (every question answered, verification outputs pasted). Task files have no separate Handoff section.
 
 ## Hard rules
 
@@ -39,6 +39,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Module internals (`models/`, `repositories/`, `engine/`, `presentations/components/`) are strictly private
 - No barrel files except each module’s root `index.ts`, which may only re-export from `useCases/`, `events/`, `stores/`, and `presentations/views/` — do not `export type` from `useCases/` for other modules (`AGENTS.md`)
 - Audio thread: no allocation, no blocking, no mutex locks
+- **TypeScript soundness:** Follow `AGENTS.md` (React — **TypeScript — soundness**). No `any` or assertion escapes to silence errors, no lazy test assertions, no suppression comments without justification.
 
 ## Safety rules (bypass-permissions mode is active)
 
