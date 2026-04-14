@@ -64,15 +64,14 @@ export const adjustmentLayerStore = createStore<AdjustmentLayerState>({
     initialData: { layers: [] },
 });
 
-let layerId = 1;
-let regionId = 1;
-
+// §122.1 — UUID instead of module-level counters that reset on HMR
+// and collide across sequential creates after a reload.
 export function getNextLayerId(): string {
-    return `adj-${layerId++}`;
+    return `adj-${crypto.randomUUID()}`;
 }
 
 export function getNextRegionId(): string {
-    return `adjr-${regionId++}`;
+    return `adjr-${crypto.randomUUID()}`;
 }
 
 export const EFFECT_PRESETS: Record<AdjustmentEffectType, AdjustmentParameter[]> = {

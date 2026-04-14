@@ -40,10 +40,9 @@ export const cvGateStore = createStore<CvGateState>({
     },
 });
 
-let outputId = 1;
-
+// §122.1 — UUID instead of module-level counter that reset on HMR.
 export function getNextOutputId(): string {
-    return `cv-${outputId++}`;
+    return `cv-${crypto.randomUUID()}`;
 }
 
 export const VOLTAGE_RANGES: Record<CvOutputChannel['type'], [number, number]> = {

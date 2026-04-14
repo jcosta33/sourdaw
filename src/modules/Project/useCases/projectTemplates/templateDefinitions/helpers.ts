@@ -17,16 +17,6 @@ export type ProjectTemplate = {
     create: () => void | Promise<void>;
 };
 
-let _synthDeviceCounter = 0;
-
-export function getSynthDeviceCounter(): number {
-    return _synthDeviceCounter;
-}
-
-export function resetSynthDeviceCounter(): void {
-    _synthDeviceCounter = 0;
-}
-
 export function attachSynthDevice(trackId: string): void {
     const state = trackStore.value;
     if (!state) {
@@ -34,7 +24,8 @@ export function attachSynthDevice(trackId: string): void {
     }
 
     const device = {
-        id: `device-synth-${++_synthDeviceCounter}`,
+        // §122.1 — UUID instead of module-level counter that reset on HMR.
+        id: `device-synth-${crypto.randomUUID()}`,
         name: 'Synth',
         type: 'synth',
         bypassed: false,

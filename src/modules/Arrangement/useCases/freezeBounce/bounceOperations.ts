@@ -3,7 +3,6 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { type Clip, type Track } from '../../models/Track';
 import { renderTrackOffline } from './renderOffline';
 
-let frozenClipId = 1;
 
 export async function bounceInPlace(trackId: string): Promise<void> {
     const state = trackStore.value;
@@ -31,7 +30,9 @@ export async function bounceInPlace(trackId: string): Promise<void> {
     }
 
     const bouncedClip: Clip = {
-        id: `frozen-clip-${frozenClipId++}`,
+        // §122.1 — UUID instead of module-level counter that reset on HMR
+        // and collided across sequential bounces after a reload.
+        id: `frozen-clip-${crypto.randomUUID()}`,
         trackId,
         name: `${track.name} (bounced)`,
         startBeat,
@@ -90,9 +91,9 @@ export async function bounceToNewTrack(trackId: string): Promise<void> {
         audioBufferCache.set(audioBufferId, renderedBuffer);
     }
 
-    const newTrackId = `track-bounce-${Date.now()}`;
+    const newTrackId = `track-bounce-${crypto.randomUUID()}`;
     const bouncedClip: Clip = {
-        id: `bounced-new-${frozenClipId++}`,
+        id: `bounced-new-${crypto.randomUUID()}`,
         trackId: newTrackId,
         name: `${track.name} (bounced)`,
         startBeat,
@@ -185,7 +186,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     }
 
     const bouncedClip: Clip = {
-        id: `bounced-sel-${frozenClipId++}`,
+        id: `bounced-sel-${crypto.randomUUID()}`,
         trackId,
         name: `${track.name} (selection bounce)`,
         startBeat,

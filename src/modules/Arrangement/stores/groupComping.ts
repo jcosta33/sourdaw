@@ -40,18 +40,16 @@ export const groupCompingStore = createStore<GroupCompingState>({
     initialData: { groups: [], activeGroupId: null, defaultCrossfade: 0.125 },
 });
 
-let groupId = 1;
-let takeSetId = 1;
-let regionId = 1;
-
+// §122.1 — UUID instead of module-level counters that reset on HMR
+// and collide across sequential creates after a reload.
 export function getNextGroupId(): string {
-    return `grp-${groupId++}`;
+    return `grp-${crypto.randomUUID()}`;
 }
 export function getNextTakeSetId(): string {
-    return `ts-${takeSetId++}`;
+    return `ts-${crypto.randomUUID()}`;
 }
 export function getNextRegionId(): string {
-    return `gr-${regionId++}`;
+    return `gr-${crypto.randomUUID()}`;
 }
 
 export const GROUP_COLORS = [

@@ -97,11 +97,15 @@ export type Send = {
     preFader: boolean;
 };
 
-let trackColorCounter = 0;
+// §167.x — Rotating palette index for new tracks. Wrapped in a holder so
+// HMR reloads don't silently reset the index and start handing out the
+// same first-palette color twice in a row (the palette cycle is what
+// gives arranged tracks their visual variety).
+const trackColorState = { counter: 0 };
 
 export function createTrack(input: { id?: string; name: string; kind: TrackKind; parentId?: string }): Track {
-    const color = TRACK_COLOR_PALETTE[trackColorCounter % TRACK_COLOR_PALETTE.length]!;
-    trackColorCounter++;
+    const color = TRACK_COLOR_PALETTE[trackColorState.counter % TRACK_COLOR_PALETTE.length]!;
+    trackColorState.counter++;
 
     const defaultDevices: Device[] =
         input.kind === 'midi'
