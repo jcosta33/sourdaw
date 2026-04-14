@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, useRef, useLayoutEffect } from 'react';
+import { type ReactElement, type MouseEvent, type PointerEvent, useRef, useLayoutEffect, useMemo } from 'react';
 import { midiStore } from '#/modules/MIDI/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
@@ -36,6 +36,8 @@ type NotePropertyLaneProps = {
     getValue: (note: MidiNote) => number;
     /** Set the value on the note (called during drag). */
     setValue: (clipId: string, noteId: string, value: number) => void;
+    /** Set the values on multiple notes at once (called during ramp drag). */
+    setValues?: (clipId: string, updates: { noteId: string; velocity: number }[]) => void;
     /** Label for the lane (used in aria-label and empty-state text). */
     label: string;
     /** Undo action label, e.g. "Change velocity". */
@@ -50,6 +52,7 @@ export const NotePropertyLane = ({
     contentWidth,
     getValue,
     setValue,
+    setValues,
     label,
     undoLabel,
 }: NotePropertyLaneProps): ReactElement => {
@@ -73,6 +76,9 @@ export const NotePropertyLane = ({
     const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
     const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
+
+    const selectedNotes = useMemo(() => notes.filter((n) => selectedNoteIds.has(n.id)), [notes, selectedNoteIds]);
+    const sortedSelected = useMemo(() => [...selectedNotes].sort((a, b) => a.startBeat - b.startBeat), [selectedNotes]);
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -195,9 +201,127 @@ export const NotePropertyLane = ({
         window.addEventListener('mouseup', onUp);
     };
 
+    const handleRampDrag = (side: 'left' | 'right', e: PointerEvent<HTMLDivElement>) => {
+        if (!clipId) return;
+        const container = containerRef.current;
+        if (!container || sortedSelected.length < 2) return;
+        
+        e.stopPropagation();
+        e.preventDefault();
+        
+        const firstNote = sortedSelected[0];
+        const lastNote = sortedSelected[sortedSelected.length - 1];
+        if (!firstNote || !lastNote) return;
+
+        const h = container.getBoundingClientRect().height;
+        const startLeftVal = getValue(firstNote);
+        const startRightVal = getValue(lastNote);
+        
+        const initialValues = new Map(sortedSelected.map(n => [n.id, getValue(n)]));
+        
+        const onMove = (me: globalThis.PointerEvent) => {
+            const containerRect = container.getBoundingClientRect();
+            const ry = me.clientY - containerRect.top;
+            const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));
+            const newVal = Math.round(r * 127);
+            
+            const currentLeft = side === 'left' ? newVal : startLeftVal;
+            const currentRight = side === 'right' ? newVal : startRightVal;
+            
+            const beatSpan = lastNote.startBeat - firstNote.startBeat;
+            
+            for (const n of sortedSelected) {
+                let interpolated = currentLeft;
+                if (beatSpan > 0) {
+                    const t = (n.startBeat - firstNote.startBeat) / beatSpan;
+                    interpolated = currentLeft + (currentRight - currentLeft) * t;
+                }
+                setValue(clipId, n.id, Math.round(interpolated));
+            }
+        };
+        
+        const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            
+            const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
+            const changes: { id: string; oldVal: number; newVal: number }[] = [];
+            
+            for (const [id, oldVal] of initialValues.entries()) {
+                const finalNote = stateNotes.find(n => n.id === id);
+                if (finalNote) {
+                    const newVal = getValue(finalNote);
+                    if (newVal !== oldVal) {
+                        changes.push({ id, oldVal, newVal });
+                    }
+                }
+            }
+            
+            if (changes.length > 0) {
+                pushUndoEntry(
+                    `${undoLabel} ramp`,
+                    () => {
+                        if (setValues) {
+                            setValues(clipId, changes.map(c => ({ noteId: c.id, velocity: c.oldVal })));
+                        } else {
+                            for (const c of changes) setValue(clipId, c.id, c.oldVal);
+                        }
+                    },
+                    () => {
+                        if (setValues) {
+                            setValues(clipId, changes.map(c => ({ noteId: c.id, velocity: c.newVal })));
+                        } else {
+                            for (const c of changes) setValue(clipId, c.id, c.newVal);
+                        }
+                    }
+                );
+            }
+        };
+        
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    };
+
+    const firstSelected = sortedSelected[0];
+    const lastSelected = sortedSelected[sortedSelected.length - 1];
+
+    const leftX = firstSelected ? firstSelected.startBeat * beatWidth + Math.max(3, firstSelected.duration * beatWidth - 2) / 2 : 0;
+    const rightX = lastSelected ? lastSelected.startBeat * beatWidth + Math.max(3, lastSelected.duration * beatWidth - 2) / 2 : 0;
+    
+    const leftVal = firstSelected ? getValue(firstSelected) : 0;
+    const rightVal = lastSelected ? getValue(lastSelected) : 0;
+
+    const getYPercent = (val: number) => `calc(2px + ${1 - val / 127} * (100% - 4px))`;
+
     return (
         <div ref={containerRef} className="relative h-full w-full" role="group" aria-label={`${label} lane`}>
             <canvas ref={canvasRef} className="cursor-ns-resize" onMouseDown={handleMouseDown} />
+            
+            {sortedSelected.length > 1 && (
+                <>
+                    <svg className="absolute inset-0 pointer-events-none w-full h-full overflow-visible">
+                        <line 
+                            x1={leftX + 1} 
+                            y1={getYPercent(leftVal)} 
+                            x2={rightX + 1} 
+                            y2={getYPercent(rightVal)} 
+                            stroke="rgba(255, 255, 255, 0.4)" 
+                            strokeWidth="1.5"
+                            strokeDasharray="4 4"
+                        />
+                    </svg>
+                    <div 
+                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
+                        style={{ left: leftX + 1, top: getYPercent(leftVal) }}
+                        onPointerDown={(e) => handleRampDrag('left', e)}
+                    />
+                    <div 
+                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
+                        style={{ left: rightX + 1, top: getYPercent(rightVal) }}
+                        onPointerDown={(e) => handleRampDrag('right', e)}
+                    />
+                </>
+            )}
         </div>
     );
 };

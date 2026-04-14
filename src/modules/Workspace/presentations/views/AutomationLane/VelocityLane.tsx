@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { setNoteVelocity } from '#/modules/MIDI/useCases';
+import { setNoteVelocity, setNoteVelocities } from '#/modules/MIDI/useCases';
 import { NotePropertyLane } from './NotePropertyLane';
 
 type VelocityLaneProps = {
@@ -17,6 +17,7 @@ export const VelocityLane = (props: VelocityLaneProps): ReactElement => (
         {...props}
         getValue={getVelocity}
         setValue={setNoteVelocity}
+        setValues={setNoteVelocities}
         label="Velocity"
         undoLabel="Change velocity"
     />

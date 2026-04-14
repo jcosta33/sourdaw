@@ -60,6 +60,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     toggleInspector: true,
     toggleChatPanel: true,
     setEditingTool: true,
+    setMarqueeSelection: true,
     addMarker: true,
     removeMarker: true,
     setMarkerColor: true,

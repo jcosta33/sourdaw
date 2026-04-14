@@ -24,6 +24,7 @@ import { handleScaleAllVelocities } from '../handlers/workspace/handleScaleAllVe
 import { handleScaleVelocities } from '../handlers/workspace/handleScaleVelocities';
 import { handleSetAllVelocities } from '../handlers/workspace/handleSetAllVelocities';
 import { handleSetEditingTool } from '../handlers/workspace/handleSetEditingTool';
+import { handleSetMarqueeSelection } from '../handlers/workspace/handleSetMarqueeSelection';
 import { handleSetMarkerColor } from '../handlers/workspace/handleSetMarkerColor';
 import { handleSetSnapValue } from '../handlers/workspace/handleSetSnapValue';
 import { handleSetWorkspaceMode } from '../handlers/workspace/handleSetWorkspaceMode';
@@ -42,6 +43,7 @@ type WorkspaceAppAction =
     | Extract<AppAction, { type: 'toggleInspector' }>
     | Extract<AppAction, { type: 'toggleChatPanel' }>
     | Extract<AppAction, { type: 'setEditingTool' }>
+    | Extract<AppAction, { type: 'setMarqueeSelection' }>
     | Extract<AppAction, { type: 'addMarker' }>
     | Extract<AppAction, { type: 'removeMarker' }>
     | Extract<AppAction, { type: 'setMarkerColor' }>
@@ -75,7 +77,7 @@ export type WorkspaceHandlersMap = {
 };
 
 /**
- * Merges Workspace `ActionHandler` maps for Command. Does **not** call `createHandler` here.
+ * Merges Workspace \`ActionHandler\` maps for Command. Does **not** call \`createHandler\` here.
  */
 export function getWorkspaceHandlers(): WorkspaceHandlersMap {
     return {
@@ -86,6 +88,7 @@ export function getWorkspaceHandlers(): WorkspaceHandlersMap {
         toggleInspector: handleToggleInspector,
         toggleChatPanel: handleToggleChatPanel,
         setEditingTool: handleSetEditingTool,
+        setMarqueeSelection: handleSetMarqueeSelection,
         addMarker: handleAddMarker,
         removeMarker: handleRemoveMarker,
         setMarkerColor: handleSetMarkerColor,

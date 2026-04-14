@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { MousePointer2, Scissors, Pencil, TrendingUp, MoveHorizontal } from 'lucide-react';
+import { MousePointer2, Scissors, Pencil, TrendingUp, MoveHorizontal, SquareDashed } from 'lucide-react';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -14,9 +14,10 @@ const TOOL_ICONS: Record<EditingTool, ReactElement> = {
     draw: <Pencil className="size-3.5" aria-hidden="true" />,
     automation: <TrendingUp className="size-3.5" aria-hidden="true" />,
     stretch: <MoveHorizontal className="size-3.5" aria-hidden="true" />,
+    marquee: <SquareDashed className="size-3.5" aria-hidden="true" />,
 };
 
-const TOOLS: EditingTool[] = ['select', 'cut', 'draw', 'automation', 'stretch'];
+const TOOLS: EditingTool[] = ['select', 'cut', 'draw', 'automation', 'stretch', 'marquee'];
 
 type ToolSelectorProps = {
     rippleEditing?: boolean;

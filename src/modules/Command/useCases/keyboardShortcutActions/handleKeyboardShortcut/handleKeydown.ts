@@ -1,16 +1,8 @@
 import { inject } from '#/infra/di/inject';
-import { stopPlayback, toggleMetronome, seekPlayhead } from '#/modules/Transport/useCases';
+import { stopPlayback, seekPlayhead } from '#/modules/Transport/useCases';
 
-import { clearSolos } from '../trackShortcuts/clearSolos';
-import { addTrack } from '../trackShortcuts/addTrack';
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
-import { duplicateClip } from '../trackShortcuts/duplicateClip';
-import { duplicateClipToNextBar } from '../trackShortcuts/duplicateClipToNextBar';
-import { zoomTracksVertical } from '../trackShortcuts/zoomTracksVertical';
 
-import { setEditingTool } from '../workspaceShortcuts/setEditingTool';
-import { zoomToFit } from '../workspaceShortcuts/zoomToFit';
-import { zoomToSelection } from '../workspaceShortcuts/zoomToSelection';
 import { workspaceStore } from '#/modules/Workspace/stores';
 
 import {
@@ -19,6 +11,7 @@ import {
     selectAllClips,
     clearClipSelection,
     toggleWorkspaceMode,
+    setEditingTool,
     type EditingTool,
     TOOL_SHORTCUTS,
 } from '#/modules/Workspace/useCases';
@@ -29,6 +22,8 @@ import { getLastClipEndBeat } from '../../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { eventBus } from '#/app/registerDependencies';
+import { shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
+import { executeAppAction } from '../../executeAppAction';
 
 const ZOOM_STEP = 4;
 
@@ -49,28 +44,123 @@ export type KeyDescriptor = {
     isInput: boolean;
 };
 
+function matches(desc: KeyDescriptor, keys: string[]): boolean {
+    return keys.some((combo) => {
+        const parts = combo.split('+');
+        const keyPart = parts.pop();
+        if (!keyPart) {
+            return false;
+        }
+
+        const hasMod = parts.includes('mod');
+        const hasShift = parts.includes('shift');
+        const hasAlt = parts.includes('alt');
+
+        const normalizedKey = keyPart === 'Space' ? ' ' : keyPart;
+        const eventKey = desc.key;
+
+        // Simple match for exact key or case-insensitive character match
+        const keyMatch =
+            normalizedKey === eventKey ||
+            (normalizedKey.length === 1 &&
+                eventKey.length === 1 &&
+                normalizedKey.toLowerCase() === eventKey.toLowerCase());
+
+        return keyMatch && hasMod === desc.mod && hasShift === desc.shift && hasAlt === desc.alt;
+    });
+}
+
 /**
  * Handles a keydown event by mapping it to the appropriate action.
  * Returns `true` if the caller should call `preventDefault()`.
  */
-export const handleKeydown = inject({ eventBus })(
-    ({ eventBus }) => {
-        const handleSimpleKeys = (key: string, shift: boolean): boolean => {
-            switch (key) {
-                case 'Escape': {
-                    const ws = workspaceStore.value;
-                    if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
-                        clearClipSelection();
-                    } else {
-                        stopPlayback();
+export const handleKeydown = inject({ eventBus, executeAppAction })(
+    ({ eventBus, executeAppAction }) => {
+        const executeShortcutAction = (action: ShortcutAction): boolean => {
+            if (action.type === 'appAction') {
+                const { type, payload } = action.action;
+
+                // Handle dynamic payloads
+                if (type === 'duplicateClip' && (payload as any)?.clipId === 'selected') {
+                    const selectedClipId = workspaceStore.value?.selectedClipId;
+                    if (selectedClipId) {
+                        executeAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
                     }
-                    return false;
+                    return true;
                 }
+                if (type === 'duplicateClipToNextBar' && (payload as any)?.clipId === 'selected') {
+                    const selectedClipId = workspaceStore.value?.selectedClipId;
+                    if (selectedClipId) {
+                        executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
+                    }
+                    return true;
+                }
+
+                executeAppAction(action.action);
+                return true;
+            }
+            if (action.type === 'callback') {
+                switch (action.id) {
+                    case 'stopPlayback': {
+                        const ws = workspaceStore.value;
+                        if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
+                            clearClipSelection();
+                        } else {
+                            stopPlayback();
+                        }
+                        return false;
+                    }
+                    case 'zoomIn':
+                        zoomTimeline(ZOOM_STEP);
+                        return true;
+                    case 'zoomOut':
+                        zoomTimeline(-ZOOM_STEP);
+                        return true;
+                    case 'toggleCommandPalette':
+                        toggleCommandPalette();
+                        return true;
+                    case 'selectAllClips':
+                        selectAllClips(getAllClipIds);
+                        return true;
+                    case 'clearClipSelection':
+                        clearClipSelection();
+                        return true;
+                    case 'duplicateTrack': {
+                        const selectedId = trackStore.value?.selectedTrackId;
+                        if (selectedId) {
+                            duplicateTrack(selectedId);
+                        }
+                        return true;
+                    }
+                    case 'cycleAutomationVisibility':
+                        cycleAutomationVisibility();
+                        return false;
+                    case 'toggleWorkspaceMode':
+                        toggleWorkspaceMode();
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+            return false;
+        };
+
+        const handleSimpleKeys = (key: string, desc: KeyDescriptor): boolean => {
+            // Check shortcut store first
+            const { definitions, customMappings } = shortcutStore.value ?? {
+                definitions: [],
+                customMappings: {},
+            };
+            for (const def of definitions) {
+                const keys = customMappings[def.id] ?? def.defaultKeys;
+                if (matches(desc, keys)) {
+                    return executeShortcutAction(def.action);
+                }
+            }
+
+            switch (key) {
                 case 'L':
                     eventBus.emit('zoom.scrollToPlayhead', undefined);
-                    return false;
-                case 'm':
-                    toggleMetronome();
                     return false;
                 case 'Home':
                     seekPlayhead(0);
@@ -78,38 +168,11 @@ export const handleKeydown = inject({ eventBus })(
                 case 'End':
                     seekPlayhead(getLastClipEndBeat());
                     return true;
-                case '=':
-                case '+':
-                    zoomTimeline(ZOOM_STEP);
-                    return true;
-                case '-':
-                    zoomTimeline(-ZOOM_STEP);
-                    return true;
                 case ']':
                     goToNextMarker();
                     return false;
                 case '[':
                     goToPreviousMarker();
-                    return false;
-                case 'f':
-                    zoomToFit();
-                    return false;
-                case 'F':
-                    zoomToSelection();
-                    return false;
-                case 'n':
-                    addTrack({ name: 'MIDI', kind: 'midi' });
-                    return false;
-                case 'N':
-                    if (shift) {
-                        addTrack({ name: 'Audio', kind: 'audio' });
-                    }
-                    return false;
-                case 'Tab':
-                    toggleWorkspaceMode();
-                    return true;
-                case 'a':
-                    cycleAutomationVisibility();
                     return false;
                 default: {
                     const numberTool = NUMBER_TOOL_MAP[key];
@@ -129,93 +192,6 @@ export const handleKeydown = inject({ eventBus })(
         return function handleKeydown(desc: KeyDescriptor): boolean {
             const { key, mod, shift, alt, repeat, isInput } = desc;
 
-            // Cmd+K: command palette (always, even in inputs)
-            if (key === 'k' && mod) {
-                toggleCommandPalette();
-                return true;
-            }
-
-            // Cmd+A: select all clips
-            if (mod && key === 'a' && !shift) {
-                if (isInput) {
-                    return false;
-                }
-                selectAllClips(getAllClipIds);
-                return true;
-            }
-
-            // Cmd+Shift+A: clear clip selection
-            if (mod && shift && key.toLowerCase() === 'a') {
-                if (isInput) {
-                    return false;
-                }
-                clearClipSelection();
-                return true;
-            }
-
-            // Cmd+Shift+D: duplicate track
-            if (mod && shift && key.toLowerCase() === 'd') {
-                if (isInput) {
-                    return false;
-                }
-                const selectedId = trackStore.value?.selectedTrackId;
-                if (selectedId) {
-                    duplicateTrack(selectedId);
-                }
-                return true;
-            }
-
-            // Alt+D: duplicate clip to next bar
-            if (alt && key.toLowerCase() === 'd' && !mod) {
-                if (isInput) {
-                    return false;
-                }
-                const selectedClipId = workspaceStore.value?.selectedClipId;
-                if (selectedClipId) {
-                    duplicateClipToNextBar(selectedClipId);
-                }
-                return true;
-            }
-
-            // Cmd+D: duplicate clip
-            if (mod && key.toLowerCase() === 'd' && !shift && !alt) {
-                if (isInput) {
-                    return false;
-                }
-                const selectedClipId = workspaceStore.value?.selectedClipId;
-                if (selectedClipId) {
-                    duplicateClip(selectedClipId);
-                }
-                return true;
-            }
-
-            // Cmd+Shift+F: zoom to fit
-            if (mod && shift && key.toLowerCase() === 'f') {
-                if (isInput) {
-                    return false;
-                }
-                zoomToFit();
-                return true;
-            }
-
-            // Cmd+Shift++: zoom tracks in
-            if (mod && shift && (key === '=' || key === '+')) {
-                if (isInput) {
-                    return false;
-                }
-                zoomTracksVertical(10);
-                return true;
-            }
-
-            // Cmd+Shift+-: zoom tracks out
-            if (mod && shift && key === '-') {
-                if (isInput) {
-                    return false;
-                }
-                zoomTracksVertical(-10);
-                return true;
-            }
-
             // V: voice toggle (press)
             if (key === 'v' && !mod && !shift && !alt && !repeat) {
                 if (isInput) {
@@ -225,21 +201,35 @@ export const handleKeydown = inject({ eventBus })(
                 return true;
             }
 
-            // Alt+S: clear solos
-            if (alt && key.toLowerCase() === 's' && !mod) {
-                if (isInput) {
-                    return false;
+            // Check shortcut store first for ALL keys (including those with modifiers)
+            const { definitions, customMappings } = shortcutStore.value ?? {
+                definitions: [],
+                customMappings: {},
+            };
+            for (const def of definitions) {
+                const keys = customMappings[def.id] ?? def.defaultKeys;
+                if (matches(desc, keys)) {
+                    // Some shortcuts (like Cmd+K) should work even in inputs
+                    const allowedInInput = def.id === 'workspace.toggleCommandPalette';
+                    if (isInput && !allowedInInput) {
+                        continue;
+                    }
+                    return executeShortcutAction(def.action);
                 }
-                clearSolos();
-                return true;
             }
 
             // All remaining shortcuts are blocked in input fields
             if (isInput) {
+                // EXCEPT Cmd+K which is special and handled above if migrated, 
+                // but let's keep the legacy fallback for now if not migrated.
+                if (key === 'k' && mod) {
+                    toggleCommandPalette();
+                    return true;
+                }
                 return false;
             }
 
-            return handleSimpleKeys(key, shift);
+            return handleSimpleKeys(key, desc);
         };
     }
 );

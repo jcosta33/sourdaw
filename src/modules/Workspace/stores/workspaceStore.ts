@@ -14,6 +14,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     commandPaletteOpen: false,
     selectedClipId: null,
     selectedClipIds: [],
+    marqueeSelection: null,
     snapValue: 1,
     sidebarWidth: 224,
     inspectorWidth: 256,

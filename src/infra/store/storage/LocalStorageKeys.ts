@@ -122,5 +122,8 @@ export type LocalStorageKey =
     // Stores AI action history (undo groups, timestamps, prompts)
     | 'sourdaw-ai-history'
 
+    // Stores user-defined keyboard shortcuts
+    | 'sourdaw-shortcuts'
+
     // Stores if the user has dismissed the alpha notice modal
     | 'sourdaw-alpha-notice-dismissed';

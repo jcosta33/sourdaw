@@ -59,6 +59,7 @@ export type Preferences = {
     autoSave: boolean;
     autoSaveIntervalMs: number;
     snapToGrid: boolean;
+    snapToZeroCrossing: boolean;
     gridSubdivision: GridSnapOption;
     showMinimap: boolean;
     voiceCommandKey: string;
@@ -86,6 +87,7 @@ export const defaultPreferences: Preferences = {
     autoSave: true,
     autoSaveIntervalMs: 30_000,
     snapToGrid: true,
+    snapToZeroCrossing: true,
     gridSubdivision: '1/4',
     showMinimap: false,
     voiceCommandKey: 'v',

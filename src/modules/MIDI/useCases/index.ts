@@ -67,6 +67,7 @@ export { removeMidiNote } from './midiNoteCrud/removeMidiNote';
 export { resizeMidiNote } from './midiNoteCrud/resizeMidiNote';
 export { setNoteProbability } from './midiNoteCrud/setNoteProbability';
 export { setNoteVelocity } from './midiNoteCrud/setNoteVelocity';
+export { setNoteVelocities } from './midiNoteCrud/setNoteVelocities';
 export { setNotesForClip } from './midiNoteCrud/setNotesForClip';
 export { shiftClipMidiNotes } from './midiNoteCrud/shiftClipMidiNotes';
 

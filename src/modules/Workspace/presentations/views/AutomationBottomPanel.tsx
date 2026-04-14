@@ -21,6 +21,7 @@ import { AutomationAddLaneControl, AutomationModeControl } from './AutomationVie
 import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { type Track } from '../../models/TrackViewTypes';
+import { type EditingTool } from '../../models/EditingTool';
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 
 const SPARKLINE_HEIGHT = 24;
@@ -28,7 +29,7 @@ const SPARKLINE_HEIGHT = 24;
 type AutomationPanelWorkspaceState = {
     selectedClipId: string | null;
     selectedClipIds: string[];
-    activeTool: 'select' | 'cut' | 'draw' | 'automation' | 'stretch';
+    activeTool: EditingTool;
     snapValue: number;
     trackListWidth: number;
     trackListOpen: boolean;

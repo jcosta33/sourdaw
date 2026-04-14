@@ -1,4 +1,4 @@
-export type EditingTool = 'select' | 'cut' | 'draw' | 'automation' | 'stretch';
+export type EditingTool = 'select' | 'cut' | 'draw' | 'automation' | 'stretch' | 'marquee';
 
 export const TOOL_SHORTCUTS: Record<string, EditingTool> = {
     s: 'select',
@@ -6,6 +6,7 @@ export const TOOL_SHORTCUTS: Record<string, EditingTool> = {
     d: 'draw',
     b: 'draw',
     t: 'stretch',
+    e: 'marquee',
 };
 
 export const TOOL_LABELS: Record<EditingTool, string> = {
@@ -14,4 +15,5 @@ export const TOOL_LABELS: Record<EditingTool, string> = {
     draw: 'Draw (D/B)',
     automation: 'Auto-draw',
     stretch: 'Stretch (T)',
+    marquee: 'Marquee (E)',
 };
