@@ -1,3 +1,5 @@
+import { type GrandBouleState } from '../../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 
 import {
@@ -7,7 +9,6 @@ import {
     PER_NOTE_PARAM_DESCRIPTORS,
 } from '../../models/GrandBoulePerNoteParams';
 
-import { grandBouleStore } from '../../stores/grandBouleStore';
 
 type SetGrandBoulePerNoteParamInput = {
     engine: GrandBouleEngineHandle;
@@ -21,10 +22,11 @@ type SetGrandBoulePerNoteParamInput = {
     perNoteMap: GrandBoulePerNoteMap;
     /** Setter for the per-note map. */
     setPerNoteMap: (next: GrandBoulePerNoteMap) => void;
+    store: Store<GrandBouleState>;
 };
 
 export const setGrandBoulePerNoteParam = (input: SetGrandBoulePerNoteParamInput): void => {
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return;
     }

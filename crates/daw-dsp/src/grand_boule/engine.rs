@@ -20,6 +20,33 @@ pub const DEFAULT_VOICE_COUNT: usize = 32;
 /// Hard upper bound the engine will honour at construction time.
 pub const MAX_VOICE_COUNT: usize = 256;
 
+#[derive(Clone, Copy)]
+pub struct PerNoteValues {
+    pub hammer_hardness: f32,
+    pub hammer_mass: f32,
+    pub string_stiffness: f32,
+    pub bridge_coupling: f32,
+    pub damper_firmness: f32,
+    pub sympathetic_gain: f32,
+    pub strike_position: f32,
+    pub tone_brightness: f32,
+}
+
+impl Default for PerNoteValues {
+    fn default() -> Self {
+        Self {
+            hammer_hardness: 1.0,
+            hammer_mass: 1.0,
+            string_stiffness: 1.0,
+            bridge_coupling: 1.0,
+            damper_firmness: 1.0,
+            sympathetic_gain: 1.0,
+            strike_position: 1.0,
+            tone_brightness: 1.0,
+        }
+    }
+}
+
 pub struct GrandBouleEngine {
     voices: Vec<PianoVoice>,
     pedals: PedalState,
@@ -146,8 +173,10 @@ impl GrandBouleEngine {
         // Combine una-corda pedal scale, preset hammer hardness offset, and
         // piano model hammer scale. offset -1 → 0.5×, 0 → 1×, +1 → 2×.
         let hardness_scale = (2.0_f32).powf(self.hammer_hardness_offset);
+        let overrides = &self.per_note_overrides[(key as usize).saturating_sub(1).min(87)];
         let stiffness_scale =
-            self.pedals.hammer_stiffness_scale() * hardness_scale * self.hammer_hardness_scale;
+            self.pedals.hammer_stiffness_scale() * hardness_scale * self.hammer_hardness_scale * overrides.hammer_hardness;
+        let mass_scale = self.hammer_mass_scale * overrides.hammer_mass;
         self.pedals.press_key(key);
         self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
         self.noise
@@ -173,7 +202,7 @@ impl GrandBouleEngine {
                     key,
                     combined_ratio,
                     stiffness_scale,
-                    self.hammer_mass_scale,
+                    mass_scale,
                 );
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
                 return;
@@ -207,7 +236,7 @@ impl GrandBouleEngine {
                     key,
                     combined_ratio,
                     stiffness_scale,
-                    self.hammer_mass_scale,
+                    mass_scale,
                 );
                 voice.arm_attack(key, self.attack_samples.length_for_key(key));
             }
@@ -223,7 +252,7 @@ impl GrandBouleEngine {
             key,
             combined_ratio,
             stiffness_scale,
-            self.hammer_mass_scale,
+            mass_scale,
         );
         voice.arm_attack(key, self.attack_samples.length_for_key(key));
     }
@@ -398,7 +427,7 @@ impl GrandBouleEngine {
     /// panics or the user hits a global panic button.
     pub fn all_notes_off(&mut self) {
         for voice in self.voices.iter_mut() {
-            voice.note_off();
+            voice.kill();
         }
     }
 

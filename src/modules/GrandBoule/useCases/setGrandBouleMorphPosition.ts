@@ -1,3 +1,5 @@
+import { type GrandBouleState } from '../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule morph position and dispatch interpolated
  * physical-modeling parameters to the engine (spec §3.1).
@@ -9,11 +11,11 @@
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { type GrandBoulePianoModel, findPianoModelById } from '../models/GrandBouleMorphState';
-import { grandBouleStore } from '../stores/grandBouleStore';
 
 type SetGrandBouleMorphPositionInput = {
     engine: GrandBouleEngineHandle;
     morphPosition: number;
+    store: Store<GrandBouleState>;
 };
 
 /**
@@ -60,7 +62,7 @@ const dispatchInterpolatedParams = (
 };
 
 export const setGrandBouleMorphPosition = (input: SetGrandBouleMorphPositionInput): void => {
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return;
     }
@@ -99,7 +101,7 @@ export const setGrandBouleMorphPosition = (input: SetGrandBouleMorphPositionInpu
     const interpolated = interpolateModels(modelA, modelB, clamped);
     dispatchInterpolatedParams(input.engine, interpolated);
 
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         morph: { ...morph, morphPosition: clamped },
     });

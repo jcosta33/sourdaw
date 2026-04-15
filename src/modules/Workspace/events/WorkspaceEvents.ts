@@ -42,10 +42,10 @@ export type ImportMidiPayload = { file: File };
 export type MidiOutPayload = { type: string; channel: number; program: number };
 
 /** Payload for MIDI note-on event from external controller. */
-export type MidiNoteOnPayload = { midiNote: number; velocity: number };
+export type MidiNoteOnPayload = { deviceId?: string; midiNote: number; velocity: number };
 
 /** Payload for MIDI note-off event from external controller. */
-export type MidiNoteOffPayload = { midiNote: number };
+export type MidiNoteOffPayload = { deviceId?: string; midiNote: number };
 
 /** Payload for MIDI pedal CC event. */
-export type MidiPedalCcPayload = { cc: number; value: number | boolean };
+export type MidiPedalCcPayload = { deviceId?: string; cc: number; value: number | boolean };

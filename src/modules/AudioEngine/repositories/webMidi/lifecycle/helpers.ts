@@ -2,6 +2,7 @@ import { tauriInvoke } from '#/utils/tauriBridge';
 import { getActiveInput, getTauriEventUnlisten, setActiveInput, setTauriEventUnlisten } from '../state';
 import { onMidiMessage } from '../messageHandlers';
 
+
 export function attachInput(input: MIDIInput): void {
     const current = getActiveInput();
     if (current && current !== input) {

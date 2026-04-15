@@ -61,14 +61,14 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         const frames = output[0].length;
         const writeHead = Atomics.load(this._controlInts, WRITE_HEAD_IDX);
         const readHead = Atomics.load(this._controlInts, READ_HEAD_IDX);
-        const available = writeHead - readHead;
+        const available = (writeHead - readHead) | 0;
 
         if (available < frames) {
             // Underrun — output silence. The engine worker will catch up.
             return true;
         }
 
-        const offset = readHead % this._ringFrames;
+        const offset = (readHead >>> 0) % this._ringFrames;
         const firstChunk = Math.min(frames, this._ringFrames - offset);
         const secondChunk = frames - firstChunk;
 
@@ -86,7 +86,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             }
         }
 
-        Atomics.store(this._controlInts, READ_HEAD_IDX, readHead + frames);
+        Atomics.store(this._controlInts, READ_HEAD_IDX, (readHead + frames) | 0);
 
         return true;
     }
