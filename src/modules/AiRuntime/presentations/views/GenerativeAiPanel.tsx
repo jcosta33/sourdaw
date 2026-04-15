@@ -10,6 +10,7 @@ import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { isTauri } from '#/utils/tauriBridge';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { aiStore } from '#/modules/AiGeneration/stores';
@@ -100,6 +101,16 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const audioIsProcessing = state.tasks.some(
         (t) => t.type === 'audio-generation' && t.status === 'processing'
     );
+
+    const handleCancelAudio = (): void => {
+        cancelProcessingTask('audio-generation');
+        notifyUser('Audio generation cancelled — result may still appear if the request was already in flight', 'info');
+    };
+
+    const handleCancelMidi = (): void => {
+        cancelProcessingTask('midi-generation');
+        notifyUser('MIDI generation cancelled — result may still appear if the request was already in flight', 'info');
+    };
 
     const handleGenerate = () => {
         const genre = activeTab === 'midi' ? midiGenre : audioGenre;
@@ -332,7 +343,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                             variant="ghost"
                                             size="sm"
                                             className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                            onClick={() => cancelProcessingTask('audio-generation')}
+                                            onClick={handleCancelAudio}
                                             title="Force-stop — the background request may still complete"
                                             aria-label="Stop audio generation (background request may still complete)"
                                         >
@@ -428,7 +439,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                         variant="ghost"
                                         size="sm"
                                         className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                        onClick={() => cancelProcessingTask('midi-generation')}
+                                        onClick={handleCancelMidi}
                                         title="Force-stop — the background request may still complete"
                                         aria-label="Stop MIDI generation (background request may still complete)"
                                     >
