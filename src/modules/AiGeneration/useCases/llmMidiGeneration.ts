@@ -5,9 +5,9 @@ import {
     isNativeEngineReady,
     PATTERN_TEMPLATES,
     resolveBackend,
+    streamCloudChatCompletion,
 } from '#/modules/AiRuntime/useCases';
 import { type MidiGenerationNote } from '#/modules/AudioEngine/useCases';
-import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 // ── System prompt for music generation ──
@@ -48,24 +48,28 @@ export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, 
     let rawResponse: string;
 
     if (backend === 'none') {
+        notifyUser(
+            'No AI backend is configured — using a built-in pattern instead. Add a cloud API key in Settings → AI, or use Chrome with WebGPU to enable the browser AI engine.',
+            'warning'
+        );
         return fallbackToPatternMatch(prompt);
     }
 
     if (backend === 'native' && isNativeEngineReady()) {
         rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     } else if (backend === 'cloud') {
-        // §127.2 — Cloud MIDI generation is not yet wired up. Previously this
-        // silently returned a pattern-match result, which looked like the
-        // cloud backend was working. Surface the degradation to both logs
-        // and the user so the misconfiguration is visible.
-        logger.warn(
-            '[llmMidiGeneration] Cloud backend selected but no cloud MIDI generation is implemented; falling back to local pattern match.'
+        let accumulated = '';
+        await streamCloudChatCompletion(
+            [
+                { role: 'system', content: MIDI_SYSTEM_PROMPT },
+                { role: 'user', content: userMessage },
+            ],
+            (token: string) => {
+                accumulated += token;
+            },
+            { maxTokens: 2000 }
         );
-        notifyUser(
-            'Cloud AI is selected but cloud MIDI generation is not wired up yet — using local pattern match instead. Switch to the Browser or Native backend for full MIDI generation.',
-            'warning'
-        );
-        return fallbackToPatternMatch(prompt);
+        rawResponse = accumulated;
     } else {
         rawResponse = await generateWebLlmCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     }
@@ -73,6 +77,10 @@ export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, 
     const notes = parseMidiResponse(rawResponse);
 
     if (notes.length === 0) {
+        notifyUser(
+            'AI returned an unreadable response — falling back to a built-in pattern. Try rephrasing your prompt.',
+            'warning'
+        );
         return fallbackToPatternMatch(prompt);
     }
 

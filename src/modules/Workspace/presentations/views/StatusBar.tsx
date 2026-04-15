@@ -12,6 +12,7 @@ import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggle
 import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles/toggleUndoHistory';
 import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
+import { renderQueueStore } from '#/modules/BrowserAi';
 import { History, Users } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -35,6 +36,12 @@ export const StatusBar = (): ReactElement => {
     const selectionLabel = useSelectionLabel();
 
     const llmStatus = useStore<StatusBarLlmState>(llmStatusStore, { state: 'idle' });
+    const renderQueue = useStore(renderQueueStore, { entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+    const activeRenderCount = renderQueue
+        ? renderQueue.entries.filter(
+              (e) => e.status === 'rendering-browser' || e.status === 'queued' || e.status === 'preparing'
+          ).length
+        : 0;
 
     // ── Metric refs (written at 60 fps by useStatusBarMetrics) ───────────
     const cpuBarRef = useRef<HTMLDivElement>(null);
@@ -107,6 +114,17 @@ export const StatusBar = (): ReactElement => {
                             )
                         }
                     />
+
+                    {activeRenderCount > 0 ? (
+                        <DawMetricCluster
+                            label="AI Render"
+                            value={
+                                <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-cyan)]">
+                                    {String(activeRenderCount)} active
+                                </span>
+                            }
+                        />
+                    ) : null}
 
                     <DawReadoutRow
                         label="Rate"

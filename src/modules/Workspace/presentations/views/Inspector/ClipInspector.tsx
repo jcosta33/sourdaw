@@ -299,7 +299,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             {clip.type === 'midi' ? (
                 <>
                     <Separator />
-                    <ClipMidiAiSection clipId={clip.id} />
+                    <ClipMidiAiSection clip={clip} />
                 </>
             ) : null}
         </div>

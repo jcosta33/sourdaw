@@ -10,6 +10,7 @@ import {
     isCloudAvailable,
     resolveBackend,
 } from '#/modules/AiRuntime/useCases';
+import { CapabilityReportPanel, ModelManagerPanel } from '#/modules/BrowserAi';
 import { cn } from '#/utils/Styles/cn';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
@@ -119,6 +120,26 @@ export const AiSection = (): ReactElement => {
                             Remove Key
                         </Button>
                     ) : null}
+                </div>
+            </FieldGroup>
+
+            <Separator />
+
+            <FieldGroup label="Browser AI">
+                <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
+                    Instrument synthesis (DDSP), vocal previews (Kokoro TTS), and singing voice synthesis
+                    (DiffSinger) — all running in the browser via WebGPU on Chrome. No server required.
+                </p>
+                <div className="border border-border/30 rounded overflow-hidden">
+                    <CapabilityReportPanel />
+                </div>
+            </FieldGroup>
+
+            <Separator />
+
+            <FieldGroup label="AI Model Manager">
+                <div className="border border-border/30 rounded overflow-hidden max-h-[400px] overflow-y-auto">
+                    <ModelManagerPanel />
                 </div>
             </FieldGroup>
 

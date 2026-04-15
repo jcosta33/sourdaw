@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { useStore } from '#/infra/store/useStore';
-import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Info, Upload } from 'lucide-react';
+import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Info, Upload, Loader2 } from 'lucide-react';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -13,7 +13,7 @@ import { isTauri } from '#/utils/tauriBridge';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { aiStore } from '#/modules/AiGeneration/stores';
-import { toggleAiPanel, handleGenerateMidiPrompt, handleGenerateAudioFallback, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { toggleAiPanel, handleGenerateMidiPrompt, handleGenerateAudioFallback, handleStemSeparationPreview, cancelProcessingTask } from '#/modules/AiGeneration/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
@@ -74,9 +74,14 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
-    const [genre, setGenre] = useState('');
-    const [instrument, setInstrument] = useState('');
-    const [mood, setMood] = useState('');
+    // Genre / mood / instrument are tracked independently per tab so switching tabs
+    // doesn't clobber the user's selections for the other context.
+    const [midiGenre, setMidiGenre] = useState('');
+    const [midiMood, setMidiMood] = useState('');
+    const [midiInstrument, setMidiInstrument] = useState('');
+    const [audioGenre, setAudioGenre] = useState('');
+    const [audioMood, setAudioMood] = useState('');
+    const [audioInstrument, setAudioInstrument] = useState('');
     const [audioDuration, setAudioDuration] = useState(4);
     const [midiNotes, setMidiNotes] = useState(32);
     const [creativity, setCreativity] = useState(65);
@@ -87,7 +92,20 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
     const isDesktop = isTauri();
 
+    // In-flight detection — disable the Generate button while a task of the matching
+    // type is already processing. This prevents double-submits and gives clear feedback.
+    const midiIsProcessing = state.tasks.some(
+        (t) => t.type === 'midi-generation' && t.status === 'processing'
+    );
+    const audioIsProcessing = state.tasks.some(
+        (t) => t.type === 'audio-generation' && t.status === 'processing'
+    );
+
     const handleGenerate = () => {
+        const genre = activeTab === 'midi' ? midiGenre : audioGenre;
+        const mood = activeTab === 'midi' ? midiMood : audioMood;
+        const instrument = activeTab === 'midi' ? midiInstrument : audioInstrument;
+
         const metadata = [
             genre && `Genre: ${genre}`,
             instrument && `Instrument: ${instrument}`,
@@ -103,9 +121,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
         if (activeTab === 'audio') {
             const bpm = transportStore.value?.tempo ?? 120;
-            handleGenerateAudioFallback(`${String(Math.round(bpm))} BPM, ${finalPrompt}`, audioDuration.toString());
+            void handleGenerateAudioFallback(`${String(Math.round(bpm))} BPM, ${finalPrompt}`, audioDuration.toString());
         } else if (activeTab === 'midi') {
-            handleGenerateMidiPrompt(finalPrompt, midiNotes, creativity / 100);
+            void handleGenerateMidiPrompt(finalPrompt, midiNotes, creativity / 100);
         }
         setPrompt('');
     };
@@ -267,18 +285,18 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 </div>
 
                                 <div className="space-y-4 pt-1 pb-2">
-                                    <ParamSection label="Genre" value={genre} onClear={() => setGenre('')}>
-                                        <GenreGrid value={genre} onChange={setGenre} />
+                                    <ParamSection label="Genre" value={audioGenre} onClear={() => setAudioGenre('')}>
+                                        <GenreGrid value={audioGenre} onChange={setAudioGenre} />
                                     </ParamSection>
-                                    <ParamSection label="Mood" value={mood} onClear={() => setMood('')}>
-                                        <MoodGrid value={mood} onChange={setMood} />
+                                    <ParamSection label="Mood" value={audioMood} onClear={() => setAudioMood('')}>
+                                        <MoodGrid value={audioMood} onChange={setAudioMood} />
                                     </ParamSection>
                                     <ParamSection
                                         label="Instrument"
-                                        value={instrument}
-                                        onClear={() => setInstrument('')}
+                                        value={audioInstrument}
+                                        onClear={() => setAudioInstrument('')}
                                     >
-                                        <InstrumentGrid value={instrument} onChange={setInstrument} />
+                                        <InstrumentGrid value={audioInstrument} onChange={setAudioInstrument} />
                                     </ParamSection>
                                 </div>
 
@@ -302,13 +320,33 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     </DawInlineHint>
                                 </div>
 
-                                <Button
-                                    className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white"
-                                    onClick={handleGenerate}
-                                    disabled={!prompt.trim() && !genre && !instrument && !mood}
-                                >
-                                    <Sparkles className="size-3.5 mr-2" /> Generate Audio
-                                </Button>
+                                {audioIsProcessing ? (
+                                    <div className="flex gap-2">
+                                        <Button
+                                            className="flex-1 h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white opacity-60"
+                                            disabled
+                                        >
+                                            <Loader2 className="size-3.5 mr-2 animate-spin" /> Generating…
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                            onClick={() => cancelProcessingTask('audio-generation')}
+                                            title="Force-stop — the background request may still complete"
+                                        >
+                                            Stop
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <Button
+                                        className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white"
+                                        onClick={handleGenerate}
+                                        disabled={!prompt.trim() && !audioGenre && !audioInstrument && !audioMood}
+                                    >
+                                        <Sparkles className="size-3.5 mr-2" /> Generate Audio
+                                    </Button>
+                                )}
                                 <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
                                     First run downloads the model (~1.7 GB). Runs locally on your device.
                                 </DawInlineHint>
@@ -333,14 +371,14 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </div>
 
                             <div className="space-y-4 pt-1 pb-2">
-                                <ParamSection label="Genre" value={genre} onClear={() => setGenre('')}>
-                                    <GenreGrid value={genre} onChange={setGenre} />
+                                <ParamSection label="Genre" value={midiGenre} onClear={() => setMidiGenre('')}>
+                                    <GenreGrid value={midiGenre} onChange={setMidiGenre} />
                                 </ParamSection>
-                                <ParamSection label="Mood" value={mood} onClear={() => setMood('')}>
-                                    <MoodGrid value={mood} onChange={setMood} />
+                                <ParamSection label="Mood" value={midiMood} onClear={() => setMidiMood('')}>
+                                    <MoodGrid value={midiMood} onChange={setMidiMood} />
                                 </ParamSection>
-                                <ParamSection label="Instrument" value={instrument} onClear={() => setInstrument('')}>
-                                    <InstrumentGrid value={instrument} onChange={setInstrument} />
+                                <ParamSection label="Instrument" value={midiInstrument} onClear={() => setMidiInstrument('')}>
+                                    <InstrumentGrid value={midiInstrument} onChange={setMidiInstrument} />
                                 </ParamSection>
                             </div>
 
@@ -377,13 +415,33 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 />
                             </div>
 
-                            <Button
-                                className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white"
-                                onClick={handleGenerate}
-                                disabled={!prompt.trim() && !genre && !instrument && !mood}
-                            >
-                                <Sparkles className="size-3.5 mr-2" /> Generate MIDI
-                            </Button>
+                            {midiIsProcessing ? (
+                                <div className="flex gap-2">
+                                    <Button
+                                        className="flex-1 h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white opacity-60"
+                                        disabled
+                                    >
+                                        <Loader2 className="size-3.5 mr-2 animate-spin" /> Generating…
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                        onClick={() => cancelProcessingTask('midi-generation')}
+                                        title="Force-stop — the background request may still complete"
+                                    >
+                                        Stop
+                                    </Button>
+                                </div>
+                            ) : (
+                                <Button
+                                    className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white"
+                                    onClick={handleGenerate}
+                                    disabled={!prompt.trim() && !midiGenre && !midiInstrument && !midiMood}
+                                >
+                                    <Sparkles className="size-3.5 mr-2" /> Generate MIDI
+                                </Button>
+                            )}
                         </div>
                     </div>
                 ) : null}

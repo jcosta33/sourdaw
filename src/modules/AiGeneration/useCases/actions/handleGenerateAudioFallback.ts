@@ -7,8 +7,8 @@ import { updateTask } from './updateTask';
 
 export async function handleGenerateAudioFallback(prompt: string, durationStr: string, _strength: number = 0.7) {
     const taskId = addTask({ type: 'audio-generation', status: 'processing', prompt });
+    const start = performance.now();
     try {
-        const start = performance.now();
 
         if (!isAudioGenerationAvailable()) {
             throw createAiGenerationError(
@@ -33,6 +33,7 @@ export async function handleGenerateAudioFallback(prompt: string, durationStr: s
                 : error instanceof Error
                   ? error.message
                   : 'Generation failed',
+            durationMs: Math.round(performance.now() - start),
         });
     }
 }

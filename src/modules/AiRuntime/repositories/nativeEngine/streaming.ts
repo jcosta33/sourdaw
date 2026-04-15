@@ -18,12 +18,16 @@ export async function streamNativeCompletion(
 ): Promise<void> {
     if (isTauri()) {
         const channel = await createChannel<LlmStreamEvent>();
+
+        // Errors thrown inside onmessage (a synchronous callback) do not propagate
+        // to the awaiting tauriInvoke call — capture and rethrow after the invoke.
+        let streamError: Error | null = null;
         channel.onmessage = (event: LlmStreamEvent) => {
             if (event.event === 'token') {
                 onToken(event.data.text);
             }
             if (event.event === 'error') {
-                throw new Error(event.data.message);
+                streamError = new Error(event.data.message);
             }
         };
 
@@ -37,6 +41,10 @@ export async function streamNativeCompletion(
             maxTokens: options?.maxTokens ?? 2048,
             onEvent: channel,
         });
+
+        if (streamError) {
+            throw streamError;
+        }
         return;
     }
 

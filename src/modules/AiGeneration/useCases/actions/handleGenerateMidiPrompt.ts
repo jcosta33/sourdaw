@@ -12,8 +12,8 @@ import { updateTask } from './updateTask';
 
 export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32, creativity: number = 0.65) {
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });
+    const start = performance.now();
     try {
-        const start = performance.now();
         let finalNotes: MidiGenerationNote[] = [];
 
         if (isTauri()) {
@@ -52,7 +52,7 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
             if (targetTrack) {
                 const transport = getTransportState();
                 const startBeat = transport ? transport.playheadPosition : 0;
-                let maxNoteBeat = -Infinity;
+                let maxNoteBeat = 0;
                 for (const n of finalNotes) {
                     const v = n.start_beat + n.duration_beats;
                     if (v > maxNoteBeat) { maxNoteBeat = v; }
@@ -127,6 +127,7 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
         updateTask(taskId, {
             status: 'error',
             error: error instanceof Error ? error.message : 'Generation failed',
+            durationMs: Math.round(performance.now() - start),
         });
     }
 }

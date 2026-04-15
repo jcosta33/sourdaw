@@ -3,6 +3,7 @@ export { handleGenerateAudioFallback } from './actions/handleGenerateAudioFallba
 export { handleGenerateMidiPrompt } from './actions/handleGenerateMidiPrompt';
 export { handleStemSeparationPreview } from './actions/handleStemSeparationPreview';
 export { removeTask } from './actions/removeTask';
+export { cancelProcessingTask } from './actions/cancelProcessingTask';
 export { toggleAiPanel } from './actions/toggleAiPanel';
 export { getAiMidiHandlers } from './getAiMidiHandlers';
 export { applyChordProgressionToTrack } from './generateChordProgression/applyToTrack';

@@ -130,7 +130,11 @@ export function getLlmEngine(): WebLlmEngine | null {
 /**
  * Legacy text completion — kept for the chat assistant (non-command use).
  */
-export async function generateWebLlmCompletion(systemPrompt: string, userMessage: string): Promise<string> {
+export async function generateWebLlmCompletion(
+    systemPrompt: string,
+    userMessage: string,
+    options?: { temperature?: number; maxTokens?: number }
+): Promise<string> {
     const eng = await initWebLlmEngine();
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -138,8 +142,8 @@ export async function generateWebLlmCompletion(systemPrompt: string, userMessage
     ];
     const response = (await eng.chat.completions.create({
         messages,
-        temperature: 0.3,
-        max_tokens: 1024,
+        temperature: options?.temperature ?? 0.3,
+        max_tokens: options?.maxTokens ?? 2048,
         seed: 0,
     })) as { choices: Array<{ message: { content: string } }> };
     return response.choices[0]?.message.content ?? '';

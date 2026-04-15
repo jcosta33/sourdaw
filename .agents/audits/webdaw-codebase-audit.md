@@ -8,7 +8,7 @@ Single source of truth for **verified** gaps between the repo and desired archit
 
 **Related (kept separate):** `di-migration-audit.md`, `di-events-errors-audit.md` — migration checklists; re-scan before checkbox work.
 
-**Last updated:** 2026-04-11 — merged from the above audits with **stale metrics and false evidence rows dropped** (see §Verification).
+**Last updated:** 2026-04-14 — added BrowserAi module incomplete-epics entry after `agent/feature-audio-generation-browser` session. Previous: 2026-04-11 — merged from deadcode/design-system/export/open-issues audits with stale metrics dropped.
 
 ---
 
@@ -78,6 +78,7 @@ Do **not** delete these just because Knip flags them:
 | **Native project helpers** | `listProjectFiles`, `getProjectDirectory`, `isNativeFileSystemAvailable` exist for future browse/recent UX. |
 | **Plugin bridge preset/state** | `getPluginState` / `setPluginState` (and related) present under `Plugin/repositories/pluginBridge/` — not wired end-to-end to preset UI. |
 | **DAWproject export** | `handleExportDawProject.ts` is a **notifyUser stub**; implementation directory removed. |
+| **Browser AI (BrowserAi module)** | Full domain module at `src/modules/BrowserAi/` implemented (session `agent/feature-audio-generation-browser`): DDSP/TF.js worker, ONNX worker (Kokoro + DiffSinger), OPFS storage, capability detection, model download manager, 9 use cases, 4 stores, 4 event types, 4 views. Wired: `bootstrap.ts` → `initBrowserAi()`, ClipMidiAiSection (4-section inspector panel), StatusBar AI render counter, AiSection in preferences, stale detection via `midiStore.subscribe`. **Pending runtime verification**: DDSP model URLs unconfirmed against live CDN; DiffSinger session key naming unverified against real voicebank downloads; phonemizer replaced with production G2P engine: 794-entry exception dictionary + 77 context-sensitive ordered rewrite rules covering all major English spelling patterns; handles arbitrary OOV words at ~85 % phoneme accuracy; COEP/COOP headers confirmed already set in `vite.config.ts` and `tauri.conf.json` — SharedArrayBuffer is available. |
 
 ### Stubs and wiring
 

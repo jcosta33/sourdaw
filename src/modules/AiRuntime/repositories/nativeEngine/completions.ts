@@ -6,13 +6,17 @@ import { BASE_URL } from './lifecycle';
  * In Tauri: in-process inference via mistral.rs.
  * In browser dev mode: direct fetch to localhost llama-server.
  */
-export async function generateNativeCompletion(systemPrompt: string, userMessage: string): Promise<string> {
+export async function generateNativeCompletion(
+    systemPrompt: string,
+    userMessage: string,
+    options?: { temperature?: number; maxTokens?: number }
+): Promise<string> {
     if (isTauri()) {
         return (await tauriInvoke('generate_native_completion', {
             systemPrompt,
             userMessage,
-            temperature: 0.1,
-            maxTokens: 1024,
+            temperature: options?.temperature ?? 0.1,
+            maxTokens: options?.maxTokens ?? 2048,
         })) as string;
     }
 
@@ -24,8 +28,8 @@ export async function generateNativeCompletion(systemPrompt: string, userMessage
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userMessage },
             ],
-            temperature: 0.1,
-            max_tokens: 1024,
+            temperature: options?.temperature ?? 0.1,
+            max_tokens: options?.maxTokens ?? 2048,
             seed: 0,
         }),
     });

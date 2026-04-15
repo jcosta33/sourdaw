@@ -3,16 +3,23 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { setNotesForClip } from '#/modules/MIDI/useCases';
 import { type Clip } from '../../stores/trackStore';
 
+export type VariationNote = { pitch: number; startBeat: number; duration: number; velocity: number };
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
 export function createAlternativeClips(
     originalClipId: string,
-    variationsData: Array<Array<{ pitch: number; startBeat: number; duration: number; velocity: number }>>
+    variationsData: VariationNote[][]
 ): void {
     const state = getTrackState();
     if (!state) {
-        return;
+        throw new Error('Track state unavailable — cannot create alternative clips.');
     }
 
-    let targetTrack: any = null;
+    type Track = (typeof state.tracks)[number];
+    let targetTrack: Track | null = null;
     let originalClip: Clip | null = null;
 
     for (const track of state.tracks) {
@@ -25,7 +32,7 @@ export function createAlternativeClips(
     }
 
     if (!targetTrack || !originalClip) {
-        return;
+        throw new Error(`Clip ${originalClipId} not found — cannot create alternative clips.`);
     }
 
     const clipDuration = originalClip.endBeat - originalClip.startBeat;
@@ -37,10 +44,11 @@ export function createAlternativeClips(
 
         const globalNotes = variation.map((n) => ({
             id: `note-${crypto.randomUUID().slice(0, 8)}`,
-            pitch: n.pitch,
-            startBeat: currentStart + n.startBeat,
-            duration: n.duration,
-            velocity: n.velocity,
+            // Clamp MIDI values to valid ranges; guard against NaN/Infinity from LLM output
+            pitch: clamp(Math.round(isFinite(n.pitch) ? n.pitch : 60), 0, 127),
+            startBeat: currentStart + Math.max(0, isFinite(n.startBeat) ? n.startBeat : 0),
+            duration: Math.max(0.0625, isFinite(n.duration) ? n.duration : 0.5),
+            velocity: clamp(Math.round(isFinite(n.velocity) ? n.velocity : 80), 1, 127),
             probability: 100,
         }));
 
@@ -49,7 +57,7 @@ export function createAlternativeClips(
         newClips.push({
             ...originalClip,
             id: newClipId,
-            name: `${originalClip.name} (Var ${index + 1})`,
+            name: `${originalClip.name} (Var ${String(index + 1)})`,
             startBeat: currentStart,
             endBeat: currentStart + clipDuration,
             muted: true,
