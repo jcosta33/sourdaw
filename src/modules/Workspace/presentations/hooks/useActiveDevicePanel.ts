@@ -7,8 +7,9 @@ import { onPanelShowDutchOven } from '../../useCases/panels/devicePanels/onPanel
 import { onPanelShowFermenter } from '../../useCases/panels/devicePanels/onPanelShowFermenter';
 import { onPanelShowGluten } from '../../useCases/panels/devicePanels/onPanelShowGluten';
 import { onPanelShowGrandBoule } from '../../useCases/panels/devicePanels/onPanelShowGrandBoule';
-import { onPanelShowGrinder } from '../../useCases/panels/devicePanels/onPanelShowGrinder';
+import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 import { onPanelShowLevain } from '../../useCases/panels/devicePanels/onPanelShowLevain';
+
 import { onPanelShowProof } from '../../useCases/panels/devicePanels/onPanelShowProof';
 import { onPanelShowScoring } from '../../useCases/panels/devicePanels/onPanelShowScoring';
 import { onPanelShowToaster } from '../../useCases/panels/devicePanels/onPanelShowToaster';
@@ -63,7 +64,11 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
             onPanelShowDutchOven(openForKind('proofChamber')),
             onPanelShowGluten(openForKind('gluten')),
             onPanelShowBacteria(openForKind('bacteria')),
-            onPanelShowGrinder(openForKind('grinder')),
+            onShowDevicePanel((payload) => {
+                if (payload.deviceType === 'grinder') {
+                    openForKind('grinder')({ deviceId: payload.deviceId });
+                }
+            }),
             onPanelShowProof(openForKind('proof')),
             onPanelShowYeast(() => setActivePanel({ kind: 'yeast' })),
             onPanelShowScoring(openForKind('scoring')),

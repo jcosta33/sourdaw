@@ -27,7 +27,7 @@ import { showGlutenPanel } from '../../../useCases/panels/devicePanels/showGlute
 import { showCrustPanel } from '../../../useCases/panels/devicePanels/showCrustPanel';
 import { showDutchOvenPanel } from '../../../useCases/panels/devicePanels/showDutchOvenPanel';
 import { showScoringPanel } from '../../../useCases/panels/devicePanels/showScoringPanel';
-import { showGrinderPanel } from '../../../useCases/panels/devicePanels/showGrinderPanel';
+import { showDevicePanel } from '../../../useCases/panels/devicePanels/showDevicePanel';
 import { showBacteriaPanel } from '../../../useCases/panels/devicePanels/showBacteriaPanel';
 import { showYeastPanel } from '../../../useCases/panels/devicePanels/showYeastPanel';
 import {
@@ -200,7 +200,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 const device = addDevice(selectedTrackId, 'grinder');
-                                showGrinderPanel(device?.id ?? null);
+                                showDevicePanel('grinder', device?.id ?? null);
                             }
                         }}
                         theme={GRINDER_THEME}

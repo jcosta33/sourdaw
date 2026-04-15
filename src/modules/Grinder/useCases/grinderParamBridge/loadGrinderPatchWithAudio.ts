@@ -70,6 +70,8 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
     'limiterThreshold',
     'cleanBlend',
     'routingMode',
+    'micBlend',
+    'roomAmount',
 ] as const;
 
 function getOptionIndex<T extends readonly string[]>(options: T, value: string): number | null {
@@ -161,6 +163,33 @@ export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(
             sendNumericParamToDevice(ref, 'preFuzzLevel', preFuzz?.params.level ?? 5);
         }
 
+        function syncSupportedPostPedals(patch: GrinderPatch, ref: DeviceRef): void {
+            const postCompressor = findFirstPedal(patch.postPedals, ['compressor']);
+            const postOverdrive = findFirstPedal(patch.postPedals, ['overdrive', 'boost']);
+            const postDistortion = findFirstPedal(patch.postPedals, ['distortion']);
+            const postFuzz = findFirstPedal(patch.postPedals, ['fuzz']);
+            sendNumericParamToDevice(ref, 'postCompressorEnabled', postCompressor?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'postCompressorThreshold', postCompressor?.params.threshold ?? -20);
+            sendNumericParamToDevice(ref, 'postCompressorRatio', postCompressor?.params.ratio ?? 4);
+            sendNumericParamToDevice(ref, 'postCompressorAttack', postCompressor?.params.attack ?? 10);
+            sendNumericParamToDevice(ref, 'postCompressorRelease', postCompressor?.params.release ?? 200);
+
+            sendNumericParamToDevice(ref, 'postOverdriveEnabled', postOverdrive?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'postOverdriveDrive', postOverdrive?.params.drive ?? 0);
+            sendNumericParamToDevice(ref, 'postOverdriveTone', postOverdrive?.params.tone ?? 5);
+            sendNumericParamToDevice(ref, 'postOverdriveLevel', postOverdrive?.params.level ?? 5);
+
+            sendNumericParamToDevice(ref, 'postDistortionEnabled', postDistortion?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'postDistortionDrive', postDistortion?.params.drive ?? 0);
+            sendNumericParamToDevice(ref, 'postDistortionTone', postDistortion?.params.tone ?? 5);
+            sendNumericParamToDevice(ref, 'postDistortionLevel', postDistortion?.params.level ?? 5);
+
+            sendNumericParamToDevice(ref, 'postFuzzEnabled', postFuzz?.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'postFuzzFuzz', postFuzz?.params.fuzz ?? 0);
+            sendNumericParamToDevice(ref, 'postFuzzTone', postFuzz?.params.tone ?? 5);
+            sendNumericParamToDevice(ref, 'postFuzzLevel', postFuzz?.params.level ?? 5);
+        }
+
         return function loadGrinderPatchWithAudio(deviceId: string, patch: GrinderPatch): void {
             const migratedPatch = migrateGrinderPatch(patch);
             loadGrinderPatch(deviceId, migratedPatch);
@@ -176,6 +205,20 @@ export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(
             }
 
             syncSupportedPedals(migratedPatch, ref);
+            syncSupportedPostPedals(migratedPatch, ref);
+
+            // Sync mic properties
+            sendNumericParamToDevice(ref, 'mic1Enabled', migratedPatch.mic1.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'mic1PositionX', migratedPatch.mic1.positionX);
+            sendNumericParamToDevice(ref, 'mic1PositionY', migratedPatch.mic1.positionY);
+            sendNumericParamToDevice(ref, 'mic1Distance', migratedPatch.mic1.distance);
+            sendNumericParamToDevice(ref, 'mic1Gain', migratedPatch.mic1.gain);
+
+            sendNumericParamToDevice(ref, 'mic2Enabled', migratedPatch.mic2.enabled ? 1 : 0);
+            sendNumericParamToDevice(ref, 'mic2PositionX', migratedPatch.mic2.positionX);
+            sendNumericParamToDevice(ref, 'mic2PositionY', migratedPatch.mic2.positionY);
+            sendNumericParamToDevice(ref, 'mic2Distance', migratedPatch.mic2.distance);
+            sendNumericParamToDevice(ref, 'mic2Gain', migratedPatch.mic2.gain);
         };
     }
 );
