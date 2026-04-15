@@ -213,6 +213,7 @@ export { moveWarpMarker } from './warp/moveWarpMarker';
 export { detectTempo } from './audioAnalysis/detectTempo';
 export { detectKey } from './audioAnalysis/detectKey';
 export { audioToMidi } from './audioAnalysis/audioToMidi';
+export { getBufferForClip } from './audioAnalysis/helpers';
 export { interpolateAutomationValue } from './automationQueries/interpolateAutomationValue';
 export { rdpSimplify } from './automationQueries/rdpSimplify';
 export { getAutomationRegions } from './automationQueries/getAutomationRegions';

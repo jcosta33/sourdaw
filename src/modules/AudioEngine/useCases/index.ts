@@ -99,6 +99,7 @@ export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
 
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 
+export { analyzePitchForClip } from './audioAnalysis/analyzePitchForClip';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 
 export type { MidiInputInfo } from './webMidiInput/helpers';

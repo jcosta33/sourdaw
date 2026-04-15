@@ -3,6 +3,8 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 import { defaultTransportState, type TransportState } from '../models/TransportState';
 
+export { defaultTransportState, type TransportState };
+
 const DOC_PREFIX_ROOT = 'root';
 
 export const transportStore = createStore<TransportState>({

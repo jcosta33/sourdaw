@@ -1,6 +1,7 @@
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation';
 import { midiStore } from '#/modules/MIDI/stores';
+import { hydrateKneadFromTrackStore } from '#/modules/Knead';
 import { arrangementStore, projectStore } from '#/modules/Project';
 import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
@@ -25,6 +26,7 @@ export function projectCrdtToStores(): void {
     for (const store of projectStores) {
         store.hydrate();
     }
+    hydrateKneadFromTrackStore();
     hydrateSidechainRoutes();
 }
 
