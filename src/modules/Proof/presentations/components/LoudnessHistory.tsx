@@ -5,6 +5,7 @@
  * Canvas-based for performance (updates ~10fps).
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 
 type LoudnessHistoryProps = {
     /** Current momentary LUFS value. */
@@ -29,33 +30,38 @@ export const LoudnessHistory = ({
     height,
 }: LoudnessHistoryProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    // §160.x — ring buffer for LUFS history. 300-element Array.shift()
-    // was O(n) on every momentaryLufs update (~10 Hz). Fixed-size
-    // Float32Array + head/filled counters gives O(1) push.
-    const historyBufRef = useRef<Float32Array>(new Float32Array(HISTORY_LENGTH));
-    const historyHeadRef = useRef(0);
-    const historyFilledRef = useRef(0);
+    const historyRef = useRef<Float32Array>(createCompactFloatBuffer({ length: HISTORY_LENGTH }));
+    const posRef = useRef(0);
 
     useEffect(() => {
-        const buf = historyBufRef.current;
-        buf[historyHeadRef.current] = momentaryLufs;
-        historyHeadRef.current = (historyHeadRef.current + 1) % HISTORY_LENGTH;
-        if (historyFilledRef.current < HISTORY_LENGTH) {
-            historyFilledRef.current++;
-        }
-        const historyLength = historyFilledRef.current;
-        const oldestIdx = historyFilledRef.current < HISTORY_LENGTH ? 0 : historyHeadRef.current;
-        const readHistory = (i: number): number => buf[(oldestIdx + i) % HISTORY_LENGTH]!;
-
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) {return;}
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
         canvas.height = height * dpr;
         ctx.scale(dpr, dpr);
+    }, [width, height]);
+
+    useEffect(() => {
+        const history = historyRef.current;
+        history[posRef.current % HISTORY_LENGTH] = momentaryLufs;
+        posRef.current++;
+
+        const historyLength = Math.min(posRef.current, HISTORY_LENGTH);
+        const pos = posRef.current;
+        const readHistory = (i: number): number => history[(pos - historyLength + i) % HISTORY_LENGTH]!;
+
+        const canvas = canvasRef.current;
+        if (!canvas) {return;}
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {return;}
 
         const w = width;
         const h = height;

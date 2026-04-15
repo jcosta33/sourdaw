@@ -1,4 +1,4 @@
-export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth';
+export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
 
 export type AutomationPoint = {
     beat: number;
@@ -6,6 +6,8 @@ export type AutomationPoint = {
     curve: AutomationCurveType;
     tension: number; // -1.0 to +1.0: negative = log, positive = exp, 0 = linear
     stairSteps?: number; // For 'stairs' curve: number of steps (2–32, default 4)
+    cp1?: { x: number; y: number }; // Normalized (0..1) bezier control point 1
+    cp2?: { x: number; y: number }; // Normalized (0..1) bezier control point 2
 };
 
 export type ClipAutomationMode = 'additive' | 'multiplicative';

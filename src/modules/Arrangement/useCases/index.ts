@@ -52,6 +52,7 @@ export { setClipGain } from './clipEditing/setClipGain';
 export { splitClip } from './clipEditing/splitClip';
 export { trimClipEnd } from './clipEditing/trimClipEnd';
 export { trimClipStart } from './clipEditing/trimClipStart';
+export { deleteTimeRange } from './clipEditing/deleteTimeRange';
 export { crossfadeClips } from './clipEditing/crossfadeClips';
 export { glueClips } from './clipEditing/glueClips';
 export { lockClip } from './clipEditing/lockClip';

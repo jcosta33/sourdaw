@@ -16,6 +16,7 @@ export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelFor
 // ── Editing Tool ──────────────────────────────────────────────────────────────
 
 export { setEditingTool } from './setEditingTool';
+export { setMarqueeSelection } from './setMarqueeSelection';
 
 // ── Track Height ──────────────────────────────────────────────────────────────
 

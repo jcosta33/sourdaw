@@ -63,8 +63,8 @@ export const generateAudio = inject({ logger })(
             logger.info(`[Audio AI] Generated: ${result.wav_path} (${String(result.duration_seconds)}s)`);
 
             // Load WAV file into AudioBuffer
-            const fileBytes = (await tauriInvoke('read_audio_file', { path: result.wav_path })) as number[];
-            const wavBuffer = new Uint8Array(fileBytes).buffer;
+            const fileBytes = (await tauriInvoke('read_audio_file', { path: result.wav_path })) as Uint8Array;
+            const wavBuffer = fileBytes.buffer as ArrayBuffer;
             const audioContext = new AudioContext();
             const audioBuffer = await audioContext.decodeAudioData(wavBuffer);
             await audioContext.close();
@@ -92,7 +92,7 @@ export const separateStems = inject({ logger })(
          */
         const separateStemsNative = async (audioData: ArrayBuffer, stems: string[]): Promise<StemResult> => {
             const tempPath = `__sourdaw_stems_input_${String(Date.now())}.wav`;
-            const wavBytes = Array.from(new Uint8Array(audioData));
+            const wavBytes = new Uint8Array(audioData);
             await tauriInvoke('write_audio_file', { path: tempPath, data: wavBytes });
 
             logger.info(`[Audio AI] Starting native stem separation...`);
@@ -110,8 +110,8 @@ export const separateStems = inject({ logger })(
 
             for (const [name, filePath] of Object.entries(result.stem_paths)) {
                 try {
-                    const fileBytes = (await tauriInvoke('read_audio_file', { path: filePath })) as number[];
-                    const wavBuffer = new Uint8Array(fileBytes).buffer;
+                    const fileBytes = (await tauriInvoke('read_audio_file', { path: filePath })) as Uint8Array;
+                    const wavBuffer = fileBytes.buffer as ArrayBuffer;
                     const audioContext = new AudioContext();
                     stemBuffers[name] = await audioContext.decodeAudioData(wavBuffer);
                     await audioContext.close();

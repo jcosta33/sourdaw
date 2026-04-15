@@ -76,6 +76,10 @@ export const Fader = ({
         if (event.button !== 0 || !trackRef.current) {
             return;
         }
+        if (event.altKey) {
+            onChange(defaultValue);
+            return;
+        }
         if (typeof event.currentTarget.setPointerCapture === 'function') {
             event.currentTarget.setPointerCapture(event.pointerId);
         }

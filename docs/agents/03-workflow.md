@@ -131,17 +131,9 @@ An audit that still lists fixed issues as open, or omits new problems discovered
 
 ---
 
-## 9. Write the handoff
+## 9. Close out the task file
 
-Fill in `## Handoff` in the task file before ending the session:
-
-- What was done
-- What was not done (and why, if relevant)
-- What the next session needs to know
-- Any open questions or assumptions that still need verification
-- Which audits and specs were updated
-
-A complete handoff means the next session can start immediately from the task file without reconstructing context.
+Complete `## Self-review` in the task file before ending the session (every question answered, verification outputs pasted). Task templates do not use a separate `## Handoff` section — the file is self-contained. Capture what was done, what was not, risks, and doc updates in **Decisions**, **Findings**, **Next steps**, and Self-review so the next session can start from the task file without reconstructing context.
 
 ---
 
@@ -186,6 +178,5 @@ Steps can be skipped when there is a genuine reason, not by default.
 | Spec         | Trivial fix with no design choices                                        |
 | Skills       | No skill exists for the relevant domain                                   |
 | Audit (post) | Trivial fix that does not change observable behavior                      |
-| Handoff      | Session was exploratory and produced no durable work                      |
 
 When skipping steps on a non-trivial task, the reason should be noted somewhere — in the task file if one exists, or briefly in a commit message if not. "I didn't write a spec because this is a one-line style fix" is fine. Silence on a non-trivial change is not.

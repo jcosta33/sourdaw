@@ -3,7 +3,7 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 const DOC_PREFIX_ROOT = 'root';
 
-export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth';
+export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
 
 export type AutomationPoint = {
     beat: number;
@@ -11,6 +11,8 @@ export type AutomationPoint = {
     curve: AutomationCurveType;
     tension: number;
     stairSteps?: number;
+    cp1?: { x: number; y: number };
+    cp2?: { x: number; y: number };
 };
 
 export type ClipAutomationMode = 'additive' | 'multiplicative';

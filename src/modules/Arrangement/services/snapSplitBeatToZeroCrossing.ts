@@ -22,11 +22,15 @@ export function snapSplitBeatToZeroCrossing(clip: Clip, splitBeat: number): numb
     const beatsPerSecond = tempo / 60;
     const sampleRate = buffer.sampleRate;
 
-    const relativeBeat = splitBeat - clip.startBeat;
-    const targetSample = Math.round((relativeBeat / beatsPerSecond) * sampleRate);
+    // The absolute distance from the clip's start beat, plus its internal audio offset
+    const offsetInAudio = (splitBeat - clip.startBeat) + (clip.audioOffsetBeats ?? 0);
+    const targetSample = Math.round((offsetInAudio / beatsPerSecond) * sampleRate);
 
     const snappedSample = findNearestZeroCrossing(buffer.getChannelData(0), targetSample);
-    const snappedRelativeBeat = (snappedSample / sampleRate) * beatsPerSecond;
+    
+    // Convert the snapped sample back into a beat offset from the clip's start
+    const snappedOffsetInAudio = (snappedSample / sampleRate) * beatsPerSecond;
+    const snappedRelativeBeat = snappedOffsetInAudio - (clip.audioOffsetBeats ?? 0);
 
     return clip.startBeat + snappedRelativeBeat;
 }

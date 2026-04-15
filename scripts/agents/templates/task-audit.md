@@ -50,7 +50,7 @@ Load `.agents/skills/write-audit/SKILL.md` before starting.
 ## Investigation checklist
 
 - [ ] Load `.agents/skills/write-audit/SKILL.md`
-- [ ] Read all files in scope
+- [ ] Read all files the audit covers
 - [ ] Identify structural issues
 - [ ] Identify repeated patterns or inconsistencies
 - [ ] Identify performance concerns
@@ -62,7 +62,6 @@ Load `.agents/skills/write-audit/SKILL.md` before starting.
 - [ ] Self-review: Evidence quality answered
 - [ ] Self-review: Severity calibration answered
 - [ ] Self-review: Recommendations answered
-- [ ] Handoff written
 
 ---
 
@@ -92,9 +91,9 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
-Before writing the Handoff, stop. An audit that is incomplete, inaccurate, or contaminated by code changes is worse than no audit — it creates false confidence. Act as a senior engineer reviewing this audit document before it is published.
+Stop. An audit that is incomplete, inaccurate, or contaminated by code changes is worse than no audit — it creates false confidence. Act as a senior engineer reviewing this audit document before it is published.
 
-> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line for a finding, do not pad the list.
+> **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line for a finding, do not pad the list.
 
 ### Verification outputs (paste actual command output — do not paraphrase)
 
@@ -107,7 +106,7 @@ Before writing the Handoff, stop. An audit that is incomplete, inaccurate, or co
 
 ### Coverage
 
-- Does the audit cover every area in the scope, line by line? Anything skipped because it was hard/large/unclear must be flagged explicitly as "not covered" with a reason. Did you read actual code, or skim file names?
+- Does the audit cover every area it promised to cover, line by line? Anything skipped because it was hard/large/unclear must be flagged explicitly as "not covered" with a reason. Did you read actual code, or skim file names?
   Answer:
 
 ### Evidence quality
@@ -125,16 +124,4 @@ Before writing the Handoff, stop. An audit that is incomplete, inaccurate, or co
 - Is every recommendation specific and actionable (specific file, specific change) rather than a vibe ("improve X")?
   Answer:
 
-Only when every answer above is written should you write the Handoff.
-
-## Handoff
-
-> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
-
-### Audit document written at:
-
-### Key findings:
-
-### Recommended follow-up tasks:
-
-### Docs updated:
+Only when every answer above is written is this task complete.

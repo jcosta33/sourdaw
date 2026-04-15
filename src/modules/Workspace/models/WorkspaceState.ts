@@ -10,6 +10,12 @@ export type TimeDisplayMode = 'musical' | 'time';
 
 export type AutomationVisibility = 'hidden' | 'overlay' | 'panel';
 
+export type MarqueeSelection = {
+    startBeat: number;
+    endBeat: number;
+    trackIds: string[];
+};
+
 export type WorkspaceState = {
     mode: WorkspaceMode;
     sidebarOpen: boolean;
@@ -23,6 +29,7 @@ export type WorkspaceState = {
     commandPaletteOpen: boolean;
     selectedClipId: string | null;
     selectedClipIds: string[];
+    marqueeSelection: MarqueeSelection | null;
     snapValue: number;
     sidebarWidth: number;
     inspectorWidth: number;
@@ -73,6 +80,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     commandPaletteOpen: false,
     selectedClipId: null,
     selectedClipIds: [],
+    marqueeSelection: null,
     snapValue: 1,
     sidebarWidth: 224,
     inspectorWidth: 256,

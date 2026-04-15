@@ -18,7 +18,7 @@ Before implementing anything non-trivial:
 
 Full workflow: `docs/agents/03-workflow.md`
 File type definitions: `docs/agents/02-file-types.md`
-Templates: `agents/templates/` (audit, spec, task)
+Templates: `scripts/agents/templates/` (audit, spec, task)
 
 ## Your task file
 
@@ -30,8 +30,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Fill in **Linked docs** with any specs/audits/skills you loaded
 - Check off **Progress checklist** steps as you complete them
 - Log **Decisions** and **Findings** as they emerge
-- Fill in **Handoff** before ending the session — never leave it empty
-- **Self-review is mandatory.** A task is not complete until every question in the Self-review section of the task file has a written answer directly beneath it, including pasted verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`). A Handoff written while any Self-review question is unanswered is an invalid session output. Do not check off `Handoff written` before Self-review is complete.
+- **Self-review is mandatory.** A task is not complete until every question in the Self-review section of the task file has a written answer directly beneath it, including pasted verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`). Task files have no separate Handoff section. Use **Decisions**, **Findings**, **Next steps**, and related sections so the file stands alone for the next reader.
 
 ## Hard rules (Claude Code-specific)
 
@@ -39,6 +38,7 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 - Do not use `useMemo`, `useCallback`, or `React.memo` — the React Compiler handles memoization.
 - Do not use `forwardRef` — `ref` is a regular prop in React 19.
 - Prefer `type` over `interface`. Prefer `as const` over `enum`.
+- **TypeScript soundness:** Follow `AGENTS.md` (React — **TypeScript — soundness**). No `any` or assertion escapes to silence errors, no lazy test assertions, no suppression comments without justification.
 - Never render with `&&` — use ternaries or early returns.
 - All audio-thread code: no allocation, no mutex locks, no blocking.
 

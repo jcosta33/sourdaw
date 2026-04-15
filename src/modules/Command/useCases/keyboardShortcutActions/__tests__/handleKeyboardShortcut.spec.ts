@@ -49,6 +49,8 @@ vi.mock('../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat
 vi.mock('../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: vi.fn() }));
 vi.mock('../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: vi.fn() }));
 
+vi.mock('../../executeAppAction', () => ({ executeAppAction: vi.fn() }));
+
 describe('handleKeyboardShortcut', () => {
     it('should emit voice.toggle on keyup for v', () => {
         handleKeyup('v');

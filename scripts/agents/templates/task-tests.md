@@ -13,7 +13,7 @@
 
 ---
 
-> **READ `docs/06-testing.md` IN FULL BEFORE TOUCHING ANY TEST.** It defines the philosophy, scope, layer-by-layer examples, mock patterns, and anti-patterns for this codebase. Every test you write or modify must conform to it. If a pattern you need is not covered there, surface it as a Finding — do not improvise.
+> **READ `docs/06-testing.md` IN FULL BEFORE TOUCHING ANY TEST.** It defines the philosophy, testing rules, layer-by-layer examples, mock patterns, and anti-patterns for this codebase. Every test you write or modify must conform to it. If a pattern you need is not covered there, surface it as a Finding — do not improvise.
 
 This task type covers all testing work: writing new tests for untested code, improving existing tests, closing coverage gaps, de-flaking, tightening assertions, aligning old tests with the current guide, and deleting tests that are testing the wrong thing.
 
@@ -21,7 +21,7 @@ This task type covers all testing work: writing new tests for untested code, imp
 
 ## Mode
 
-Which kind of testing work is this session? Check one or more — and for each, state which files are in scope in the Target files table below.
+Which kind of testing work is this session? Check one or more — and for each, state which files are listed in the Target files table below.
 
 - [ ] **New tests** — source files that currently have no spec
 - [ ] **Close coverage gaps** — existing specs that don't cover every exported function or edge case
@@ -69,14 +69,15 @@ Examples: dummy factories (`TrackDummy`, `ClipDummy`), EventBus mock, Container 
 
 ---
 
-## Out of scope
+## Non-goals (session type)
 
-Be explicit about what you are NOT testing in this session:
+This task type does **not** cover:
 
-- Integration tests — never in this session type
-- E2E / Playwright — never in this session type
+- Integration tests
+- E2E / Playwright
 - Real Web Audio rendering, real Tauri IPC, real Automerge — always mocked
-- Files not listed in the Target files table above — do not drift
+
+Use the **Target files** table as the primary plan. If you add specs for additional files because you found real gaps, extend the table and note it in **Findings**.
 
 ---
 
@@ -93,10 +94,10 @@ Be explicit about what you are NOT testing in this session:
 - Do not mock `DomainEvent` or `AppError` subclasses — construct them for real
 - No real time dependencies: use `vi.useFakeTimers()` or explicit values for `currentTime` / `Date.now()`
 - When extending or rewriting an existing spec, first run it (`pnpm test:run <path>`) to confirm its current state; do not assume green
-- Run `pnpm test:run <path>` after every file — all tests in scope must pass before moving to the next
-- Run `pnpm test:run` on the full suite before handoff — nothing outside your scope should have regressed
-- Run `pnpm deps:validate` before handoff — test work must not introduce architectural violations
-- Run `pnpm typecheck` before handoff — must be clean
+- Run `pnpm test:run <path>` after every file — all tests you touched must pass before moving to the next
+- Run `pnpm test:run` on the full suite before marking the task complete — no unrelated regressions
+- Run `pnpm deps:validate` before marking the task complete — test work must not introduce architectural violations
+- Run `pnpm typecheck` before marking the task complete — must be clean
 - **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
@@ -110,8 +111,8 @@ Be explicit about what you are NOT testing in this session:
 - [ ] For each `extend`/`rewrite`/`delete` target: run the existing spec first and record its baseline
 - [ ] Identify any production code that resists testing and document in Findings before refactoring
 - [ ] Work through files one at a time, running `pnpm test:run <path>` after each
-- [ ] All specs in scope are green
-- [ ] Full suite `pnpm test:run` passes — nothing outside scope regressed
+- [ ] All specs you changed are green
+- [ ] Full suite `pnpm test:run` passes — no unrelated regressions
 - [ ] `pnpm deps:validate` passes with zero new violations
 - [ ] `pnpm typecheck` passes
 - [ ] Self-review: Verification outputs pasted
@@ -124,7 +125,6 @@ Be explicit about what you are NOT testing in this session:
 - [ ] Self-review: Production code changes answered
 - [ ] Self-review: Completeness answered
 - [ ] Self-review: Mode-specific sections answered (extended/rewrote/deleted/de-flaked — whichever apply)
-- [ ] Handoff written
 
 ---
 
@@ -166,9 +166,9 @@ Concrete starting points for the next session if this one ends incomplete. List 
 
 ## Self-review
 
-Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing these tests as if you didn't write them. You are looking for tests that will rot — flaky tests, tests that re-assert mocks, tests that test the framework instead of the code. Read every spec adversarially.
+Stop. Act as a nitpicky senior engineer reviewing these tests as if you didn't write them. You are looking for tests that will rot — flaky tests, tests that re-assert mocks, tests that test the framework instead of the code. Read every spec adversarially.
 
-> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
+> **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
 ### Verification outputs (paste actual command output — do not paraphrase)
 
@@ -245,18 +245,4 @@ Before writing the Handoff, stop. Act as a nitpicky senior engineer reviewing th
 - Can you name the specific source of non-determinism you fixed (real timer, shared mutable state, test ordering dependency, race on async work)?
 - Did you re-run the affected test at least 10 times in a row to confirm it is now stable?
 
-Only when every answer above is written should you write the Handoff.
-
-## Handoff
-
-> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
-
-Summary for the next session or reviewer.
-
-### Done:
-
-### Not done:
-
-### Watch out for:
-
-### Docs updated:
+Only when every answer above is written is this task complete.

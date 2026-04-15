@@ -5,10 +5,10 @@ import {
     getEnvelope,
 } from '../../../stores/gainEnvelopeStore';
 import { addGainEnvelopePoint } from '../addGainEnvelopePoint';
-import { getClipGainEnvelope } from '../getClipGainEnvelope';
+import { ensureClipGainEnvelope } from '../getClipGainEnvelope';
 
 vi.mock('../getClipGainEnvelope', () => ({
-    getClipGainEnvelope: vi.fn(),
+    ensureClipGainEnvelope: vi.fn(),
 }));
 
 describe('addGainEnvelopePoint', () => {
@@ -23,7 +23,7 @@ describe('addGainEnvelopePoint', () => {
             enabled: true,
             points: [{ id: 'p0', beatOffset: 0, gainDb: 0 }],
         };
-        vi.mocked(getClipGainEnvelope).mockReturnValue(env);
+        vi.mocked(ensureClipGainEnvelope).mockReturnValue(env);
 
         addGainEnvelopePoint('c1', 0.5, -6);
 

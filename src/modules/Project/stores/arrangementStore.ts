@@ -169,7 +169,7 @@ export type ProjectTakeLaneStoreState = {
     lanes: ProjectTakeLane[];
 };
 
-export type ProjectAutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth';
+export type ProjectAutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
 
 export type ProjectAutomationPoint = {
     beat: number;
@@ -177,6 +177,8 @@ export type ProjectAutomationPoint = {
     curve: ProjectAutomationCurveType;
     tension: number;
     stairSteps?: number;
+    cp1?: { x: number; y: number };
+    cp2?: { x: number; y: number };
 };
 
 export type ProjectAutomationObject = {

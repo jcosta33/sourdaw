@@ -5,6 +5,7 @@ import {
     type ChannelStripWidth,
     type TimeDisplayMode,
     type AutomationVisibility,
+    type MarqueeSelection,
 } from '../../models/WorkspaceState';
 import { type EditingTool } from '../../models/EditingTool';
 import {
@@ -22,6 +23,7 @@ export type {
     ChannelStripWidth,
     TimeDisplayMode,
     AutomationVisibility,
+    MarqueeSelection,
     EditingTool,
     Preferences,
     GridSnapOption,
@@ -36,6 +38,7 @@ export const defaultPreferences: Preferences = {
     autoSave: true,
     autoSaveIntervalMs: 30_000,
     snapToGrid: true,
+    snapToZeroCrossing: true,
     gridSubdivision: '1/4',
     showMinimap: false,
     voiceCommandKey: 'v',

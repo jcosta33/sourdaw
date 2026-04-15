@@ -116,7 +116,8 @@ export type AppAction =
     | { type: 'toggleInspector'; payload?: undefined }
     | { type: 'toggleChatPanel'; payload?: undefined }
     | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
-    | { type: 'setEditingTool'; payload: { tool: 'select' | 'cut' | 'draw' | 'automation' | 'stretch' } }
+    | { type: 'setEditingTool'; payload: { tool: 'select' | 'cut' | 'draw' | 'automation' | 'stretch' | 'marquee' } }
+    | { type: 'setMarqueeSelection'; payload: { selection: { startBeat: number; endBeat: number; trackIds: string[] } | null } }
     | { type: 'addMarker'; payload: { beat: number; name: string } }
     | { type: 'removeMarker'; payload: { markerId: string } }
     | { type: 'setMarkerColor'; payload: { markerId: string; color: string } }
@@ -126,9 +127,18 @@ export type AppAction =
     | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
     | {
           type: 'addAutomationPoint';
-          payload: { laneId: string; beat: number; value: number; curve?: 'linear' | 'step' | 'exponential' };
+          payload: { 
+              laneId: string; 
+              beat: number; 
+              value: number; 
+              curve?: 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
+              tension?: number;
+              stairSteps?: number;
+              cp1?: { x: number; y: number };
+              cp2?: { x: number; y: number };
+          };
       }
-    | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number } }
+    | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
     | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
     | { type: 'humanizeNotes'; payload: { clipId: string; amount: number } }

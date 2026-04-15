@@ -31,7 +31,7 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
             // Write the file bytes
             await invoke('write_audio_file', {
                 path: tempPath,
-                data: Array.from(new Uint8Array(arrayBuffer)),
+                data: new Uint8Array(arrayBuffer),
             });
 
             // Decode using the new typed repository

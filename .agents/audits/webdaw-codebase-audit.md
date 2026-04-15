@@ -118,33 +118,31 @@ Priorities are ordered by typical impact; severities are indicative.
 
 10. **Volatile state that should be durable** — `sidechainStore` and `cvGate` use `createAutomergeStorage`. **`kneadStore`** and **`actionHistoryStore`** remain memory-only.
 
-11. **Monolithic offline render** — `offlineRender.ts` is very large; split scheduling vs graph build when touching exports.
-
-12. **Collaboration `latencyMs`** — Remains `null` in `sessionManagement.ts`; no RTT/ping path yet (`CollaborationTypes.ts`).
+11. **Collaboration `latencyMs`** — Remains `null` in `sessionManagement.ts`; no RTT/ping path yet (`CollaborationTypes.ts`).
 
 ### P2 — Maintainability / platform
 
-13. **`LocalStorageKeys`** — Legacy brand keys need legal/product sign-off before deletion.
+12. **`LocalStorageKeys`** — Legacy brand keys need legal/product sign-off before deletion.
 
-14. **Tauri commands** — Keep commands thin; `src-tauri/src/commands/plugin_gui.rs` exists for GUI lifecycle. Domain logic belongs in crates.
+13. **Tauri commands** — Keep commands thin; `src-tauri/src/commands/plugin_gui.rs` exists for GUI lifecycle. Domain logic belongs in crates.
 
-15. **`TrackNode` device branching** — Still uses `deviceType` switches; long-term: registry / `DeviceDescriptor` factory (`TrackNode.ts`).
+14. **`TrackNode` device branching** — Still uses `deviceType` switches; long-term: registry / `DeviceDescriptor` factory (`TrackNode.ts`).
 
-16. **Rust workspace** — Optional consolidation (e.g. toward fewer crates); current root `Cargo.toml` has **10** members (`daw-core`, `daw-collab`, `daw-engine`, `daw-dsp`, `daw-io`, `daw-wasm-decoder`, `daw-plugin-host`, `proof-chamber`, `scoring`, `src-tauri`). No `dutch-oven` workspace crate.
+15. **Rust workspace** — Optional consolidation (e.g. toward fewer crates); current root `Cargo.toml` has **10** members (`daw-core`, `daw-collab`, `daw-engine`, `daw-dsp`, `daw-io`, `daw-wasm-decoder`, `daw-plugin-host`, `proof-chamber`, `scoring`, `src-tauri`). No `dutch-oven` workspace crate.
 
-17. **Bridge “business logic”** — Prefer services in Rust crates over fat command handlers; old `llm.rs`-style paths retired.
+16. **Bridge “business logic”** — Prefer services in Rust crates over fat command handlers; old `llm.rs`-style paths retired.
 
-18. **Cross-module type re-exports from use cases** — Prefer models living in module `models/` without `export type { … } from '../models/...'` in query bridges (examples drift — grep when refactoring).
+17. **Cross-module type re-exports from use cases** — Prefer models living in module `models/` without `export type { … } from '../models/...'` in query bridges (examples drift — grep when refactoring).
 
-19. **Sample library folder scope** — Tauri persisted scope / rehydrate on boot; align with IDB paths (`SampleLibrary/useCases/connectFolder/connectFolder.ts` — `connectFolderTauri` is a nested function).
+18. **Sample library folder scope** — Tauri persisted scope / rehydrate on boot; align with IDB paths (`SampleLibrary/useCases/connectFolder/connectFolder.ts` — `connectFolderTauri` is a nested function).
 
 ### P3 — Follow-up
 
-20. **Plugin hosting target** — Long-term: SAB ring / dedicated RT reader; aligns with P0 bridge work.
+19. **Plugin hosting target** — Long-term: SAB ring / dedicated RT reader; aligns with P0 bridge work.
 
-21. **UI perf — dense canvases** — e.g. `PianoRoll.tsx` uses `useStore` for `midiStore` + `trackStore`; profile and narrow subscriptions.
+20. **UI perf — dense canvases** — e.g. `PianoRoll.tsx` uses `useStore` for `midiStore` + `trackStore`; profile and narrow subscriptions.
 
-22. **DI + EventBus + domain errors** — `inject({` is used broadly in production modules now; backlog is **consistent** DI boundaries, `eventBus` over DOM shortcuts, and `createAppError` where appropriate. Re-scan `di-migration-audit.md` / `di-events-errors-audit.md` before using line numbers.
+21. **DI + EventBus + domain errors** — `inject({` is used broadly in production modules now; backlog is **consistent** DI boundaries, `eventBus` over DOM shortcuts, and `createAppError` where appropriate. Re-scan `di-migration-audit.md` / `di-events-errors-audit.md` before using line numbers.
 
 ---
 

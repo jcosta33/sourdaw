@@ -3,7 +3,7 @@
  * Shows the complete audio path from generators through effects to output.
  * Each node is interactive — clicking opens its controls in the inspector.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useMemo } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { ENGINE_NAMES, FILTER_MODEL_NAMES, WARP_MODE_NAMES, type FermenterPatch } from '../../models/FermenterPatch';
 
@@ -57,11 +57,12 @@ export const SignalFlowView = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     // Build node graph
-    const nodes: FlowNode[] = [];
-    const connections: Array<[number, number]> = [];
+    const { nodes, connections, canvasW, canvasH } = useMemo(() => {
+        const nodes: FlowNode[] = [];
+        const connections: Array<[number, number]> = [];
 
-    let x = 10;
-    const y0 = 10;
+        let x = 10;
+        const y0 = 10;
 
     // Layer generators
     for (let i = 0; i < numLayers; i++) {
@@ -280,10 +281,11 @@ export const SignalFlowView = ({
         w: 60,
         h: NODE_H,
     });
-    connections.push([widthIdx, masterIdx]);
-
-    const canvasW = x + 70;
+    connections.push([widthIdx, masterIdx]);    const canvasW = x + 70;
     const canvasH = row2y + 30;
+
+    return { nodes, connections, canvasW, canvasH };
+    }, [patch, numLayers, activeLayer]);
 
     useEffect(() => {
         const canvas = canvasRef.current;

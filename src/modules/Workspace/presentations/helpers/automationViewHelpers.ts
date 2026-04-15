@@ -112,6 +112,15 @@ export const buildCurvePath = (
         return path;
     }
 
+    if (p1.curve === 'bezier') {
+        const dx = x2 - x1;
+        const cp1x = x1 + (p1.cp1?.x ?? 0.33) * dx;
+        const cp1y = p1.cp1?.y !== undefined ? valueToY(p1.cp1.y) : y1;
+        const cp2x = x1 + (p1.cp2?.x ?? 0.66) * dx;
+        const cp2y = p1.cp2?.y !== undefined ? valueToY(p1.cp2.y) : y2;
+        return `C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+    }
+
     // Exponential with tension
     if (p1.curve === 'exponential') {
         const tension = p1.tension ?? 0;

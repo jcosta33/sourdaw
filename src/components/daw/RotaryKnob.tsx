@@ -105,6 +105,10 @@ export const RotaryKnob = ({
         if (event.button !== 0) {
             return;
         }
+        if (event.altKey) {
+            onChange(defaultValue);
+            return;
+        }
         if (typeof event.currentTarget.setPointerCapture === 'function') {
             event.currentTarget.setPointerCapture(event.pointerId);
         }

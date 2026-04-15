@@ -71,7 +71,7 @@ Skip this for trivial changes. For everything else, before writing the first lin
 - [ ] `pnpm deps:validate` passes with zero violations
 - [ ] All spec acceptance criteria verified (if spec exists)
 - [ ] Audit updated if observable behavior changed (if audit is relevant)
-- [ ] Task file Handoff section filled in (if task file exists)
+- [ ] Task file Self-review complete (if task file exists)
 - [ ] No pushed branches, no merged code, no commits to wrong branch
 
 ---
@@ -82,6 +82,6 @@ Skip this for trivial changes. For everything else, before writing the first lin
 - Implementing directly from a research file without a spec — research is input, not a spec.
 - Writing research because none exists — surface the gap as a blocker.
 - Using the task file as a substitute for writing an audit or spec — findings in a task file that belong in a durable artifact must be moved there.
-- Declaring a task done with an empty Handoff section.
+- Declaring a task done with incomplete Self-review.
 - Leaving audits stale after making changes they cover.
 - Loading skills only when their domain causes a problem — load them proactively.

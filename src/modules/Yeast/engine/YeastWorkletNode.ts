@@ -25,6 +25,7 @@ async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
 }
 
 export type YeastWorkletNodeResult = {
+    context: BaseAudioContext;
     processBlock: (
         events: readonly MidiEvent[],
         blockStart: number,
@@ -74,6 +75,7 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         });
 
     return {
+        context: ctx,
         processBlock,
         addProcessor: (processorType, processorId) =>
             node.port.postMessage({ type: 'addProcessor', processorType, processorId }),

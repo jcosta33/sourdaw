@@ -6,12 +6,14 @@ import {
     pasteClip,
     removeClip,
     addClip,
+    deleteTimeRange,
 } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { saveProject } from '#/modules/Project';
 import { workspaceStore } from '../../stores/workspaceStore';
 
+import { setMarqueeSelection } from '../../useCases/setMarqueeSelection';
 import {
     clearClipSelection,
     toggleChatPanel,
@@ -98,6 +100,16 @@ export const useAppKeyboardShortcuts = ({ onOpenExport, onOpenPreferences }: Sho
                 if (!ws) {
                     return;
                 }
+
+                if (ws.marqueeSelection) {
+                    e.preventDefault();
+                    const { startBeat, endBeat, trackIds } = ws.marqueeSelection;
+                    // TODO: proper undo/redo for this specific action
+                    deleteTimeRange(startBeat, endBeat, trackIds);
+                    setMarqueeSelection(null);
+                    return;
+                }
+
                 const ids =
                     ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
                 if (ids.length > 0) {

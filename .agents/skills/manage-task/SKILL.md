@@ -1,6 +1,6 @@
 ---
 name: manage-task
-description: Load at the start of every session. Covers how to fill in, maintain, and close out the task file — what goes in each section, when to update it, and what a complete handoff looks like.
+description: Load at the start of every session. Covers how to fill in, maintain, and close out the task file — what goes in each section, when to update it, and how to complete Self-review so the task is self-contained.
 ---
 
 # SKILL: manage-task
@@ -9,7 +9,7 @@ description: Load at the start of every session. Covers how to fill in, maintain
 
 The task file is the agent's working memory for a session. It records objective, plan, decisions, blockers, assumptions, and progress. A well-maintained task file means the session can be interrupted and resumed without loss. A poor one means context is reconstructed from scratch.
 
-Template: `agents/templates/task.md`.
+Template: `scripts/agents/templates/task.md` (or `task-<type>.md`).
 Task files are gitignored — they are local to the worktree and not shared.
 
 ---
@@ -32,22 +32,11 @@ Task files are gitignored — they are local to the worktree and not shared.
 
 8. **List docs loaded in Linked docs.** Every spec, audit, research file, or skill loaded during the session goes here. This is how the next session knows what context was available.
 
-9. **Fill in Next steps before the Handoff.** If the session ends before the task is complete, `## Next steps` is where the incoming session finds its starting point. Be concrete: "Read `FermenterPanel.tsx:142` — that's where the allocation happens."
+9. **Fill in `## Next steps` when work is incomplete.** If the session ends before the task is done, this section is where a follow-up session finds its starting point. Be concrete: "Read `FermenterPanel.tsx:142` — that's where the allocation happens."
 
-10. **Fill in Handoff before ending the session.** A session without a Handoff is incomplete. The next session must be able to start from the task file.
+10. **Complete `## Self-review` before ending the session.** Tasks do not use a separate **Handoff** section — the task file is self-contained. Completion requires every Self-review question answered (including verification outputs), per the task template. Use **Decisions**, **Findings**, **Blockers**, and **Next steps** to capture what would otherwise be narrative for the next reader.
 
----
-
-## Handoff requirements
-
-A complete Handoff includes:
-
-- **Done:** What was actually completed (not what was planned — what was done).
-- **Not done:** What was planned but not completed, and why.
-- **Watch out for:** Anything surprising, fragile, or likely to cause problems.
-- **Docs updated:** Which audits, specs, or research files were touched during the session.
-
-If the session was exploratory and produced no durable artifacts, record what was found and what the recommended next step is. An empty Handoff is never acceptable.
+11. **Primary deliverable first; document extra work.** The Objective names what must ship. Fixes or improvements you make along the way (even outside the first path you imagined) are fine when they are correct — note them in **Findings** or **Decisions** so reviewers can follow the branch. Do not revert good work only because it was not in the original ask.
 
 ---
 
@@ -58,5 +47,5 @@ If the session was exploratory and produced no durable artifacts, record what wa
 - Leaving the Decisions section empty — significant choices made during the session will be invisible to the next.
 - Not recording findings — if you discovered something useful about the codebase, it belongs somewhere permanent.
 - Leaving durable findings only in the task file — task files are gitignored and local; write to audits or specs.
-- Ending a session with an empty or placeholder Handoff.
+- Ending a session with incomplete Self-review (unanswered questions or missing verification outputs).
 - Not listing loaded docs in Linked docs — the next session cannot know what context was available.

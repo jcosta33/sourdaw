@@ -1,4 +1,5 @@
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useMemo } from 'react';
+import { useStore } from '#/infra/store/useStore';
 
 import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
@@ -10,7 +11,7 @@ import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { ClipContextMenu } from './ClipContextMenu';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import {
     TRACK_HEIGHT_VALUES,
     onZoomToFit,
@@ -35,6 +36,11 @@ export const TimelineSurface = (): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<TimelineRenderer | null>(null);
 
+    const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
+    const marqueeSelection = workspaceState.marqueeSelection;
+    const currentViewStore = useStore(timelineViewStore, { scrollX: 0, scrollY: 0, pixelsPerBeat: 20, autoScrollEnabled: true });
+    const currentTrackStore = useStore(trackStore, { tracks: [], selectedTrackId: null });
+
     const {
         handleMouseDown,
         handleMouseMove,
@@ -56,6 +62,57 @@ export const TimelineSurface = (): ReactElement => {
     } = useTimelineInteractions(canvasRef);
 
     const closeContextMenu = () => setContextMenu(null);
+
+    const marqueeStyle = useMemo(() => {
+        if (!marqueeSelection || !currentViewStore || !currentTrackStore) return null;
+        
+        const pixelsPerBeat = currentViewStore.pixelsPerBeat;
+        const scrollX = currentViewStore.scrollX;
+        const scrollY = currentViewStore.scrollY ?? 0;
+        
+        const left = Math.max(0, marqueeSelection.startBeat * pixelsPerBeat - scrollX);
+        const width = (marqueeSelection.endBeat - marqueeSelection.startBeat) * pixelsPerBeat;
+        
+        let topTrackIdx = -1;
+        let bottomTrackIdx = -1;
+        
+        currentTrackStore.tracks.forEach((track, idx) => {
+            if (marqueeSelection.trackIds.includes(track.id)) {
+                if (topTrackIdx === -1 || idx < topTrackIdx) topTrackIdx = idx;
+                if (idx > bottomTrackIdx) bottomTrackIdx = idx;
+            }
+        });
+        
+        if (topTrackIdx === -1) return null;
+        
+        let trackYOffset = 0;
+        let top = 0;
+        let bottom = 0;
+        
+        for (let i = 0; i <= bottomTrackIdx; i++) {
+            const track = currentTrackStore.tracks[i];
+            if (!track) continue;
+            
+            if (i === topTrackIdx) {
+                top = trackYOffset;
+            }
+            if (i === bottomTrackIdx) {
+                bottom = trackYOffset + TRACK_HEIGHT_VALUES['normal']; // Note: Assumes normal height for now, but model.tracks has actual height
+            }
+            
+            // To get accurate track heights, we ideally use the render model, but since we're in React land, 
+            // assuming normal height is a fallback. A better way is using TRACK_HEIGHT_VALUES[workspaceState.channelStripWidth or similar]
+            // But for now let's just use the default height as a simple approximation if we can't get it.
+            trackYOffset += TRACK_HEIGHT_VALUES['normal'];
+        }
+        
+        return {
+            left,
+            top: top - scrollY,
+            width,
+            height: bottom - top,
+        };
+    }, [marqueeSelection, currentViewStore, currentTrackStore]);
 
     useEffect(() => {
         const handleZoomToFit = () => {
@@ -386,6 +443,13 @@ export const TimelineSurface = (): ReactElement => {
                         width: Math.abs(rubberBand.endX - rubberBand.startX),
                         height: Math.abs(rubberBand.endY - rubberBand.startY),
                     }}
+                />
+            ) : null}
+
+            {marqueeStyle ? (
+                <div
+                    className="absolute border border-primary/60 bg-primary/10 pointer-events-none z-10"
+                    style={marqueeStyle}
                 />
             ) : null}
 

@@ -12,8 +12,9 @@ import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hi
 import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
 import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
+import { snapToZeroCrossing } from '../../useCases/timelineInteractions/snapToZeroCrossing';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
 import {
     toggleClipInSelection,
     selectClipWithFocus,
@@ -21,6 +22,7 @@ import {
     setClipSelection,
     selectClip,
     setWorkspaceMode,
+    setMarqueeSelection,
 } from '#/modules/Workspace/useCases';
 import { trackStore } from '../../stores/trackStore';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
@@ -269,7 +271,16 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             return;
         }
         if (dragState.mode === 'stretch') {
-            const newEnd = Math.max(dragState.startBeat + 0.25, snapToGrid(rawBeat));
+            let newEnd = Math.max(dragState.startBeat + 0.25, snapToGrid(rawBeat));
+
+            if (preferencesStore.value?.snapToZeroCrossing) {
+                const state = trackStore.value;
+                const clip = state?.tracks.flatMap(t => t.clips).find(c => c.id === dragState.clipId);
+                if (clip && clip.type === 'audio') {
+                    newEnd = snapToZeroCrossing(clip, newEnd);
+                }
+            }
+
             const preview = clipDragPreviewRef.current;
             if (preview) {
                 const orig = preview.originals.get(dragState.clipId);
@@ -397,10 +408,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const rightBeat = right / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
 
                 const hitIds: string[] = [];
+                const hitTrackIds: string[] = [];
                 let trackYOffset = 0;
                 for (const track of model.tracks) {
                     const h = track.height;
                     if (!(trackYOffset + h < top || trackYOffset > bottom)) {
+                        hitTrackIds.push(track.id);
                         for (const clip of track.clips) {
                             if (clip.endBeat > leftBeat && clip.startBeat < rightBeat) {
                                 hitIds.push(clip.id);
@@ -409,7 +422,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     }
                     trackYOffset += h;
                 }
-                setClipSelection(hitIds);
+                
+                if (getActiveTool() === 'marquee') {
+                    setMarqueeSelection({ startBeat: leftBeat, endBeat: rightBeat, trackIds: hitTrackIds });
+                } else {
+                    setClipSelection(hitIds);
+                    setMarqueeSelection(null);
+                }
             }
             rubberBandRef.current = null;
             setRubberBand(null);
@@ -417,6 +436,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
         rubberBandRef.current = null;
         setRubberBand(null);
+
+        // Clicking without dragging using the marquee tool or select tool should clear the marquee selection
+        if (!dragState && getActiveTool() === 'marquee') {
+            setMarqueeSelection(null);
+        }
 
         if (dragState) {
             const {

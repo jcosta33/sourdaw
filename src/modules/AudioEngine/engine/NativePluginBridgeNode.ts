@@ -50,11 +50,11 @@ export async function createNativePluginBridgeNode(
             try {
                 const resultBytes = (await tauriInvoke('process_plugin_audio', {
                     enginePluginId,
-                    audioBytes: Array.from(new Uint8Array(audioBuffer)),
-                })) as number[];
+                    audioBytes: new Uint8Array(audioBuffer),
+                })) as Uint8Array;
 
-                const resultArray = new Uint8Array(resultBytes);
-                node.port.postMessage({ type: 'processed', audio: resultArray.buffer }, [resultArray.buffer]);
+                // resultBytes is already a Uint8Array (binary IPC), so we can use its buffer directly.
+                node.port.postMessage({ type: 'processed', audio: resultBytes.buffer }, [resultBytes.buffer]);
             } catch {
                 // If Rust processing fails, the worklet falls back to passthrough
             } finally {

@@ -2,6 +2,8 @@
 
 Writing and execution standards for all agents working in this repo.
 
+This file is about **documentation** (specs, audits, tasks, research). Rules for **TypeScript and implementation code** (sound typing, tests, assertions) are canonical in **`AGENTS.md`** (repo root) and summarized for humans in **`docs/07-conventions.md`**.
+
 ---
 
 ## Clarity
@@ -132,23 +134,23 @@ When writing audits, findings go in `## Findings` and `## Open issues`. When wri
 
 ## Handoffs
 
-A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch.
+A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch. Task files do **not** use a dedicated `## Handoff` section — put this information in **Decisions**, **Findings**, **Next steps**, and **`## Self-review`** so each task file is self-contained.
 
-A useful handoff answers these questions:
+Useful closure answers these questions:
 
 - What work is actually complete (not what was planned — what was done and verified)?
 - What is explicitly not done, and why?
 - What should the next session watch out for — fragile areas, known gaps, surprising behaviour?
 - Which durable documents (audits, specs, research) were created or updated?
 
-A handoff that only lists files changed is not useful. A handoff that lists decisions made, assumptions confirmed or invalidated, and specific next steps is.
+A summary that only lists files changed is not useful. Record decisions made, assumptions confirmed or invalidated, and specific next steps in the sections above.
 
 ---
 
-## Scope discipline
+## Task focus vs opportunistic fixes
 
-Work only what is assigned. If you discover related work that needs doing, record it — in the audit, the spec's open questions, or the task's handoff — but do not start it.
+Each session has a **primary deliverable** (the Objective or the human’s ask). That is what you must complete.
 
-This is not about following rules. It is about the fact that unplanned work in a worktree produces changes that were not specced, not reviewed, and cannot be attributed to the task. The worktree's branch will contain unexpected changes. The audit will not cover them. The spec will not include them.
+If you discover a real problem or a clear improvement while doing that work — including outside the path you first expected — you **may** address it. Prefer documenting meaningful extra changes in the task file’s **Findings** or **Decisions** (what changed and why) so the branch stays reviewable. Large or risky tangents still deserve an explicit note or a separate follow-up; the point is not to treat “scope” as a reason to ignore obvious issues.
 
-If the discovered work is urgent, surface it explicitly: write up what was found and why it matters. Let the person running the session decide whether to reprioritise.
+If you cannot safely take something on, record it in **Findings** / **Next steps** (or the spec’s **Open questions**) instead of losing it.

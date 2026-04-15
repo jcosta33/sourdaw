@@ -13,7 +13,7 @@
 
 ---
 
-> ⚠️ **FIX SESSION — MINIMAL BLAST RADIUS** — Touch only the files necessary to resolve the issue. Do not refactor surrounding code. Do not make "while I'm here" improvements. If you find related issues, note them in Findings — do not fix them.
+> **FIX SESSION** — Prefer the smallest change that fixes the bug. If you discover a related defect or an obvious safety fix in the same area, you may take it on; document it in **Findings** or **Decisions**. Do not revert correct fixes only to keep the diff smaller.
 
 ---
 
@@ -47,9 +47,9 @@ What is wrong. Observable symptoms.
 
 ---
 
-## Expected fix scope
+## Expected files to touch
 
-List the specific files you expect to modify. If you find yourself touching more than this, stop and note it as a finding.
+List the files you expect to change. If investigation requires more, extend the list and note why in **Findings** or **Decisions**.
 
 - ***
 
@@ -60,7 +60,7 @@ List the specific files you expect to modify. If you find yourself touching more
 - Do not merge, rebase, or push unless explicitly instructed
 - Run `pnpm i` to install dependencies
 - Run `pnpm deps:validate` and `pnpm typecheck` after fixing
-- **Minimum necessary changes only** — no refactoring, no cleanup, no improvements
+- Prefer **minimal** fixes for the reported bug; opportunistic fixes elsewhere should be small, clearly correct, and documented
 - **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
 
 ---
@@ -79,7 +79,6 @@ List the specific files you expect to modify. If you find yourself touching more
 - [ ] Self-review: Minimality answered
 - [ ] Self-review: Correctness answered
 - [ ] Self-review: Conventions answered
-- [ ] Handoff written
 
 ---
 
@@ -89,7 +88,7 @@ List the specific files you expect to modify. If you find yourself touching more
 
 ## Findings
 
-Related issues found during investigation — do not fix these, just note them.
+Related issues found during investigation — note them here. Fix if they block the bug or are clearly safe; otherwise leave for a follow-up and say so.
 
 - ***
 
@@ -111,9 +110,9 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
-Before writing the Handoff, stop. The standard for a fix is brutal simplicity: the minimum change that addresses the root cause, nothing more. Act as a senior engineer reviewing this diff with maximum skepticism. You are looking for anything that shouldn't be there.
+Stop. The standard for a fix is brutal simplicity: the minimum change that addresses the root cause, nothing more. Act as a senior engineer reviewing this diff with maximum skepticism. You are looking for anything that shouldn't be there.
 
-> **Hard gate.** The Handoff stays empty until every question below has a written answer directly beneath it. An unanswered question is a skipped check. A Handoff written with unanswered Self-review questions is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
+> **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
 
 ### Verification outputs (paste actual command output — do not paraphrase)
 
@@ -129,7 +128,7 @@ Before writing the Handoff, stop. The standard for a fix is brutal simplicity: t
 
 ### Minimality — the hardest part
 
-- Could you fix this bug by touching fewer files? Is every single line necessary to fix the bug? Anything traceable to "cleanup" or "while I'm here" — revert it.
+- Could you fix this bug by touching fewer files? Is every single line necessary to fix the bug? If you included extra fixes, are they justified in **Findings** or **Decisions**? Revert only what is wrong or risky — not correct work you only meant to trim from the diff.
   Answer:
 
 ### Correctness
@@ -142,16 +141,4 @@ Before writing the Handoff, stop. The standard for a fix is brutal simplicity: t
 - Did you accidentally violate any React 19 rules, architectural boundaries, or coding conventions while fixing the bug?
   Answer:
 
-Only when every answer above is written should you write the Handoff.
-
-## Handoff
-
-> If any question in Self-review above is unanswered, stop and fill those in first. Do not write the Handoff before the Self-review is complete.
-
-### Done:
-
-### Not done:
-
-### Watch out for:
-
-### Docs updated:
+Only when every answer above is written is this task complete.

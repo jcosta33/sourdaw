@@ -18,6 +18,6 @@ describe('handleQuantizeNotes', () => {
             type: 'quantizeNotes',
             payload: { clipId: 'c1', gridSize: 0.25 }
         });
-        expect(mocks.quantizeNotes).toHaveBeenCalledWith('c1', 0.25);
+        expect(mocks.quantizeNotes).toHaveBeenCalledWith('c1', 0.25, undefined, undefined);
     });
 });

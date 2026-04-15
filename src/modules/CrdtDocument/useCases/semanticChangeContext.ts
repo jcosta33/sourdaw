@@ -15,16 +15,18 @@ type SemanticContext = {
     entityRefs: string[];
 };
 
-let currentContext: SemanticContext | null = null;
+export const sessionState: { currentContext: SemanticContext | null } = {
+    currentContext: null,
+};
 
 export const setSemanticContext = (ctx: SemanticContext): void => {
-    currentContext = ctx;
+    sessionState.currentContext = ctx;
 };
 
 export const getSemanticContext = (): SemanticContext | null => {
-    return currentContext;
+    return sessionState.currentContext;
 };
 
 export const clearSemanticContext = (): void => {
-    currentContext = null;
+    sessionState.currentContext = null;
 };

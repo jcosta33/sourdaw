@@ -3,7 +3,7 @@
  * (AGENTS.md §95 — model isolation). Only the fields the scheduler consumes.
  */
 
-export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth';
+export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
 
 export type AutomationPoint = {
     beat: number;
@@ -11,6 +11,8 @@ export type AutomationPoint = {
     curve: AutomationCurveType;
     tension: number;
     stairSteps?: number;
+    cp1?: { x: number; y: number };
+    cp2?: { x: number; y: number };
 };
 
 export type AutomationLane = {

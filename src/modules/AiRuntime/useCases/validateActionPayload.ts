@@ -177,6 +177,7 @@ const validators = {
     setPreRollBars: 'unchecked',
     seekPlayhead: 'unchecked',
     setEditingTool: 'unchecked',
+    setMarqueeSelection: 'unchecked',
     setWorkspaceMode: 'unchecked',
     setSnapValue: 'unchecked',
     zoomToFit: 'unchecked',

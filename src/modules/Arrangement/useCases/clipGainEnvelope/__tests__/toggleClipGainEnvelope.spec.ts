@@ -6,11 +6,11 @@ import {
     getEnvelope,
 } from '#/modules/Arrangement/stores/gainEnvelopeStore';
 
-import { getClipGainEnvelope } from '../getClipGainEnvelope';
+import { ensureClipGainEnvelope } from '../getClipGainEnvelope';
 import { toggleClipGainEnvelope } from '../toggleClipGainEnvelope';
 
 vi.mock('../getClipGainEnvelope', () => ({
-    getClipGainEnvelope: vi.fn(),
+    ensureClipGainEnvelope: vi.fn(),
 }));
 
 describe('toggleClipGainEnvelope', () => {
@@ -25,7 +25,7 @@ describe('toggleClipGainEnvelope', () => {
             enabled: true,
             points: [{ id: 'p', beatOffset: 0, gainDb: 0 }],
         };
-        vi.mocked(getClipGainEnvelope).mockReturnValue(env);
+        vi.mocked(ensureClipGainEnvelope).mockReturnValue(env);
 
         expect(toggleClipGainEnvelope('c1')).toBe(false);
         expect(getEnvelope('c1')!.enabled).toBe(false);

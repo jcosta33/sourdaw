@@ -41,6 +41,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
 
             <div className="space-y-3">
                 <ToggleRow label="Snap to Grid" value={prefs.snapToGrid} onChange={(v) => update({ snapToGrid: v })} />
+                <ToggleRow label="Snap to Zero Crossing" value={prefs.snapToZeroCrossing} onChange={(v) => update({ snapToZeroCrossing: v })} />
                 <ToggleRow label="Auto Save" value={prefs.autoSave} onChange={(v) => update({ autoSave: v })} />
                 <ToggleRow
                     label="Show Minimap"
