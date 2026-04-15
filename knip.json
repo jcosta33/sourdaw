@@ -5,11 +5,8 @@
     "ignore": [
         "src/components/**/*.tsx",
         "src/modules/Levain/repositories/levainPresets.ts",
-        "src/modules/Plugin/ProofChamber/models/ProofChamberState.ts",
-        "src/modules/Plugin/ProofChamber/presentations/views/ProofChamber.tsx",
-        "src/modules/Plugin/ProofChamber/presentations/views/SpectrogramView.tsx",
-        "src/modules/Plugin/ProofChamber/stores/chamberStore.ts",
-        "src/modules/ProofChamber/repositories/proofChamberPresets.ts",
+        "src/modules/Plugin/models/ProofChamberState.ts",
+        "src/modules/Plugin/stores/chamberStore.ts",
         "src/modules/Toaster/models/GrooveTemplates.ts",
         "src/modules/Workspace/presentations/components/Sidebar/SectionHeader.tsx",
         "src/modules/Workspace/useCases/automationSubLanes.ts",

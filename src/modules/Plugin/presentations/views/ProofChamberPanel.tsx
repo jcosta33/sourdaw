@@ -14,18 +14,23 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Waves } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
-    type AlgorithmType,
+    type ProofChamberAlgorithm,
     ALGORITHM_MAP,
     DEFAULT_PARAMS,
     PARAM_MAP,
-    type ProofChamberParams,
+    type ProofChamberEngineState,
     SPACE_PRESETS,
     type SpaceType,
-} from '../../models/ProofChamberPatch';
-import { updateProofChamberParam } from '../../useCases/proofChamberParamBridge';
+} from '../../models/ProofChamberState';
 import { DecayEqOverlay } from '../components/DecayEqOverlay';
 import { IrBrowser } from '../components/IrBrowser';
 import { SignalFlowDiagram } from '../components/SignalFlowDiagram';
+
+import { chamberStore } from '../../stores/chamberStore';
+import { registerChamberInstance } from '../../useCases/proofChamber/registerChamberInstance';
+import { updateChamberEngine } from '../../useCases/proofChamber/updateChamberEngine';
+import { useStore } from '#/infra/store/useStore';
+import { executeAppAction } from '#/modules/Command/useCases';
 
 const SPACES: ReadonlyArray<{ id: SpaceType; label: string; mood: string }> = [
     { id: 'hall', label: 'Hall', mood: 'Wide bloom' },
@@ -44,7 +49,7 @@ const VINTAGE_MODES = [
     { id: 2, label: '70s' },
 ] as const;
 
-const ALGORITHMS: ReadonlyArray<{ id: AlgorithmType; label: string }> = [
+const ALGORITHMS: ReadonlyArray<{ id: ProofChamberAlgorithm; label: string }> = [
     { id: 'plate', label: 'Plate' },
     { id: 'fdn-8', label: 'FDN 8' },
     { id: 'fdn-16', label: 'FDN 16' },
@@ -162,39 +167,53 @@ function KnobCell({
 }
 
 export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const [params, setParams] = useState<ProofChamberParams>({ ...DEFAULT_PARAMS });
+    const storeState = useStore(chamberStore, { activeInstanceId: null, instances: {} });
+    const params = storeState?.instances?.[deviceId]?.engineState ?? DEFAULT_PARAMS;
+
+    useEffect(() => {
+        registerChamberInstance(deviceId);
+    }, [deviceId]);
     const [decayEqMults, setDecayEqMults] = useState([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
     const [showDecayEq, setShowDecayEq] = useState(false);
     const [showFlow, setShowFlow] = useState(false);
 
-    function setParam(key: keyof ProofChamberParams, value: number | boolean): void {
-        setParams((prev) => ({ ...prev, [key]: value }));
+    function setParam(key: keyof ProofChamberEngineState, value: number | boolean): void {
+        updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, [key]: value }));
         const rustKey = PARAM_MAP[key];
-        if (!rustKey) {
-            return;
-        }
+        if (!rustKey) return;
         const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
-        updateProofChamberParam(deviceId, rustKey, numericValue);
+        executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId, paramId: rustKey, value: numericValue },
+        });
     }
 
     function selectSpace(space: SpaceType): void {
         const preset = SPACE_PRESETS[space];
-        const algorithm = (preset as Record<string, unknown>).algorithm as AlgorithmType | undefined;
+        const algorithm = (preset as Record<string, unknown>).algorithm as ProofChamberAlgorithm | undefined;
         const nextParams = { ...DEFAULT_PARAMS, ...preset, space, algorithm: algorithm ?? 'plate' };
-        setParams(nextParams);
-        updateProofChamberParam(deviceId, 'algorithm', ALGORITHM_MAP[nextParams.algorithm] ?? 0);
+
+        updateChamberEngine(deviceId, () => nextParams);
+        executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[nextParams.algorithm] ?? 0 },
+        });
+
         for (const [key, rawValue] of Object.entries(nextParams)) {
-            if (key === 'algorithm' || key === 'space') {
-                continue;
-            }
+            if (key === 'algorithm' || key === 'space') continue;
             const rustKey = PARAM_MAP[key];
-            if (!rustKey) {
-                continue;
-            }
+            if (!rustKey) continue;
+
             if (typeof rawValue === 'boolean') {
-                updateProofChamberParam(deviceId, rustKey, rawValue ? 1 : 0);
+                executeAppAction({
+                    type: 'setDeviceParameter',
+                    payload: { deviceId, paramId: rustKey, value: rawValue ? 1 : 0 },
+                });
             } else if (typeof rawValue === 'number') {
-                updateProofChamberParam(deviceId, rustKey, rawValue);
+                executeAppAction({
+                    type: 'setDeviceParameter',
+                    payload: { deviceId, paramId: rustKey, value: rawValue },
+                });
             }
         }
     }
@@ -246,12 +265,18 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     key={algorithm.id}
                                     active={active}
                                     onClick={() => {
-                                        setParams((prev) => ({ ...prev, algorithm: algorithm.id }));
-                                        updateProofChamberParam(
-                                            deviceId,
-                                            'algorithm',
-                                            ALGORITHM_MAP[algorithm.id] ?? 0
-                                        );
+                                        updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({
+                                            ...prev,
+                                            algorithm: algorithm.id,
+                                        }));
+                                        executeAppAction({
+                                            type: 'setDeviceParameter',
+                                            payload: {
+                                                deviceId,
+                                                paramId: 'algorithm',
+                                                value: ALGORITHM_MAP[algorithm.id] ?? 0,
+                                            },
+                                        });
                                     }}
                                 >
                                     {algorithm.label}
@@ -342,7 +367,10 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             const next = [...decayEqMults];
                                             next[band] = mult;
                                             setDecayEqMults(next);
-                                            updateProofChamberParam(deviceId, `decay_eq_${band}`, mult);
+                                            executeAppAction({
+                                                type: 'setDeviceParameter',
+                                                payload: { deviceId, paramId: `decay_eq_${band}`, mult },
+                                            });
                                         }}
                                         width={600}
                                         height={120}
@@ -651,12 +679,18 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                                 key={algorithm.id}
                                                 active={params.algorithm === algorithm.id}
                                                 onClick={() => {
-                                                    setParams((prev) => ({ ...prev, algorithm: algorithm.id }));
-                                                    updateProofChamberParam(
-                                                        deviceId,
-                                                        'algorithm',
-                                                        ALGORITHM_MAP[algorithm.id] ?? 0
-                                                    );
+                                                    updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({
+                                                        ...prev,
+                                                        algorithm: algorithm.id,
+                                                    }));
+                                                    executeAppAction({
+                                                        type: 'setDeviceParameter',
+                                                        payload: {
+                                                            deviceId,
+                                                            paramId: 'algorithm',
+                                                            value: ALGORITHM_MAP[algorithm.id] ?? 0,
+                                                        },
+                                                    });
                                                 }}
                                             >
                                                 {algorithm.label}

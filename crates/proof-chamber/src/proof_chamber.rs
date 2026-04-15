@@ -503,11 +503,13 @@ impl ProofChamber {
             }
             "high_cut" => {
                 self.high_cut_freq = value.clamp(1000.0, 20000.0);
-                self.high_cut.set_freq(value, self.sample_rate);
+                self.high_cut_l.set_freq(value, self.sample_rate);
+                self.high_cut_r.set_freq(value, self.sample_rate);
             }
             "low_cut" => {
                 self.low_cut_freq = value.clamp(20.0, 1000.0);
-                self.low_cut.set_freq(value, self.sample_rate);
+                self.low_cut_l.set_freq(value, self.sample_rate);
+                self.low_cut_r.set_freq(value, self.sample_rate);
             }
             "width" => self.width = value.clamp(0.0, 2.0),
             "freeze" => {

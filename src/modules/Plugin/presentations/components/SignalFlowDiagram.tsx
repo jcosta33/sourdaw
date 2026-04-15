@@ -6,10 +6,10 @@
  */
 import { type ReactElement } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
-import { type AlgorithmType } from '../../models/ProofChamberPatch';
+import { type ProofChamberAlgorithm } from '../../models/ProofChamberState';
 
 type SignalFlowDiagramProps = {
-    algorithm: AlgorithmType;
+    algorithm: ProofChamberAlgorithm;
     shimmerEnabled: boolean;
     freezeEnabled: boolean;
 };
@@ -18,7 +18,7 @@ type FlowNode = { id: string; label: string; x: number; y: number; active: boole
 type FlowEdge = { from: string; to: string; label?: string };
 
 function getFlowForAlgorithm(
-    algorithm: AlgorithmType,
+    algorithm: ProofChamberAlgorithm,
     shimmer: boolean,
     freeze: boolean
 ): { nodes: FlowNode[]; edges: FlowEdge[] } {

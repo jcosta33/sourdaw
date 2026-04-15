@@ -31,7 +31,7 @@ import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
-import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
+import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
 import { GlutenPanel } from '#/modules/Gluten/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views';
