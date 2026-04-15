@@ -19,6 +19,29 @@ import { type ModelDownloadProgressPayload } from '../events/ModelDownloadProgre
 const BROADCAST_CHANNEL_NAME = 'sourdaw-model-downloads';
 const MAX_RETRIES = 3;
 
+/**
+ * GitHub release assets are not CORS-accessible from the browser.
+ * Route them through the Vercel Edge proxy which fetches server-side.
+ *
+ * In local development (Vite dev server) the proxy endpoint does not exist —
+ * fall back to the direct URL. GitHub release downloads will be CORS-blocked
+ * in that case; use the production deploy to test vocoder download end-to-end.
+ */
+function resolveDownloadUrl(url: string): string {
+    if (import.meta.env.DEV) {
+        return url;
+    }
+    try {
+        const parsed = new URL(url);
+        if (parsed.hostname === 'github.com' || parsed.hostname.endsWith('.githubusercontent.com')) {
+            return `/api/proxy-model?url=${encodeURIComponent(url)}`;
+        }
+    } catch {
+        // Not a valid URL — let fetch fail naturally
+    }
+    return url;
+}
+
 type ModelDownloadSpec = {
     modelId: string;
     family: string;
@@ -65,7 +88,7 @@ export const downloadModel = inject({ logger })(
                 try {
                     logger.info(`[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`);
 
-                    const response = await fetch(url);
+                    const response = await fetch(resolveDownloadUrl(url));
                     if (!response.ok) {
                         throw new Error(`HTTP ${String(response.status)}: ${response.statusText}`);
                     }

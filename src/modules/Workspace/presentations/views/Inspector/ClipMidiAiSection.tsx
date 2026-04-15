@@ -2,12 +2,11 @@ import { type ReactElement, useState, useEffect } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
-import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { Button } from '#/components/ui/button';
-import { Sparkles, Loader2, Music, Cpu, Mic, AudioLines } from 'lucide-react';
+import { Sparkles, Loader2, Music, Mic, AudioLines, Download } from 'lucide-react';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
@@ -16,10 +15,13 @@ import { midiStore } from '#/modules/MIDI/stores';
 import {
     renderKokoroTts,
     renderDiffSingerPhrase,
+    downloadModel,
     capabilityStore,
     modelRegistryStore,
     KokoroVoiceSelector,
     RenderProgressIndicator,
+    KOKORO_MODEL_ENTRY,
+    NSF_HIFIGAN_VOCODER,
     type RenderQuality,
 } from '#/modules/BrowserAi';
 import { useStore } from '#/infra/store/useStore';
@@ -64,6 +66,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
 
     const kokoroStatus = registry?.kokoroModel?.status ?? 'not-downloaded';
     const kokoroProgress = registry?.kokoroModel?.downloadProgress ?? 0;
+    const vocoderStatus = registry?.vocoder?.status ?? 'not-downloaded';
+    const vocoderProgress = registry?.vocoder?.downloadProgress ?? 0;
 
     const handleGenerateVariations = async (): Promise<void> => {
         setIsGeneratingVariations(true);
@@ -80,13 +84,44 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         }
     };
 
+    // Reset per-clip state when the inspected clip changes so text/voice/render
+    // state from one clip does not bleed into another.
+    useEffect(() => {
+        setTtsText('');
+        setDiffSingerLyrics('');
+        setTtsVoiceId('af_heart');
+        setTtsSpeed('1.0');
+        setVariationTokenCount(0);
+        setIsGeneratingVariations(false);
+        setIsRenderingTts(false);
+        setIsRenderingSvs(false);
+    }, [clip.id]);
+
+    const handleDownloadKokoro = (): void => {
+        void downloadModel({
+            modelId: KOKORO_MODEL_ENTRY.id,
+            family: KOKORO_MODEL_ENTRY.family,
+            url: KOKORO_MODEL_ENTRY.url,
+            sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
+        });
+    };
+
+    const handleDownloadVocoder = (): void => {
+        void downloadModel({
+            modelId: NSF_HIFIGAN_VOCODER.id,
+            family: NSF_HIFIGAN_VOCODER.family,
+            url: NSF_HIFIGAN_VOCODER.url,
+            sizeBytes: NSF_HIFIGAN_VOCODER.sizeBytes,
+        });
+    };
+
     const handlePreviewVoice = async (): Promise<void> => {
         if (!ttsText.trim()) {
             notifyUser('Enter some text to preview', 'error');
             return;
         }
         if (kokoroStatus !== 'ready') {
-            notifyUser('Download the Kokoro TTS model first (AI Model Manager in Settings)', 'error');
+            notifyUser('Download the voice model first', 'error');
             return;
         }
         const tempoState = tempoMapStore.value;
@@ -214,20 +249,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     </Button>
                 </DawPluginSectionCard>
 
-                {/* AI Instrument Synthesis — DDSP (not available in this build) */}
-                <DawPluginSectionCard
-                    title="AI Instrument Synthesis"
-                    detail={<Cpu className="size-3 text-[var(--color-accent-cyan)]" aria-hidden="true" />}
-                    detailMode="badge"
-                >
-                    <DawBlockedState
-                        compact
-                        title="Not available"
-                        description="DDSP synthesis requires TensorFlow.js, which cannot be statically bundled by the build tool. Use the Singing Voice section below for AI audio."
-                        action={<DawMicroBadge tone="muted">Blocked by bundler</DawMicroBadge>}
-                    />
-                </DawPluginSectionCard>
-
                 {/* Vocal Preview (Kokoro TTS) */}
                 {isUnsupported ? null : (
                     <DawPluginSectionCard
@@ -258,19 +279,19 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         ) : kokoroStatus !== 'ready' ? (
                             <DawEmptyState
                                 compact
-                                title="Kokoro model not installed"
-                                description="Download the Kokoro TTS model (~86 MB) to enable vocal previews."
+                                title="Download a voice to get started"
+                                description="Generate spoken scratch tracks from your lyrics."
                                 action={
-                                    <div className="flex items-center gap-2">
-                                        <DawMicroBadge tone="muted">~86 MB · Apache 2.0</DawMicroBadge>
-                                        <button
-                                            type="button"
-                                            onClick={openPreferencesDialog}
-                                            className="text-[9px] text-[var(--color-accent-peach)] hover:underline transition-colors"
-                                        >
-                                            Open AI Settings →
-                                        </button>
-                                    </div>
+                                    <Button
+                                        variant="secondary"
+                                        size="xs"
+                                        className="h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
+                                        onClick={handleDownloadKokoro}
+                                    >
+                                        <Download className="size-3 mr-1" aria-hidden="true" />
+                                        Download Voice Model
+                                        <DawMicroBadge tone="muted" className="ml-1.5">~86 MB</DawMicroBadge>
+                                    </Button>
                                 }
                             />
                         ) : (
@@ -352,25 +373,25 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         {voicebanks.length === 0 ? (
                             <DawEmptyState
                                 compact
-                                title="No voice packs installed"
-                                description="Install a DiffSinger voicebank to enable browser singing synthesis."
+                                title="No singing voices downloaded"
+                                description="Download a singing voice to render your MIDI notes as vocals."
                                 action={
-                                    <div className="flex items-center gap-2">
-                                        <DawMicroBadge tone="muted">~115–160 MB per voice</DawMicroBadge>
-                                        <button
-                                            type="button"
-                                            onClick={openPreferencesDialog}
-                                            className="text-[9px] text-[var(--color-accent-lavender)] hover:underline transition-colors"
-                                        >
-                                            Open AI Settings →
-                                        </button>
-                                    </div>
+                                    <Button
+                                        variant="secondary"
+                                        size="xs"
+                                        className="h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                        onClick={openPreferencesDialog}
+                                    >
+                                        <Download className="size-3 mr-1" aria-hidden="true" />
+                                        Browse Singing Voices
+                                        <DawMicroBadge tone="muted" className="ml-1.5">~150 MB each</DawMicroBadge>
+                                    </Button>
                                 }
                             />
                         ) : (
                             <div className="space-y-2">
                                 <p className="text-[9px] text-muted-foreground leading-relaxed">
-                                    Browser singing synthesis: phonemizer → variance → acoustic → vocoder.
+                                    Render MIDI notes as a singing vocal — choose a voice and type your lyrics.
                                 </p>
 
                                 {/* Voicebank selector */}
@@ -430,23 +451,63 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
 
                                 <RenderProgressIndicator phraseId={`${clip.id}-svs`} />
 
-                                <Button
-                                    variant="secondary"
-                                    size="xs"
-                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                    onClick={handleRenderSinging}
-                                    disabled={isRenderingSvs}
-                                >
-                                    {isRenderingSvs ? (
-                                        <>
-                                            <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…
-                                        </>
-                                    ) : (
-                                        <>
-                                            <AudioLines className="size-3 mr-1" aria-hidden="true" /> Render Singing
-                                        </>
-                                    )}
-                                </Button>
+                                {vocoderStatus === 'downloading' ? (
+                                    <div className="space-y-1.5">
+                                        <p className="text-[9px] text-muted-foreground">Downloading singing engine…</p>
+                                        <div
+                                            className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
+                                            role="progressbar"
+                                            aria-valuenow={Math.round(vocoderProgress * 100)}
+                                            aria-valuemin={0}
+                                            aria-valuemax={100}
+                                            aria-label={`Downloading vocoder: ${Math.round(vocoderProgress * 100)}%`}
+                                        >
+                                            <div
+                                                className="h-full bg-[var(--color-accent-lavender)] transition-all"
+                                                style={{ width: `${Math.round(vocoderProgress * 100)}%` }}
+                                            />
+                                        </div>
+                                        <p className="text-[9px] text-muted-foreground/60 tabular-nums">
+                                            {Math.round(vocoderProgress * 100)}%
+                                        </p>
+                                    </div>
+                                ) : vocoderStatus !== 'ready' ? (
+                                    <div className="space-y-1.5">
+                                        <p className="text-[9px] text-muted-foreground/70">
+                                            {vocoderStatus === 'error'
+                                                ? 'Download failed — check your connection and try again.'
+                                                : 'A singing engine is also required to render audio.'}
+                                        </p>
+                                        <Button
+                                            variant="secondary"
+                                            size="xs"
+                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                            onClick={handleDownloadVocoder}
+                                        >
+                                            <Download className="size-3 mr-1" aria-hidden="true" />
+                                            {vocoderStatus === 'error' ? 'Retry Download' : 'Download Singing Engine'}
+                                            <DawMicroBadge tone="muted" className="ml-1.5">~52 MB</DawMicroBadge>
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <Button
+                                        variant="secondary"
+                                        size="xs"
+                                        className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                        onClick={handleRenderSinging}
+                                        disabled={isRenderingSvs}
+                                    >
+                                        {isRenderingSvs ? (
+                                            <>
+                                                <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…
+                                            </>
+                                        ) : (
+                                            <>
+                                                <AudioLines className="size-3 mr-1" aria-hidden="true" /> Render Singing
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
                             </div>
                         )}
                     </DawPluginSectionCard>

@@ -146,5 +146,9 @@ export async function generateWebLlmCompletion(
         max_tokens: options?.maxTokens ?? 2048,
         seed: 0,
     })) as { choices: Array<{ message: { content: string } }> };
-    return response.choices[0]?.message.content ?? '';
+
+    const raw = response.choices[0]?.message.content ?? '';
+    // Qwen3 prefixes answers with <think>...</think> reasoning blocks.
+    // Strip them so callers receive only the final output.
+    return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
