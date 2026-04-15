@@ -169,10 +169,10 @@ export const renderDiffSingerPhrase = inject({
                 }
 
                 // Load shared vocoder
-                const vocoderData = await readModel({ family: 'diffsinger/vocoder', modelId: 'nsf-hifigan' });
+                const vocoderData = await readModel({ family: 'diffsinger/vocoder', modelId: 'nsf-hifigan-44k' });
                 if (!vocoderData) {
                     throw new Error(
-                        'NSF-HiFiGAN vocoder not found in OPFS. Download it in AI Settings.'
+                        'Singing vocoder not downloaded. Download it from the AI section in the clip inspector.'
                     );
                 }
                 await inferenceWorkerBridge.loadOnnxSession({ modelId: 'shared/vocoder', modelData: vocoderData });

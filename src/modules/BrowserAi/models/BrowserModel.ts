@@ -10,7 +10,7 @@ export type ModelFamily =
     | 'diffsinger-pitch'
     | 'diffsinger-acoustic'
     | 'diffsinger-variance'
-    | 'diffsinger-vocoder';
+    | 'diffsinger/vocoder';
 
 export type ModelDownloadStatus = 'not-downloaded' | 'downloading' | 'ready' | 'error' | 'stale';
 
@@ -76,5 +76,5 @@ export type DiffSingerVoicebank = {
 
 /** Shared NSF-HiFiGAN vocoder — downloaded once, reused across all voicebanks */
 export type VocoderModel = BrowserModel & {
-    family: 'diffsinger-vocoder';
+    family: 'diffsinger/vocoder';
 };

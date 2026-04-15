@@ -29,7 +29,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 /** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
 let midiStaleSubscription: (() => void) | undefined;
 
-const KOKORO_MODEL_ENTRY: KokoroModel = {
+export const KOKORO_MODEL_ENTRY: KokoroModel = {
     id: 'kokoro-82m-q8',
     name: 'Kokoro TTS (q8)',
     family: 'kokoro',
@@ -43,10 +43,10 @@ const KOKORO_MODEL_ENTRY: KokoroModel = {
     quantization: 'q8',
 };
 
-const NSF_HIFIGAN_VOCODER: VocoderModel = {
+export const NSF_HIFIGAN_VOCODER: VocoderModel = {
     id: 'nsf-hifigan-44k',
     name: 'NSF-HiFiGAN Vocoder',
-    family: 'diffsinger-vocoder',
+    family: 'diffsinger/vocoder',
     sizeBytes: NSF_HIFIGAN_SIZE_BYTES,
     url: NSF_HIFIGAN_URL,
     license: 'CC-BY-NC-SA-4.0',
