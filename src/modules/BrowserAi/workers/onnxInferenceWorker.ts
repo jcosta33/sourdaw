@@ -30,7 +30,7 @@ type OrtModule = {
         create: (data: ArrayBuffer, options?: { executionProviders?: string[] }) => Promise<OrtInferenceSession>;
     };
     Tensor: new (type: string, data: ArrayBuffer | Float32Array | BigInt64Array | Int32Array | Uint8Array, dims: number[]) => OrtTensor;
-    env: { wasm: { numThreads: number } };
+    env: { wasm: { numThreads: number }; logLevel: string };
 };
 
 type SessionEntry = {
@@ -60,6 +60,9 @@ async function getOrt(): Promise<OrtModule> {
     ort.env.wasm.numThreads = (typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated)
         ? (navigator.hardwareConcurrency ?? 4)
         : 1;
+    // Suppress "Some nodes were not assigned to the preferred execution providers"
+    // warnings — these are informational (ORT moves shape ops to CPU intentionally).
+    ort.env.logLevel = 'error';
     ortModule = ort;
     return ort;
 }
