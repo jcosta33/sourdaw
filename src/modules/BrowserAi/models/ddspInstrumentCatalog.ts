@@ -27,12 +27,14 @@ export const NSF_HIFIGAN_URL =
 export const NSF_HIFIGAN_SIZE_BYTES = 52_000_000;
 
 /**
- * Kokoro TTS model — q8 quantized, 168 MB.
+ * Kokoro TTS model — q8f16 quantized (int8 weights, float16 activations), 86 MB.
+ * Path: onnx/model_q8f16.onnx inside onnx-community/Kokoro-82M-v1.0-ONNX.
+ * The model_q8.onnx file does not exist in the repo; q8f16 is the closest equivalent.
  */
 export const KOKORO_MODEL_URL =
-    'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/model_q8.onnx';
+    'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx';
 
-export const KOKORO_MODEL_SIZE_BYTES = 168_000_000;
+export const KOKORO_MODEL_SIZE_BYTES = 86_000_000;
 
 /**
  * Factory DDSP instrument catalog.

@@ -214,17 +214,17 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     </Button>
                 </DawPluginSectionCard>
 
-                {/* Browser AI Render — DDSP (not available in this build) */}
+                {/* AI Instrument Synthesis — DDSP (not available in this build) */}
                 <DawPluginSectionCard
-                    title="Browser AI Render"
+                    title="AI Instrument Synthesis"
                     detail={<Cpu className="size-3 text-[var(--color-accent-cyan)]" aria-hidden="true" />}
                     detailMode="badge"
                 >
                     <DawBlockedState
                         compact
-                        title="DDSP Not Available"
-                        description="TensorFlow.js cannot be bundled for browser delivery. DDSP instrument synthesis is coming in a future release."
-                        action={<DawMicroBadge tone="muted">Coming soon</DawMicroBadge>}
+                        title="Not available"
+                        description="DDSP synthesis requires TensorFlow.js, which cannot be statically bundled by the build tool. Use the Singing Voice section below for AI audio."
+                        action={<DawMicroBadge tone="muted">Blocked by bundler</DawMicroBadge>}
                     />
                 </DawPluginSectionCard>
 
@@ -259,10 +259,10 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                             <DawEmptyState
                                 compact
                                 title="Kokoro model not installed"
-                                description="Download the Kokoro TTS model (~160 MB) to enable vocal previews."
+                                description="Download the Kokoro TTS model (~86 MB) to enable vocal previews."
                                 action={
                                     <div className="flex items-center gap-2">
-                                        <DawMicroBadge tone="muted">~160 MB · Apache 2.0</DawMicroBadge>
+                                        <DawMicroBadge tone="muted">~86 MB · Apache 2.0</DawMicroBadge>
                                         <button
                                             type="button"
                                             onClick={openPreferencesDialog}
