@@ -26,6 +26,8 @@ const FADE_SAMPLES = 441;
 const HOP_SIZE = 512;
 const SAMPLE_RATE = 44100;
 const FRAMES_PER_SECOND = SAMPLE_RATE / HOP_SIZE; // ~86.13
+const VOCODER_MODEL_ID = 'nsf-hifigan-44k';
+const VOCODER_FAMILY = 'diffsinger/vocoder';
 
 type RenderDiffSingerPhraseInput = {
     phraseId: string;
@@ -169,7 +171,7 @@ export const renderDiffSingerPhrase = inject({
                 }
 
                 // Load shared vocoder
-                const vocoderData = await readModel({ family: 'diffsinger/vocoder', modelId: 'nsf-hifigan-44k' });
+                const vocoderData = await readModel({ family: VOCODER_FAMILY, modelId: VOCODER_MODEL_ID });
                 if (!vocoderData) {
                     throw new Error(
                         'Singing vocoder not downloaded. Download it from the AI section in the clip inspector.'

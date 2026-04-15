@@ -19,7 +19,7 @@ import {
     capabilityStore,
     modelRegistryStore,
     KokoroVoiceSelector,
-    RenderProgressIndicator,
+    AiRenderClipPreview,
     KOKORO_MODEL_ENTRY,
     NSF_HIFIGAN_VOCODER,
     type RenderQuality,
@@ -27,6 +27,17 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import { tempoMapStore } from '#/modules/Transport/stores';
 import { type Clip } from '../../../models/TrackViewTypes';
+
+type RenderResult = {
+    audio: Float32Array;
+    sampleRate: number;
+    label: string;
+    name: string;
+};
+
+const TTS_SPEED_VARIANTS = [0.95, 1.0, 1.05] as const;
+const SVS_SEED_VARIANTS = [42, 1337, 2025] as const;
+const VARIANT_LABELS = ['A', 'B', 'C'] as const;
 
 const QUALITY_OPTIONS: Array<{ value: RenderQuality; label: string }> = [
     { value: 'low', label: 'Low (3 steps)' },
@@ -51,6 +62,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const [selectedVoicebankId, setSelectedVoicebankId] = useState('');
     const [diffSingerLyrics, setDiffSingerLyrics] = useState('');
     const [isRenderingSvs, setIsRenderingSvs] = useState(false);
+    const [ttsResults, setTtsResults] = useState<RenderResult[]>([]);
+    const [svsResults, setSvsResults] = useState<RenderResult[]>([]);
 
     const capState = useStore(capabilityStore, { phase: 'idle' });
     const registry = useStore(modelRegistryStore, {
@@ -95,6 +108,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setIsGeneratingVariations(false);
         setIsRenderingTts(false);
         setIsRenderingSvs(false);
+        setTtsResults([]);
+        setSvsResults([]);
     }, [clip.id]);
 
     const handleDownloadKokoro = (): void => {
@@ -129,22 +144,35 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         const beatsPerSecond = bpm / 60;
         const targetDurationSec = (clip.endBeat - clip.startBeat) / beatsPerSecond;
 
-        const speed = parseFloat(ttsSpeed);
-        if (!isFinite(speed) || speed <= 0) {
+        const baseSpeed = parseFloat(ttsSpeed);
+        if (!isFinite(baseSpeed) || baseSpeed <= 0) {
             notifyUser('Invalid speed value', 'error');
             return;
         }
 
         setIsRenderingTts(true);
+        setTtsResults([]);
         try {
-            await renderKokoroTts({
-                phraseId: `${clip.id}-tts`,
-                text: ttsText.trim(),
-                speakerId: ttsVoiceId,
-                speed,
-                targetDurationSec,
-            });
-            notifyAiChange('Vocal preview ready', ['Kokoro TTS rendered for this clip']);
+            const results = await Promise.all(
+                TTS_SPEED_VARIANTS.map(async (multiplier, i) => {
+                    const speed = baseSpeed * multiplier;
+                    const result = await renderKokoroTts({
+                        phraseId: `${clip.id}-tts-${VARIANT_LABELS[i]}`,
+                        text: ttsText.trim(),
+                        speakerId: ttsVoiceId,
+                        speed,
+                        targetDurationSec,
+                    });
+                    return {
+                        audio: result.audio,
+                        sampleRate: result.sampleRate,
+                        label: VARIANT_LABELS[i]!,
+                        name: `${ttsVoiceId} · ${ttsText.trim().slice(0, 20)}${ttsText.trim().length > 20 ? '…' : ''}`,
+                    };
+                })
+            );
+            setTtsResults(results);
+            notifyAiChange('Vocal preview ready', ['3 alternatives rendered — drag one onto an audio track']);
         } catch (err) {
             notifyUser(err instanceof Error ? err.message : 'TTS render failed', 'error');
         } finally {
@@ -184,17 +212,30 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         }
 
         setIsRenderingSvs(true);
+        setSvsResults([]);
         try {
-            await renderDiffSingerPhrase({
-                phraseId: `${clip.id}-svs`,
-                voicebankId: selectedVoicebankId,
-                lyrics: diffSingerLyrics.trim() || 'la la la',
-                notes,
-                renderQuality: svsRenderQuality,
-            });
-            notifyAiChange('Singing render complete', [
-                `${activeVoicebank?.name ?? selectedVoicebankId} rendered for this clip`,
-            ]);
+            const voiceName = activeVoicebank?.name ?? selectedVoicebankId;
+            const lyrics = diffSingerLyrics.trim() || 'la la la';
+            const results = await Promise.all(
+                SVS_SEED_VARIANTS.map(async (seed, i) => {
+                    const result = await renderDiffSingerPhrase({
+                        phraseId: `${clip.id}-svs-${VARIANT_LABELS[i]}`,
+                        voicebankId: selectedVoicebankId,
+                        lyrics,
+                        notes,
+                        renderQuality: svsRenderQuality,
+                        seed,
+                    });
+                    return {
+                        audio: result.audio,
+                        sampleRate: result.sampleRate,
+                        label: VARIANT_LABELS[i]!,
+                        name: `${voiceName} · ${lyrics.slice(0, 20)}${lyrics.length > 20 ? '…' : ''}`,
+                    };
+                })
+            );
+            setSvsResults(results);
+            notifyAiChange('Singing render complete', ['3 alternatives rendered — drag one onto an audio track']);
         } catch (err) {
             notifyUser(err instanceof Error ? err.message : 'Singing render failed', 'error');
         } finally {
@@ -339,8 +380,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         <option value="2.0">2.0× Very fast</option>
                                     </DawCompactSelect>
                                 </div>
-                                <RenderProgressIndicator phraseId={`${clip.id}-tts`} />
-
                                 <Button
                                     variant="secondary"
                                     size="xs"
@@ -354,10 +393,26 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         </>
                                     ) : (
                                         <>
-                                            <Mic className="size-3 mr-1" aria-hidden="true" /> Preview Voice
+                                            <Mic className="size-3 mr-1" aria-hidden="true" /> Render 3 Alternatives
                                         </>
                                     )}
                                 </Button>
+                                {ttsResults.length > 0 ? (
+                                    <div className="space-y-1 pt-1">
+                                        <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
+                                            Drag onto an audio track
+                                        </p>
+                                        {ttsResults.map((r) => (
+                                            <AiRenderClipPreview
+                                                key={r.label}
+                                                audio={r.audio}
+                                                sampleRate={r.sampleRate}
+                                                label={r.label}
+                                                name={r.name}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : null}
                             </div>
                         )}
                     </DawPluginSectionCard>
@@ -449,8 +504,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                     </DawCompactSelect>
                                 </div>
 
-                                <RenderProgressIndicator phraseId={`${clip.id}-svs`} />
-
                                 {vocoderStatus === 'downloading' ? (
                                     <div className="space-y-1.5">
                                         <p className="text-[9px] text-muted-foreground">Downloading singing engine…</p>
@@ -490,23 +543,41 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         </Button>
                                     </div>
                                 ) : (
-                                    <Button
-                                        variant="secondary"
-                                        size="xs"
-                                        className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                        onClick={handleRenderSinging}
-                                        disabled={isRenderingSvs}
-                                    >
-                                        {isRenderingSvs ? (
-                                            <>
-                                                <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…
-                                            </>
-                                        ) : (
-                                            <>
-                                                <AudioLines className="size-3 mr-1" aria-hidden="true" /> Render Singing
-                                            </>
-                                        )}
-                                    </Button>
+                                    <>
+                                        <Button
+                                            variant="secondary"
+                                            size="xs"
+                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                            onClick={handleRenderSinging}
+                                            disabled={isRenderingSvs}
+                                        >
+                                            {isRenderingSvs ? (
+                                                <>
+                                                    <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <AudioLines className="size-3 mr-1" aria-hidden="true" /> Render 3 Alternatives
+                                                </>
+                                            )}
+                                        </Button>
+                                        {svsResults.length > 0 ? (
+                                            <div className="space-y-1 pt-1">
+                                                <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
+                                                    Drag onto an audio track
+                                                </p>
+                                                {svsResults.map((r) => (
+                                                    <AiRenderClipPreview
+                                                        key={r.label}
+                                                        audio={r.audio}
+                                                        sampleRate={r.sampleRate}
+                                                        label={r.label}
+                                                        name={r.name}
+                                                    />
+                                                ))}
+                                            </div>
+                                        ) : null}
+                                    </>
                                 )}
                             </div>
                         )}
