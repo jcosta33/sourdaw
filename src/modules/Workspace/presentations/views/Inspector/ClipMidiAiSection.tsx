@@ -19,7 +19,6 @@ import {
     capabilityStore,
     modelRegistryStore,
     KokoroVoiceSelector,
-    RenderProgressIndicator,
     AiRenderClipPreview,
     KOKORO_MODEL_ENTRY,
     NSF_HIFIGAN_VOCODER,
@@ -381,8 +380,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         <option value="2.0">2.0× Very fast</option>
                                     </DawCompactSelect>
                                 </div>
-                                <RenderProgressIndicator phraseId={`${clip.id}-tts`} />
-
                                 <Button
                                     variant="secondary"
                                     size="xs"
@@ -506,8 +503,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         ))}
                                     </DawCompactSelect>
                                 </div>
-
-                                <RenderProgressIndicator phraseId={`${clip.id}-svs`} />
 
                                 {vocoderStatus === 'downloading' ? (
                                     <div className="space-y-1.5">

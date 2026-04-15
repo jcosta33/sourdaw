@@ -62,8 +62,12 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
         source.buffer = buffer;
         source.connect(getAudioContext().destination);
         source.onended = () => {
-            setIsPlaying(false);
-            sourceRef.current = null;
+            // Guard: only clear state if this source is still the active one.
+            // Prevents a stopped source's onended from clobbering a new playback.
+            if (sourceRef.current === source) {
+                setIsPlaying(false);
+                sourceRef.current = null;
+            }
         };
         source.start();
         sourceRef.current = source;

@@ -19,7 +19,11 @@ export const generateWebLlmToolCalls = inject({ logger })(
             tools: ChatCompletionTool[]
         ): Promise<ToolCallResult[]> {
             const toolDescriptions = tools
-                .map((t) => `- ${t.function.name}: ${t.function.description ?? ''}`)
+                .map((t) => {
+                    const params = t.function.parameters as Record<string, unknown> | undefined;
+                    const paramStr = params ? ` Parameters: ${JSON.stringify(params)}` : '';
+                    return `- ${t.function.name}: ${t.function.description ?? ''}${paramStr}`;
+                })
                 .join('\n');
 
             const fullSystemPrompt = [
