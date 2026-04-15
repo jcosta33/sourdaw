@@ -4,13 +4,15 @@
 The Toaster plugin must operate as a stable, high-performance, and multi-instance capable drum machine within the Sourdaw architecture. It must provide robust state management (one state per instance), allocation-free real-time audio processing in its AudioWorklet, and accurate hydration of all parameters from the UI/Store to the Rust DSP engine. 
 
 ## Current state
-The Toaster plugin currently functions as a single global drum machine, hard-coupled to singleton state stores and hydration workflows. While the Rust DSP engine is largely allocation-free and well-structured, the TypeScript layer connecting the UI, State, and AudioNode makes severe singleton assumptions that break multi-instance support. Additionally, there are severe violations of the Web Audio real-time processing constraints in the JavaScript AudioWorklet wrapper (`ToasterProcessor.js`), and missing/ignored parameters bridging the gap between TS and Rust.
+The Toaster plugin currently functions as a single global drum machine, hard-coupled to singleton state stores and hydration workflows. While the Rust DSP engine is largely allocation-free and well-structured, the TypeScript layer connecting the UI, State, and AudioNode makes severe singleton assumptions that break multi-instance support. Additionally, there are severe violations of the Web Audio real-time processing constraints in the JavaScript AudioWorklet wrapper (`ToasterProcessor.js`), and missing/ignored parameters bridging the gap between TS and Rust. Several DSP algorithms are missing sample-rate compensation, and the sequencer schedules Web Audio triggers via Javascript's `setTimeout` which introduces severe timing jitter.
 
 ## Findings
-- **Singleton architecture:** The UI, state, and hydration logic assume there is only one Toaster plugin in the entire project. This manifests across `toasterStore`, `loadToasterKit`, and `toasterSubscriber`.
+- **Singleton architecture:** The UI, state, and hydration logic assume there is only one Toaster plugin in the entire project. This manifests across `toasterStore`, `loadToasterKit`, `toasterSubscriber`, `sequencerPlayback`, and the param bridge.
 - **Audio Thread allocations:** The AudioWorklet processor allocates and mutates memory during the hot audio loop, which will cause garbage collection pauses and audio dropouts.
 - **Disconnected global effects:** The UI presents global controls for effects (Reverb Mix / Delay Mix), but the underlying Rust DSP is designed as a send-effect architecture that ignores global mix levels, rendering the UI knobs non-functional.
 - **Partial hydration:** Several parameters exist in the Rust engine and TypeScript models but are completely dropped during state hydration and kit loading.
+- **Sample-Rate Dependencies in DSP:** Several parameters and hardcoded decay coefficients in the DSP layer are per-sample rather than time-based, causing the audio to sound significantly different at 44.1kHz vs 96kHz.
+- **Sequencer Timing Jitter:** The pattern sequencer relies on `setTimeout` to directly trigger the Web Audio `noteOn` method without providing a precise `sampleFrame`, throwing away the sample-accurate timing guarantees of Web Audio.
 
 ## Issues
 
@@ -28,6 +30,18 @@ The Toaster plugin currently functions as a single global drum machine, hard-cou
 - **Why it matters:** Users cannot add two different Toaster drum machines to a project. Updating the UI or loading a preset on Toaster B will actually mutate the audio parameters of Toaster A. 
 - **Concrete Fix:** Refactor `toasterStore` to be keyed by `deviceId` (e.g., `Record<string, ToasterState>`), and pass `deviceId` explicitly to `getToasterControls(deviceId)` instead of finding the first track. Update `ToasterPanel` to select its specific device state from the store using the provided `deviceId` prop.
 
+**3. Param Bridge Modifies Global Store**
+- **Severity:** Critical
+- **Evidence:** `src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts` and `setToasterKitParam.ts`. They call `updatePad` and `updateKit` which mutate the global `toasterStore`.
+- **Why it matters:** Exacerbates the Singleton limitation. Twisting a knob on Toaster B's UI correctly sends DSP updates to Toaster B via `deviceId`, but updates the global UI state, meaning Toaster A's UI incorrectly reflects Toaster B's changes, detaching the UI from reality.
+- **Concrete Fix:** Refactor the store mutators to accept a `deviceId` and only mutate that instance's state.
+
+**4. Sequencer Web Audio Jitter (setTimeout Scheduling)**
+- **Severity:** Critical
+- **Evidence:** `src/modules/Toaster/useCases/sequencerPlayback.ts` uses `setTimeout(fire, totalDelayMs)` to trigger drum pads.
+- **Why it matters:** `setTimeout` runs on the main thread and is subject to the Javascript event loop. If the UI is rendering or the garbage collector runs, the drum hit will be delayed. A drum machine requires sample-accurate timing.
+- **Concrete Fix:** Calculate the exact `sampleFrame` for the trigger time based on `totalDelayMs` and pass it to `dn.toasterControls.noteOn(padIndex, velocity, note, sampleFrame)`. Remove the `setTimeout` wrapper entirely and use a lookahead window to schedule events into the worklet's queue ahead of time.
+
 ### 2) Functional issues
 
 **1. Missing Pad Parameter Hydration**
@@ -42,6 +56,24 @@ The Toaster plugin currently functions as a single global drum machine, hard-cou
 - **Why it matters:** The user turns the Reverb and Delay global mix knobs on the UI, but absolutely nothing happens to the audio because the DSP engine ignores the parameters.
 - **Concrete Fix:** Either implement a master return gain for the global reverb and delay in `ToasterEngine`'s `process_block` and handle `reverb_mix` / `delay_mix` in `set_param`, OR remove the knobs from the UI if it is strictly a per-pad send architecture.
 
+**3. Transient Shaper Audio Clicks**
+- **Severity:** Medium
+- **Evidence:** `crates/daw-dsp/src/toaster/transient.rs` uses an instantaneous conditional branch (`if is_transient { input * attack_gain } else { input * sustain_gain }`) to apply gain.
+- **Why it matters:** Switching instantaneously between two multipliers on a continuous audio signal produces discontinuities (clicks/pops/zipper noise) if the signal is not exactly zero.
+- **Concrete Fix:** Introduce a smoothed gain state variable that interpolates (e.g. via a one-pole filter) between `attack_gain` and `sustain_gain` over a few samples.
+
+**4. Tone Filter Sample-Rate Dependency**
+- **Severity:** Medium
+- **Evidence:** `crates/daw-dsp/src/toaster/engines/kick.rs` `self.tone_state += self.tone_cutoff * (driven - self.tone_state);`. The `tone_cutoff` coefficient is directly set by the 0.01-1.0 parameter.
+- **Why it matters:** The kick's tone filter frequency will shift wildly depending on the user's audio interface sample rate (e.g., sounding much darker at 96kHz than at 44.1kHz).
+- **Concrete Fix:** Map the `tone` 0-1 parameter to an actual frequency range (e.g., 100Hz - 20000Hz) and calculate a sample-rate compensated 1-pole coefficient using `(2.0 * PI * freq / sample_rate).min(1.0)`.
+
+**5. DSP Choke/Decay Sample-Rate Dependencies**
+- **Severity:** Low
+- **Evidence:** `crates/daw-dsp/src/toaster/voice.rs` uses `choke_decay = 0.99;`. `crates/daw-dsp/src/toaster/engines/modal.rs` uses `self.amp_decay_coeff *= 0.999;`. `crates/daw-dsp/src/toaster/engines/cymbal.rs` uses `self.decay_coeff = 0.9995;`.
+- **Why it matters:** Hardcoded per-sample multipliers mean choke and release fade-outs happen more than twice as fast at 96kHz compared to 44.1kHz, causing inconsistent behavior across user setups.
+- **Concrete Fix:** Precalculate decay coefficients dynamically using `(-1.0 / (time_in_seconds * sample_rate)).exp()`.
+
 ### 3) UX/UI issues
 
 **1. Panel Global State Coupling**
@@ -52,13 +84,19 @@ The Toaster plugin currently functions as a single global drum machine, hard-cou
 
 ### 4) Structural/code health issues
 
-**1. Duplicated Hydration Logic**
+**1. `getFirstToasterDeviceId` Anti-Pattern**
+- **Severity:** High
+- **Evidence:** `src/modules/Toaster/useCases/toasterParamBridge/getFirstToasterDeviceId.ts`, `sequencerPlayback.ts`, and `triggerPad.ts`.
+- **Why it matters:** Relies on scanning tracks to find the *first* Toaster device in the project to dispatch sequencer start/stop commands and triggers. If a user adds a second Toaster, it will never receive sequencer events and won't play.
+- **Concrete Fix:** The sequencer playback and pad trigger logic must broadcast to all Toaster `deviceId`s or target them specifically via a passed `deviceId` parameter, rather than grabbing the first one.
+
+**2. Duplicated Hydration Logic**
 - **Severity:** Medium
 - **Evidence:** The exact same 30-line `for` loop mapping pad parameters is duplicated across `loadToasterKit.ts` and `toasterSubscriber.ts`.
 - **Why it matters:** Adding a new parameter requires updating it in two places, which is why `busRoute` and `transientAttack` were missed.
 - **Concrete Fix:** Extract the parameter mapping loop into a shared pure function `hydrateToasterEngine(controls, kit)`.
 
-**2. Incomplete Plugin Descriptor**
+**3. Incomplete Plugin Descriptor**
 - **Severity:** Medium
 - **Evidence:** `src/modules/Arrangement/models/pluginDescriptors/toasterDescriptor.ts`.
 - **Why it matters:** Only 4 global parameters (`masterGain`, `reverbMix`, `delayMix`, `swing`) are declared. None of the internal `delayTime`, `lofiBits`, or the 16 pads' `volume`, `pan`, `decay` are registered. This breaks DAW parameter automation and MIDI mapping for the Toaster.
@@ -83,9 +121,7 @@ The Toaster plugin currently functions as a single global drum machine, hard-cou
 ### 7) Missing features or unfinished integrations
 
 **1. No Lofi Processor implementation found**
-- **Severity:** Medium
-- **Evidence:** The `engine.rs` references `self.global_lofi = LofiProcessor::new()`. While it is likely implemented in `lofi.rs`, it was not explicitly audited but UI exposes it. Assuming functional, but needs verification. 
-- **Concrete Fix:** Verify `crates/daw-dsp/src/toaster/lofi.rs` works as expected.
+- **Severity:** Resolved (Lofi processor exists in `lofi.rs` and properly mimics SP-1200 style sample-and-hold without pre-aliasing filter, which is correct for that aesthetic).
 
 ### 8) Low-effort/high-impact improvements
 
@@ -103,12 +139,15 @@ The Toaster plugin currently functions as a single global drum machine, hard-cou
 ## Priorities
 1. Fix the `splice` allocation in `ToasterProcessor.ts` to prevent audio dropouts.
 2. Refactor `toasterStore` to be keyed by `deviceId` so multiple instances work.
-3. Fix the `loadToasterKit.ts` `getToasterControls` to target the specific device.
-4. Extract and complete the duplicated hydration logic to include missing parameters (`busRoute`, `transientAttack`, etc.).
-5. Wire up or remove the non-functional global Reverb/Delay mix knobs.
+3. Remove `setTimeout` from `sequencerPlayback.ts` and use sample-accurate `sampleFrame` scheduling.
+4. Remove `getFirstToasterDeviceId` and refactor sequencer/triggers to broadcast or target specific Toasters.
+5. Fix the param bridge (`setToasterPadParam`/`setToasterKitParam`) to only mutate the specific instance state.
+6. Extract and complete the duplicated hydration logic to include missing parameters (`busRoute`, `transientAttack`, etc.).
+7. Fix the Transient Shaper's conditional gain application to eliminate audio clicks.
+8. Apply sample-rate compensation to Kick Tone and Voice Choke Decay DSP across all engines.
 
 ## Risks
-If the singleton issue is not fixed, the first user who tries to add two drum tracks will completely corrupt their project state and audio outputs. If the `splice` memory allocation in the worklet isn't fixed, it will cause unpredictable click/pop artifacts on slower machines during garbage collection. 
+If the singleton issue is not fixed, the first user who tries to add two drum tracks will completely corrupt their project state and audio outputs. If the `splice` memory allocation in the worklet isn't fixed, it will cause unpredictable click/pop artifacts on slower machines during garbage collection. `setTimeout` scheduling will result in amateurish, jittery drum rhythms that drift out of sync with the DAW timeline. Audio clicks from the Transient Shaper will make the plugin sound broken.
 
 ## Suggested approaches
 1. **Singleton Fix:** Change `ToasterState` to `Record<string, ToasterInstanceState>`. Update the initialization event in `toasterSubscriber.ts` to create a default state entry for new `deviceId`s if they don't exist. Update `ToasterPanel` to grab state using its `deviceId` prop. 

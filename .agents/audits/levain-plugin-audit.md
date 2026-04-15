@@ -1,105 +1,89 @@
 # Levain Plugin End-to-End Audit
 
 ## Goal
-Levain is the core sample playback and performance intelligence engine for Sourdaw, designed to emulate realistic orchestral sections and soloists. "Good" means:
-- Seamless articulation switching and expression (CC1 dynamics, CC11 expression, vibrato).
-- Intelligent performance simulation (legato, auto-divisi, ensemble timing, humanization).
-- Multi-track independence (each track must have its own state, engine instance, and patch data).
-- High-performance Rust audio processing without blocking the main thread or dropping voices.
-- Intuitive, tactile macro controls in the UI perfectly synced with the engine.
+Levain is Sourdaw's flagship orchestral performance engine. It must provide high-fidelity sample playback, intelligent legato, and "orchestral realism" (physical modeling artifacts) while supporting complex, multi-track arrangements. "Good" means per-instance state isolation, sample-accurate event timing, seamless articulation switching, and a DSP engine that fully realizes the performance gestures (Macros/Expression) initiated in the UI.
 
 ## Current State
-Levain has a robust DSP engine (`crates/daw-dsp/src/levain`) capable of complex humanization, legato, and mic mixing. However, the JS/UI layer currently forces it into a singleton pattern. `levainStore` acts as a global store. `levainBridge` tracks a single `activeDevice` and flushes parameters globally, causing multi-track orchestration to be completely broken. Furthermore, several critical features (macros, transition zones, Tone/Attack/Release) are mocked or hard-coded in the Rust engine.
+Levain is functionally impressive in isolation but architecturally "unfinished" for production use. The JS/TS layer is built around a singleton pattern that breaks as soon as a second Levain track is added. The Rust engine has sophisticated frameworks for humanization and legato, but critical parts of these (True Legato transitions, Macro mappings for Tone/Attack/Release) are currently stubs. MIDI timing is currently jittery due to un-timestamped `MessagePort` dispatch.
 
 ## Priorities
-1. **Critical:** Fix the singleton architecture (`levainStore` and `levainBridge` must be per-instance/device-scoped).
-2. **High:** Decouple `levainBridge` from the Arrangement domain (`getAllTracks`).
-3. **High:** Wire up the missing macro parameters (`Tone`, `Attack`, `Release`) in the Rust engine.
-4. **Medium:** Implement the true legato transition zone lookup in `engine.rs`.
-5. **Medium:** Fix the global `LevainLoadingSpinner` logic.
+1. **[CRITICAL]** Fix Singleton Architecture: Move from `levainStore` to per-instance state (indexed by `deviceId`).
+2. **[CRITICAL]** Fix Automation Persistence: Ensure `persistDeviceParam` targets the correct `deviceId`, not just the first one found.
+3. **[HIGH]** Implement Stubbed DSP: Wire `Tone`, `Attack`, and `Release` macros in the Rust engine.
+4. **[HIGH]** Sample-Accurate MIDI: Implement a jitter buffer/scheduler in the Rust engine to handle `sampleFrame` offsets from MIDI events.
+5. **[HIGH]** True Legato: Implement the transition sample lookup logic in `engine.rs`.
+6. **[MEDIUM]** Randomization Seeds: Unique RNG seeds per instance to prevent deterministic phasing.
 
 ## Findings
-- **Singleton Pattern in a Multi-Instance Context:** `levainStore` initializes with one `defaultLevainState`. `LevainPanel` hooks into this global store. This implies you can only view or edit one Levain instance across the entire project at a time.
-- **Domain Leakage:** `levainBridge` imports `getAllTracks` from the Arrangement module to find an active Levain device. Plugins should be agnostic of the DAW's track list (architectural violation).
-- **Incomplete Engine Integrations:** The UI provides 8 macros, but the engine explicitly drops three of them (`Tone`, `Attack`, `Release`).
-- **Deferred Features:** The legato engine lacks the final lookup for transition samples (`TrueTransition`), falling back to a crossfaded sustain zone.
+
+### 1. Architectural Integrity & Persistence
+- **Singleton Violation:** `src/modules/Levain/stores/levainStore.ts` exports a single `levainStore`. Every `LevainPanel` and bridge call currently points to this global object.
+- **Automation Corruption:** `levainBridge.ts` resolves `activeDeviceId` by finding the first Levain device in the project (`deps.getAllTracks()`). Parameter changes on *any* instance will overwrite the automation state of the *first* instance.
+- **Cross-Module Coupling:** Bridge helpers import `getAllTracks` from the Arrangement module. Plugins must be agnostic of host track layout.
+
+### 2. Audio Engine (Rust DSP)
+- **Stubbed Macros:** In `crates/daw-dsp/src/levain/engine.rs`, the `"tone"`, `"attack"`, and `"release"` parameter handlers are empty blocks (`{}`).
+- **Legato Implementation Gap:** `engine.rs` contains a `TODO` for `TrueTransition`. It currently falls back to a crossfaded sustain zone rather than playing transition samples.
+- **MIDI Jitter:** The `noteOn`/`noteOff` handlers in `engine.rs` process events immediately upon receipt. Since `MessagePort` delivery is not sample-accurate relative to the audio clock, this introduces audible timing jitter.
+- **Determinstic Randomization:** The `Humanizer` (humanize.rs) defaults to seed `42`. Multiple instances playing the same MIDI will phase perfectly because their "random" offsets are identical.
+
+### 3. Sample Loading & Memory
+- **Sequential Loading:** `loadInstrumentFromManifest.ts` fetches and decodes samples one-by-one. This is unnecessarily slow for large orchestral banks.
+- **Memory Pressure:** `SamplePool` stores samples as raw `Vec<f32>` in the WASM heap. Large orchestral sections may exceed the 4GB WASM memory limit without aggressive LOD management.
+- **Tauri Path Brittleness:** `autoLoadSamples.ts` relies on the `_up_/public` path convention, which is a fragile deployment detail.
+
+### 4. UI/UX and State
+- **Global Spinners:** `LevainLoadingSpinner.tsx` reads from the global `levainStore`. Loading Track 1 causes Track 2 to show a spinner.
+- **Hardcoded Labels:** Macro labels are hardcoded in the UI component, making it impossible for custom user patches or future instruments to redefine macro roles.
 
 ## Issues
 
 ### 1) Critical Bugs
-**Singleton Store / Multi-track breakage**
+**1.1. Multi-Track State & Persistence Corruption**
 - **Severity:** Critical
-- **Evidence:** `src/modules/Levain/stores/levainStore.ts` exports a single `levainStore`. `src/modules/Levain/useCases/levainParamBridge/helpers.ts` uses a global `activeDevice` and loop over `getAllTracks()` to find it.
-- **Files involved:** `levainStore.ts`, `helpers.ts`, `LevainPanel.tsx`.
-- **Why it matters:** Users cannot use more than one Levain instrument in a project without them stomping on each other's state and UI.
-- **Needed:** Convert `levainStore` to a factory function or map indexed by `deviceId`. Update `LevainPanel` to accept a `deviceId` prop and subscribe to the correct store instance. `levainBridge` must manage instances keyed by `deviceId`.
+- **Evidence:** `levainStore.ts` (Singleton) and `helpers.ts` (`activeDeviceId` resolution via `getAllTracks`).
+- **Why it matters:** Users cannot use multiple Levain tracks. Parameter tweaks on Track 2 will "leak" into Track 1's automation and UI.
+- **Needed:** Scoped stores and bridge instances keyed by `deviceId`.
+
+**1.2. MIDI Timing Jitter**
+- **Severity:** High
+- **Evidence:** `LevainNode.ts` sends `sampleFrame` but `engine.rs` has no jitter buffer to schedule the event at that offset.
+- **Why it matters:** Orchestral music relies on precise micro-timing. Main-thread jitter will degrade the performance feel.
+- **Needed:** An event queue in the Rust engine that holds messages until the `current_sample + offset` is reached in `process_block`.
 
 ### 2) Functional Issues
-**Tone, Attack, and Release macros do nothing**
+**2.1. Tone/Attack/Release Macros are non-functional**
 - **Severity:** High
-- **Evidence:** In `crates/daw-dsp/src/levain/engine.rs` (lines 343-347): `"tone" => {}`, `"attack" | "release" => {}`.
-- **Files involved:** `crates/daw-dsp/src/levain/engine.rs`
-- **Why it matters:** The user manipulates the Tone/Attack/Release knobs in the UI and hears no difference.
-- **Needed:** Implement simple ADSR overrides and a tilt-EQ/filter in the `LevainEngine` and apply them to the voices in `process_block`.
+- **Evidence:** `engine.rs` lines 343-347 (Empty blocks).
+- **Needed:** Implement a 1-pole filter for Tone and ADSR overrides for Attack/Release in `LevainVoice`.
 
-**Missing True Legato Transition Samples**
-- **Severity:** Medium
-- **Evidence:** `engine.rs` (line 182) has a `TODO: when transition sample zones are populated, look up the transition zone by sample_id and play that instead of the sustain zone.`
-- **Files involved:** `crates/daw-dsp/src/levain/engine.rs`
-- **Why it matters:** Orchestral libraries rely heavily on true legato intervals. Without this, legato is merely an overlapped crossfade.
-- **Needed:** Finish the transition zone lookup logic in `LegatoResult::TrueTransition`.
+**2.2. True Legato transitions are missing**
+- **Severity:** High
+- **Evidence:** `engine.rs` line 182 (`TODO`).
+- **Needed:** Complete the `LegatoResult::TrueTransition` branch.
 
 ### 3) UX/UI Issues
-**Global Loading Spinner**
+**3.1. Cross-track Loading Spinners**
 - **Severity:** Medium
-- **Evidence:** `LevainLoadingSpinner.tsx` checks if the track has a levain device, but then uses the global `levainState.sampleLoadProgress`.
-- **Files involved:** `src/modules/Arrangement/presentations/views/TrackHeader/LevainLoadingSpinner.tsx`
-- **Why it matters:** If Track 2 is loading Levain, Track 1 (which also has Levain) will show a loading spinner too, leading to user confusion.
-- **Needed:** Scope `sampleLoadProgress` to `deviceId`.
+- **Evidence:** `LevainLoadingSpinner.tsx` uses global `levainState.sampleLoadProgress`.
+- **Needed:** Contextual progress tracking.
 
 ### 4) Structural/Code Health Issues
-**Bridge couples Plugin to Arrangement Domain**
-- **Severity:** High
-- **Evidence:** `levainBridgeDependencies.ts` imports `getAllTracks` from `#/modules/Arrangement/useCases`.
-- **Files involved:** `src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts`, `helpers.ts`
-- **Why it matters:** This violates module boundaries. A device plugin should not depend on the track arrangement state.
-- **Needed:** Inject the `deviceId` directly when initializing the bridge or panel, rather than scanning the entire arrangement to find a matching type.
+**4.1. Architecture Violation (Sandboxing)**
+- **Evidence:** `levainBridgeDependencies.ts` imports from `#/modules/Arrangement`.
+- **Needed:** Pass `deviceId` during initialization.
 
 ### 5) Performance Concerns
-**WASM Init Error Handling lacks recovery**
-- **Severity:** Low
-- **Evidence:** `LevainNode.ts` logs a warning if `e.data?.type === 'error'` but does not recover.
-- **Files involved:** `src/modules/AudioEngine/engine/LevainNode.ts`
-- **Why it matters:** If the WASM thread crashes, the node stays silent forever.
-- **Needed:** Add a mechanism to reboot or mark the node as dead in the UI.
-
-### 6) Security/Stability Risks
-*None identified.*
-
-### 7) Missing features or unfinished integrations
-**Bypass not wired to UI**
-- **Severity:** Low
-- **Evidence:** `LevainNode.ts` supports `setBypass` but `LevainPanel.tsx` has no UI control for it.
-- **Files involved:** `src/modules/AudioEngine/engine/LevainNode.ts`, `src/modules/Levain/presentations/views/LevainPanel.tsx`
-- **Why it matters:** Bypassing an instrument is a fundamental DAW feature.
-- **Needed:** Add a power button to `LevainPanel` that maps to the `bypass` state.
-
-### 8) Low-effort/high-impact improvements
-**Consolidate Patch State**
-- **Severity:** Low
-- **Evidence:** `LevainDescriptor` in Arrangement has `hasCustomUI: true` and a few duplicated parameters (e.g., `humanize`, `legatoEnabled`).
-- **Files involved:** `src/modules/Arrangement/models/pluginDescriptors/levainDescriptor.ts`
-- **Why it matters:** Duplication of state between the plugin descriptor and `LevainPatch`.
-- **Needed:** Align the parameters so the host can automate them correctly.
-
-### 9) Recommended refactors
-- Refactor `LevainPatch` to be instantiated per plugin instance in the true project state (`Workspace` or `Project` module) instead of living in a transient UI store (`levainStore`), ensuring patches are saved and loaded perfectly.
+**5.1. Sequential Sample Decoding**
+- **Severity:** Medium
+- **Evidence:** `loadInstrumentFromManifest.ts` loop.
+- **Needed:** Parallelize `fetchAndDecode` with a concurrency limit.
 
 ## Risks
-If the singleton architecture is left unaddressed, the entire Sourdaw application will fail when attempting complex orchestral arrangements using multiple Levain tracks. Users will experience severe state corruption across tracks. If the missing Tone/Attack/Release parameters are not implemented, users will consider the plugin broken or incomplete.
+The current architecture makes Levain a "singleton plugin," which is a fundamental failure for a DAW. Furthermore, the lack of sample-accurate MIDI and stubbed DSP parameters will lead to professional users perceiving the engine as "amateur" or "broken."
 
 ## Suggested approaches
-1. **Decouple and Parameterize:** Refactor `levainStore` to export a function `getLevainStore(deviceId: string)` that returns or creates a store.
-2. **Push State Up:** Store the `LevainPatch` as a serialized blob in the `DeviceParameter` state of the track, so it saves/loads with the project.
-3. **Bridge Refactor:** Update `levainBridge` to manage a map of `activePorts` and `activeDevices` by `deviceId`, avoiding `getAllTracks`.
-4. **Implement Missing DSP:** Add an ADSR struct to the `Voice` in `engine.rs` to handle attack and release modifications, and a simple 1-pole filter for Tone.
+1. **Refactor Store:** Convert `levainStore` to a `Map<string, Store<LevainState>>`.
+2. **Event Scheduling:** Add a `VecDeque<MidiEvent>` to `LevainEngine` in Rust. In `process_block`, consume events only when their `sample_frame` timestamp is reached.
+3. **Instance Seeds:** Pass a unique `u64` seed (e.g., derived from `deviceId`) to the Rust engine on `init`.
+4. **DSP Wiring:** Implement a simple Tilt-EQ for `Tone` and modify the `AdsrEnvelope` to accept runtime rate multipliers.

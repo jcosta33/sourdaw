@@ -73,6 +73,11 @@ The Dutch Oven plugin is in a heavily fragmented and severely broken state. The 
 - **Why it matters:** Each algorithm (Plate, FDN, Spring, Convolution, etc.) has its own specific string-based parameter schema and ignores parameters it doesn't recognize. The front-end UI (`ProofChamberPatch.ts`) is hardcoded to send a single set of generic parameters. When the user switches algorithms, the UI keeps sending `decay` and `diffusion`, but algorithms like `Spring` or `Convolution` might expect `ir_stretch` or completely ignore them. This breaks the UX and creates a disconnected plugin where knobs stop working.
 - **Needed:** Enforce a unified parameter schema mapping in the Rust `ProofChamberInstance` that translates generic "macro" parameters from the UI (like `size`, `decay`, `color`) into the specific DSP parameters for the currently active algorithm.
 
+**4.3. Complete lack of DSP unit tests and useless UI tests**
+- **Evidence:** `crates/proof-chamber/src/` contains zero `#[test]` blocks for complex math (e.g., partitioned convolution, FDN Hadamard matrices). `src/modules/Plugin/ProofChamber/presentations/views/__tests__/ProofChamber.spec.tsx` contains dummy assertions like `expect(document.body).toBeTruthy()`.
+- **Why it matters:** A flagship, high-complexity audio DSP engine operating in an unsafe memory boundary (WASM) without a single test is extremely fragile. The UI tests provide a false sense of security while testing nothing.
+- **Needed:** Add comprehensive Rust unit tests validating the DSP impulse responses, filter coefficients, and memory boundaries. Rewrite or delete the useless React tests.
+
 ### 5. Performance Concerns
 **5.1. High-frequency param dispatching without throttling**
 - **Evidence:** `ProofChamberPanel.tsx` calls `updateProofChamberParam` synchronously on every knob tick.

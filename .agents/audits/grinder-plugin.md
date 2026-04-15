@@ -5,14 +5,15 @@ The Grinder plugin must be a high-performance, real-time safe amp simulator with
 
 ## Findings
 
-The architecture contains severe UI thread performance issues, violations of RT-safe automation rules, and disconnected features where UI state does not reach the audio thread.
+The architecture contains severe UI thread performance issues, violations of RT-safe automation rules, and disconnected features where UI state does not reach the audio thread. Additionally, the Rust DSP engine has numerous code quality warnings and missing capabilities.
 
 ## Priorities
 1. **Critical:** Decouple telemetry from the persistent patch store to fix 60fps full-tree UI re-renders.
 2. **Critical:** Expose `AudioParam`s for continuous variables to enable sample-accurate automation.
 3. **Critical:** Fix the `replacePatch` event flood on pedal knob drags.
-4. **Functional:** Wire up missing parameters (`micBlend`, `roomAmount`, `postPedals`) to the audio engine sync list.
-5. **UX:** Make the cabinet mic positions interactive.
+4. **Functional:** Wire up missing parameters (`micBlend`, `roomAmount`, `postPedals`) to the audio engine sync list, and implement their missing logic in the Rust engine.
+5. **Structural:** Clean up all Cargo warnings/clippy lints in the `daw-dsp` crate to ensure a healthy compilation baseline.
+6. **UX:** Make the cabinet mic positions interactive.
 
 ---
 
@@ -85,6 +86,20 @@ The architecture contains severe UI thread performance issues, violations of RT-
 **Concrete Fix:** 
 - Explicitly declare all supported pedal keys in `PARAM_MAP` to ensure structural integrity and guard against accidental renaming on the Rust side.
 
+#### [HEALTH] 4.3 Severe Testing Gaps in Parameter Bridge
+**Severity:** High
+**Evidence:** `src/modules/Grinder/useCases/__tests__/grinderParamBridge.spec.ts`
+**Why it matters:** The parameter bridge tests only verify the "device not found" early-exit path. The actual tests for `loadGrinderPatchWithAudio` and `setGrinderParamWithAudio` are literal stubs (`expect(subject).toBeDefined()`). The `paramBatcher` logic, `toPatchValue` conversions, and IPC mappings are entirely untested.
+**Concrete Fix:** 
+- Implement comprehensive tests for `loadGrinderPatchWithAudio` and `setGrinderParamWithAudio` verifying the exact `updateDeviceParam` payloads and batcher flushes.
+
+#### [HEALTH] 4.4 Cargo Clippy Warnings Across DSP Crate
+**Severity:** Medium
+**Evidence:** `cargo clippy --manifest-path crates/daw-dsp/Cargo.toml` output (165 errors)
+**Why it matters:** The `daw-dsp` crate has 165 clippy errors under `-D warnings`, including `manual-clamp`, `manual-div-ceil`, `needless-range-loop`, and missing `Default` implementations across all synth/sampler/effect engines. This indicates tech debt accumulation and prevents clean compilation in strict mode.
+**Concrete Fix:** 
+- Resolve all clippy warnings across the `daw-dsp` crate, focusing on fixing iterators and standard traits.
+
 ---
 
 ### 5) Performance Concerns
@@ -121,6 +136,14 @@ The architecture contains severe UI thread performance issues, violations of RT-
 **Concrete Fix:** 
 - Implement a Tauri file dialog integration to load custom neural models.
 - Pass the loaded model bytes down to the WASM worklet.
+
+#### [MISSING] 7.2 Unimplemented Cabinet Mics in Rust
+**Severity:** High
+**Evidence:** `crates/daw-dsp/src/grinder/engine.rs` and `cabinet.rs`
+**Why it matters:** The UI implies full control over `mic1` and `mic2` positions (`mic.positionX`, `mic.positionY`), `micBlend`, and `roomAmount`. However, the Rust audio engine entirely ignores these parameters. `set_param` in `engine.rs` does not route them, and the `CabinetConvolver` implementation lacks multi-IR mic-mixing semantics entirely. 
+**Concrete Fix:** 
+- Implement multi-IR loading and mic interpolation mixing in the `CabinetConvolver` in Rust.
+- Wire the mic coordinates from UI to the Rust engine.
 
 ---
 
