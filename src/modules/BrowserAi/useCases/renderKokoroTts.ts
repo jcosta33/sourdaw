@@ -59,6 +59,12 @@ async function fetchVoiceStyle(voiceId: string, tokenCount: number): Promise<Flo
     }
 
     // Each embedding is 256 floats; index by tokenCount (before padding)
+    if (allEmbeddings.length < 256) {
+        throw new Error(
+            `Kokoro voice file for "${voiceId}" is empty or corrupted (${String(allEmbeddings.length)} floats). ` +
+            'Re-download the voice from AI Settings.'
+        );
+    }
     const maxIdx = Math.floor(allEmbeddings.length / 256) - 1;
     const idx = Math.min(tokenCount, maxIdx);
     return allEmbeddings.slice(idx * 256, idx * 256 + 256);
