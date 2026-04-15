@@ -21,6 +21,12 @@ export type BuiltinDeviceNode = {
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
     };
+    /** Generic controls for Web Audio Modules (WAM) / Faust */
+    wamControls?: {
+        setParam: (name: string, value: number) => void;
+        scheduleParam: (name: string, value: number, time: number) => void;
+        destroy?: () => void;
+    };
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
     fermenterControls?: {
         ready: boolean;

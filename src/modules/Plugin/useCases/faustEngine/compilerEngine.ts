@@ -247,11 +247,20 @@ export async function createFaustNode(
             // the second AudioWorkletNode constructor fires before registerProcessor() has
             // run in the worklet scope. A short delay lets the worklet finish evaluation.
             if (!existingReg) {resolveReg!();}
-            await new Promise<void>((r) => setTimeout(r, 20));
-            try {
-                return await mod.generator.createNode(context);
-            } catch (retryError) {
-                logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
+            
+            let backoff = 20;
+            const maxRetries = 5;
+            for (let i = 0; i < maxRetries; i++) {
+                await new Promise<void>((r) => setTimeout(r, backoff));
+                try {
+                    return await mod.generator.createNode(context);
+                } catch (retryError) {
+                    if (i === maxRetries - 1) {
+                        logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
+                    } else {
+                        backoff *= 2;
+                    }
+                }
             }
         } else {
             // Real error, allow other waiters to fail too if they want

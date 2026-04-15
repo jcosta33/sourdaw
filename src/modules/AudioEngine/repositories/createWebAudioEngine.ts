@@ -16,7 +16,6 @@ class AudioEngineImpl implements AudioEngine {
     private sidechainConnections = new Map<string, GainNode>();
     private scheduledNodes: AudioScheduledSourceNode[] = [];
     private masterMeterBuffer!: Float32Array;
-    private pendingFaustParams = new Map<string, Map<string, number>>();
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private workletReady = false;
     private fallbackMode = false;
@@ -150,7 +149,6 @@ class AudioEngineImpl implements AudioEngine {
                     getBusGainNode: () => undefined,
                     getTrackGainNode: () => undefined,
                     getSendsForTrack: () => [],
-                    pendingFaustParams: new Map(),
                     pendingDevicePromises: new Set(),
                 });
             } else {
@@ -161,7 +159,6 @@ class AudioEngineImpl implements AudioEngine {
                     getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
                     getSendsForTrack: (tId) =>
                         Array.from(this.sendNodes.values()).filter((s) => s.sourceTrackId === tId),
-                    pendingFaustParams: this.pendingFaustParams,
                     pendingDevicePromises: this.pendingDevicePromises,
                 });
             }
@@ -452,7 +449,6 @@ class AudioEngineImpl implements AudioEngine {
         for (const [id] of this.trackNodes) {
             this.removeTrackStrip(id);
         }
-        this.pendingFaustParams.clear();
         this.pendingDevicePromises.clear();
     }
 
