@@ -442,6 +442,15 @@ export class TrackNode {
         }
     }
 
+    public updatePatch(deviceId: string, patch: Record<string, unknown>): void {
+        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        if (!dn) return;
+
+        if (dn.fermenterControls) {
+            dn.fermenterControls.setPatch?.(patch);
+        }
+    }
+
     public scheduleParam(deviceId: string, paramId: string, value: number, time: number): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
@@ -466,6 +475,9 @@ export class TrackNode {
                     targetParam.setValueAtTime(value, time);
                 }
             }
+        } else if (dn.fermenterControls) {
+            const sampleFrame = Math.round(time * this.deps.context.sampleRate);
+            dn.fermenterControls.setParam(paramId, value, sampleFrame);
         }
     }
 

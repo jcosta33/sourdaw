@@ -260,6 +260,10 @@ class AudioEngineImpl implements AudioEngine {
         this.trackNodes.get(trackId)?.updateParam(deviceId, paramId, value);
     }
 
+    public updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void {
+        this.trackNodes.get(trackId)?.updatePatch(deviceId, patch);
+    }
+
     public scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void {
         this.trackNodes.get(trackId)?.scheduleParam(deviceId, paramId, value, time);
     }

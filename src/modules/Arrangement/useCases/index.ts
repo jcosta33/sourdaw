@@ -107,6 +107,7 @@ export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
 export { removeSend } from './device/sendManagement/removeSend';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDeviceParam } from './device/setDeviceParameter/persistDeviceParam';
+export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
 export { freezeTrack } from './freezeBounce/freezeTrack/freezeTrack';
 export { unfreezeTrack } from './freezeBounce/freezeTrack/unfreezeTrack';

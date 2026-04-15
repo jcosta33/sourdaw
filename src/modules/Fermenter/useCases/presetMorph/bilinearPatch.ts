@@ -14,6 +14,19 @@ export function lerpPatch(a: FermenterPatch, b: FermenterPatch, t: number): Ferm
         const vb = b[key];
         if (typeof va === 'number' && typeof vb === 'number') {
             (result as Record<string, unknown>)[key] = va + (vb - va) * clamped;
+        } else if (Array.isArray(va) && Array.isArray(vb) && va.length === vb.length) {
+            // Assume number array (e.g. macros)
+            const arr = new Array(va.length);
+            for (let i = 0; i < va.length; i++) {
+                const aVal = va[i];
+                const bVal = vb[i];
+                if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    arr[i] = aVal + (bVal - aVal) * clamped;
+                } else {
+                    arr[i] = aVal; // Fallback to A if not numbers
+                }
+            }
+            (result as Record<string, unknown>)[key] = arr;
         }
     }
 

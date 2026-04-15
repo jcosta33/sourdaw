@@ -16,116 +16,20 @@ import '../wasm/workletPolyfill.js';
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
 /**
- * Map TypeScript camelCase param names (from FermenterPatch) to
- * Rust snake_case names (used by MasterSynth::set_param).
+ * Convert camelCase to snake_case automatically.
  */
-const PARAM_MAP = {
-    oscEngine: 'engine',
-    oscWaveform: 'osc_waveform',
-    oscLevel: 'osc_level',
-    oscCoarse: 'osc_coarse',
-    oscFine: 'osc_fine',
-    pulseWidth: 'pulse_width',
-    unisonVoices: 'unison_voices',
-    unisonDetune: 'unison_detune',
-    unisonSpread: 'unison_spread',
-    noiseLevel: 'noise_level',
-    noiseColor: 'noise_color',
-    filterModel: 'filter_model',
-    filterMode: 'filter_mode',
-    filterCutoff: 'cutoff',
-    filterResonance: 'resonance',
-    filterDrive: 'filter_drive',
-    filterKeytrack: 'filter_keytrack',
-    ampAttack: 'amp_attack',
-    ampDecay: 'amp_decay',
-    ampSustain: 'amp_sustain',
-    ampRelease: 'amp_release',
-    filterAttack: 'filter_attack',
-    filterDecay: 'filter_decay',
-    filterSustain: 'filter_sustain',
-    filterRelease: 'filter_release',
-    filterEnvAmount: 'mod_env_to_filter',
-    lfoRate: 'lfo_rate',
-    lfoShape: 'lfo_shape',
-    lfoPitchAmount: 'mod_lfo_to_pitch',
-    lfoFilterAmount: 'lfo_filter_amount',
-    msegToFilter: 'mseg_to_filter',
-    seqRate: 'seq_rate',
-    seqToPitch: 'seq_to_pitch',
-    portamentoTime: 'portamento',
-    portamentoMode: 'portamento_mode',
-    reverbType: 'reverb_type',
-    reverbMix: 'reverb_mix',
-    reverbDecay: 'reverb_decay',
-    delayTime: 'delay_time',
-    delayFeedback: 'delay_feedback',
-    delayMix: 'delay_mix',
-    chorusRate: 'chorus_rate',
-    chorusDepth: 'chorus_depth',
-    chorusMix: 'chorus_mix',
-    phaserRate: 'phaser_rate',
-    phaserDepth: 'phaser_depth',
-    phaserMix: 'phaser_mix',
-    distDrive: 'dist_drive',
-    distTone: 'dist_tone',
-    distMix: 'dist_mix',
-    oscDrift: 'drift',
-    warpMode: 'warp_mode',
-    warpAmount: 'warp_amount',
-    audioModRate: 'audio_mod_rate',
-    audioModDepth: 'audio_mod_depth',
-    audioModTarget: 'audio_mod_target',
-    additivePartials: 'additive_partials',
-    additiveTilt: 'additive_tilt',
-    additiveOdd: 'additive_odd',
-    additiveInharm: 'additive_inharm',
-    samplerMode: 'sampler_mode',
-    samplerStart: 'sampler_start',
-    samplerEnd: 'sampler_end',
-    voiceDrive: 'voice_drive',
-    ksDamping: 'ks_damping',
-    ksBrightness: 'ks_brightness',
-    grainDensity: 'grain_density',
-    grainSize: 'grain_size',
-    grainPosition: 'grain_position',
-    grainSpray: 'grain_spray',
-    grainPitchVar: 'grain_pitch_var',
-    grainPanSpread: 'grain_pan_spread',
-    compThreshold: 'comp_threshold',
-    compRatio: 'comp_ratio',
-    compAttack: 'comp_attack',
-    compRelease: 'comp_release',
-    compMix: 'comp_mix',
-    stereoWidth: 'stereo_width',
-    activeLayer: 'active_layer',
-    numLayers: 'num_layers',
-    layerLevel: 'layer_level',
-    layerPan: 'layer_pan',
-    eqLowFreq: 'eq_low_freq',
-    eqLowGain: 'eq_low_gain',
-    eqLowQ: 'eq_low_q',
-    eqMidFreq: 'eq_mid_freq',
-    eqMidGain: 'eq_mid_gain',
-    eqMidQ: 'eq_mid_q',
-    eqHighFreq: 'eq_high_freq',
-    eqHighGain: 'eq_high_gain',
-    eqHighQ: 'eq_high_q',
-    chaosAmount: 'chaos_amount',
-    chaosSpeed: 'chaos_speed',
-    masterGain: 'master_gain',
-    fmAlgorithm: 'fm_algorithm',
-    fmRatio1: 'fm_ratio1',
-    fmRatio2: 'fm_ratio2',
-    fmRatio3: 'fm_ratio3',
-    fmRatio4: 'fm_ratio4',
-    fmLevel1: 'fm_level1',
-    fmLevel2: 'fm_level2',
-    fmLevel3: 'fm_level3',
-    fmLevel4: 'fm_level4',
-    fmFeedback: 'fm_feedback',
-    fmModAmount: 'fm_mod_amount',
-};
+function camelToSnake(str) {
+    const snake = str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    // Handle the 3 exceptions
+    if (snake === 'filter_cutoff') return 'cutoff';
+    if (snake === 'filter_resonance') return 'resonance';
+    if (snake === 'filter_env_amount') return 'mod_env_to_filter';
+    if (snake === 'lfo_pitch_amount') return 'mod_lfo_to_pitch';
+    if (snake === 'osc_engine') return 'engine';
+    if (snake === 'osc_drift') return 'drift';
+    if (snake === 'portamento_time') return 'portamento';
+    return snake;
+}
 
 class FermenterProcessor extends AudioWorkletProcessor {
     _instance = null; // FermenterInstance (generated wasm-bindgen class)
@@ -193,8 +97,20 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 inst.note_off(msg.note);
                 break;
             case 'param': {
-                const rustName = PARAM_MAP[msg.name] ?? msg.name;
+                const rustName = camelToSnake(msg.name);
                 inst.set_param(rustName, msg.value);
+                break;
+            }
+            case 'patch': {
+                for (const [key, value] of Object.entries(msg.patch)) {
+                    if (typeof value === 'number') {
+                        inst.set_param(camelToSnake(key), value);
+                    } else if (key === 'macros' && Array.isArray(value)) {
+                        for (let i = 0; i < value.length; i++) {
+                            inst.set_param(`macro${i}`, value[i]);
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -226,10 +142,36 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const rightPtr = this._instance.get_right_ptr();
 
             const mem = this._memory.buffer;
-            output[0].set(new Float32Array(mem, leftPtr, frames));
+            const outL = new Float32Array(mem, leftPtr, frames);
+            output[0].set(outL);
+            
+            let outR = null;
             if (output[1]) {
-                output[1].set(new Float32Array(mem, rightPtr, frames));
+                outR = new Float32Array(mem, rightPtr, frames);
+                output[1].set(outR);
             }
+
+            // Compute Telemetry (Peak & Scope) every 2048 frames (~46ms at 44.1kHz)
+            if (currentFrame % 2048 < frames) {
+                let peakL = 0;
+                let peakR = 0;
+                for (let i = 0; i < frames; i++) {
+                    const l = Math.abs(outL[i]);
+                    if (l > peakL) peakL = l;
+                    if (outR) {
+                        const r = Math.abs(outR[i]);
+                        if (r > peakR) peakR = r;
+                    }
+                }
+                const scopeBuffer = new Float32Array(128);
+                // Downsample from block into scope buffer
+                const step = frames / 128;
+                for (let i = 0; i < 128; i++) {
+                    scopeBuffer[i] = outL[Math.floor(i * step)] || 0;
+                }
+                this.port.postMessage({ type: 'telemetry', peakL, peakR, scopeBuffer }, [scopeBuffer.buffer]);
+            }
+
         } catch (err) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(err) });

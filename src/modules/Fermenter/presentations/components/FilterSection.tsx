@@ -126,6 +126,7 @@ export const FilterSection = ({
                         max={20000}
                         step={10}
                         defaultValue={5000}
+                        scale="log"
                         size="xl"
                         tone="sage"
                     />

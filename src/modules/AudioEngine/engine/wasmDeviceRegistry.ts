@@ -22,6 +22,7 @@ import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNod
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
 
+import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { updateGlutenMeters } from '#/modules/Gluten/stores';
 import { updateGrinderMeters } from '#/modules/Grinder/stores';
@@ -79,6 +80,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                result.onTelemetry((data) => {
+                    setFermenterTelemetry(deviceId, data.peakL, data.peakR, data.scopeBuffer);
+                });
                 onLoaded({
                     deviceId,
                     type: deviceType,

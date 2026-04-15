@@ -36,6 +36,7 @@ type RotaryKnobProps = {
     fineStep?: number;
     defaultValue?: number;
     bipolar?: boolean;
+    scale?: 'linear' | 'log';
     size?: 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
     /** Label rendered below the knob. When set, the component expands its min-width to prevent label overlap. */
@@ -75,6 +76,7 @@ export const RotaryKnob = ({
     trackId,
     deviceId,
     tone = 'cyan',
+    scale = 'linear',
 }: RotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
     const isLearningThis = Boolean(
@@ -118,17 +120,30 @@ export const RotaryKnob = ({
         rootRef.current?.setAttribute('data-dragging', '');
     };
 
+    const normalized = scale === 'log' && min > 0
+        ? Math.max(0, Math.min(1, (Math.log(value) - Math.log(min)) / (Math.log(max) - Math.log(min))))
+        : Math.max(0, Math.min(1, (value - min) / (max - min)));
+
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         if (!draggingRef.current) {
             return;
         }
         const deltaY = startY.current - event.clientY;
         const sweepPx = 150;
-        let sensitivity = (max - min) / sweepPx;
-        if (event.shiftKey) {
-            sensitivity *= 0.1;
+        
+        let raw = 0;
+        if (scale === 'log' && min > 0) {
+            const startNorm = (Math.log(startValue.current) - Math.log(min)) / (Math.log(max) - Math.log(min));
+            let sensitivityNorm = 1 / sweepPx;
+            if (event.shiftKey) sensitivityNorm *= 0.1;
+            const newNorm = Math.max(0, Math.min(1, startNorm + deltaY * sensitivityNorm));
+            raw = min * Math.exp(newNorm * (Math.log(max) - Math.log(min)));
+        } else {
+            let sensitivity = (max - min) / sweepPx;
+            if (event.shiftKey) sensitivity *= 0.1;
+            raw = startValue.current + deltaY * sensitivity;
         }
-        const raw = startValue.current + deltaY * sensitivity;
+
         const currentStep = event.shiftKey ? fineStep : step;
         const quantized = Math.round(raw / currentStep) * currentStep;
         onChange(clamp(quantized));
@@ -158,8 +173,6 @@ export const RotaryKnob = ({
         }
     };
 
-    // Visual rotation (-135deg to +135deg → 270deg sweep)
-    const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
     const rotation = -135 + normalized * 270;
 
     // Conic arc gradient for the value ring

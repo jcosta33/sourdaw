@@ -3,14 +3,16 @@
  * Renders L/R peak levels as vertical bars.
  */
 import { type ReactElement } from 'react';
+import { useFermenterPeaks } from '../hooks/useFermenterTelemetry';
 
 type OutputMeterProps = {
-    peakL: number;
-    peakR: number;
+    deviceId: string;
     height?: number;
 };
 
-export const OutputMeter = ({ peakL, peakR, height = 48 }: OutputMeterProps): ReactElement => {
+export const OutputMeter = ({ deviceId, height = 48 }: OutputMeterProps): ReactElement => {
+    const { peakL, peakR } = useFermenterPeaks(deviceId);
+
     const toDb = (v: number): number => {
         if (v < 0.0001) {return -60;}
         return 20 * Math.log10(v);
