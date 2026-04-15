@@ -50,11 +50,11 @@ The Toaster plugin currently functions as a single global drum machine, hard-cou
 - **Why it matters:** Parameters like `busRoute`, `transientAttack`, and `transientSustain` are defined in `PAD_PARAM_MAP` and exist on the `PadState`, but they are completely omitted from the hydration loops. When a user reloads the project or loads a kit, these parameters are not sent to the WASM engine, reverting to defaults.
 - **Concrete Fix:** Add explicit hydration calls for these missing properties in the loop: `controls.setPadParam(i, 'bus_route', pad.busRoute);`, etc.
 
-**2. Disconnected Global Effect Mix Knobs**
+**2. Disconnected global effect mix knobs**
 - **Severity:** High
-- **Evidence:** `ToasterPanel.tsx` has UI knobs for "Space" (`kit.reverbMix`) and "Spray" (`kit.delayMix`). However, in `crates/daw-dsp/src/toaster/engine.rs`, `PlateReverb::set_param` explicitly ignores `reverb_mix` (`/* mix is controlled by pad send levels */`).
-- **Why it matters:** The user turns the Reverb and Delay global mix knobs on the UI, but absolutely nothing happens to the audio because the DSP engine ignores the parameters.
-- **Concrete Fix:** Either implement a master return gain for the global reverb and delay in `ToasterEngine`'s `process_block` and handle `reverb_mix` / `delay_mix` in `set_param`, OR remove the knobs from the UI if it is strictly a per-pad send architecture.
+- **Evidence:** `PlateReverb::set_param` ignores `reverb_mix` (`engine.rs`). `StereoDelay::set_param` stores `delay_mix` into `self.mix`, but `StereoDelay::process` returns full wet taps without applying `self.mix`; summed in `process_block` as `rev_l/r + del_l/r` with no global dry/wet scaling from those fields.
+- **Why it matters:** “Space” / global reverb return has no `reverb_mix` effect; “Spray” / `delay_mix` is stored but does not attenuate the delay return in current `process`/`process_block` wiring.
+- **Concrete Fix:** Apply `reverb_mix` / `delay_mix` when summing global FX into the master (or remove/label knobs as send-only).
 
 **3. Transient Shaper Audio Clicks**
 - **Severity:** Medium
@@ -155,3 +155,20 @@ If the singleton issue is not fixed, the first user who tries to add two drum tr
 
 ## Resolved
 - None yet.
+
+## Verification notes (2026-04-14)
+
+### Pass 2 — DSP + worklet
+
+| Claim | Check |
+|--------|--------|
+| `setTimeout` in sequencer | **Confirmed** — `sequencerPlayback.ts` uses `setTimeout` for tick/trigger paths. |
+| `_drainQueue` / `_enqueue` `splice` | **Confirmed** — `toasterProcessor.ts` ordered insert `splice(lo,0,msg)` + batch `splice(0, drained)`. |
+| **Global reverb mix vs delay mix** | **Refined** — `PlateReverb::set_param` ignores `"reverb_mix"` (`engine.rs` ~84). `StereoDelay` stores `"delay_mix"` in `self.mix` (`~145`) but `StereoDelay::process` (`~117–136`) returns **100% wet taps** and **never multiplies by `self.mix`**; `process_block` (`~492–495`) adds `rev_l/r + del_l/r` to bus. **UI “Space” (reverb) knob:** still ineffective at global return. **“Spray” (delay):** `delay_mix` is **stored but unused** in delay output — both global returns are effectively send-only unless another path applies `mix`. |
+| Singleton store / first-track | **Not runtime-tested** — still treat as architectural risk. |
+
+### Pass 3 (2026-04-14) — store shape
+
+| Claim | Result |
+|--------|--------|
+| **Global `toasterStore` (not per-device)** | **Confirmed** — `toasterStore.ts` exports one `createStore<ToasterState>` with **no** `deviceId` map; `ToasterState` is a single kit + UI fields. Multiple Toaster devices would share one reactive tree unless the panel namespaces elsewhere (not in this store). **Multi-instance risk** remains **architectural**, not runtime-benchmarked. |

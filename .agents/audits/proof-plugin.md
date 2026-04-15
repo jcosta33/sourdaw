@@ -7,18 +7,38 @@ The Proof mastering suite and ProofChamber (Dutch Oven reverb) must deliver zero
 Both plugins are functional but suffer from severe disconnects between the UI state and the audio engine. The macro controls in the React UI fail to transmit nested parameters (like EQ and Dynamics bands) to the WASM backend. In addition, the Rust DSP for the Dutch Oven reverb contains critical mathematical errors in its stereo EQ stage and granular pitch shifter, rendering key features broken.
 
 ## Priorities
-1. Fix the `setProofParamWithPatch` bridge to ensure DSP actually responds to macro UI changes.
-2. Fix the broken stereo EQ filtering in the Dutch Oven reverb.
-3. Fix the shimmer pitch-shifter math that outputs DC instead of pitched audio.
-4. Refactor direct state mutations in the React components.
-5. Correct the mono input routing configuration in ProofNode.
-6. Create a reliable "flush" mechanism for loading presets so the WASM engine fully syncs.
+1. Fix the `setProofParamWithPatch` bridge (or `syncProofPatch`) so nested band data reaches WASM.
+2. Fix Dutch Oven wet-path stereo filtering (`wet_r`) in `proof_chamber.rs`.
+3. Validate shimmer granular behavior with tests/listening; tune phase/read if pitch-up is wrong.
+4. Fix immutability in `ProofPanel` Level 2 (`dynBands` mutation).
+5. Align `ProofNode` channel options + worklet mono guards with `ProofChamberNode` behavior.
+6. Preset/patch flush path so WASM matches stored `ProofPatch`.
 
 ## Findings
 - **Complex UI vs Flat WASM Parameters:** The React UI organizes parameters into hierarchical objects (`patch.dynBands[0].threshold`), while the WASM engine expects flat scalar keys (`dyn_band_0_threshold`). The bridging layer is incomplete, leading to "ghost" UI changes where the knobs move but the sound remains identical.
 - **Component-Level Dispatching:** The individual module sections (like `ProofDynSection`) correctly send their parameters via `onSendParam`. The bugs occur exclusively when macro controls (Level 2) or presets attempt to update the whole patch at once without iterating through the individual band parameters.
 - **Polling Telemetry:** `ProofNode` relies on `setInterval` to read metering data from a `SharedArrayBuffer`. This relies on an explicit `destroy()` call to prevent memory leaks in the `telemetryAllocator`.
 - **DSP Math Oversights:** The Dutch Oven Rust implementation has a few "TODOs" and commented hacks (like mono-compatible approximations) that were deployed to production but result in broken stereo behavior.
+
+## Verification notes (2026-04-14)
+
+### Pass 2 — `crates/daw-dsp/src/proof/` + worklets
+
+| Issue | Claim | Result |
+|-------|--------|--------|
+| §1 | `setProofParamWithPatch` omits nested keys | **Confirmed** — file ends ~L43 after `imgMonoBassFreq`; no `eqBands` / `dynBands` / etc. |
+| §2 | `Level2Shape` mutates `dynBands` elements in place | **Confirmed** — `ProofPanel.tsx` ~543–545 `bands.forEach((b) => (b.threshold = v))`. |
+| §3 | `wet_r` unfiltered before M/S | **Confirmed** — `proof_chamber.rs` ~691–701 `high_cut`/`low_cut` only on `wet_l`. |
+| §4 | Shimmer granular phase | **Confirmed** — `GranularShifter::process` ~280–281 `phase1 += (pitch_ratio - 1.0) / gs`; read uses `write_pos - gs * phase1`. Audible correctness / “DC” should be validated by ear + unit test; math is non-trivial granular overlap. |
+| §5 | Telemetry slot + `destroy` | **Plausible** — `ProofNode.ts` allocates `sabSlot`, `setInterval` poll; release in `destroy` — **leak if wrapper dropped without destroy** still a real risk. |
+| §7 | Limiter O(window) per sample | **Confirmed** — `limiter.rs` ~85 `gain_buffer.iter().fold(0.0, f32::max)` inside `for i in 0..left.len()`. |
+| §8 | Tape pre/de after saturation | **Confirmed** — `exciter.rs` ~63–96 upsample→sat→downsample; Tape branch ~99–104 `pre_emph` then `de_emph` on **wet** after saturation — inverse pair can cancel unless pre shapes input before nonlinearity. |
+| §9 | Imager `m_scaled` | **Confirmed** — `imager.rs` ~147 `m * (2.0 - width).max(0.0)`, `s_scaled = s * width`. At `width=2`, mid scales to 0. |
+| §10 | Four-band cascade | **Confirmed** — `crossover.rs` `FourBandSplitter::process` chains `xover1` → low on `high_a` through `xover2`/`xover3`. LR4 per stage sums LP+HP at each split; **reconstruction when re-summing bands** still warrants DSP review for path-dependent phase. |
+| §11 | TPDF no quantization | **Confirmed** — `dither.rs` ~32–37 returns `x + noise` only; `NoiseShapedDither` ~75–77 quantizes. |
+| §12 | Shared `Oversampler2x` delay line | **Confirmed** — `oversample.rs` single `delay_line`; `upsample`/`downsample` both advance `pos` and write the same buffer. |
+| §13 | `ProofNode` channel options | **Refined** — `ProofNode.ts` ~54–58 sets `outputChannelCount: [2]` but **no** `channelCount` / `channelCountMode` (contrast `ProofChamberNode.ts`). Input upmix behavior depends on Web Audio defaults. |
+| §14 | Mono guard | **Confirmed** — `proofProcessor.ts` ~81 `input.length < 2`; **Chamber** ~71 uses `< 2` with `input[1] ?? input[0]` after guard (still dead for mono inputs). |
 
 ## Issues
 
@@ -51,16 +71,11 @@ Both plugins are functional but suffer from severe disconnects between the UI st
   ```
 - **Needed**: Instantiate separate `high_cut_r` and `low_cut_r` `OnePole` filters in the `ProofChamber` struct and process `wet_r` through them.
 
-### 4. Shimmer Pitch Shifter Math Outputs DC
-- **Severity**: Critical
-- **Files**: `crates/proof-chamber/src/proof_chamber.rs`
-- **Evidence**: The granular pitch shifter calculates the read pointer using:
-  ```rust
-  self.phase1 += (self.pitch_ratio - 1.0) / gs;
-  let read1 = self.write_pos as f64 - gs * self.phase1 + j1;
-  ```
-  Because `phase` is incrementing, the read delay *increases*, which shifts the pitch *down*. For an octave up (`pitch_ratio = 2.0`), the delay increases by 1 sample per sample, causing the read pointer to stand completely still, resulting in 0 Hz (DC) output.
-- **Needed**: Correct the phase increment to `(1.0 - self.pitch_ratio) / gs` (and handle wrapping appropriately) so the read pointer advances faster than the write pointer, creating the required upward pitch shift.
+### 4. Shimmer granular pitch (verify pitch-up behavior)
+- **Severity**: High
+- **Files**: `crates/proof-chamber/src/proof_chamber.rs` (`GranularShifter`)
+- **Evidence**: `phase1 += (pitch_ratio - 1.0) / gs`; read index `write_pos - gs * phase1 + jitter`; Hann envelope on `phase1`. This is a dual-grain overlap design — **simple “DC output” claims are not proven** without analyzing grain overlap and wrap.
+- **Needed**: Unit tests / ear check at `shimmer_pitch` fifth vs octave; validate read pointer motion vs intended pitch ratio; fix math if pitch-up is wrong or unstable.
 
 ### 5. Potential Leak in Telemetry Slot Allocation
 - **Severity**: Medium
@@ -128,14 +143,22 @@ Both plugins are functional but suffer from severe disconnects between the UI st
   However, `Oversampler2x` only has a single `delay_line` array. `upsample` pushes the 1x-rate input sample into it, and `downsample` pushes the 2x-rate saturated output samples into the *same array*. The filter is convolving across a completely mangled buffer containing a mix of different sample rates and both pre- and post-saturation audio. Furthermore, the polyphase math in `upsample` is mathematically incorrect as it doesn't zero-stuff or decompose correctly.
 - **Needed**: The `Oversampler2x` must use separate, dedicated delay lines and state variables for the upsampling FIR and the downsampling FIR. The polyphase upsampling math must also be corrected to properly separate the even (pure delay) and odd (FIR filter) taps.
 
-### 13. ProofNode Missing Channel Upmix Configuration
-- **Severity**: Critical
-- **Files**: `src/modules/AudioEngine/engine/ProofNode.ts`
-- **Evidence**: The `AudioWorkletNode` constructor for `ProofNode` does not specify `channelCount: 2` or `channelCountMode: 'explicit'` (unlike `ProofChamberNode.ts`). When connected to a mono track or source, the Web Audio API defaults to `channelCountMode: 'max'`, sending only a 1-channel array to the underlying Worklet Processor.
-- **Needed**: Add `channelCount: 2, channelCountMode: 'explicit'` to the node's options object to guarantee the browser upmixes mono sources to stereo before hitting the DSP.
+### 13. ProofNode input channel configuration vs ProofChamber
+- **Severity**: High
+- **Files**: `src/modules/AudioEngine/engine/ProofNode.ts`, `ProofChamberNode.ts`
+- **Evidence**: `ProofNode` passes `outputChannelCount: [2]` but does **not** set `channelCount` / `channelCountMode` on the node. `ProofChamberNode` uses `channelCount: 2, channelCountMode: 'explicit'`. Mono-source behavior may differ.
+- **Needed**: Align `ProofNode` options with `ProofChamberNode` (or document intentional difference) and pair with worklet guard fixes in §14 for mono inputs.
 
 ### 14. AudioWorkletProcessors Actively Reject Mono Inputs
 - **Severity**: Critical
 - **Files**: `src/modules/AudioEngine/services/proofProcessor.ts`, `src/modules/AudioEngine/services/proofChamberProcessor.ts`
 - **Evidence**: Both worklet processors contain the guard clause: `if (!input || input.length < 2 || !output || output.length < 2) {return true;}`. This immediately skips processing and returns silence/bypass if the input is mono (`input.length === 1`). The irony is that the code below the guard explicitly handles mono fallbacks (`input[1] ?? input[0]`), but it is rendered dead code by the overly aggressive guard.
 - **Needed**: Change the guard to `if (!input || input.length < 1 || !output || output.length < 1) {return true;}` to allow 1-channel inputs to correctly trigger the `input[1] ?? input[0]` fallback logic.
+
+### Pass 3 (2026-04-14) — PDC + WASM surface
+
+| Claim | Result |
+|--------|--------|
+| **`get_latency()` in JS WASM wrapper** | **Confirmed** — `proof_chamber.js` exposes `get_latency()` for PDC (convolution head size). |
+| **Host sees plugin-reported latency** | **Not wired** — `ProofChamberNode.ts` / `proofChamberProcessor.ts` do not read `get_latency()` or post a `latency` value to the node; aligns with Dutch Oven audit **PDC** gap and Issue list § on timing sync. |
+| **Telemetry `destroy`** | **Re-confirmed** — risk remains: wrapper must call `destroy()` to release SAB slot + interval (Pass 2 §5). |

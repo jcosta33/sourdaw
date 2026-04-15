@@ -227,6 +227,17 @@ See the companion spec file for detailed component specifications.
 
 ---
 
+## Verification notes (2026-04-14)
+
+### Pass 1
+
+| Note | Detail |
+|------|--------|
+| **Pattern counts** | Tables under **Current Behavior** use approximate `rg`-style counts from an earlier snapshot; re-run searches before using counts in CI or specs. |
+| **Scope** | No code changes in this pass — audit text only. |
+
+---
+
 ## Resolved
 
 _None yet — this is the initial audit._

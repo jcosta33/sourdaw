@@ -58,9 +58,9 @@ In `GrandBoulePanel.tsx`, an analyser node is polled using `requestAnimationFram
 In `setGrandBoulePerNoteParam.ts`, parameter overrides are dispatched to the engine via `name: "perNote.${key}.${param}"`. However, `engine.rs` has no string matching logic for `perNote.*`. Additionally, `stretchAmount`, `attackBite`, and `velocityCurve` are sent to the Web Worker in `camelCase`. Since they are missing from the Worker's `PARAM_MAP`, they are passed to Rust exactly as `camelCase`. `engine.rs` explicitly expects `snake_case` (e.g. `"stretch_amount"`), causing all of these parameters to be ignored.
 **Needed:** Add the missing translations to `PARAM_MAP` in `grandBouleEngineWorker.ts`. Add string parsing in `engine.rs`'s `set_param` to match `"perNote."`, extract the key and parameter name, and update a new per-note override structure.
 
-### 6. Inverted Voice Stealing Logic
-In `crates/daw-dsp/src/grand_boule/voice.rs`, `steal_score` subtracts `age_seconds` for releasing notes (`400.0 - age_seconds`), making older notes score lower than fresh ones. It also subtracts `amplitude` for active notes, but `amplitude` is always `1.0` during the `Active` stage, meaning all active notes have a score of `0.0` regardless of acoustic energy. As a result, the engine steals the loudest, most recently played notes first.
-**Needed:** Invert the age logic (`400.0 + age_seconds`) so older releasing notes score higher. For active notes, calculate the score based on the actual tracked string energy (e.g. `self.last_string_displacement.abs()`) instead of the static ADSR `amplitude`.
+### 6. Voice-stealing scores (validate product intent)
+In `engine.rs`, the stolen voice is the one with **maximum** `steal_score` among eligible voices. In `voice.rs`: **Releasing** uses `400.0 - age_seconds.min(200.0)` — **newer** releases score **higher** → they are preferred as steal victims. **Active** uses `200.0 - 200.0 * amplitude.clamp(0,1)` — **higher amplitude → lower score**, so **quieter** active voices score higher and are stolen first (not “loudest first”). Many active notes at full sustain can tie near `0` score. Whether this matches musical intent needs product review.
+**Needed:** Decide desired steal policy (e.g. steal oldest/lowest energy first), then align `steal_score` + selection; add tests or deterministic scenarios.
 
 ### 7. Global Singleton Store for Device State
 `src/modules/GrandBoule/stores/grandBouleStore.ts` creates a global singleton store. In `GrandBoulePanel.tsx`, this single store is read and mutated. If a user adds two Grand Boule tracks to their arrangement, mutating parameters or pedals on one will mutate the state for the other, causing unpredictable UI cross-talk.
@@ -86,7 +86,7 @@ In `GrandBouleNode.ts`, the `disconnect()` and `destroy()` methods wrap `node.di
 - **Browser/DAW Crash:** The WebGL context leak will crash the entire DAW UI within minutes of playing chords.
 - **Engine Crash:** The ring buffer issue guarantees a hard crash of the audio engine after ~12 hours of continuous use.
 - **Thermal Throttling & UI Jank:** The Worker spin-loop and the 60fps React render loop will heavily tax the CPU, causing UI stutter and degrading real-time audio performance.
-- **Feature Illusion & Audio Glitches:** Several parameters are placebo knobs, and the inverted voice stealing guarantees abrupt, unnatural cutoffs during dense passages, severely undermining the product's acoustic quality.
+- **Feature Illusion & Audio Glitches:** Several parameters are placebo knobs; voice-steal ordering may sound wrong under dense polyphony until scores match intent.
 
 ## Suggested approaches
 - **Integer overflow:** Adopt bitwise unsigned shifting `>>> 0` in JS to treat `Atomics.load` values as `Uint32` rather than signed `Int32`.
@@ -94,9 +94,34 @@ In `GrandBouleNode.ts`, the `disconnect()` and `destroy()` methods wrap `node.di
 - **React Performance (WebGL & Waterfall):** 
   - For `PianoModel3D`: Store `activeNotes` in a `useRef` and access it from within a stable `requestAnimationFrame` loop instantiated exactly once on mount.
   - For `SpectralWaterfall`: Move the `engine.getAnalyserNode()` subscription logic inside the component itself, updating its canvas directly within its own `requestAnimationFrame` loop to bypass React's render cycle completely.
-- **Missing Parameters & Voice Stealing:** Update `PARAM_MAP` in the Worker to correctly translate `stretchAmount` and `attackBite`. Rewrite `steal_score` in Rust to add `age_seconds` and rely on string energy `transverse_sample` rather than ADSR state.
+- **Missing Parameters & Voice Stealing:** Update `PARAM_MAP` in the Worker for `stretchAmount` / `attackBite`. Revisit `steal_score` vs product intent (max-score victim, releasing vs active formulas).
 - **Per-Note DSP Integration:** Pass a structured array or map of overrides from the Web Worker to the Rust engine on every change, and have the engine merge these into its calculation for `note_on`.
 - **State management:** Migrate `grandBouleStore` to a map of stores keyed by `deviceId`.
 
 ## Resolved
 *(None yet)*
+
+## Verification notes (2026-04-14)
+
+### Pass 2
+
+| Claim | Check |
+|--------|--------|
+| `steal_score` / victim selection | **Confirmed** — `engine.rs` ~186–196 **maximizes** `steal_score`. `Releasing`: `400 - age` → newer release **higher** score → stolen first. `Active`: `200 - 200*amp` → **lower amplitude → higher score** → quieter voices stolen first (not “loudest first”). |
+| `PianoModel3D` WebGL `useEffect` | **Confirmed** — `PianoModel3D.tsx` ~514 `}, [activeNotes, sustainPedal]);` — effect teardown/reinit when those references change. |
+| `grandBouleStore` singleton | **Not re-verified** — still a likely multi-instance hazard. |
+| Ring buffer overflow | **Analytical** — validate worker/worklet index math under long `Int32` wrap. |
+
+### Gaps
+- Document ring buffer wrap policy when fixing overflow.
+- Add listening/tests for steal policy once product intent is fixed.
+
+### Pass 3 (2026-04-14) — worker + store + `PARAM_MAP`
+
+| Claim | Result |
+|--------|--------|
+| **`grandBouleStore` singleton** | **Confirmed** — `grandBouleStore.ts` single `createStore<GrandBouleState>`; no `deviceId` map in store type. |
+| `PianoModel3D` effect deps | **Confirmed** — `PianoModel3D.tsx` ~514 `}, [activeNotes, sustainPedal]);` |
+| **`MessageChannel` yield + `scheduleRender`** | **Confirmed** — `AudioEngine/workers/grandBouleEngineWorker.ts` ~37–42 `yieldChannel.port2.postMessage` → `renderLoop`; **every** exit from `renderLoop` calls `scheduleRender()` (~127) — when ring is full the inner loop breaks immediately with no writes but still reschedules, **tight spin risk** until worklet reads. |
+| **Ring index math** | **Confirmed** — `writeHead` from `Atomics.load` (`Int32Array`) used as `writeHead % ringFrames` (~110); **no** `>>> 0` — long-session overflow / negative index risk matches Issue #1. |
+| **`PARAM_MAP` tiny vs UI params** | **Confirmed** — worker `PARAM_MAP` only `masterGain`, `soundboardSend`, `sympatheticSend` (~45–49); **no** `stretchAmount` / `attackBite` / `velocityCurve` / `perNote` mapping — aligns with §5 / §6. |

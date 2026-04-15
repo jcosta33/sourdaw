@@ -93,12 +93,11 @@ The architecture contains severe UI thread performance issues, violations of RT-
 **Concrete Fix:** 
 - Implement comprehensive tests for `loadGrinderPatchWithAudio` and `setGrinderParamWithAudio` verifying the exact `updateDeviceParam` payloads and batcher flushes.
 
-#### [HEALTH] 4.4 Cargo Clippy Warnings Across DSP Crate
+#### [HEALTH] 4.4 Cargo Clippy on `daw-dsp` (warnings remain)
 **Severity:** Medium
-**Evidence:** `cargo clippy --manifest-path crates/daw-dsp/Cargo.toml` output (165 errors)
-**Why it matters:** The `daw-dsp` crate has 165 clippy errors under `-D warnings`, including `manual-clamp`, `manual-div-ceil`, `needless-range-loop`, and missing `Default` implementations across all synth/sampler/effect engines. This indicates tech debt accumulation and prevents clean compilation in strict mode.
-**Concrete Fix:** 
-- Resolve all clippy warnings across the `daw-dsp` crate, focusing on fixing iterators and standard traits.
+**Evidence:** `cargo clippy --manifest-path crates/daw-dsp/Cargo.toml` (**Pass 3, 2026-04-14**): completes with **exit 0**; **173 warnings** (e.g. `too_many_arguments`, fixable suggestions). Former **2 hard errors** were `clippy::approx_constant` on literal `0.7071` in `crates/daw-dsp/src/gluten/sidechain.rs` — **fixed** by using `std::f32::consts::FRAC_1_SQRT_2`.
+**Why it matters:** Warning triage and optional `-D warnings` CI still blocked until warnings are addressed or allowed with rationale.
+**Concrete Fix:** Incrementally apply `cargo clippy --fix` where safe; chip away at remaining 173 warnings.
 
 ---
 
@@ -168,4 +167,35 @@ The architecture contains severe UI thread performance issues, violations of RT-
 - Refactor the store to use granular setters or a `useReducer`-like action dispatch model so that updating a single pedal parameter doesn't require deep cloning the entire patch object manually every time.
 
 ## Resolved
-*(None yet)*
+
+- **`daw-dsp` clippy hard errors (2026-04-14):** `gluten/sidechain.rs` — replaced `0.7071` with `FRAC_1_SQRT_2` in `SidechainHpf::set_freq` and `SidechainLpf::set_freq`. `cargo clippy -p daw-dsp` now finishes successfully; 173 warnings remain.
+
+## Verification notes (2026-04-14)
+
+### Pass 2
+
+| Claim | Check |
+|--------|--------|
+| `AUDIO_SYNC_KEYS` | **Confirmed** — `loadGrinderPatchWithAudio.ts` ~L20, iteration ~L171. |
+| `cargo clippy` (before fix) | **173 warnings + 2 errors** — see §4.4 history. |
+| `replacePatch` / persistence flood | **Not re-verified** — spot-check `GrinderPanel` `DriveDeck` + `loadGrinderPatchWithAudio` when implementing. |
+| Telemetry + `useStore(grinderStore)` | **Plausible** — confirm `GrinderPanel` subscription pattern under load. |
+
+### Pass 3 (2026-04-14)
+
+| Step | Result |
+|------|--------|
+| `cargo clippy --manifest-path crates/daw-dsp/Cargo.toml` | **Exit 0** after `sidechain.rs` fix. |
+| `pnpm deps:validate` | **Exit 0** (warnings only in cruise output). |
+
+### Gaps to close next pass
+- Diff `AUDIO_SYNC_KEYS` against full `GrinderPatch` / product requirements (`micBlend`, `postPedals`, etc.).
+- Triage the **173** clippy warnings if CI requires a clean lint.
+
+### Pass 4 (2026-04-14) — `replacePatch` → full sync
+
+| Claim | Result |
+|--------|--------|
+| **`replacePatch` → `loadGrinderPatchWithAudio`** | **Confirmed** — `GrinderPanel.tsx` ~1390–1391 `replacePatch` calls `loadGrinderPatchWithAudio(deviceId, next)`. |
+| **Drive tab continuous knobs** | **Confirmed** — `DriveDeck` (`~721+`) `RotaryKnob` `onChange` calls `replacePatch({ ...patch, prePedals: upsertPedal(...) })` — **each** drag tick replaces the whole patch path. |
+| **Full `AUDIO_SYNC_KEYS` + persist per replace** | **Confirmed** — `loadGrinderPatchWithAudio.ts` ~171–175 loops **every** `AUDIO_SYNC_KEYS` entry → `updateDeviceParamFn` + `persistDeviceParamFn` per key. Persistence flood for drive knob drags **matches** §1.1. |

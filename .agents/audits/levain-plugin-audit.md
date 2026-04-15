@@ -87,3 +87,22 @@ The current architecture makes Levain a "singleton plugin," which is a fundament
 2. **Event Scheduling:** Add a `VecDeque<MidiEvent>` to `LevainEngine` in Rust. In `process_block`, consume events only when their `sample_frame` timestamp is reached.
 3. **Instance Seeds:** Pass a unique `u64` seed (e.g., derived from `deviceId`) to the Rust engine on `init`.
 4. **DSP Wiring:** Implement a simple Tilt-EQ for `Tone` and modify the `AdsrEnvelope` to accept runtime rate multipliers.
+
+## Verification notes (2026-04-14)
+
+### Pass 2
+
+| Claim | Check |
+|--------|--------|
+| `"tone"`, `"attack"`, `"release"` no-ops | **Confirmed** — `engine.rs` ~406–410. |
+| Default human seed `42` | **Confirmed** — `crates/daw-dsp/src/levain/types.rs` ~385 `seed: 42` in default config. |
+| `levainBridgeDependencies` | **Exists** — `src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts` (path corrected from generic `helpers.ts`). |
+| Singleton / first-device bridge | **Refined in Pass 3** — see below. |
+
+### Pass 3 (2026-04-14) — `levainBridge` + `persistDeviceParam`
+
+| Claim | Result |
+|--------|--------|
+| **Injectable singleton** | **Confirmed** — `levainBridge.ts` uses `inject(levainBridgeDependencies)` and returns one shared `LevainBridgeApi`. |
+| **`persistDeviceParam` targets one device id** | **Confirmed** — `helpers.ts` `registerLevainDevice` sets `activeDeviceId` by scanning `getAllTracks()` and taking the **first** track that has `devices.find((dev) => dev.type === 'levain')`, then `break` (~63–71). Multiple Levain instances across tracks → **wrong id** for any but the first matching track order. |
+| **`unregisterLevainDevice` clears id** | **Confirmed** — ~92–96 clears `activeDevice` / `activePort` and `paramBatcher.cancelAll()` but does **not** clear `activeDeviceId` (still used if stale — worth fixing with explicit `activeDeviceId = null`). |

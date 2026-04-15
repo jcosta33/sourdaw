@@ -289,3 +289,10 @@ The continuation pass landed the canvas/rAF hoisting cluster, the
 §188.1 (see Resolved block). The items below remain unlanded and are
 a good fit for a parallel-agent sweep — each file is independent and
 the patterns are well-established.
+
+---
+
+## Verification notes (2026-04-14)
+
+- **Cross-audit pass:** Plugin and engine audits under `.agents/audits/` were refreshed with dated verification tables against current sources; this **code-quality** document was not re-scanned line-by-line — unresolved §160+ appendix items unchanged.
+- **Tooling baseline:** Depcruise warning count and Knip behavior referenced elsewhere in this file were **not** re-run in this session; treat numbers as historical unless you execute the commands locally.

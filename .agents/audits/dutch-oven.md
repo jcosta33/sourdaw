@@ -1,14 +1,14 @@
-# SKILL: write-audit
+# Audit: Dutch Oven (ProofChamber)
 
 ## Goal
 The goal of the Dutch Oven (ProofChamber) plugin is to provide a flagship, real-time-safe, high-quality Dattorro plate reverb with robust parameter management, accurate stereo DSP, and a unified, state-driven UI that integrates seamlessly with the DAW's plugin host, undo history, and parameter automation.
 
 ## Current State
-The Dutch Oven plugin is in a heavily fragmented and severely broken state. The domain is split across two completely isolated module directories (`src/modules/ProofChamber` and `src/modules/Plugin/ProofChamber`). The WASM audio worklet contains a fatal memory-access bug, rendering audio output effectively random or silent. The DSP implementation has a broken stereo EQ implementation. The UI state is entirely disconnected from global store state in the primary panel, meaning parameter tweaks are lost on unmount.
+The Dutch Oven plugin remains split across two module trees (`src/modules/ProofChamber` and `src/modules/Plugin/ProofChamber`). The UI still mixes local state with plugin-specific stores in places. **An earlier audit claimed the worklet read “random WASM memory”; that finding is outdated** — see **Verification notes** and **Resolved** below. A **real** stereo EQ imbalance remains in the Rust wet path (left channel filtered, right not, before M/S). IR loading and PDC reporting to the host are still integration gaps.
 
 ## Priorities
-1. Fix the catastrophic memory access bug in `ProofChamberProcessor` so the plugin actually outputs audio.
-2. Fix the stereo output EQ bug in the Rust DSP engine.
+1. ~~Fix the catastrophic memory access bug in `ProofChamberProcessor`~~ — **superseded** (see Resolved); keep validating bindgen output when Rust API changes.
+2. Fix the stereo wet-path EQ / imaging imbalance in the Rust DSP (`proof_chamber.rs` wet sum path).
 3. Resolve the massive architecture violation by merging `src/modules/ProofChamber` and `src/modules/Plugin/ProofChamber`.
 4. Connect the primary UI panel to the shared plugin state store so parameter changes persist across unmounts.
 5. Integrate parameter changes with the DAW's undo/redo command system.
@@ -20,23 +20,13 @@ The Dutch Oven plugin is in a heavily fragmented and severely broken state. The 
 - The `ProofChamberPanel` relies entirely on local React state (`useState`) for all parameters. Closing and reopening the panel resets all parameters to defaults.
 
 ### 1. Critical Bugs
-**1.1. AudioWorklet reads random memory instead of audio**
-- **Evidence:** `src/modules/AudioEngine/services/proofChamberProcessor.ts`
-  ```javascript
-  const leftPtr = this._instance.process(input[0], input[1] ?? input[0], frames);
-  const rightPtr = this._instance.get_right_ptr();
-  const mem = this._memory.buffer;
-  output[0].set(new Float32Array(mem, leftPtr, frames));
-  ```
-  `crates/proof-chamber/src/proof_chamber.rs`
-  ```rust
-  pub fn process(&mut self, left: &mut [f32], right: &mut [f32])
-  ```
-- **Why it matters:** The Rust `process` function has no return type (returns void/undefined in JS). The JS worklet assigns `undefined` to `leftPtr` and attempts to create a `Float32Array` view from `undefined` offset in WASM memory (which defaults to 0). This causes the worklet to output random WASM memory garbage instead of the processed audio buffer.
-- **Needed:** Rewrite the Rust `process` method to explicitly return a pointer to an internal output buffer, or expose `get_left_ptr()` and `get_right_ptr()` correctly, avoiding relying on implicit `wasm-bindgen` array slicing in real-time contexts.
+**1.1. AudioWorklet output pointers (historical false alarm — see Resolved)**
+- **What was claimed:** JS treated `process()` as void and read garbage memory.
+- **Current code:** `ProofChamberInstance::process` lives in `crates/proof-chamber/src/lib.rs` and returns `*const f32` to `out_left` after DSP; `get_right_ptr()` returns `out_right`. The worklet uses that return value and `get_right_ptr()` — see `proofChamberProcessor.ts` `process()` and `lib.rs` `process` / `get_right_ptr`.
+- **Needed:** None for the pointer pattern itself; **regression-proof** by codegen review whenever `proof-chamber` exports change.
 
-**1.2. Right channel EQ bypassed in Rust DSP**
-- **Evidence:** `crates/proof-chamber/src/proof_chamber.rs` lines 442-443.
+**1.2. Right channel EQ bypassed in Rust DSP (wet path)**
+- **Evidence:** `crates/proof-chamber/src/proof_chamber.rs` (wet tap path: `wet_l` through `high_cut` / `low_cut`; `wet_r` not filtered before M/S width — see ~661–706).
   ```rust
   wet_l = self.high_cut.process(wet_l);
   wet_l = self.low_cut.process(wet_l);
@@ -101,7 +91,26 @@ The Dutch Oven plugin is in a heavily fragmented and severely broken state. The 
 - **Needed:** Add a mechanism in `ProofChamberProcessor` to query `get_latency()` on initialization or algorithm change, and send a `latency` message to `ProofChamberNode` so the DAW's PDC graph can compensate.
 
 ## Risks
-If the worklet memory bug is not fixed immediately, the plugin will produce noise or crash the audio thread. If the architecture violation is allowed to remain, further development will split the codebase, resulting in unmaintainable parallel logic. If the local state issue is not resolved, the plugin is functionally unusable for real-world mixing as settings cannot be saved or recalled reliably.
+If the wet-path stereo imbalance and IR/PDC gaps remain, the plugin will sound wrong on headphones and fail loudness/timing parity with the rest of the mix. Split modules and local-only panel state still risk confused maintenance and lost user settings.
+
+## Verification notes (2026-04-14)
+
+### Pass 2
+
+| Claim | Result |
+|--------|--------|
+| `process()` returns void / random memory | **Invalid** — `lib.rs` returns `self.out_left.as_ptr()`; worklet uses `leftPtr` + `get_right_ptr()`. |
+| `wet_r` unfiltered before M/S | **Valid** — `proof_chamber.rs` applies `high_cut`/`low_cut` only to `wet_l` before width matrix (~691–701). |
+| Split `ProofChamber` vs `Plugin/ProofChamber` | **Valid** — both trees exist under `src/modules/`. |
+| FDN param list vs UI `decay`/`diffusion` | **Plausible** — verify Rust `set_param` / engine matrix for each `ReverbEngine` variant; `proof_chamber.js` exposes `get_param_names()` from WASM. |
+
+### Pass 3 (2026-04-14) — PDC wiring
+
+| Claim | Result |
+|--------|--------|
+| **`get_latency()` exists in WASM bindings** | **Confirmed** — `src/modules/AudioEngine/wasm/proof_chamber.js` documents PDC and calls `proofchamberinstance_get_latency`. |
+| **Worklet / node consume latency for host PDC** | **Confirmed gap** — `proofChamberProcessor.ts` has **no** `get_latency` / `latency` message handling; `ProofChamberNode.ts` has **no** `latency` references. Matches **Issues** § on IR/PDC — reporting to the DAW graph is still **not wired**. |
 
 ## Resolved
-*(None yet)*
+
+- **Worklet “random memory” / void `process` (former §1.1):** Superseded. Current Rust API is `pub fn process(&mut self, left_in: &[f32], right_in: &[f32], frames: u32) -> *const f32` in `crates/proof-chamber/src/lib.rs`; JS bindings consume the returned left pointer and `get_right_ptr()` for the right channel.

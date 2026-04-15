@@ -1,6 +1,6 @@
 //! Sidechain processing — HPF, LPF, tilt filter (Thrust), parametric EQ.
 
-use std::f32::consts::PI;
+use std::f32::consts::{FRAC_1_SQRT_2, PI};
 
 /// 2nd-order Butterworth highpass filter for sidechain.
 pub struct SidechainHpf {
@@ -36,7 +36,7 @@ impl SidechainHpf {
 
     pub fn set_freq(&mut self, sample_rate: f32, freq: f32) {
         let w0 = 2.0 * PI * freq / sample_rate;
-        let alpha = w0.sin() / (2.0 * 0.7071);
+        let alpha = w0.sin() / (2.0 * FRAC_1_SQRT_2);
         let cos_w0 = w0.cos();
         let a0 = 1.0 + alpha;
 
@@ -108,7 +108,7 @@ impl SidechainLpf {
 
     pub fn set_freq(&mut self, sample_rate: f32, freq: f32) {
         let w0 = 2.0 * PI * freq / sample_rate;
-        let alpha = w0.sin() / (2.0 * 0.7071);
+        let alpha = w0.sin() / (2.0 * FRAC_1_SQRT_2);
         let cos_w0 = w0.cos();
         let a0 = 1.0 + alpha;
 

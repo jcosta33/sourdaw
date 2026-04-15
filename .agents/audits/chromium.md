@@ -297,6 +297,15 @@ Do **not** begin **WebTransport** without a Collaboration **spec** and networkin
 
 ---
 
+## Verification notes (2026-04-14)
+
+### Pass 1 — dual-path spot-check
+
+| Item | Result |
+|------|--------|
+| **`scheduler.yield` in app** | **Not found** — `rg 'scheduler\\?\\.yield'` over `src/` returns **no** matches. Offline yield is still `setTimeout(..., 0)` in `AudioEngine/useCases/offlineRender/yieldToMain.ts`. Chrome-first row in **Dual-path model** for long tasks is **not yet implemented** as written. |
+| **OPFS / IndexedDB / SAB** | **Not re-benchmarked** — architecture audit only; performance work remains per **Phased action list**. |
+
 ## Handoff checklist for the implementing agent
 
 1. **Scope:** You are delivering **Chrome web** wins with **legacy fallbacks**; **do not** scope-creep into native/Tauri except to **preserve** existing branches untouched.

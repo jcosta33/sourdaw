@@ -211,5 +211,6 @@ Not bugs; product gaps.
 
 - **2026-04-11:** Content merged from the four superseded audits; **removed** stale Knip counts, stale “false positive” evidence rows that no longer matched imports (e.g. levain preset file usage, GrooveTemplates → Yeast wiring, Sidebar `SectionHeader` vs registry `SectionHeader`), and outdated file names (`batchFeatureHandlers`, `fileIO.ts` monolith, `finalFeatureHandlers.ts` filename-only references).
 - **Checks run at merge:** `pnpm typecheck` passed. `pnpm deps:validate` reports warnings (circular dependency warnings — see depcruise output). `pnpm exec knip` still exits non-zero with hundreds of unused-file hits — **expected** given entry graph.
+- **2026-04-14:** Per-plugin audits (`proof`, `recording`, `faust`, `grinder`, `knead`, `grand-boule`, `dutch-oven`, `levain`, `fermenter`, `toaster`, `crumbs`, etc.) received additional **Verification notes** passes against current `src/` + `crates/` paths; **no** full re-count of Knip/depcruise metrics in this sweep.
 
 When updating this file after major work: refresh **metrics** (line counts, file counts) only if they drive decisions; prefer **behavioral** descriptions tied to paths.

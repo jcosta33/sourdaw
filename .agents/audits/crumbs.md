@@ -105,7 +105,38 @@ The Crumbs plugin possesses a highly detailed, visually complete UI (`SamplerPan
 - **Needed:** Standardize on one name across the stack. Given the existing ecosystem of culinary names (Fermenter, Toaster, Levain), "Crumbs" should be the official module name, replacing "Sampler" internally.
 
 ## Risks
-Leaving the DSP engine detached means the single most prominent instrument in the UI is a facade. If users attempt to build projects relying on "Crumbs", they will be confused when renders and playback are silent. The Mutex and Singleton state issues guarantee that once it *is* wired up, it will crash the audio thread and corrupt state across tracks unless those are fixed simultaneously. The React performance flaw (Issue 8) will make the UI completely unusable if playback is ever active.
+Leaving the DSP engine detached means the single most prominent instrument in the UI is a facade. If users attempt to build projects relying on "Crumbs", they will be confused when renders and playback are silent. The Mutex and Singleton state issues guarantee that once it *is* wired up, it will crash the audio thread and corrupt state across tracks unless those are fixed simultaneously. The React performance flaw (Issue 11) will make the UI janky if playback drives full-panel re-renders at 60fps.
 
 ## Resolved
 (None yet)
+
+## Verification notes (2026-04-14)
+
+### Pass 2
+
+| Claim | Check |
+|--------|--------|
+| `SamplerEngine` not in `daw-engine` graph | **Confirmed** — `scheduler.rs` only `PluginCore::Knead` / `Native`; no `SamplerEngine`. |
+| Tauri mutex map | **Confirmed** — `src-tauri/src/commands/sampler.rs` pattern. |
+| `initSamplerEngine(..., 44100)` | **Confirmed** — `SamplerPanel.tsx`. |
+| Stereo filter shared | **Confirmed** — `crates/daw-dsp/src/sampler/voice.rs` ~244–248 `self.filter.process_mono(left)` then `self.filter.process_mono(right)` on **one** `TptSvf`. |
+| **Name collision** | **Confirmed** — separate `SamplerEngine` types: `crates/daw-dsp/src/sampler/engine.rs` vs `crates/daw-dsp/src/fermenter/sampler.rs` (different modules). |
+
+### Pass 3 (2026-04-14) — DSP + UI spot-check
+
+| Claim | Result |
+|--------|--------|
+| **`loop_crossfade` unused in advance** | **Confirmed** — `advance_position` (`voice.rs` ~282–322) never reads `self.loop_crossfade`; field is only stored (~121). Forward loop snaps `position = start + overshoot` (~299–303). |
+| **`playbackFrame` + `subscribeToPosition`** | **Confirmed** — `SamplerPanel.tsx` ~104–108 `useState` + `subscribeToPosition(setPlaybackFrame)`. |
+| **`PadGrid` without `padPeaks`** | **Confirmed** — `SamplerPanel.tsx` ~190–196 `<PadGrid ...>` passes pads/select/onTrigger only; **no** `padPeaks` prop. |
+| **`smartLoopPoints` IPC fan-out** | **Refined** — `detectAndApplyLoopPoints` (`smartLoopPoints.ts`) calls **`setSamplerParamThrottled` four times** (loopMode, loopStart, loopEnd, loopCrossfade) after `setLoopParams`; audit “four calls” claim **holds** for the param bridge path. |
+
+### Gaps
+- End-to-end test once sampler is wired: playback + multi-instance stores.
+- Runtime heap proof for Tauri `SamplerEngine` mutex contention (still analytical until graph integration exists).
+
+### Pass 4 (2026-04-14) — scheduler cross-check
+
+| Claim | Result |
+|--------|--------|
+| **`SamplerEngine` still absent from `daw-engine` graph** | **Re-confirmed** — `rg SamplerEngine` / `sampler` on `crates/daw-engine/src/scheduler.rs` finds **no** `SamplerEngine` integration; only `PluginCore::Knead` path among builtins (~74–91 area). Matches Pass 2/3. |

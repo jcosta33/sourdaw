@@ -20,33 +20,33 @@ The audio engine must be real-time safe, sample-accurate, and fully decouple par
 - **MIDI Recording:** Incoming WebMidi events (`onmidimessage`) are captured by `messageHandlers.ts` and appended to the active MIDI clip via `handleNoteOff`.
 - **Live Playback Latency (PDC):** Correctly implemented for track-level plugins! `getCompensationDelay(trackId)` shifts the scheduling of clips forward to align tracks.
 - **Recording Latency:** Neither Audio nor MIDI recording applies latency compensation offsets to the captured data.
-- **Offline Rendering:** Recreates the audio graph and schedules clips, but entirely ignores PDC offsets. Suspends the context to post MIDI messages to Worklets.
-- **Routing:** `TrackNode` rebuilds its entire internal AudioNode graph whenever a device is added, removed, or bypassed.
+- **Offline Rendering:** Recreates the audio graph and schedules clips, but entirely ignores PDC offsets. Worklet instrument notes are triggered via batched `OfflineAudioContext.suspend(time)` callbacks that call `instrumentControls.noteOn/noteOff`, then `resume()` — not raw `postMessage` to the worklet in this module.
+- **Routing:** `TrackNode.rebuildChain()` runs when devices are **added** or **removed**, and when **bypass** changes for devices that use the generic bypass path (`dn.bypassed` + reconnect). **Per-parameter updates** (`updateParam`) do **not** rebuild the chain; they forward to device controls / `AudioParam`. **Fermenter / Toaster / Levain** bypass uses `setBypass` on controls without a full reconnect when applicable.
 
 ## Findings
 - **PDC Computation ignores Bus Routing:** `getTrackLatency(trackId)` only sums the latency of devices placed directly on the track. It does not traverse the graph to account for latency introduced by devices on Buses that the track routes to.
 - **Offline Rendering ignores PDC:** `scheduleTrackClips.ts` schedules clips using raw `beatToSeconds(startBeat)` without applying `getCompensationDelay(trackId)`. Tracks with WASM/Faust plugins will be misaligned in exported stems and mixdowns.
-- **Race Condition in Offline Render Worklet Scheduling:** `schedulePendingSuspends.ts` suspends the `OfflineAudioContext`, sends a `postMessage` to trigger a note, and immediately calls `resume()`. Because `postMessage` is asynchronous across thread boundaries, the `OfflineAudioContext` will likely render past the event's `sampleFrame` before the worklet receives the message, resulting in dropped or late notes in exports.
+- **Offline render instrument scheduling:** `schedulePendingSuspends.ts` batches events, suspends at quantized times, invokes **main-thread** `instrumentControls` (not worklet `postMessage` for note on/off in this file), then resumes. Timing risk is different from the old “async postMessage vs offline clock” story but **suspend/resume vs sample-accurate scheduling** can still miss or misplace notes relative to the offline timeline; pre-queuing sample-frame events in the worklet before `startRendering()` remains safer.
 - **Recording alignment is broken:** Captured audio, MIDI, and automation data do not account for round-trip latency, resulting in out-of-sync recorded clips and late automation points.
 - The engine's core routing (`TrackNode`) is heavily coupled to specific product features (`Fermenter`, `Toaster`, `Levain`), rather than treating all devices as polymorphic plugins.
 - Metering currently happens on the main thread via `AnalyserNode`.
-- Automation for WASM plugins applies a main-thread single-pole IIR slew (`SLEW_ALPHA`) which avoids zipper noise but binds automation resolution to the UI/scheduler tick rate rather than sample rate.
+- **Automation slew** uses a single-pole smooth (`SLEW_ALPHA` in `applyAutomation.ts`), not inside `TrackNode` — it affects how values reach scheduled automation, not WASM-specifically.
 
 ## Priorities
 1. Fix Offline Rendering Race Condition for Worklet Instruments.
 2. Implement Recording Latency Compensation (Audio, MIDI, and Automation).
 3. Apply PDC scheduling offsets to Offline Rendering (`scheduleTrackClips.ts`).
 4. Traverse graph routing in `getTrackLatency()` so Bus latency is accounted for.
-5. Refactor `TrackNode` to stop tearing down the graph on parameter/bypass updates.
+5. Refactor `TrackNode` to avoid unnecessary full reconnects where bypass/topology still forces `rebuildChain()` (verify per device type).
 6. Move metering from `AnalyserNode` polling to `AudioWorklet` + SAB taps.
 7. Prevent main-thread allocation spikes during audio recording stop.
 
 ## Open issues
 
-**1. Offline Rendering Race Condition drops Worklet Notes**
-- **Problem:** `schedulePendingSuspends.ts` triggers notes during offline rendering by suspending the context, posting a message, and resuming. `postMessage` takes ~1-3ms to reach the audio thread, but `resume()` allows the offline render to process thousands of frames instantly. The worklet receives the message *after* the `sampleFrame` has passed, dropping the note.
-- **Files:** `src/modules/AudioEngine/useCases/offlineRender/schedulePendingSuspends.ts`, `FermenterNode.ts`.
-- **Needed:** Avoid `suspend()` for note scheduling. Instead, pre-calculate the array of all `{ type: 'noteOn', sampleFrame, ... }` events for the track and send them to the worklet in a single `postMessage` *before* calling `offlineCtx.startRendering()`. The worklet must queue these and process them accurately when `currentFrame >= sampleFrame`.
+**1. Offline rendering instrument timing**
+- **Problem:** Notes for WASM/worklet instruments are not scheduled with per-event `sampleFrame` on the worklet side during offline render. Current path uses `schedulePendingSuspends` + main-thread `instrumentControls` at quantized suspend times — can drift or miss relative to sample-accurate MIDI.
+- **Files:** `src/modules/AudioEngine/useCases/offlineRender/schedulePendingSuspends.ts`, device control surfaces used as `instrumentControls`.
+- **Needed:** Prefer pre-queuing `{ type: 'noteOn', sampleFrame, ... }` (or equivalent) on the worklet **before** `startRendering()`, or another sample-accurate offline contract; validate exports with multi-note dense MIDI.
 
 **2. Recorded Audio, MIDI, and Automation are not latency-compensated**
 - **Problem:** When recording data, it is placed at the raw playhead position without offsetting for input/output hardware latency (`AudioContext.baseLatency` / `outputLatency`) or the track's DSP latency. Recorded clips will always land late.
@@ -63,15 +63,15 @@ The audio engine must be real-time safe, sample-accurate, and fully decouple par
 - **Files:** `src/modules/AudioEngine/useCases/latencyCompensation/compensation/helpers.ts`.
 - **Needed:** Recursively trace `track.outputId` and `track.sends` to accumulate downstream bus latency into the track's total latency.
 
-**5. Graph Teardown Anti-Pattern in TrackNode**
-- **Problem:** `TrackNode.rebuildChain()` drops and reconnects the entire audio graph (`preFaderTap`, `faderNode`, `panNode`, all devices) whenever a plugin is added or removed. This violates the `web-audio-engine` skill ("reconcile rather than recreate") and risks audio dropouts/clicks.
-- **Files:** `src/modules/AudioEngine/engine/TrackNode.ts`.
-- **Needed:** Implement targeted reconciliation. When adding a device, disconnect only the previous node's output and wire the new device inline.
+**5. Graph reconnect cost in TrackNode**
+- **Problem:** `rebuildChain()` disconnects strip nodes and all device outputs, then rewires the full chain. This runs on **add/remove device** and on **bypass** for the generic `dn.bypassed` path — **not** on ordinary `updateParam`.
+- **Files:** `src/modules/AudioEngine/engine/TrackNode.ts` (`rebuildChain`, `updateBypass`, `addDevice`, `removeDevice`).
+- **Needed:** Targeted reconciliation where safe; keep full rebuild when topology requires it.
 
 **6. Main-Thread DSP (Metering)**
-- **Problem:** `TrackNode.getPeakLevel()` reads 256 samples on the main thread via `analyserNode.getFloatTimeDomainData()`. This couples metering to UI render frames and violates real-time isolation rules.
-- **Files:** `src/modules/AudioEngine/engine/TrackNode.ts`.
-- **Needed:** Replace `AnalyserNode` with an `AudioWorklet` metering tap that writes peak/RMS values into a `SharedArrayBuffer` (similar to the telemetry allocator).
+- **Problem:** `TrackNode.getPeakLevel()` uses `analyserNode.getFloatTimeDomainData` into `meterBuffer` (`fftSize` / buffer length **256** in `TrackNode` constructor). Peaks are computed on the main thread when callers poll.
+- **Files:** `src/modules/AudioEngine/engine/TrackNode.ts` (~93–103, strip setup ~50–70).
+- **Needed:** Replace `AnalyserNode` polling with worklet + SAB (or equivalent) if metering must be decoupled from UI cadence.
 
 **7. Main-Thread Allocation Spike on Audio Record Stop**
 - **Problem:** `stopAudioRecording` receives a single, massive `Float32Array` from the OPFS worker and synchronously creates an `AudioBuffer` for the entire take. For a 10-minute take, this allocates ~115MB on the main thread in one block, causing jank.
@@ -93,7 +93,29 @@ The audio engine must be real-time safe, sample-accurate, and fully decouple par
 - **PDC Fixes:** Update `scheduleTrackClips.ts` to add the compensation delay immediately. Update `getTrackLatency()` to traverse the graph to the master out.
 
 ## Recommendation
-Address **Issue #1 (Offline Rendering Race Condition)**, **Issue #2 (Recorded Latency)**, and **Issue #3 (Offline Rendering PDC)** as the immediate first steps. These all result in corrupted exports or un-usable recorded data, representing the most critical functionality of a DAW.
+Address **Issue #1 (offline instrument timing)**, **Issue #2 (Recorded Latency)**, and **Issue #3 (Offline Rendering PDC)** as the immediate first steps. Validate exports with real projects after any change.
 
 ## Resolved
 *(None yet)*
+
+## Verification notes (2026-04-14)
+
+### Pass 2 (full structural read)
+
+| Claim | Result |
+|--------|--------|
+| `getTrackLatency` / bus graph | **Confirmed** — `helpers.ts`: only `track.devices`, no sends/buses. |
+| Offline `scheduleTrackClips` / PDC | **Confirmed** — no `getCompensationDelay`; live `scheduleAudioClips.ts` uses `getCompensationDelay(track.id)`. |
+| `schedulePendingSuspends` | **Confirmed** — `suspend().then` → `instrumentControls` note on/off → `resume()`; sorted/batched by quantized time. |
+| `TrackNode.rebuildChain` vs params | **Confirmed** — `updateParam` does **not** call `rebuildChain`; rebuild on add/remove device; `updateBypass` rebuilds only in generic branch after `dn.bypassed = bypassed`. |
+| `getPeakLevel` / 256 samples | **Confirmed** — `analyserNode.fftSize = 256`, `meterBuffer` length from `frequencyBinCount`, loop over `data.length`. |
+| `buildAndDeliver` allocation | **Confirmed** — `recording.ts` ~200–201 `ctx.createBuffer(1, samples.length, sampleRate)` + full `set` on main thread. |
+| Automation slew `SLEW_ALPHA` | **Confirmed** — `src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts` ~25, ~100. |
+| MIDI / audio recording latency offset | **Not implemented in grep pass** — `toggleRecording.ts` had no `baseLatency`/`outputLatency`; treat issue #2 as **still open** until code adds offsets. |
+
+### Pass 3 (2026-04-14) — recording path + OPFS worker
+
+| Claim | Result |
+|--------|--------|
+| **OPFS drain interval 50 ms** | **Confirmed** — `recordingWorker.ts` `POLL_MS = 50`; `recording.ts` header comments match (~2.4k samples at 48 kHz). |
+| **No I/O latency in transport toggle** | **Confirmed** — `toggleRecording.ts` contains no `latency` / `baseLatency` / `outputLatency` symbols (grep); Issue #2 remains **open** at the transport layer. |

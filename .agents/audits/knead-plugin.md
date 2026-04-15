@@ -164,3 +164,28 @@ Because `KneadEngine`'s `shift_semitones` is hardcoded to `0.0`, the PSOLA routi
 
 ## Resolved
 - *(None yet. Initial audit.)*
+
+## Verification notes (2026-04-14)
+
+### Pass 2
+
+| Claim | Check |
+|--------|--------|
+| Scheduler only `left` | **Confirmed** — `daw-engine/src/scheduler.rs` ~177–178 `process_analysis_frame(left)` only. |
+| Static shift + flat target curve | **Confirmed** — `knead/engine.rs` ~80–90 `target_f0 = f0 * 2^...`, ~91 `vec![target_f0; self.in_buffer.len()]`, `Vec::with_capacity(100)` for pitch marks. |
+| YIN every block when voiced + shift | **Confirmed** — `process_analysis_frame` pushes samples until frame_size, runs `yin_frame`, builds `pitch_marks` vec, `psola_process_offline` when `shift_semitones != 0`. |
+| `shift_semitones` default 0 | **Confirmed** — `engine.rs` ~44 `shift_semitones: 0.0` skips PSOLA branch when shift is zero (but YIN still runs when buffer full). |
+| KneadEditor warning | **Spot-check** — grep `KneadEditor` for analysis message when validating UX. |
+
+### Gaps
+- `knead/mod.rs` WASM path vs `daw-engine` scheduler — confirm no duplicate entry points.
+- A11y / schema / persistence — still open from main audit body.
+
+### Pass 3 (2026-04-14) — UI strings + PSOLA + YIN cost
+
+| Claim | Result |
+|--------|--------|
+| **KneadEditor “not wired”** | **Confirmed** — `KneadEditor.tsx` ~27–35 `console.warn` + `Real DSP pitch analysis is not wired up yet...`; UI still shows “Analyzing pitch tracking data...” (~218) when `isAnalyzing`. |
+| **`hann_window` per grain** | **Confirmed** — `psola.rs` ~52 calls `hann_window(grain_len)` inside PSOLA path; `utils.rs` allocates new `Vec<f32>`. |
+| **Static `target_f0` curve** | **Re-confirmed** — `engine.rs` ~90–91 `vec![target_f0; self.in_buffer.len()]`. |
+| **YIN when `shift_semitones == 0`** | **Confirmed** — `process_analysis_frame` runs `yin_frame` whenever `in_buffer.len() >= frame_size` (~60–67) **before** the `voiced && shift_semitones != 0.0` branch (~80); expensive analysis still runs when shift is zero. |

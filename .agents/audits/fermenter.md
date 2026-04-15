@@ -77,3 +77,24 @@ Ensure the Fermenter synthesizer module (JS/TS boundary, UI state management, an
 ## Resolved
 
 *(None yet)*
+
+## Verification notes (2026-04-14)
+
+### Pass 2
+
+| Claim | Check |
+|--------|--------|
+| No telemetry from worklet `process()` | **Confirmed** — `fermenterProcessor.ts` `process()` only writes outputs; no telemetry `postMessage`. |
+| `_handleMessage` / `sampleFrame` | **Confirmed** — ~176–183. |
+| Queue + `splice` | **Confirmed** — same idiom as Toaster. |
+
+### Gaps
+- **`setParam` vs sample accuracy:** **Confirmed** — `FermenterNode.ts` `setParam` (~77–80) posts only `{ type: 'param', name, value }` (no `sampleFrame`); notes support `sampleFrame`. Automation must be extended to pass a frame when fixing zipper noise.
+- Quantify morph drag: count `setFermenterParamWithAudio` calls from `applyMorphedPatch` in a profile.
+
+### Pass 3 (2026-04-14) — morph hot path
+
+| Claim | Result |
+|--------|--------|
+| **`applyMorphedPatch` fans out per numeric field** | **Confirmed** — `applyMorphedPatch.ts` ~10–14: `Object.entries(patch)` → `setFermenterParamWithAudio` for each `typeof val === 'number'`. One drag can still mean **dozens of messages** (every numeric key in the patch object). |
+| **Nested / array fields** | **Refined** — only **top-level numbers** are forwarded; nested structures are not walked (same as Issue #3 narrative). |
