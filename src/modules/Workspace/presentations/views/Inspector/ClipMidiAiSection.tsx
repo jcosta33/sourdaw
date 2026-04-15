@@ -7,26 +7,22 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { Button } from '#/components/ui/button';
-import { Dialog, DialogContent, DialogClose } from '#/components/ui/dialog';
 import { Sparkles, Loader2, Music, Cpu, Mic, AudioLines } from 'lucide-react';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
-import { isTauri } from '#/utils/tauriBridge';
 import { openPreferencesDialog } from '#/modules/Workspace/useCases/dialogs/openPreferencesDialog';
+import { midiStore } from '#/modules/MIDI/stores';
 import {
-    renderDdspInstrument,
     renderKokoroTts,
     renderDiffSingerPhrase,
     capabilityStore,
     modelRegistryStore,
     KokoroVoiceSelector,
     RenderProgressIndicator,
-    DDSP_INSTRUMENT_CATALOG,
     type RenderQuality,
 } from '#/modules/BrowserAi';
 import { useStore } from '#/infra/store/useStore';
-import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore } from '#/modules/Transport/stores';
 import { type Clip } from '../../../models/TrackViewTypes';
 
@@ -44,16 +40,12 @@ type ClipMidiAiSectionProps = {
 export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElement => {
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [variationTokenCount, setVariationTokenCount] = useState(0);
-    const [isRendering, setIsRendering] = useState(false);
     const [isRenderingTts, setIsRenderingTts] = useState(false);
-    const [instrumentId, setInstrumentId] = useState('ddsp-violin');
     // DiffSinger SVS uses diffusion-based synthesis with configurable step count.
-    // DDSP (TF.js GraphModel) is frame-based and has no quality/step parameter.
     const [svsRenderQuality, setSvsRenderQuality] = useState<RenderQuality>('standard');
     const [ttsText, setTtsText] = useState('');
     const [ttsVoiceId, setTtsVoiceId] = useState('af_heart');
     const [ttsSpeed, setTtsSpeed] = useState('1.0');
-    const [showUnsupportedDialog, setShowUnsupportedDialog] = useState(false);
     const [selectedVoicebankId, setSelectedVoicebankId] = useState('');
     const [diffSingerLyrics, setDiffSingerLyrics] = useState('');
     const [isRenderingSvs, setIsRenderingSvs] = useState(false);
@@ -69,18 +61,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
 
     const capability = capState?.phase === 'done' ? capState.report.capability : null;
     const isUnsupported = capability === 'unsupported-browser' || capability === 'unsupported-platform';
-    const isNativePlatform = capability === 'unsupported-platform' && isTauri();
 
-    const unsupportedReason =
-        capability === 'unsupported-platform'
-            ? 'Browser AI requires Chrome on Windows. On macOS/Linux with Tauri, the native renderer is used instead.'
-            : 'Browser AI requires Chrome (latest) with WebGPU. Firefox, Safari, and other browsers are not supported.';
-
-    // DDSP instruments are CDN-served — use the static catalog when the registry hasn't
-    // populated them yet (which happens lazily via TF.js on first render).
-    const registryInstruments = registry?.ddspInstruments ?? [];
-    const instruments = registryInstruments.length > 0 ? registryInstruments : DDSP_INSTRUMENT_CATALOG;
-    const selectedInstrumentMeta = instruments.find((i) => i.id === instrumentId);
     const kokoroStatus = registry?.kokoroModel?.status ?? 'not-downloaded';
     const kokoroProgress = registry?.kokoroModel?.downloadProgress ?? 0;
 
@@ -96,47 +77,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser(err instanceof Error ? err.message : 'Variation generation failed', 'error');
         } finally {
             setIsGeneratingVariations(false);
-        }
-    };
-
-    const handleRenderInstrument = async (): Promise<void> => {
-        const midiState = midiStore.value;
-        const notes = midiState?.notesByClipId[clip.id] ?? [];
-
-        if (notes.length === 0) {
-            notifyUser('No MIDI notes in this clip to render', 'error');
-            return;
-        }
-
-        if (!selectedInstrumentMeta) {
-            notifyUser('Select an instrument first', 'error');
-            return;
-        }
-
-        // DDSP instruments are CDN-served — no pre-download step required.
-        // TF.js loads and caches the model from Google CDN automatically on first use.
-
-        const tempoState = tempoMapStore.value;
-        const bpm = tempoState?.changes[0]?.tempo ?? 120;
-        const beatsPerSecond = bpm / 60;
-        const durationSec = (clip.endBeat - clip.startBeat) / beatsPerSecond;
-
-        setIsRendering(true);
-        try {
-            await renderDdspInstrument({
-                phraseId: clip.id,
-                modelId: instrumentId,
-                modelUrl: selectedInstrumentMeta.url,
-                notes,
-                durationSec,
-            });
-            notifyAiChange('Instrument render complete', [
-                `${selectedInstrumentMeta.name} rendered for this clip`,
-            ]);
-        } catch (err) {
-            notifyUser(err instanceof Error ? err.message : 'Render failed', 'error');
-        } finally {
-            setIsRendering(false);
         }
     };
 
@@ -274,80 +214,18 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     </Button>
                 </DawPluginSectionCard>
 
-                {/* Browser AI Render */}
+                {/* Browser AI Render — DDSP (not available in this build) */}
                 <DawPluginSectionCard
                     title="Browser AI Render"
                     detail={<Cpu className="size-3 text-[var(--color-accent-cyan)]" aria-hidden="true" />}
                     detailMode="badge"
                 >
-                    {isUnsupported ? (
-                        <DawBlockedState
-                            compact
-                            title={isNativePlatform ? 'Use Native Renderer' : 'Browser AI Unavailable'}
-                            description={
-                                isNativePlatform
-                                    ? 'macOS/Linux Tauri uses the native DiffSinger pipeline.'
-                                    : 'Requires Chrome with WebGPU.'
-                            }
-                            action={
-                                <div className="flex gap-2 items-center">
-                                    <DawMicroBadge tone="danger">Unsupported</DawMicroBadge>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowUnsupportedDialog(true)}
-                                        className="text-[9px] text-muted-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors"
-                                    >
-                                        Why?
-                                    </button>
-                                </div>
-                            }
-                        />
-                    ) : (
-                        <div className="space-y-2">
-                            <p className="text-[9px] text-muted-foreground leading-relaxed">
-                                DDSP instrument synthesis via TensorFlow.js + WebGPU.
-                            </p>
-
-                            {/* Instrument selector */}
-                            <div className="space-y-1">
-                                <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                    Instrument
-                                </label>
-                                <DawCompactSelect
-                                    value={instrumentId}
-                                    onChange={(e) => setInstrumentId(e.target.value)}
-                                    aria-label="DDSP instrument"
-                                    className="w-full"
-                                >
-                                    {instruments.map((inst) => (
-                                        <option key={inst.id} value={inst.id}>
-                                            {inst.name}
-                                        </option>
-                                    ))}
-                                </DawCompactSelect>
-                            </div>
-
-                            <RenderProgressIndicator phraseId={clip.id} />
-
-                            <Button
-                                variant="secondary"
-                                size="xs"
-                                className="w-full h-6 text-[10px] bg-[var(--color-accent-cyan)]/20 hover:bg-[var(--color-accent-cyan)]/40 text-[var(--color-accent-cyan)]"
-                                onClick={handleRenderInstrument}
-                                disabled={isRendering}
-                            >
-                                {isRendering ? (
-                                    <>
-                                        <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…
-                                    </>
-                                ) : (
-                                    <>
-                                        <Cpu className="size-3 mr-1" aria-hidden="true" /> Render Instrument
-                                    </>
-                                )}
-                            </Button>
-                        </div>
-                    )}
+                    <DawBlockedState
+                        compact
+                        title="DDSP Not Available"
+                        description="TensorFlow.js cannot be bundled for browser delivery. DDSP instrument synthesis is coming in a future release."
+                        action={<DawMicroBadge tone="muted">Coming soon</DawMicroBadge>}
+                    />
                 </DawPluginSectionCard>
 
                 {/* Vocal Preview (Kokoro TTS) */}
@@ -575,28 +453,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 )}
             </div>
 
-            <Dialog open={showUnsupportedDialog} onOpenChange={setShowUnsupportedDialog}>
-                <DialogContent showCloseButton={false} className="max-w-sm">
-                    <div className="flex flex-col gap-4">
-                        <div className="flex items-start gap-3">
-                            <Cpu className="size-5 shrink-0 text-muted-foreground mt-0.5" aria-hidden="true" />
-                            <div>
-                                <h2 className="text-sm font-semibold mb-1">Browser AI Unavailable</h2>
-                                <p className="text-xs text-muted-foreground leading-relaxed">{unsupportedReason}</p>
-                            </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                            DDSP instrument synthesis, Kokoro TTS, and DiffSinger SVS all require Chrome's WebGPU
-                            implementation for real-time inference. No data leaves your browser.
-                        </p>
-                        <DialogClose asChild>
-                            <Button size="sm" variant="secondary" className="self-end h-7 text-xs">
-                                Got it
-                            </Button>
-                        </DialogClose>
-                    </div>
-                </DialogContent>
-            </Dialog>
         </section>
     );
 };

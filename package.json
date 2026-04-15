@@ -49,6 +49,7 @@
         "@automerge/automerge": "^3.2.5",
         "@breezystack/lamejs": "^1.2.7",
         "@grame/faustwasm": "^0.16.1",
+        "@huggingface/transformers": "^4.0.1",
         "@mlc-ai/web-llm": "^0.2.82",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
         "@spotify/basic-pitch": "^1.0.1",
