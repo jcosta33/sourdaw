@@ -151,6 +151,10 @@ export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writ
                     speed,
                 });
 
+                if (result.audio.length === 0) {
+                    throw new Error('Kokoro inference produced no audio — model may have received an invalid input sequence');
+                }
+
                 // 5. Resample 24 kHz → 44.1 kHz
                 const resampled = await resampleTo44100({
                     audio: result.audio,

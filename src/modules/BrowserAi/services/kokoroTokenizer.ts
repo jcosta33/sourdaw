@@ -130,7 +130,17 @@ export function textToKokoroInputIds(text: string): KokoroInputIds {
         // Unknown phonemes are silently dropped (shouldn't happen with a complete map)
     }
 
+    if (tokenIds.length === 0) {
+        throw new Error('Text produced no phonemes — cannot synthesize empty or whitespace-only input');
+    }
+
     const tokenCount = tokenIds.length;
+
+    if (tokenCount > 510) {
+        // Kokoro v1.0 context limit is 512 tokens including the two pad tokens.
+        // Truncate to 510 so the padded sequence never exceeds the model's limit.
+        tokenIds.splice(510);
+    }
 
     // Wrap with pad token 0 at both ends (Kokoro v1.0 post-processor convention)
     const paddedIds = [0, ...tokenIds, 0];

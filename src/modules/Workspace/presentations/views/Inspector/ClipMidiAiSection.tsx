@@ -203,6 +203,10 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser('No MIDI notes in this clip to render', 'error');
             return;
         }
+        if (!selectedVoicebankId) {
+            notifyUser('Select a voicebank first', 'error');
+            return;
+        }
 
         setIsRenderingSvs(true);
         try {
