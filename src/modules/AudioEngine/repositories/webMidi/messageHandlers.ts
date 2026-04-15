@@ -209,8 +209,9 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
         const isRecording = transport?.isRecording ?? false;
 
         if (isRecording && isArmed) {
-            const clipId = findActiveRecordingClip(getTargetTrackId()!);
-            if (!clipId) {
+            const trackId = getTargetTrackId();
+            const clipId = trackId ? findActiveRecordingClip(trackId) : null;
+            if (!clipId || !trackId) {
                 return;
             }
 
@@ -218,7 +219,13 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             const durationSeconds = audioEngine.context.currentTime - noteData.startTime;
             const durationBeats = secondsToBeats(durationSeconds, tempo);
 
-            const midiNote = deps.createMidiNote(note, noteData.startBeat, Math.max(durationBeats, 0.0625), 100);
+            const trackLatencySec = getCompensationDelay(trackId);
+            const ctx = audioEngine.context;
+            const totalLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + trackLatencySec;
+            const offsetBeats = secondsToBeats(totalLatencySec, tempo);
+            const compensatedStartBeat = Math.max(0, noteData.startBeat - offsetBeats);
+
+            const midiNote = deps.createMidiNote(note, compensatedStartBeat, Math.max(durationBeats, 0.0625), 100);
 
             if (getMpeEnabled()) {
                 if (noteData.pressure !== undefined) {

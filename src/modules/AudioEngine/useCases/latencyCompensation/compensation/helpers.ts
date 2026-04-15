@@ -28,16 +28,18 @@ export function getDeviceLatencyMs(deviceType: string): number {
     return deviceLatencyMap[deviceType] ?? 0;
 }
 
-export function getTrackLatency(trackId: string): TrackLatency {
+export function getTrackLatency(trackId: string, visited = new Set<string>()): TrackLatency {
     const state = getTrackStoreState();
     if (!state) {
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
     }
 
     const track = state.tracks.find((t) => t.id === trackId);
-    if (!track) {
+    if (!track || visited.has(trackId)) {
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
     }
+
+    visited.add(trackId);
 
     let deviceLatencyMs = 0;
     for (const device of track.devices) {
@@ -46,7 +48,21 @@ export function getTrackLatency(trackId: string): TrackLatency {
         }
     }
 
-    return { trackId, deviceLatencyMs, totalLatencyMs: deviceLatencyMs };
+    let maxDownstreamMs = 0;
+
+    if (track.outputId && track.outputId !== 'hw_out') {
+        const outLatency = getTrackLatency(track.outputId, visited);
+        maxDownstreamMs = Math.max(maxDownstreamMs, outLatency.totalLatencyMs);
+    }
+
+    for (const send of track.sends) {
+        const sendLatency = getTrackLatency(send.busId, visited);
+        maxDownstreamMs = Math.max(maxDownstreamMs, sendLatency.totalLatencyMs);
+    }
+
+    visited.delete(trackId);
+
+    return { trackId, deviceLatencyMs, totalLatencyMs: deviceLatencyMs + maxDownstreamMs };
 }
 
 export function getMaxTrackLatency(): number {

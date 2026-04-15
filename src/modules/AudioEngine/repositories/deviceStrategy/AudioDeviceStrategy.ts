@@ -5,8 +5,8 @@ export interface AudioDeviceStrategy {
     readonly node: OfflineDeviceNode;
     setParam(name: string, value: number): void;
     setBypass?(bypassed: boolean): void;
-    noteOn?(noteOrPad: number, velocity: number, midiNote?: number): void;
-    noteOff?(noteOrPad: number): void;
+    noteOn?(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void;
+    noteOff?(noteOrPad: number, sampleFrame?: number): void;
     destroy?(): void;
 }
 

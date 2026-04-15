@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
+import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import { TrackNode } from '../engine/TrackNode';
 import { BusNode } from '../engine/BusNode';
 
@@ -9,6 +10,7 @@ class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
     public masterGainNode!: GainNode;
     public masterAnalyser!: AnalyserNode;
+    public masterMeterNode!: AudioWorkletNode;
 
     private trackNodes = new Map<string, TrackNode>();
     private busNodes = new Map<string, BusNode>();
@@ -49,8 +51,13 @@ class AudioEngineImpl implements AudioEngine {
         this.context = new OfflineAudioContext(2, 1, 44100) as unknown as AudioContext;
         this.masterGainNode = this.context.createGain();
         this.masterGainNode.gain.value = 0;
+        this.masterMeterNode = {
+            connect: () => {},
+            disconnect: () => {},
+            port: { postMessage: () => {} },
+        } as unknown as AudioWorkletNode; // Mock node for noop/offline fallback
         this.masterAnalyser = this.context.createAnalyser();
-        this.masterMeterBuffer = new Float32Array(0);
+        this.masterMeterBuffer = new Float32Array(1);
     }
 
     public async initialize(): Promise<void> {
@@ -62,6 +69,7 @@ class AudioEngineImpl implements AudioEngine {
             await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js');
             await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js');
             await this.context.audioWorklet.addModule(recordingProcessorUrl);
+            await this.context.audioWorklet.addModule(meteringProcessorUrl);
             this.workletReady = true;
         } catch (error) {
             logger.warn(`AudioWorklet modules failed to load: ${error}`);
@@ -203,15 +211,8 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return 0;
         }
-        const data = this.masterMeterBuffer;
-        this.masterAnalyser.getFloatTimeDomainData(data as any);
-        let peak = 0;
-        for (let i = 0; i < data.length; i++) {
-            const abs = Math.abs(data[i]!);
-            if (abs > peak) {
-                peak = abs;
-            }
-        }
+        const peak = this.masterMeterBuffer[0]!;
+        this.masterMeterBuffer[0] = 0;
         return peak;
     }
 

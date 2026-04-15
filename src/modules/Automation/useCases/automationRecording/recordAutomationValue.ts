@@ -1,4 +1,6 @@
 import { getTrackById } from '#/modules/Arrangement/useCases';
+import { getAudioContext, getCompensationDelay } from '#/modules/AudioEngine/useCases';
+import { getTransportStoreValue } from '#/modules/Transport/useCases';
 import { type AutomationPoint } from '../../models/Automation';
 import {
     RECORDING_MODES,
@@ -16,6 +18,17 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
         return;
     }
 
+    const transport = getTransportStoreValue();
+    const tempo = transport?.tempo ?? 120;
+    
+    const ctx = getAudioContext();
+    const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
+    const trackLatencySec = getCompensationDelay(trackId);
+    const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
+    const offsetBeats = (totalLatencySec * tempo) / 60;
+    
+    const compensatedBeat = Math.max(0, beat - offsetBeats);
+
     const key = makeKey(trackId, parameterId);
     let session = activeRecording.get(key);
 
@@ -23,14 +36,14 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
         session = {
             parameterId,
             trackId,
-            startBeat: beat,
+            startBeat: compensatedBeat,
             lastValue: null,
         };
         activeRecording.set(key, session);
         pendingPoints.set(key, []);
     }
 
-    const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
+    const point: AutomationPoint = { beat: compensatedBeat, value, curve: 'linear', tension: 0 };
     const laneId = findLaneId(trackId, parameterId);
 
     // The session-creation branch above always calls `pendingPoints.set(key, [])`
@@ -41,7 +54,7 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     if (track.automationMode === 'write') {
         if (laneId) {
             // Clear from recording start to current position (not shifting start)
-            clearPointsInRange(laneId, session.startBeat, beat);
+            clearPointsInRange(laneId, session.startBeat, compensatedBeat);
         }
         points?.push(point);
         session.lastValue = value;

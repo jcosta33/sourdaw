@@ -16,8 +16,8 @@ export type DeviceNodeEntry = {
         setBypass: (bypassed: boolean) => void;
     };
     instrumentControls?: {
-        noteOn: (noteOrPad: number, velocity: number, midiNote?: number) => void;
-        noteOff: (noteOrPad: number) => void;
+        noteOn: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
+        noteOff: (noteOrPad: number, sampleFrame?: number) => void;
     };
 };
 
@@ -90,8 +90,8 @@ export const buildDeviceChain = inject({ logger })(
                         setBypass: (bypassed) => strategy!.setBypass?.(bypassed),
                     },
                     instrumentControls: {
-                        noteOn: (note, vel, midi) => strategy!.noteOn?.(note, vel, midi),
-                        noteOff: (note) => strategy!.noteOff?.(note),
+                        noteOn: (note, vel, midi, sampleFrame) => strategy!.noteOn?.(note, vel, midi, sampleFrame),
+                        noteOff: (note, sampleFrame) => strategy!.noteOff?.(note, sampleFrame),
                     },
                 });
             }

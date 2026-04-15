@@ -92,12 +92,34 @@ async function stopWorker(): Promise<void> {
         return;
     }
 
-    // Read back the full PCM file and transfer ownership to the main thread.
+    // Re-open stream to patch the WAV header at the beginning
+    const patchStream = await opfsFileHandle.createWritable({ keepExistingData: true });
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+    
+    const totalSamples = localReadHead;
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + totalSamples * 4, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 3, true); // IEEE float
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, workerSampleRate, true);
+    view.setUint32(28, workerSampleRate * 4, true);
+    view.setUint16(32, 4, true);
+    view.setUint16(34, 32, true);
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, totalSamples * 4, true);
+
+    await patchStream.write({ type: 'write', position: 0, data: header });
+    await patchStream.close();
+
+    // Read back the full WAV file and transfer ownership to the main thread.
     const file = await opfsFileHandle.getFile();
     const arrayBuffer = await file.arrayBuffer();
-    const samples = new Float32Array(arrayBuffer);
 
-    self.postMessage({ type: 'pcm', samples, sampleRate: workerSampleRate }, [samples.buffer]);
+    self.postMessage({ type: 'wav', buffer: arrayBuffer }, [arrayBuffer]);
 
     // Remove the temp file — non-fatal if it fails.
     try {
