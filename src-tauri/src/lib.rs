@@ -13,7 +13,7 @@ pub fn run() {
         .manage(commands::native_llm::NativeLlmState::default())
         .manage(commands::speech::DictationState::default())
         .manage(commands::audio_gen::AudioGenState::default())
-        .manage(commands::sampler::SamplerState::default())
+        .manage(commands::crumbs::CrumbsState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
@@ -79,23 +79,23 @@ pub fn run() {
             commands::collab::collab_stop_advertising,
             commands::collab::collab_start_browsing,
             commands::collab::collab_get_nearby_sessions,
-            // Sampler
-            commands::sampler::create_sampler,
-            commands::sampler::destroy_sampler,
-            commands::sampler::load_sample,
-            commands::sampler::sampler_note_on,
-            commands::sampler::sampler_note_off,
-            commands::sampler::set_sampler_param,
-            commands::sampler::set_sampler_mode,
-            commands::sampler::get_waveform_peaks,
-            commands::sampler::detect_onsets,
-            commands::sampler::detect_sample_pitch,
-            commands::sampler::get_sampler_metering,
-            commands::sampler::sampler_all_sound_off,
-            commands::sampler::get_sampler_position,
-            commands::sampler::detect_smart_loop_points,
-            commands::sampler::arm_recording,
-            commands::sampler::stop_recording,
+            // Crumbs
+            commands::crumbs::create_crumbs,
+            commands::crumbs::destroy_crumbs,
+            commands::crumbs::load_sample,
+            commands::crumbs::crumbs_note_on,
+            commands::crumbs::crumbs_note_off,
+            commands::crumbs::set_crumbs_param,
+            commands::crumbs::set_crumbs_mode,
+            commands::crumbs::get_waveform_peaks,
+            commands::crumbs::detect_onsets,
+            commands::crumbs::detect_sample_pitch,
+            commands::crumbs::get_crumbs_metering,
+            commands::crumbs::crumbs_all_sound_off,
+            commands::crumbs::get_crumbs_position,
+            commands::crumbs::detect_smart_loop_points,
+            commands::crumbs::arm_recording,
+            commands::crumbs::stop_recording,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
