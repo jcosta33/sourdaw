@@ -32,7 +32,7 @@ export { renderQueueStore } from './stores/renderQueueStore';
 export { inferenceProgressStore } from './stores/inferenceProgressStore';
 
 // Views
-export { ModelManagerPanel, CapabilityReportPanel, RenderProgressIndicator, KokoroVoiceSelector } from './presentations/views';
+export { ModelManagerPanel, CapabilityReportPanel, RenderProgressIndicator, KokoroVoiceSelector, AiRenderClipPreview } from './presentations/views';
 
 
 // Events (types only — follow event contract pattern)
