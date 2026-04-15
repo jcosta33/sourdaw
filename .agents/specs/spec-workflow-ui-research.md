@@ -27,19 +27,21 @@ After implementation, Sourdaw adds: professional MIDI editor interactions (Alt+d
 The piano roll currently supports basic note operations but lacks the muscle-memory interactions that define a professional MIDI editing workflow.
 
 #### A1. Alt+Drag to Duplicate Notes
-Hold Alt (Option on macOS), then drag selected notes. Instead of moving, the original notes remain in place and a copy is created at the drop position. The copies become the new selection. Snaps to grid. Undo creates a single entry ("Duplicate N notes"). This is the single most expected MIDI editing shortcut in any DAW.
+Hold Alt (Option on macOS), then drag selected notes. Instead of moving, the original notes remain in place and a copy is created at the drop position. The copies become the new selection. Snaps to grid. Undo creates a single entry ("Duplicate N notes"). If Alt+drag starts on an unselected note, that note is first selected (same as current move behavior), then the selection is duplicated. Alt+drag on empty space remains rubber-band selection (existing behavior preserved). This is the single most expected MIDI editing shortcut in any DAW.
 
 #### A2. Ctrl/Cmd+D — Duplicate Selection Forward
 Duplicates the current note selection, placing copies immediately after the last note in the selection (offset by the selection's total time span). Repeated presses stack duplicates sequentially. If no notes are selected, duplicates the entire clip content.
 
 #### A3. Quick-Swap Tool (Hold to Temporarily Switch)
+**Note: this is a workspace-level feature affecting both arrangement and piano roll contexts, listed here because it most impacts MIDI editing flow.**
+
 Holding a tool shortcut key (S, C, D, T, E) temporarily activates that tool; releasing returns to the previous tool. Example: while in Select mode, hold D to draw a note, release to return to Select. This eliminates constant tool switching. The existing tool shortcuts (S/C/D/T/E) currently require a press-to-toggle; this adds a hold-to-temporary-swap behavior (press-and-release within 300ms = permanent switch; hold beyond 300ms = temporary swap).
 
 #### A4. Legato — Extend Notes to Next
 Select notes, press L (or context menu "Legato"). Each selected note's duration extends (or contracts) so its end meets the start of the next note on the same pitch. If no subsequent note exists on that pitch, the note extends to the next note on any pitch in the selection. Eliminates gaps between notes without overlap.
 
 #### A5. Note Split at Cursor
-With notes selected, press Alt+S (or context menu "Split at Cursor"). Each selected note that spans the playhead position is split into two notes at that beat. Both halves retain the original velocity and expression data. If no selected note spans the cursor, no action.
+With notes selected, press Shift+S (or context menu "Split at Cursor"). Each selected note that spans the playhead position is split into two notes at that beat. Both halves retain the original velocity and expression data. If no selected note spans the cursor, no action. (Shift+S chosen over Alt+S to avoid conflict with the global 'S' tool shortcut; Shift+key is free in the piano roll's keyDown handler for alphabetic keys.)
 
 #### A6. Join / Glue Selected Notes
 Select two or more adjacent notes on the same pitch, press J (or context menu "Join"). Merges them into a single note spanning the first note's start to the last note's end. Velocity takes the first note's value. If selected notes are non-adjacent or on different pitches, only pitch-matched adjacent groups are joined.
@@ -54,7 +56,7 @@ When the velocity lane is visible, clicking and dragging in a continuous motion 
 Open multiple MIDI clips simultaneously in a single piano roll view. Notes from each clip are color-coded by their source clip. Edits apply to whichever clip owns the note being manipulated. A clip selector in the toolbar controls which clip receives newly drawn notes. Notes from non-focused clips render semi-transparently and are directly editable (click to select, drag to move, etc.) — distinct from the existing "Ghost Notes" toggle which shows read-only preview notes from adjacent clips. Both systems can be active simultaneously: ghost notes remain read-only references; multi-clip notes are fully interactive.
 
 #### A10. Slip Editing (Move Content Within Clip Boundaries)
-Hold Ctrl/Cmd+Shift and drag inside a clip in the arrangement to slide the clip's internal content (MIDI notes or audio waveform) earlier or later without moving the clip boundaries. The clip start/end stays fixed; the content inside shifts. This uses the existing `audioOffsetBeats` field for audio and adjusts `startBeat` of all notes for MIDI. Undo label: "Slip clip content".
+Hold Ctrl/Cmd+Shift and drag inside a clip in the arrangement to slide the clip's internal content (MIDI notes or audio waveform) earlier or later without moving the clip boundaries. The clip start/end stays fixed; the content inside shifts. For audio clips, this adjusts the existing `audioOffsetBeats` field (non-destructive). For MIDI clips, a new `midiOffsetBeats` field on the clip model stores the offset (non-destructive — note `startBeat` values are not mutated; the offset is applied at render and playback time). Undo label: "Slip clip content".
 
 #### A11. In-Place MIDI Editing
 Toggle an inline piano roll directly in the arrangement timeline (no separate editor window needed). Notes render inside the clip region on the arrangement, scaled to the track's height. Basic editing (select, move, draw, delete) works directly. Double-click to expand into the full piano roll editor. This is the Ableton/Bitwig pattern of seeing notes directly on the arrangement.
@@ -68,10 +70,10 @@ When hovering over a note in the piano roll (without clicking), after a 200ms de
 ### B. Arrangement — Professional Clip Interactions
 
 #### B1. Alt+Drag to Duplicate Clips
-Hold Alt and drag a selected clip (or clip selection) to duplicate instead of move — identical to Alt+drag for notes (A1). The original clip stays; copies land at the drop position. Single undo entry.
+Hold Alt and drag a selected clip (or clip selection) to duplicate instead of move — identical to Alt+drag for notes (A1). The original clip stays; copies land at the drop position. Single undo entry. If Alt+drag starts on an unselected clip, that clip is first selected (same as current move behavior), then duplicated. Alt+drag on empty space remains rubber-band selection (existing behavior preserved).
 
 #### B2. Ctrl/Cmd+D — Duplicate Clips Forward
-Duplicates selected clips, placing copies immediately after the selection. Repeated presses stack. Same pattern as note duplication (A2).
+Duplicates selected clips, placing copies immediately after the selection (offset by the selection's time span). Repeated presses stack. If no clips are selected, the command is a no-op (unlike A2 which duplicates entire clip content — at the arrangement level, duplicating "everything" is too destructive to be a default).
 
 #### B3. Ripple Insert and Ripple Move
 Ripple delete already exists (`rippleDelete/`). Add:
@@ -254,24 +256,24 @@ Import/export system for custom device/macro mappings as a portable JSON format.
 
 ### MIDI Editor — Professional Interactions
 
-1. **R-A1** — Alt+drag (Option+drag on macOS) on selected notes in the piano roll duplicates the selection at the drop position. Original notes remain. Copies become the new selection. Snaps to grid. Single undo entry.
+1. **R-A1** — Alt+drag (Option+drag on macOS) on selected notes in the piano roll duplicates the selection at the drop position. Original notes remain. Copies become the new selection. Snaps to grid. Single undo entry. Alt+drag on unselected note = select then duplicate. Alt+drag on empty = rubber band (preserved).
 2. **R-A2** — Ctrl/Cmd+D duplicates the note selection forward, offset by the selection's time span. Repeated presses stack. No selection = duplicates entire clip content.
 3. **R-A3** — Holding a tool shortcut key (S/C/D/T/E) beyond 300ms temporarily activates that tool; releasing returns to the previous tool. Press-and-release within 300ms = permanent switch (current behavior preserved).
 4. **R-A4** — Legato command (L key or context menu): each selected note's duration extends/contracts so its end meets the start of the next note on the same pitch. Fallback: next note on any pitch in selection.
-5. **R-A5** — Split at cursor (Alt+S or context menu): selected notes spanning the playhead are split into two notes at that beat. Both halves retain velocity and expression data.
+5. **R-A5** — Split at cursor (Shift+S or context menu): selected notes spanning the playhead are split into two notes at that beat. Both halves retain velocity and expression data.
 6. **R-A6** — Join (J key or context menu): adjacent selected notes on the same pitch merge into a single note. Non-adjacent or different-pitch notes are unaffected.
 7. **R-A7** — Velocity ramp: in the velocity lane, Shift+drag draws a linear ramp across the time range. All notes in range are interpolated linearly between the start and end velocity values.
 8. **R-A8** — Velocity painting: continuous drag-through in the velocity lane paints velocity values onto all notes under the cursor's path in a single gesture (extends existing click-to-set with freehand painting).
 9. **R-A9** — Multi-clip editing: multiple MIDI clips can be open simultaneously in one piano roll. Notes color-coded by source clip. A clip selector controls which clip receives new notes. Non-focused clip notes are semi-transparent and directly editable (distinct from existing read-only "Ghost Notes" feature).
-10. **R-A10** — Slip editing: Ctrl/Cmd+Shift+drag inside a clip slides internal content without moving clip boundaries. Uses `audioOffsetBeats` for audio clips; shifts all note `startBeat` values for MIDI clips.
+10. **R-A10** — Slip editing: Ctrl/Cmd+Shift+drag inside a clip slides internal content without moving clip boundaries. Uses `audioOffsetBeats` for audio clips; adds new `midiOffsetBeats` field for MIDI clips (non-destructive — note data unchanged, offset applied at render/playback).
 11. **R-A11** — In-place MIDI editing: an inline piano roll renders notes directly inside clip regions on the arrangement timeline, scaled to track height. Basic editing (select, move, draw, delete) works inline. Double-click expands to full editor.
 12. **R-A12** — Constrain to scale: when a scale is selected, a "Constrain" toggle locks all note input and movement to scale degrees. Pitches snap to the nearest scale degree. Works with full keyboard visible (unlike "Fold" which hides rows).
 13. **R-A13** — Note preview on hover: after 200ms hover delay over a note, play a short audition via `playAuditionNote`. Configurable on/off in preferences.
 
 ### Arrangement — Professional Clip Interactions
 
-14. **R-B1** — Alt+drag on selected clips in the arrangement duplicates instead of moving. Same pattern as R-A1.
-15. **R-B2** — Ctrl/Cmd+D duplicates selected clips forward. Same pattern as R-A2.
+14. **R-B1** — Alt+drag on selected clips in the arrangement duplicates instead of moving. Same pattern as R-A1 (Alt+drag on unselected clip = select then duplicate; Alt+drag on empty = rubber band preserved).
+15. **R-B2** — Ctrl/Cmd+D duplicates selected clips forward, offset by selection timespan. No selection = no-op (unlike R-A2 which falls back to full clip content).
 16. **R-B3.1** — Ripple insert: pasting or drawing a clip in ripple mode pushes subsequent clips forward by the inserted clip's duration.
 17. **R-B3.2** — Ripple move: moving a clip in ripple mode closes the gap at the source and opens space at the destination.
 18. **R-B3.3** — Both ripple insert and move respect the existing per-track vs all-tracks ripple toggle.
@@ -374,7 +376,7 @@ Import/export system for custom device/macro mappings as a portable JSON format.
 - WebGPU features must degrade gracefully when WebGPU is unavailable
 - Sample analysis (R-G1) must run in Web Workers
 - All new interactions must integrate with the existing undo system (`pushUndoEntry`) with descriptive labels
-- New keyboard shortcuts must not conflict with existing shortcuts (S/C/D/B/T/E for tools, arrow keys for nudge, Delete/Backspace for delete, Ctrl+A/C/X/V for clipboard, Shift+click for add-to-selection, Alt+click for rubber band)
+- New keyboard shortcuts must not conflict with existing shortcuts (S/C/D/B/T/E for tools, arrow keys for nudge, Delete/Backspace for delete, Ctrl+A/C/X/V for clipboard, Shift+click for add-to-selection, Alt+drag for rubber band on empty space). New shortcuts introduced by this spec: L (legato), J (join), Shift+S (split), Ctrl/Cmd+D (duplicate forward), Ctrl/Cmd+L (loop from selection), Alt+drag on note/clip (duplicate), Alt+]/[ (cycle ghost clip alternatives)
 - Visual styling defers to `look-and-feel.md` — this spec defines behavior, not appearance
 
 ---
@@ -432,12 +434,12 @@ Import/export system for custom device/macro mappings as a portable JSON format.
 - [ ] **AC-A2** — Ctrl/Cmd+D duplicates selection forward by selection timespan; repeated presses stack
 - [ ] **AC-A3** — Holding tool key >300ms temporarily swaps; releasing returns to previous tool
 - [ ] **AC-A4** — Legato (L) extends each note to meet the next note on the same pitch
-- [ ] **AC-A5** — Split at cursor (Alt+S) splits selected notes at playhead; both halves retain velocity/expression
+- [ ] **AC-A5** — Split at cursor (Shift+S) splits selected notes at playhead; both halves retain velocity/expression
 - [ ] **AC-A6** — Join (J) merges adjacent same-pitch notes; non-adjacent/different-pitch notes unaffected
 - [ ] **AC-A7** — Shift+drag in velocity lane draws linear ramp across notes in range
 - [ ] **AC-A8** — Drag-through in velocity lane paints continuous velocity values across multiple notes in a single gesture
 - [ ] **AC-A9** — Multiple clips open in single piano roll; notes color-coded; clip selector for new notes; non-focused clip notes editable (distinct from read-only Ghost Notes)
-- [ ] **AC-A10** — Ctrl/Cmd+Shift+drag slides clip content without moving boundaries
+- [ ] **AC-A10** — Ctrl/Cmd+Shift+drag slides clip content without moving boundaries; non-destructive for both audio (`audioOffsetBeats`) and MIDI (new `midiOffsetBeats`)
 - [ ] **AC-A11** — Inline piano roll renders notes in arrangement clip regions; basic editing works; double-click expands
 - [ ] **AC-A12** — Constrain toggle locks note input/movement to scale degrees with full keyboard visible
 - [ ] **AC-A13** — Hovering over a note for 200ms plays audition; preference toggle available
@@ -506,11 +508,13 @@ Import/export system for custom device/macro mappings as a portable JSON format.
 
 The primary file for piano roll interactions is `src/modules/Workspace/presentations/hooks/usePianoRollInteractions.ts` (866 lines). Key integration points:
 
-- **Alt+drag duplicate (R-A1)**: In `handleMouseDown`, when `hit` exists and `e.altKey` is true, instead of entering `mode: 'move'`, enter `mode: 'duplicate'`. In `handleMouseUp`, create copies at final positions instead of moving originals. The `dragPreviewRef` already supports multi-note move previews — reuse for duplicate preview with a visual indicator.
+- **Alt+drag duplicate (R-A1)**: In `handleMouseDown`, when `hit` exists and `e.altKey` is true, instead of entering `mode: 'move'`, enter `mode: 'duplicate'`. In `handleMouseUp`, create copies at final positions instead of moving originals. The `dragPreviewRef` already supports multi-note move previews — reuse for duplicate preview with a visual indicator (e.g., dashed outlines for originals). When `hit` is null and `e.altKey` is true, the existing rubber-band path fires unchanged (line 278).
 - **Quick-swap (R-A3)**: Requires tracking keydown/keyup timing in the tool selector. The tool shortcuts are defined in `Workspace/models/EditingTool.ts` (`TOOL_SHORTCUTS`). Add a `toolSwapTimer` ref in the tool selector component.
 - **Legato (R-A4)**: New use case in `MIDI/useCases/midiNoteTransforms/legatoNotes.ts`. Sorts selected notes by startBeat per pitch, extends each duration to the next note's startBeat.
 - **Split (R-A5)**: New use case in `MIDI/useCases/midiNoteTransforms/splitNoteAtBeat.ts`. Splits a note into two, preserving expression.
 - **Join (R-A6)**: New use case in `MIDI/useCases/midiNoteTransforms/joinNotes.ts`. Merges adjacent same-pitch notes.
+- **Split (R-A5)**: Uses Shift+S (not Alt+S) to avoid conflict with the global 'S' → select tool shortcut. The piano roll's `handleKeyDown` must check `e.shiftKey && e.key === 's'` and call `e.stopPropagation()` to prevent the tool selector from intercepting the 'S' key.
+- **Slip editing (R-A10)**: Requires adding `midiOffsetBeats?: number` to the Clip model. The piano roll renderer and MIDI scheduling code must apply this offset when reading note positions. This keeps slip non-destructive for MIDI (matching audio's `audioOffsetBeats` pattern).
 - **Velocity ramp (R-A7)**: Modification to `VelocityLane.tsx` / `NotePropertyLane` — detect Shift+drag to compute linear interpolation across the time range.
 
 ### Existing code to modify (Arrangement interactions)
@@ -551,20 +555,28 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 - [ ] **Manual** — Press Ctrl/Cmd+D three times: verify three sequential duplications stacked forward
 - [ ] **Manual** — Hold D key for >500ms then release: verify draw tool activates and deactivates; verify quick tap <200ms permanently switches
 - [ ] **Manual** — Select notes with gaps, press L: verify each note extends to the next note on same pitch
-- [ ] **Manual** — Place playhead mid-note, select note, press Alt+S: verify note splits into two at playhead
+- [ ] **Manual** — Place playhead mid-note, select note, press Shift+S: verify note splits into two at playhead
 - [ ] **Manual** — Select adjacent same-pitch notes, press J: verify single merged note; verify non-adjacent notes unchanged
 - [ ] **Manual** — Select notes, Shift+drag in velocity lane: verify linear ramp from start to end
+- [ ] **Manual** — Click-drag through velocity lane across multiple notes in a single gesture: verify continuous velocity painting
 - [ ] **Manual** — Open two clips in piano roll: verify color-coded notes; verify edits go to correct clip
 - [ ] **Manual** — Ctrl/Cmd+Shift+drag clip content: verify boundaries stay fixed, content slides
 - [ ] **Manual** — Toggle inline editing: verify notes visible in arrangement; draw a note inline; double-click to expand
+- [ ] **Manual** — Select scale in piano roll, enable Constrain: verify note draw only places on scale degrees; verify move snaps to scale degrees; verify full keyboard still visible
+- [ ] **Manual** — Hover over a note for 300ms: verify audition plays; toggle off in preferences: verify no audition
 
 ### Arrangement
-- [ ] **Manual** — Alt+drag clip: verify original stays, copy at destination; single undo
+- [ ] **Manual** — Alt+drag clip: verify original stays, copy at destination; single undo; verify Alt+drag on empty = rubber band unchanged
+- [ ] **Manual** — Select clips, press Ctrl/Cmd+D: verify copies placed after selection; press again: verify stacking; verify no-op with no selection
 - [ ] **Manual** — Enable ripple, paste clip: verify subsequent clips push forward
 - [ ] **Manual** — Enable ripple, move clip: verify gap closes at source, space opens at destination
 - [ ] **Manual** — Shift+click beat ruler: verify time range selection; test delete-with-ripple on selection
 - [ ] **Manual** — Select clips, press Ctrl/Cmd+L: verify loop region matches selection bounds
 - [ ] **Manual** — Click-drag on beat ruler: verify audio scrub at drag speed
+
+### Layout & AI
+- [ ] **Manual** — Open session view alongside arrangement: verify both visible simultaneously; resize split; verify shared transport
+- [ ] **Manual** — Trigger AI clip generation: verify ghost clip appears with semi-transparent dashed visual; press Tab to accept: verify clip commits to project model; press Escape on next ghost: verify dismissal; press Alt+]: verify alternative cycles
 
 ### Visualization & Automation
 - [ ] **Manual** — Connect modulation source to knob: verify colored arc, 30fps animation, color by source
@@ -572,6 +584,10 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 - [ ] **Manual** — Play audio, open spectrum analyzer: verify 60fps FFT. Hover to freeze. Enable collision view.
 - [ ] **Manual** — Open spectrogram: verify heatmap renders. Toggle waveform overlay.
 - [ ] **Manual** — Open automation lanes: verify WebGPU canvas renders curves. Verify DOM controls interactive. Disable WebGPU: verify Canvas 2D fallback.
+- [ ] **Manual** — Create LFO modulator, connect to parameter: verify output in modulation halo; create envelope modulator: verify same; create step sequencer: verify same
+- [ ] **Manual** — Record multiple automation passes on same lane: verify take lanes appear; comp regions: verify correct segments play; flatten: verify merged automation
+- [ ] **Manual** — AI volume riding: analyze track, verify ghost automation suggestion appears; accept: verify committed curve
+- [ ] **Manual** — Cross-track linking: define scale relationship between two parameters; change source: verify target follows
 
 ### Sample Library
 - [ ] **Manual** — Import samples: verify BPM/key/descriptors appear in metadata; verify UI stays responsive
@@ -579,10 +595,20 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 - [ ] **Manual** — Open 2D map: verify point cloud; pan/zoom/select/audition
 - [ ] **Manual** — Drag sample to timeline: verify drop; test tempo-cropped variant
 
-### Other
-- [ ] **Manual** — Create automation clip, link instance: verify edits propagate; apply override; verify override sticks
-- [ ] **Manual** — MPE expression: select notes, open per-note lanes: verify expression data per note; humanize expression
+### Clip Aliases & Groove
+- [ ] **Manual** — Create automation clip, link instance: verify edits propagate; apply override; verify override sticks; Reset override: verify reverts
+- [ ] **Manual** — Open variation lanes in timeline: verify TrackAlternative content visible; switch active variation: verify playback follows
+- [ ] **Manual** — Apply groove template to clip: verify quantization/swing applied; adjust intensity slider: verify gradual change; remove: verify notes return to original positions
+
+### MPE Expression
+- [ ] **Manual** — Select notes, open per-note lanes: verify expression data per note; humanize expression
+- [ ] **Manual** — Record mod wheel while notes selected: verify expression data written to note-bound lanes (not clip CC)
+- [ ] **Manual** — Dense MPE data: verify piano roll collapses/dims overlays; hover over note: verify expression detail expands
+
+### Hardware Controllers
 - [ ] **Manual** — Connect Push/Launchpad: verify auto-detect, profile loads, mappings work
+- [ ] **Manual** — Write controller script that maps a knob to track volume: verify parameter control and feedback
+- [ ] **Manual** — Export mapping as JSON; reimport on clean install: verify mappings restored
 - [ ] **Automated** — `pnpm deps:validate` passes with zero violations
 - [ ] **Automated** — `pnpm typecheck` passes with no errors
 
