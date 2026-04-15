@@ -3,11 +3,18 @@
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 //! All DSP is lock-free, allocation-free in the audio path.
 
+pub mod adaa;
+pub mod bridged_t;
+pub mod dc_block;
 pub mod engine;
 pub mod engines;
 pub mod euclidean;
 pub mod lofi;
+pub mod mu_law;
 pub mod pad;
+pub mod poly_blep;
+pub mod sp1200;
+pub mod tolerance;
 pub mod transient;
 pub mod voice;
 
