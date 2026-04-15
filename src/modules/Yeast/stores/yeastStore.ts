@@ -17,6 +17,7 @@ import { createStore } from '#/infra/store/createStore';
 import { MidiRack } from '../useCases/MidiRack';
 import { type ProcessorType } from '../useCases/processorFactory';
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
+import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 export type YeastProcessorInfo = {
     id: string;
@@ -37,51 +38,61 @@ const defaultState: YeastState = {
 
 export const yeastStore = createStore<YeastState>({ initialData: defaultState });
 
-// The actual MIDI rack instance (main thread — used for live MIDI and UI state tracking)
-let rackInstance: MidiRack | null = null;
+type YeastSessionState = {
+    rackInstance: MidiRack | null;
+    processorTypeMap: Map<string, ProcessorType>;
+    _workletNode: YeastWorkletNodeResult | null;
+    _workletNodePromise: Promise<YeastWorkletNodeResult | null> | null;
+};
 
-// Explicit type map so the worklet can recreate processors on init/add.
-const processorTypeMap = new Map<string, ProcessorType>();
-
-// Worklet node — lazy init, null until first getYeastWorkletNodeAsync() call settles.
-let _workletNode: YeastWorkletNodeResult | null = null;
-let _workletNodePromise: Promise<YeastWorkletNodeResult | null> | null = null;
+const session = createHmrPersistentState<YeastSessionState>('yeast.session', () => ({
+    rackInstance: null,
+    processorTypeMap: new Map<string, ProcessorType>(),
+    _workletNode: null,
+    _workletNodePromise: null,
+}));
 
 /**
  * Lazily create (or return cached) the YeastWorkletNode.
  * Returns null if the worklet fails to initialize (triggers main-thread fallback).
  */
 export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<YeastWorkletNodeResult | null> {
-    if (_workletNode) {
-        return _workletNode;
-    }
-    if (_workletNodePromise) {
-        return _workletNodePromise;
+    // If context changed, invalidate existing session
+    if (session._workletNode && session._workletNode.context !== ctx) {
+        session._workletNode = null;
+        session._workletNodePromise = null;
     }
 
-    _workletNodePromise = createYeastWorkletNode(ctx)
+    if (session._workletNode) {
+        return session._workletNode;
+    }
+    if (session._workletNodePromise) {
+        return session._workletNodePromise;
+    }
+
+    session._workletNodePromise = createYeastWorkletNode(ctx)
         .then((node) => {
-            _workletNode = node;
+            session._workletNode = node;
             // Sync any processors that were added before the worklet was ready.
-            for (const [id, type] of processorTypeMap) {
+            for (const [id, type] of session.processorTypeMap) {
                 node.addProcessor(type, id);
             }
             return node;
         })
         .catch((err) => {
             logger.warn('[Yeast] Worklet init failed, using main-thread fallback:', err);
-            _workletNodePromise = null;
+            session._workletNodePromise = null;
             return null;
         });
 
-    return _workletNodePromise;
+    return session._workletNodePromise;
 }
 
 export function getYeastRack(): MidiRack {
-    if (!rackInstance) {
-        rackInstance = new MidiRack();
+    if (!session.rackInstance) {
+        session.rackInstance = new MidiRack();
     }
-    return rackInstance;
+    return session.rackInstance;
 }
 
 /**
@@ -90,7 +101,7 @@ export function getYeastRack(): MidiRack {
  * Use cases call this to notify the worklet of mutations without awaiting.
  */
 export function getWorkletNodeSync(): YeastWorkletNodeResult | null {
-    return _workletNode;
+    return session._workletNode;
 }
 
 /**
@@ -98,7 +109,7 @@ export function getWorkletNodeSync(): YeastWorkletNodeResult | null {
  * Called by write use cases when adding a processor.
  */
 export function registerProcessorType(id: string, type: ProcessorType): void {
-    processorTypeMap.set(id, type);
+    session.processorTypeMap.set(id, type);
 }
 
 /**
@@ -106,7 +117,7 @@ export function registerProcessorType(id: string, type: ProcessorType): void {
  * Called by write use cases when removing a processor.
  */
 export function unregisterProcessorType(id: string): void {
-    processorTypeMap.delete(id);
+    session.processorTypeMap.delete(id);
 }
 
 /**
@@ -125,7 +136,7 @@ export function syncStoreFromRack(): void {
         ...state,
         processors: names.map((n) => ({
             id: n.id,
-            type: processorTypeMap.get(n.id) ?? inferType(n.name),
+            type: session.processorTypeMap.get(n.id) ?? inferType(n.name),
             name: n.name,
             bypassed: n.bypassed,
         })),

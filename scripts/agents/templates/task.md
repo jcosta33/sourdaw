@@ -55,7 +55,7 @@ Update this if the plan changes.
 - [ ] Self-review: Correctness answered
 - [ ] Self-review: Architecture answered
 - [ ] Self-review: Conventions answered
-- [ ] Self-review: Scope answered
+- [ ] Self-review: Primary deliverable and related work answered
 - [ ] Self-review: Completeness answered
 
 ---
@@ -120,9 +120,9 @@ Stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't
 - No `useMemo`/`useCallback`/`React.memo`. No `&&` in JSX rendering. No `interface` — use `type`. No `enum` — use `as const`. No barrel files except each module’s root `index.ts` (curated re-exports only). No cross-module internal imports.
   Answer:
 
-### Scope
+### Primary deliverable and related work
 
-- Did you touch anything outside the stated scope? Did you make improvements that weren't asked for? Revert them.
+- The **Objective** is what you must ship. If you fixed or improved something outside that path, note it in **Findings** or **Decisions** (what and why). Do not revert correct work only because it was not named in the Objective.
   Answer:
 
 ### Completeness

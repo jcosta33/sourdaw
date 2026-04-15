@@ -1,30 +1,39 @@
 import { audioEngine } from '../createWebAudioEngine';
 import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
+import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
-let monitorStream: MediaStream | null = null;
-let monitorSource: MediaStreamAudioSourceNode | null = null;
+type InputMonitoringSession = {
+    monitorStream: MediaStream | null;
+    monitorSource: MediaStreamAudioSourceNode | null;
+};
+
+const session = createHmrPersistentState<InputMonitoringSession>('audioEngine.inputMonitoring', () => ({
+    monitorStream: null,
+    monitorSource: null,
+}));
 
 export async function startInputMonitoring(trackId: string, inputId?: string | null): Promise<boolean> {
-    if (monitorSource) {
-        return true;
-    }
     try {
-        const selectedInputId = inputId ?? getSelectedInputId();
-        const audioConstraints: MediaTrackConstraints = {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-        };
-        if (selectedInputId) {
-            audioConstraints.deviceId = { exact: selectedInputId };
+        if (!session.monitorSource) {
+            const selectedInputId = inputId ?? getSelectedInputId();
+            const audioConstraints: MediaTrackConstraints = {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+            };
+            if (selectedInputId) {
+                audioConstraints.deviceId = { exact: selectedInputId };
+            }
+            session.monitorStream = await navigator.mediaDevices.getUserMedia({
+                audio: audioConstraints,
+            });
+            const ctx = audioEngine.context;
+            session.monitorSource = ctx.createMediaStreamSource(session.monitorStream);
         }
-        monitorStream = await navigator.mediaDevices.getUserMedia({
-            audio: audioConstraints,
-        });
-        const ctx = audioEngine.context;
-        monitorSource = ctx.createMediaStreamSource(monitorStream);
+
+        // Always ensure connection to the latest track strip (handles HMR replacement of strips)
         const strip = audioEngine.ensureTrackStrip(trackId);
-        monitorSource.connect(strip.gainNode);
+        session.monitorSource.connect(strip.gainNode);
         return true;
     } catch {
         return false;
@@ -32,14 +41,14 @@ export async function startInputMonitoring(trackId: string, inputId?: string | n
 }
 
 export function stopInputMonitoring(): void {
-    if (monitorSource) {
-        monitorSource.disconnect();
-        monitorSource = null;
+    if (session.monitorSource) {
+        session.monitorSource.disconnect();
+        session.monitorSource = null;
     }
-    if (monitorStream) {
-        for (const t of monitorStream.getTracks()) {
+    if (session.monitorStream) {
+        for (const t of session.monitorStream.getTracks()) {
             t.stop();
         }
-        monitorStream = null;
+        session.monitorStream = null;
     }
 }

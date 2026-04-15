@@ -80,7 +80,7 @@ Every public path you add a compatibility shim to. Do not remove a shim until al
 - [ ] Self-review: Completeness answered
 - [ ] Self-review: Shim contracts answered
 - [ ] Self-review: Behaviour preservation answered
-- [ ] Self-review: Scope answered
+- [ ] Self-review: Primary deliverable and related work answered
 
 ---
 
@@ -140,9 +140,9 @@ Stop. Refactors are high-risk: they touch many files, they drift from intent, an
 - Did you change any behaviour while restructuring? Restructuring means moving and renaming, not rewriting. Did you delete anything still needed somewhere?
   Answer:
 
-### Scope
+### Primary deliverable and related work
 
-- Files outside your team scope touched without documenting why? Unrelated improvements or cleanups?
+- The refactor plan is the main job. If you fixed or improved something beyond it, note it in **Findings** or **Decisions** so the branch stays reviewable. Do not revert correct work only because it was extra.
   Answer:
 
 Only when every answer above is written is this task complete.

@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useRef } from 'react';
 import { useStore } from '#/infra/store/useStore';
+import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 import { Activity, Waves } from 'lucide-react';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -368,6 +369,13 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const phaseRef = useRef(0);
     const rafRef = useRef(0);
+    const centsRef = useRef(cents);
+    const activeRef = useRef(active);
+
+    useEffect(() => {
+        centsRef.current = cents;
+        activeRef.current = active;
+    }, [cents, active]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -379,20 +387,32 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
             return;
         }
 
+        // Handle high-DPI displays
+        const dpr = window.devicePixelRatio || 1;
+        const logicalWidth = 480;
+        const logicalHeight = 180;
+        canvas.width = logicalWidth * dpr;
+        canvas.height = logicalHeight * dpr;
+        ctx.scale(dpr, dpr);
+
+        let imageData: ImageData | null = null;
+
         const draw = (): void => {
-            const width = canvas.width;
-            const height = canvas.height;
-            const velocity = active ? Math.sign(cents) * Math.sqrt(Math.abs(cents)) * 0.15 : 0;
-            const effectiveVelocity = Math.abs(cents) < 0.1 ? 0 : velocity;
+            const width = logicalWidth;
+            const height = logicalHeight;
+            const currentCents = centsRef.current;
+            const currentActive = activeRef.current;
+            const velocity = currentActive ? Math.sign(currentCents) * Math.sqrt(Math.abs(currentCents)) * 0.15 : 0;
+            const effectiveVelocity = Math.abs(currentCents) < 0.1 ? 0 : velocity;
             phaseRef.current += effectiveVelocity * 0.016;
 
-            const background = ctx.createLinearGradient(0, 0, 0, height);
-            background.addColorStop(0, 'rgb(4,4,6)');
-            background.addColorStop(1, 'rgb(2,2,3)');
-            ctx.fillStyle = background;
-            ctx.fillRect(0, 0, width, height);
+            if (!currentActive) {
+                const background = ctx.createLinearGradient(0, 0, 0, height);
+                background.addColorStop(0, 'rgb(4,4,6)');
+                background.addColorStop(1, 'rgb(2,2,3)');
+                ctx.fillStyle = background;
+                ctx.fillRect(0, 0, width, height);
 
-            if (!active) {
                 ctx.fillStyle = 'rgba(255,255,255,0.06)';
                 ctx.font = '12px sans-serif';
                 ctx.textAlign = 'center';
@@ -401,22 +421,41 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
                 return;
             }
 
+            if (!imageData || imageData.width !== canvas.width || imageData.height !== canvas.height) {
+                imageData = ctx.createImageData(canvas.width, canvas.height);
+            }
+
+            const data = imageData.data;
             const stripeCount = 24;
-            for (let x = 0; x < width; x += 1) {
-                const u = x / width + phaseRef.current;
+            const absCents = Math.abs(currentCents);
+            const nearZero = absCents < 2;
+
+            // Render to high-DPI imageData buffer
+            const physicalWidth = canvas.width;
+            const physicalHeight = canvas.height;
+
+            for (let x = 0; x < physicalWidth; x += 1) {
+                const u = (x / physicalWidth) + phaseRef.current;
                 const t = u * stripeCount;
                 const fraction = t - Math.floor(t);
                 const intensity = 1 - Math.abs(2 * fraction - 1);
                 const powered = Math.pow(intensity, 2.5);
-                const nearZero = Math.abs(cents) < 2;
-                const red = nearZero ? Math.floor(powered * 30) : Math.floor(powered * 210);
-                const green = nearZero ? Math.floor(powered * 220) : Math.floor(powered * 210);
-                const blue = nearZero ? Math.floor(powered * 140) : Math.floor(powered * 220);
-                ctx.fillStyle = `rgb(${red},${green},${blue})`;
-                ctx.fillRect(x, 0, 1, height);
-            }
+                
+                const r = nearZero ? Math.floor(powered * 30) : Math.floor(powered * 210);
+                const g = nearZero ? Math.floor(powered * 220) : Math.floor(powered * 210);
+                const b = nearZero ? Math.floor(powered * 140) : Math.floor(powered * 220);
 
-            if (Math.abs(cents) < 0.5) {
+                for (let y = 0; y < physicalHeight; y += 1) {
+                    const idx = (y * physicalWidth + x) * 4;
+                    data[idx] = r;
+                    data[idx + 1] = g;
+                    data[idx + 2] = b;
+                    data[idx + 3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+
+            if (absCents < 0.5) {
                 ctx.save();
                 ctx.shadowColor = 'rgba(52,220,160,0.3)';
                 ctx.shadowBlur = 8;
@@ -432,36 +471,27 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
 
         rafRef.current = requestAnimationFrame(draw);
         return () => cancelAnimationFrame(rafRef.current);
-    }, [cents, active]);
+    }, []);
 
-    return <canvas ref={canvasRef} width={480} height={180} className="h-full w-full" />;
+    return <canvas ref={canvasRef} style={{ width: 480, height: 180 }} className="h-full w-full" />;
 };
 
 const HISTORY_GRAPH_WINDOW = 300;
 
 const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    // §163.x — ring buffer for cents history. 300-entry Array.shift() on
-    // every cents update (sung note pitch) was O(n); fixed-size
-    // Float32Array + head/filled counters give O(1) push.
-    const historyBufRef = useRef<Float32Array>(new Float32Array(HISTORY_GRAPH_WINDOW));
-    const historyHeadRef = useRef(0);
-    const historyFilledRef = useRef(0);
+    const historyRef = useRef<Float32Array>(createCompactFloatBuffer({ length: HISTORY_GRAPH_WINDOW }));
+    const posRef = useRef(0);
+    const centsRef = useRef(cents);
+    const activeRef = useRef(active);
+    const rafRef = useRef(0);
 
     useEffect(() => {
-        if (active) {
-            const buf = historyBufRef.current;
-            buf[historyHeadRef.current] = cents;
-            historyHeadRef.current = (historyHeadRef.current + 1) % HISTORY_GRAPH_WINDOW;
-            if (historyFilledRef.current < HISTORY_GRAPH_WINDOW) {
-                historyFilledRef.current++;
-            }
-        }
-        const historyLength = historyFilledRef.current;
-        const oldestIdx = historyFilledRef.current < HISTORY_GRAPH_WINDOW ? 0 : historyHeadRef.current;
-        const readHistory = (i: number): number =>
-            historyBufRef.current[(oldestIdx + i) % HISTORY_GRAPH_WINDOW]!;
+        centsRef.current = cents;
+        activeRef.current = active;
+    }, [cents, active]);
 
+    useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -471,66 +501,92 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
             return;
         }
 
-        const width = canvas.width;
-        const height = canvas.height;
-        const background = ctx.createLinearGradient(0, 0, 0, height);
-        background.addColorStop(0, 'rgb(8,8,11)');
-        background.addColorStop(1, 'rgb(4,4,6)');
-        ctx.fillStyle = background;
-        ctx.fillRect(0, 0, width, height);
+        // Handle high-DPI displays
+        const dpr = window.devicePixelRatio || 1;
+        const logicalWidth = 720;
+        const logicalHeight = 56;
+        canvas.width = logicalWidth * dpr;
+        canvas.height = logicalHeight * dpr;
+        ctx.scale(dpr, dpr);
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-        ctx.lineWidth = 0.5;
-        for (const fraction of [0.25, 0.75]) {
+        const draw = (): void => {
+            const currentCents = centsRef.current;
+            const currentActive = activeRef.current;
+            const history = historyRef.current;
+
+            if (currentActive) {
+                history[posRef.current % HISTORY_GRAPH_WINDOW] = currentCents;
+                posRef.current++;
+            }
+
+            const historyLength = Math.min(posRef.current, HISTORY_GRAPH_WINDOW);
+            const pos = posRef.current;
+            const readHistory = (i: number): number => history[(pos - historyLength + i) % HISTORY_GRAPH_WINDOW]!;
+
+            const width = logicalWidth;
+            const height = logicalHeight;
+            const background = ctx.createLinearGradient(0, 0, 0, height);
+            background.addColorStop(0, 'rgb(8,8,11)');
+            background.addColorStop(1, 'rgb(4,4,6)');
+            ctx.fillStyle = background;
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+            ctx.lineWidth = 0.5;
+            for (const fraction of [0.25, 0.75]) {
+                ctx.beginPath();
+                ctx.moveTo(0, height * fraction);
+                ctx.lineTo(width, height * fraction);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = 'rgba(52,220,160,0.15)';
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(0, height * fraction);
-            ctx.lineTo(width, height * fraction);
+            ctx.moveTo(0, height / 2);
+            ctx.lineTo(width, height / 2);
             ctx.stroke();
-        }
 
-        ctx.strokeStyle = 'rgba(52,220,160,0.15)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, height / 2);
-        ctx.lineTo(width, height / 2);
-        ctx.stroke();
+            if (historyLength >= 2) {
+                ctx.save();
+                ctx.shadowColor = 'rgba(130,200,220,0.3)';
+                ctx.shadowBlur = 4;
+                ctx.strokeStyle = 'rgba(140,200,220,0.65)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (let index = 0; index < historyLength; index += 1) {
+                    const x = (index / HISTORY_GRAPH_WINDOW) * width;
+                    const y = height / 2 - (readHistory(index) / 50) * (height / 2);
+                    if (index === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                ctx.stroke();
+                ctx.restore();
 
-        if (historyLength < 2) {
-            return;
-        }
-
-        ctx.save();
-        ctx.shadowColor = 'rgba(130,200,220,0.3)';
-        ctx.shadowBlur = 4;
-        ctx.strokeStyle = 'rgba(140,200,220,0.65)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for (let index = 0; index < historyLength; index += 1) {
-            const x = (index / HISTORY_GRAPH_WINDOW) * width;
-            const y = height / 2 - (readHistory(index) / 50) * (height / 2);
-            if (index === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
+                ctx.strokeStyle = 'rgba(140,200,220,0.7)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (let index = 0; index < historyLength; index += 1) {
+                    const x = (index / HISTORY_GRAPH_WINDOW) * width;
+                    const y = height / 2 - (readHistory(index) / 50) * (height / 2);
+                    if (index === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                ctx.stroke();
             }
-        }
-        ctx.stroke();
-        ctx.restore();
 
-        ctx.strokeStyle = 'rgba(140,200,220,0.7)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let index = 0; index < historyLength; index += 1) {
-            const x = (index / HISTORY_GRAPH_WINDOW) * width;
-            const y = height / 2 - (readHistory(index) / 50) * (height / 2);
-            if (index === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
-            }
-        }
-        ctx.stroke();
-    }, [cents, active]);
+            rafRef.current = requestAnimationFrame(draw);
+        };
+
+        rafRef.current = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(rafRef.current);
+    }, []);
 
     return <canvas ref={canvasRef} width={720} height={56} className="h-full w-full" />;
 };

@@ -470,7 +470,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                         role="menuitem"
                         onClick={waveAct(() => {
-                            const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
+                            const track = trackState.tracks.find((t) => t.clips.some((c) => c.id === clipId));
                             if (track) {
                                 audioToMidi({ clipId, trackId: track.id });
                             }

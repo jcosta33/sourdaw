@@ -67,11 +67,21 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     let lastTick = 0;
     for (const event of events) {
         const delta = Math.max(0, event.tick - lastTick);
-        trackBytes.push(...writeVarLen(delta), ...event.data);
+        const deltaBytes = writeVarLen(delta);
+        for (let i = 0; i < deltaBytes.length; i++) {
+            trackBytes.push(deltaBytes[i]!);
+        }
+        for (let i = 0; i < event.data.length; i++) {
+            trackBytes.push(event.data[i]!);
+        }
         lastTick = event.tick;
     }
 
-    trackBytes.push(...writeVarLen(0), 0xff, 0x2f, 0x00);
+    const endDelta = writeVarLen(0);
+    for (let i = 0; i < endDelta.length; i++) {
+        trackBytes.push(endDelta[i]!);
+    }
+    trackBytes.push(0xff, 0x2f, 0x00);
 
     return trackBytes;
 }
@@ -97,9 +107,20 @@ export function downloadMidiFile({ clipName, clipStartBeat, notes, ccs }: Downlo
         ...write16(TICKS_PER_BEAT),
     ];
 
-    const trackChunk = [...writeString('MTrk'), ...write32(trackData.length), ...trackData];
+    const mtrk = writeString('MTrk');
+    const trackLen = write32(trackData.length);
+    const trackChunkLen = mtrk.length + trackLen.length + trackData.length;
+    const totalLen = headerChunk.length + trackChunkLen;
 
-    const bytes = new Uint8Array([...headerChunk, ...trackChunk]);
+    const bytes = new Uint8Array(totalLen);
+    bytes.set(headerChunk, 0);
+    let offset = headerChunk.length;
+    bytes.set(mtrk, offset);
+    offset += mtrk.length;
+    bytes.set(trackLen, offset);
+    offset += trackLen.length;
+    bytes.set(trackData, offset);
+
     const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
     downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
 }

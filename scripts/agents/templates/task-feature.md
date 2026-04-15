@@ -67,7 +67,7 @@ Which modules will be touched and what changes in each.
 - [ ] Self-review: Correctness answered
 - [ ] Self-review: Architecture answered
 - [ ] Self-review: React and TypeScript conventions answered
-- [ ] Self-review: Scope answered
+- [ ] Self-review: Primary deliverable and related work answered
 - [ ] Self-review: Completeness answered
 
 ---
@@ -131,9 +131,9 @@ Stop. Act as a senior engineer doing an adversarial review of this implementatio
 - Did you use `useMemo`, `useCallback`, or `React.memo`? Did you use `&&` for conditional rendering? Did you use `interface` instead of `type`, or `enum` instead of `as const`? Does `pnpm typecheck` pass cleanly?
   Answer:
 
-### Scope
+### Primary deliverable and related work
 
-- Did you touch files outside your team scope without a documented reason in Findings? Did you make any "while I'm here" improvements that weren't asked for?
+- The **Objective** and spec are what you must ship. If you fixed or improved something outside that path, note it in **Findings** or **Decisions**. Do not revert correct work only because it was not in the original ask.
   Answer:
 
 ### Completeness

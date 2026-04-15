@@ -96,6 +96,13 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
         const ctx = canvas.getContext('2d');
         if (ctx === null) {return;}
 
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = DISPLAY_COLS;
+        offscreenCanvas.height = HISTORY_FRAMES;
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+        if (offscreenCtx === null) {return;}
+        const imgData = offscreenCtx.createImageData(DISPLAY_COLS, HISTORY_FRAMES);
+
         let raf = 0;
         const render = (): void => {
             const frame = frameRef.current;
@@ -122,21 +129,15 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
             }
 
             // Draw the waterfall.
-            ctx.clearRect(0, 0, width, height);
             const history = historyRef.current;
             const head = headRef.current;
-            const rowH = height / HISTORY_FRAMES;
-            const colW = width / DISPLAY_COLS;
+            const data = imgData.data;
+            data.fill(0);
 
             for (let row = 0; row < HISTORY_FRAMES; row++) {
                 const frameIdx = (head - row - 1 + HISTORY_FRAMES) % HISTORY_FRAMES;
                 const rowData = history[frameIdx]!;
-                const y = Math.floor(row * rowH);
-                const nextY = Math.floor((row + 1) * rowH);
-                const rh = nextY - y;
-                if (rh <= 0) {
-                    continue;
-                }
+                const yOffset = row * DISPLAY_COLS * 4;
 
                 for (let c = 0; c < DISPLAY_COLS; c++) {
                     const mag = rowData[c]!;
@@ -144,12 +145,20 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
                         continue;
                     }
                     const [r, g, b, a] = colorMap(mag);
-                    ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${(a / 255).toFixed(2)})`;
-                    const x = Math.floor(c * colW);
-                    const cw = Math.floor((c + 1) * colW) - x;
-                    ctx.fillRect(x, y, cw, rh);
+                    const idx = yOffset + c * 4;
+                    data[idx] = r;
+                    data[idx + 1] = g;
+                    data[idx + 2] = b;
+                    data[idx + 3] = a;
                 }
             }
+
+            offscreenCtx.putImageData(imgData, 0, 0);
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(offscreenCanvas, 0, 0, width, height);
+
             raf = requestAnimationFrame(render);
         };
         raf = requestAnimationFrame(render);

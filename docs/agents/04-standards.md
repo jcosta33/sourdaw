@@ -147,10 +147,10 @@ A summary that only lists files changed is not useful. Record decisions made, as
 
 ---
 
-## Scope discipline
+## Task focus vs opportunistic fixes
 
-Work only what is assigned. If you discover related work that needs doing, record it — in the audit, the spec's open questions, or the task file's Findings / Next steps — but do not start it.
+Each session has a **primary deliverable** (the Objective or the human’s ask). That is what you must complete.
 
-This is not about following rules. It is about the fact that unplanned work in a worktree produces changes that were not specced, not reviewed, and cannot be attributed to the task. The worktree's branch will contain unexpected changes. The audit will not cover them. The spec will not include them.
+If you discover a real problem or a clear improvement while doing that work — including outside the path you first expected — you **may** address it. Prefer documenting meaningful extra changes in the task file’s **Findings** or **Decisions** (what changed and why) so the branch stays reviewable. Large or risky tangents still deserve an explicit note or a separate follow-up; the point is not to treat “scope” as a reason to ignore obvious issues.
 
-If the discovered work is urgent, surface it explicitly: write up what was found and why it matters. Let the person running the session decide whether to reprioritise.
+If you cannot safely take something on, record it in **Findings** / **Next steps** (or the spec’s **Open questions**) instead of losing it.

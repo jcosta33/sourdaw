@@ -138,9 +138,10 @@ not `Map<>`, so React ref-equality works; fixes data-loss on panel close/reopen)
   `CrustWaveformDisplay` (hoisted `getContext('2d')`; peak-label list
   advance+cull now in place via write-pointer, replacing `.map().filter()`
   two-array alloc per frame). Commit `be2bb645`.
-- **Ring buffer rolling histories:** §160.x / §162.x / §163.x — replaced
+- **HMR-unsafe module state (batch 2):** §168.1, §170.1, §176.1, §177.1, §169.x, §171.x (`scheduleAudioClips` Set, `semanticChangeContext`, `inputMonitoring`, `yeastStore` worklets, `songStructureDetection` spreads, `assetTransfer` base64). Wrapped with `createHmrPersistentState` or plain `sessionState` holders.
+- **Ring buffer rolling histories / allocations:** §160.x / §162.x / §163.x / §165.x / §172.x / §161.x / §164.x / §166.x / §173.x — replaced
   `Array.shift()` O(n) rolling histories with fixed-size `Float32Array` +
-  head index O(1) writes. Commit `6e9feeb2`.
+  head index O(1) writes; optimized large MIDI exports, signal flow rebuilds, and waterfall canvas allocations; bypassed boxed IPC array allocations in Tauri bridge. Commit `6e9feeb2`.
 - **HMR-unsafe module state (tail):** §167.x — 16-levels holder; §122.1
   tail — 14 more `let nextXId = 1` counters converted to
   `crypto.randomUUID()`. Commit `df63cf66`.
@@ -232,6 +233,7 @@ deliberately skipped has been moved to **Resolved findings** or
 ### Needs a spec (not a refactor)
 
 #### §10.1 `createAutomergeStorage.ts` — infra → domain import
+
 **File:** `src/infra/store/storage/createAutomergeStorage.ts`
 
 `infra/` imports from `#/modules/CrdtDocument`, inverting the
@@ -246,6 +248,7 @@ stores. Design-doc-first refactor, not a single-session edit.
 ### Feature work (not a refactor)
 
 #### §35.2 Mono-only recording
+
 Audio recording hardcodes `channelCount: 1`. Stereo requires a
 `numberOfInputChannels` setting, changes to the OPFS worker's PCM
 assembly, and input-channel UI. Real product scope.
@@ -255,17 +258,20 @@ assembly, and input-channel UI. Real product scope.
 ### Low-impact open bugs
 
 #### §70.2 `Meyda.sampleRate` / `bufferSize` — global state mutation
+
 Meyda's module-level singleton config is written during analysis
 calls. Unavoidable given the library API — document or wrap in a
 save/restore helper.
 
 #### §58.3 `compilerEngine.ts` side-effect at module load
+
 The code explicitly documents "side-effect at module load is required
 because nothing imports the registry directly from the host side".
 Design decision, not a bug — flagged for future revisit if the plugin
 loader layer gets a bootstrap entry point.
 
 #### §8.2 Remaining-stores pure-setter confirmation pass
+
 Spot-checked the 22 large store files flagged in the original sweep.
 Most are pure setters (allowed by §8.1) or mechanical clamping
 helpers that are still conceptually setters. No concrete offenders
@@ -283,18 +289,3 @@ The continuation pass landed the canvas/rAF hoisting cluster, the
 §188.1 (see Resolved block). The items below remain unlanded and are
 a good fit for a parallel-agent sweep — each file is independent and
 the patterns are well-established.
-
-**Non-reactive store reads during render (batch 2):**
-§203.1, §206.4 (the render-time cluster not covered by the §195.3 /
-§197.1 / §198.1 / §201.1 / §202.1 / §211.1 work already landed).
-
-**Ring buffer `shift()` / boxed IPC allocation (remaining):**
-§161.x, §164.x, §165.x, §166.x, §173.x.
-
-**HMR-unsafe module state (remaining — same §14.1 pattern):**
-§168.x, §169.x, §170.x, §171.x, §172.x, §176.1, §177.1. For any of
-these where an external resource (Worker, MediaStream, WebSocket,
-timer) holds a closure reference into the state, the fix is
-`createHmrPersistentState` from `src/utils/HMR/`; otherwise a plain
-`Session | null` holder per `docs/03-state-management.md` is the
-right shape.

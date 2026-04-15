@@ -146,7 +146,7 @@ Stop. A partial migration is a ticking time bomb — it leaves the codebase in a
 
 ### Blast radius
 
-- Did you touch files outside your team scope without documenting why?
+- Did you change files beyond what the migration plan listed? Note additions in **Findings** or **Decisions** so reviewers can trace the branch — not a reason to avoid necessary fixes.
   Answer:
 
 Only when every answer above is written is this task complete.

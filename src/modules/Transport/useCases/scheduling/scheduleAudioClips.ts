@@ -24,7 +24,7 @@ const MICRO_FADE_SECONDS = 0.003;
  * sent a peer request this session. Prevents spamming requestAsset()
  * every scheduler tick while waiting.
  */
-const assetRequestState: { requestedAssets: Set<string> } = {
+export const sessionState: { requestedAssets: Set<string> } = {
     requestedAssets: new Set<string>(),
 };
 
@@ -89,8 +89,8 @@ export function scheduleAudioClips(
                 if (!isRecordingClip) {
                     const inSession = collaborationStore.value?.isEnabled ?? false;
                     if (inSession && clip.assetHash) {
-                        if (!assetRequestState.requestedAssets.has(clip.assetHash)) {
-                            assetRequestState.requestedAssets.add(clip.assetHash);
+                        if (!sessionState.requestedAssets.has(clip.assetHash)) {
+                            sessionState.requestedAssets.add(clip.assetHash);
                             getAssetTransfer()?.requestAsset(clip.assetHash);
                         }
                     } else {

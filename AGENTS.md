@@ -13,7 +13,7 @@ Before starting significant implementation work, read the shared process documen
 | `docs/agents/01-process.md`    | Why documentation-first exists and the five document types            |
 | `docs/agents/02-file-types.md` | Definitions, required sections, and completion criteria for each type |
 | `docs/agents/03-workflow.md`   | Step-by-step execution flow for agent sessions                        |
-| `docs/agents/04-standards.md`  | Writing quality for specs/audits/tasks (not TypeScript — see `docs/07-conventions.md`) |
+| `docs/agents/04-standards.md`  | Writing quality for specs/audits/tasks; task focus vs opportunistic fixes (not TypeScript — see `docs/07-conventions.md`) |
 | `docs/07-conventions.md`       | Coding patterns for humans; **TypeScript soundness** is canonical in **`AGENTS.md`** (see § TypeScript — soundness there) |
 | `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                   |
 | `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`              |

@@ -36,6 +36,8 @@ Task files are gitignored — they are local to the worktree and not shared.
 
 10. **Complete `## Self-review` before ending the session.** Tasks do not use a separate **Handoff** section — the task file is self-contained. Completion requires every Self-review question answered (including verification outputs), per the task template. Use **Decisions**, **Findings**, **Blockers**, and **Next steps** to capture what would otherwise be narrative for the next reader.
 
+11. **Primary deliverable first; document extra work.** The Objective names what must ship. Fixes or improvements you make along the way (even outside the first path you imagined) are fine when they are correct — note them in **Findings** or **Decisions** so reviewers can follow the branch. Do not revert good work only because it was not in the original ask.
+
 ---
 
 ## Anti-patterns

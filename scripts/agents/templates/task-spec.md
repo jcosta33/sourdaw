@@ -100,7 +100,7 @@ If you cannot find any prior art, state that explicitly — "no existing pattern
 - [ ] Self-review: Verification outputs pasted
 - [ ] Self-review: Read-only constraint answered
 - [ ] Self-review: Completeness answered
-- [ ] Self-review: Scope and boundaries answered
+- [ ] Self-review: Requirements boundaries (spec clarity) answered
 - [ ] Self-review: Open questions answered
 - [ ] Self-review: Consistency answered
 - [ ] Self-review: Integration with existing patterns answered
@@ -153,9 +153,9 @@ Stop. A spec that ships with gaps, ambiguities, or unresolved questions will cau
 - Could a developer start implementation tomorrow with no follow-up questions, based solely on this spec? Does every requirement have a testable acceptance criterion? Is every edge case and failure mode addressed?
   Answer:
 
-### Scope and boundaries
+### Requirements boundaries (spec clarity)
 
-- Is the scope clearly bounded? Could a developer accidentally implement something adjacent but out-of-scope and believe they were following the spec? Does the spec inadvertently describe work that belongs to a different team or spec?
+- This question is about the **spec document** (what belongs in this spec vs another), not about limiting what implementers may fix in the codebase. Is the requirements boundary clear? Could a developer accidentally implement something adjacent but belonging in a different spec and believe they were following this one?
   Answer:
 
 ### Open questions

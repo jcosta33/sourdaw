@@ -50,7 +50,7 @@ Load `.agents/skills/write-audit/SKILL.md` before starting.
 ## Investigation checklist
 
 - [ ] Load `.agents/skills/write-audit/SKILL.md`
-- [ ] Read all files in scope
+- [ ] Read all files the audit covers
 - [ ] Identify structural issues
 - [ ] Identify repeated patterns or inconsistencies
 - [ ] Identify performance concerns
@@ -106,7 +106,7 @@ Stop. An audit that is incomplete, inaccurate, or contaminated by code changes i
 
 ### Coverage
 
-- Does the audit cover every area in the scope, line by line? Anything skipped because it was hard/large/unclear must be flagged explicitly as "not covered" with a reason. Did you read actual code, or skim file names?
+- Does the audit cover every area it promised to cover, line by line? Anything skipped because it was hard/large/unclear must be flagged explicitly as "not covered" with a reason. Did you read actual code, or skim file names?
   Answer:
 
 ### Evidence quality
