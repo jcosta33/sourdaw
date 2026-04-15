@@ -334,6 +334,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                             className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
                                             onClick={() => cancelProcessingTask('audio-generation')}
                                             title="Force-stop — the background request may still complete"
+                                            aria-label="Stop audio generation (background request may still complete)"
                                         >
                                             Stop
                                         </Button>
@@ -429,6 +430,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                         className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
                                         onClick={() => cancelProcessingTask('midi-generation')}
                                         title="Force-stop — the background request may still complete"
+                                        aria-label="Stop MIDI generation (background request may still complete)"
                                     >
                                         Stop
                                     </Button>

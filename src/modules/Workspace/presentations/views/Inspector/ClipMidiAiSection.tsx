@@ -189,10 +189,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser('No MIDI notes in this clip to render', 'error');
             return;
         }
-        if (!activeVoicebankId) {
-            notifyUser('Select a voicebank first', 'error');
-            return;
-        }
 
         setIsRenderingSvs(true);
         try {
@@ -520,14 +516,14 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         Quality
                                     </label>
                                     <DawCompactSelect
-                                        value={svsRenderQuality}
-                                        onChange={(e) => {
+                                    value={svsRenderQuality}
+                                    onChange={(e) => {
                                         const opt = QUALITY_OPTIONS.find((o) => o.value === e.target.value);
                                         if (opt) setSvsRenderQuality(opt.value);
                                     }}
-                                        aria-label="Singing render quality"
-                                        className="w-full"
-                                    >
+                                    aria-label="Singing render quality"
+                                    className="w-full"
+                                >
                                         {QUALITY_OPTIONS.map((opt) => (
                                             <option key={opt.value} value={opt.value}>
                                                 {opt.label}
