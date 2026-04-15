@@ -54,8 +54,12 @@ async function getOrt(): Promise<OrtModule> {
     }
     // Dynamic import keeps onnxruntime-web out of the main bundle
     const ort = await import('onnxruntime-web') as unknown as OrtModule;
-    // Enable multi-threaded WASM (requires COEP/COOP headers)
-    ort.env.wasm.numThreads = navigator.hardwareConcurrency ?? 4;
+    // Multi-threaded WASM requires SharedArrayBuffer which is only available
+    // when crossOriginIsolated is true. IIFE workers (forced by Rolldown)
+    // are not cross-origin isolated, so fall back to single-threaded.
+    ort.env.wasm.numThreads = (typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated)
+        ? (navigator.hardwareConcurrency ?? 4)
+        : 1;
     ortModule = ort;
     return ort;
 }
