@@ -259,7 +259,11 @@ async function runDiffSingerPipeline(
 
     // The acoustic model runs all diffusion steps internally via the `steps` tensor.
     const acousticOut = await sessions.acoustic.run(acousticFeeds);
-    const mel = acousticOut['mel'];
+    // Key may vary by ONNX export ('mel' is conventional, but some exports use other names)
+    const mel = acousticOut['mel'] ?? Object.values(acousticOut)[0];
+    if (!mel) {
+        throw new Error('Acoustic model produced no mel-spectrogram output');
+    }
     post('Rendering mel-spectrogram', 0.82);
 
     // ── 6. Vocoder ─────────────────────────────────────────────────────────
