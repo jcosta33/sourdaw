@@ -104,8 +104,9 @@ function wireToasterMocks(setParam: ReturnType<typeof vi.fn>, setPadParam: Retur
 
 describe('TOASTER_ENGINE_MAP', () => {
     it('should map kick and snare drum types to distinct engine indices', () => {
-        expect(TOASTER_ENGINE_MAP['kick-808']).toBe(0);
-        expect(TOASTER_ENGINE_MAP['snare-808']).toBe(1);
+        expect(TOASTER_ENGINE_MAP['kick-808']).toBe(13);
+        expect(TOASTER_ENGINE_MAP['snare-808']).toBe(15);
+        expect(TOASTER_ENGINE_MAP['kick-808']).not.toBe(TOASTER_ENGINE_MAP['kick-909']);
     });
 
     it('should map hihat types to the same engine index as documented', () => {

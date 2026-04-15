@@ -129,6 +129,7 @@ impl DrumVoice {
         sample_rate: f32,
         filter_cutoff: f32,
         filter_resonance: f32,
+        is_open: bool,
     ) {
         self.active = true;
         self.pad_index = pad_index;
@@ -141,6 +142,9 @@ impl DrumVoice {
         if self.engine.engine_type() != engine_type {
             self.engine = DrumSynthEngine::new(engine_type, sample_rate);
         }
+        // Set open/closed state BEFORE trigger so HiHat engines read the correct
+        // flag when computing their decay coefficient in trigger().
+        self.engine.set_param("open", if is_open { 1.0 } else { 0.0 });
         self.engine.trigger(velocity, sample_rate);
 
         // Setup filter
