@@ -59,6 +59,12 @@ async function fetchVoiceStyle(voiceId: string, tokenCount: number): Promise<Flo
     }
 
     // Each embedding is 256 floats; index by tokenCount (before padding)
+    if (allEmbeddings.length < 256) {
+        throw new Error(
+            `Kokoro voice file for "${voiceId}" is empty or corrupted (${String(allEmbeddings.length)} floats). ` +
+            'Re-download the voice from AI Settings.'
+        );
+    }
     const maxIdx = Math.floor(allEmbeddings.length / 256) - 1;
     const idx = Math.min(tokenCount, maxIdx);
     return allEmbeddings.slice(idx * 256, idx * 256 + 256);
@@ -150,6 +156,10 @@ export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writ
                     style,
                     speed,
                 });
+
+                if (result.audio.length === 0) {
+                    throw new Error('Kokoro inference produced no audio — model may have received an invalid input sequence');
+                }
 
                 // 5. Resample 24 kHz → 44.1 kHz
                 const resampled = await resampleTo44100({

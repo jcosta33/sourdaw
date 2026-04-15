@@ -42,7 +42,7 @@ function isVariationNoteArray(arr: unknown): arr is VariationNote[] {
     );
 }
 
-export async function generateMidiVariations(clipId: string, options: GenerateMidiVariationsOptions = {}): Promise<void> {
+export async function generateMidiVariations(clipId: string, options: GenerateMidiVariationsOptions = {}): Promise<number> {
     const { onToken } = options;
 
     const state = getTrackState();
@@ -176,4 +176,5 @@ ONLY output raw JSON, no markdown blocks.`;
         'ai'
     );
     commitUndoEntry(undoEntry);
+    return variations.length;
 }

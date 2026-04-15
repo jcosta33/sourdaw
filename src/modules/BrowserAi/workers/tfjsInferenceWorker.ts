@@ -169,7 +169,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
             const response: WorkerResponse = { type: 'session-created', requestId: req.requestId, modelId: req.modelId };
             self.postMessage(response);
         } catch (error) {
-            const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
+            const response: WorkerResponse = {
+                type: 'error',
+                requestId: req.requestId,
+                error: `Failed to load DDSP model from ${req.modelUrl}/model.json: ${String(error)}`,
+            };
             self.postMessage(response);
         }
         return;

@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
@@ -88,10 +88,10 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setIsGeneratingVariations(true);
         setVariationTokenCount(0);
         try {
-            await generateMidiVariations(clip.id, {
+            const count = await generateMidiVariations(clip.id, {
                 onToken: (token) => setVariationTokenCount((c) => c + token.length),
             });
-            notifyAiChange('MIDI variations generated', ['3 unique musical variations created as alternative clips']);
+            notifyAiChange('MIDI variations generated', [`${String(count)} variation${count === 1 ? '' : 's'} created as alternative clips`]);
         } catch (err) {
             notifyUser(err instanceof Error ? err.message : 'Variation generation failed', 'error');
         } finally {
@@ -178,8 +178,22 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     };
 
     const voicebanks = registry?.diffSingerVoicebanks ?? [];
-    const activeVoicebankId = selectedVoicebankId || voicebanks[0]?.id || '';
-    const activeVoicebank = voicebanks.find((v) => v.id === activeVoicebankId);
+
+    // Keep selectedVoicebankId in sync with the available voicebanks list.
+    // Initialises to the first voicebank on load; resets to the first if the
+    // previously selected voicebank is removed from storage.
+    useEffect(() => {
+        if (voicebanks.length === 0) {
+            setSelectedVoicebankId('');
+            return;
+        }
+        const isValid = voicebanks.some((v) => v.id === selectedVoicebankId);
+        if (!isValid) {
+            setSelectedVoicebankId(voicebanks[0]!.id);
+        }
+    }, [voicebanks, selectedVoicebankId]);
+
+    const activeVoicebank = voicebanks.find((v) => v.id === selectedVoicebankId);
 
     const handleRenderSinging = async (): Promise<void> => {
         const midiState = midiStore.value;
@@ -189,18 +203,22 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser('No MIDI notes in this clip to render', 'error');
             return;
         }
+        if (!selectedVoicebankId) {
+            notifyUser('Select a voicebank first', 'error');
+            return;
+        }
 
         setIsRenderingSvs(true);
         try {
             await renderDiffSingerPhrase({
                 phraseId: `${clip.id}-svs`,
-                voicebankId: activeVoicebankId,
+                voicebankId: selectedVoicebankId,
                 lyrics: diffSingerLyrics.trim() || 'la la la',
                 notes,
                 renderQuality: svsRenderQuality,
             });
             notifyAiChange('Singing render complete', [
-                `${activeVoicebank?.name ?? activeVoicebankId} rendered for this clip`,
+                `${activeVoicebank?.name ?? selectedVoicebankId} rendered for this clip`,
             ]);
         } catch (err) {
             notifyUser(err instanceof Error ? err.message : 'Singing render failed', 'error');
@@ -483,7 +501,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         Voice
                                     </label>
                                     <DawCompactSelect
-                                        value={activeVoicebankId}
+                                        value={selectedVoicebankId}
                                         onChange={(e) => setSelectedVoicebankId(e.target.value)}
                                         aria-label="DiffSinger voicebank"
                                         className="w-full"

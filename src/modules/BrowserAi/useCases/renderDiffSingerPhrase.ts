@@ -159,16 +159,23 @@ export const renderDiffSingerPhrase = inject({
 
                 for (const { key, sessionKey } of voicebankModels) {
                     const modelData = await readModel({ family: `diffsinger/${voicebankId}`, modelId: key });
-                    if (modelData) {
-                        await inferenceWorkerBridge.loadOnnxSession({ modelId: sessionKey, modelData });
+                    if (!modelData) {
+                        throw new Error(
+                            `DiffSinger model "${key}" not found in OPFS for voicebank "${voicebankId}". ` +
+                            'Re-download the voicebank in AI Settings.'
+                        );
                     }
+                    await inferenceWorkerBridge.loadOnnxSession({ modelId: sessionKey, modelData });
                 }
 
                 // Load shared vocoder
                 const vocoderData = await readModel({ family: 'diffsinger/vocoder', modelId: 'nsf-hifigan' });
-                if (vocoderData) {
-                    await inferenceWorkerBridge.loadOnnxSession({ modelId: 'shared/vocoder', modelData: vocoderData });
+                if (!vocoderData) {
+                    throw new Error(
+                        'NSF-HiFiGAN vocoder not found in OPFS. Download it in AI Settings.'
+                    );
                 }
+                await inferenceWorkerBridge.loadOnnxSession({ modelId: 'shared/vocoder', modelData: vocoderData });
 
                 // Run full pipeline in ONNX worker
                 const result = await inferenceWorkerBridge.runDiffSingerPhrase({

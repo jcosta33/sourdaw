@@ -26,6 +26,9 @@ import {
 import { type DdspInstrument, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
 import { midiStore } from '#/modules/MIDI/stores';
 
+/** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
+let midiStaleSubscription: (() => void) | undefined;
+
 const KOKORO_MODEL_ENTRY: KokoroModel = {
     id: 'kokoro-82m-q8',
     name: 'Kokoro TTS (q8)',
@@ -116,8 +119,11 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             logger.info(`[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel.status}`);
 
             // ── 6. Subscribe to midiStore — mark rendered phrases stale on edit ──
+            // The unsubscribe function is stored at module scope so it is not garbage-collected
+            // and can be called if the module is ever torn down (e.g. in tests or HMR).
+            midiStaleSubscription?.();
             let prevNotesByClipId = midiStore.value?.notesByClipId ?? {};
-            midiStore.subscribe((next) => {
+            midiStaleSubscription = midiStore.subscribe((next) => {
                 const nextNotesByClipId = next?.notesByClipId ?? {};
                 const queueState = renderQueueStore.value;
                 if (!queueState) {
