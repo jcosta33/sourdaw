@@ -64,9 +64,16 @@ export type WorkerRequest =
     | {
           type: 'run-kokoro-tts';
           requestId: string;
-          text: string;
-          /** Voice preset ID (e.g. 'af_heart') — passed as `voice` to Transformers.js pipeline */
-          voice: string;
+          /**
+           * Pre-tokenized phoneme IDs with pad tokens (0) at both ends.
+           * Shape: int64[1, seq_len] — built by textToKokoroInputIds() on the main thread.
+           */
+          inputIds: BigInt64Array;
+          /**
+           * Voice style embedding slice [256 float32 values].
+           * Selected from the voice .bin file at index = tokenCount (pre-padding length).
+           */
+          style: Float32Array;
           speed: number;
       }
     | {

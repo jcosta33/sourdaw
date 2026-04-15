@@ -151,8 +151,8 @@ type LoadSessionInput = {
 
 type RunKokoroInput = {
     requestId: string;
-    text: string;
-    voice: string;
+    inputIds: BigInt64Array;
+    style: Float32Array;
     speed: number;
 };
 
@@ -184,7 +184,11 @@ export const inferenceWorkerBridge = {
     async runKokoroTts(input: RunKokoroInput): Promise<Extract<WorkerResponse, { type: 'tts-result' }>> {
         const worker = await getOnnxWorker();
         const request: WorkerRequest = { type: 'run-kokoro-tts', ...input };
-        const response = await sendRequest(worker, workerState.onnx, request);
+        // Transfer typed array buffers (zero-copy) — they are consumed by the worker
+        const response = await sendRequest(worker, workerState.onnx, request, [
+            input.inputIds.buffer,
+            input.style.buffer,
+        ]);
         return response as Extract<WorkerResponse, { type: 'tts-result' }>;
     },
 

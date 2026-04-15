@@ -277,26 +277,61 @@ async function runDiffSingerPipeline(
     return new Float32Array(waveform.data as Float32Array);
 }
 
-// ── Kokoro TTS via Transformers.js ────────────────────────────────────────
+// ── Kokoro TTS via onnxruntime-web ────────────────────────────────────────
 
-type TransformersPipeline = {
-    (text: string, options?: { voice?: string; speed?: number }): Promise<{ audio: Float32Array; sampling_rate: number }>;
-};
+const KOKORO_SESSION_ID = 'kokoro-82m-q8';
 
-let kokoroPipeline: TransformersPipeline | null = null;
-
-async function getKokoroPipeline(): Promise<TransformersPipeline> {
-    if (kokoroPipeline) {
-        return kokoroPipeline;
+/**
+ * Run Kokoro TTS inference using the pre-loaded ONNX session.
+ * Inputs are prepared on the main thread (tokenization + voice embedding selection)
+ * and transferred to this worker as typed arrays.
+ *
+ * Model inputs:
+ *   input_ids  int64[1, seq_len]  — phoneme token IDs with 0-padding at both ends
+ *   style      float32[1, 256]    — voice style embedding (indexed by token count)
+ *   speed      float32[1]         — speed multiplier
+ *
+ * Output: float32 audio at 24 kHz.
+ */
+async function runKokoroOnnx(
+    requestId: string,
+    inputIds: BigInt64Array,
+    style: Float32Array,
+    speed: number
+): Promise<Float32Array> {
+    const ort = await getOrt();
+    const session = sessionCache.get(KOKORO_SESSION_ID)?.session;
+    if (!session) {
+        throw new Error('Kokoro ONNX session not loaded — call create-session with modelId="kokoro-82m-q8" first');
     }
-    // Dynamic import — @huggingface/transformers must be installed
-    const { pipeline } = await import('@huggingface/transformers');
-    const device = (typeof navigator !== 'undefined' && 'gpu' in navigator) ? 'webgpu' : 'wasm';
-    kokoroPipeline = await pipeline('text-to-speech', 'onnx-community/Kokoro-82M-v1.0-ONNX', {
-        device,
-        dtype: 'q8',
-    }) as unknown as TransformersPipeline;
-    return kokoroPipeline;
+
+    const post = (stage: string, progress: number): void => {
+        const msg: WorkerResponse = { type: 'inference-progress', requestId, stage, progress };
+        self.postMessage(msg);
+    };
+
+    post('Synthesizing speech', 0.2);
+
+    const seqLen = inputIds.length;
+    const inputIdsTensor = new ort.Tensor('int64', inputIds, [1, seqLen]);
+    const styleTensor = new ort.Tensor('float32', style, [1, 256]);
+    const speedTensor = new ort.Tensor('float32', new Float32Array([speed]), [1]);
+
+    const outputs = await session.run({
+        input_ids: inputIdsTensor,
+        style: styleTensor,
+        speed: speedTensor,
+    });
+
+    post('Synthesizing speech', 0.95);
+
+    // The model outputs a waveform tensor — key may vary by export
+    const waveform = outputs['waveform'] ?? outputs['audio'] ?? Object.values(outputs)[0];
+    if (!waveform) {
+        throw new Error('Kokoro ONNX produced no output');
+    }
+
+    return new Float32Array(waveform.data as Float32Array);
 }
 
 // ── Message handler ────────────────────────────────────────────────────────
@@ -374,22 +409,23 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
 
     if (req.type === 'run-kokoro-tts') {
         try {
-            const progressMsg: WorkerResponse = { type: 'inference-progress', requestId: req.requestId, stage: 'Loading TTS model', progress: 0.05 };
+            const progressMsg: WorkerResponse = {
+                type: 'inference-progress',
+                requestId: req.requestId,
+                stage: 'Synthesizing speech',
+                progress: 0.1,
+            };
             self.postMessage(progressMsg);
 
-            const tts = await getKokoroPipeline();
-            const progressMsg2: WorkerResponse = { type: 'inference-progress', requestId: req.requestId, stage: 'Synthesizing speech', progress: 0.3 };
-            self.postMessage(progressMsg2);
-
-            const result = await tts(req.text, { voice: req.voice, speed: req.speed });
+            const audio = await runKokoroOnnx(req.requestId, req.inputIds, req.style, req.speed);
             const response: WorkerResponse = {
                 type: 'tts-result',
                 requestId: req.requestId,
-                audio: result.audio,
-                samplingRate: result.sampling_rate,
+                audio,
+                // Kokoro ONNX outputs 24 kHz PCM
+                samplingRate: 24000,
             };
-            // Transfer audio buffer without copying
-            self.postMessage(response, [result.audio.buffer]);
+            self.postMessage(response, [audio.buffer]);
         } catch (error) {
             const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
             self.postMessage(response);
