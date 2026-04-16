@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { KneadEditor } from '../KneadEditor';
 
 vi.mock('#/components/ui/button', () => ({
@@ -37,14 +37,14 @@ vi.mock('#/components/daw/DawCompactCheckbox', () => ({
 }));
 
 vi.mock('#/modules/Knead/stores/kneadStore', () => ({
-    kneadStore: { value: { tracks: {} } },
-    updateTrackKneadState: vi.fn(),
+    kneadStore: { value: { clips: {} } },
+    updateClipKneadState: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({
-        activeTrackId: null,
-        tracks: {},
+        activeClipId: null,
+        clips: {},
         isAnalyzing: false,
         analysisProgress: 0,
     })),
@@ -65,6 +65,7 @@ vi.mock('#/modules/Knead/useCases/dspAnalysis', () => ({
 describe('KneadEditor', () => {
     const defaultProps = {
         trackId: 'track-1',
+        clipId: 'clip-1',
     };
 
     beforeEach(() => {

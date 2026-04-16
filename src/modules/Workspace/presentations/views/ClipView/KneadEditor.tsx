@@ -1,41 +1,54 @@
-import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
-import { kneadStore, updateTrackKneadState } from '#/modules/Knead/stores';
+import { type ReactElement, useRef, useEffect, useLayoutEffect, useState, type PointerEvent } from 'react';
+import { kneadStore, updateClipKneadState } from '#/modules/Knead';
+import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
 import { useStore } from '#/infra/store/useStore';
 import { useTracks } from '../../hooks/useTracks';
 import { addDevice } from '#/modules/Arrangement/useCases';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
+import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { Mic } from 'lucide-react';
 import { logger } from '#/infra/logger/appLogger';
 
-export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
+export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: string }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const { tracks } = useTracks();
+    const [zoom, setZoom] = useState(1.0);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragStart = useRef<{ x: number; y: number; blobId: string; startCents: number } | null>(null);
 
     const track = tracks.find((t) => t.id === trackId);
     const hasKnead = track?.devices.some((d) => d.type.toLowerCase() === 'knead') ?? false;
 
     const kneadStoreState = useStore(kneadStore, {
-        activeTrackId: null,
-        tracks: {},
+        activeClipId: null,
+        clips: {},
         isAnalyzing: false,
         analysisProgress: 0,
     });
-    const kneadState = kneadStoreState.tracks[trackId];
+    const transportState = useStore(transportStore, defaultTransportState);
+    const kneadState = kneadStoreState.clips[clipId];
 
-    // TODO(knead): Wire the real DSP pitch-analysis pipeline (WASM pitch detection)
-    // to `ingestDspAnalysis(trackId, ...)` here. The previous implementation
-    // injected a fixed A3/E4/C4 pitch-blob dataset on a 600ms timer, which
-    // presented fabricated analysis output to users regardless of the clip's
-    // actual audio content. That mock has been removed (audit §124.1).
+    // Refs for animation loop to avoid dependency-triggered re-runs of the loop itself
+    const stateRef = useRef({ kneadState, zoom, transportState, isDragging });
+    
+    useEffect(() => {
+        stateRef.current = { kneadState, zoom, transportState, isDragging };
+    }, [kneadState, zoom, transportState, isDragging]);
+
+    // Trigger real DSP pitch-analysis pipeline (WASM pitch detection)
     useEffect(() => {
         if (hasKnead && (!kneadState || kneadState.blobs.length === 0)) {
-            logger.warn(
-                `[KneadEditor] Real DSP pitch analysis is not wired up yet for track ${trackId}; blob list will remain empty until the WASM pitch pipeline is connected.`
-            );
+            analyzePitchForClip(clipId).catch((err) => {
+                logger.error(err);
+            });
         }
-    }, [hasKnead, kneadState, trackId]);
+    }, [hasKnead, kneadState, clipId]);
+
+    const pixelsPerSecond = 300 * zoom;
+    const rowHeight = 24;
 
     // Render loop for the Canvas-based Blob Editor
     useEffect(() => {
@@ -52,6 +65,9 @@ export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
         let animationFrameId: number;
 
         const render = () => {
+            const { kneadState: currentKnead, zoom: currentZoom, transportState: currentTransport } = stateRef.current;
+            const currentPPS = 300 * currentZoom;
+            
             const width = canvas.width;
             const height = canvas.height;
 
@@ -62,7 +78,6 @@ export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
             // Draw Piano Roll horizontal grid lanes
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
             ctx.lineWidth = 1;
-            const rowHeight = 24;
             for (let y = 0; y < height; y += rowHeight) {
                 ctx.beginPath();
                 ctx.moveTo(0, y);
@@ -71,22 +86,22 @@ export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
             }
 
             // Draw Knead Blobs
-            if (kneadState && kneadState.blobs.length > 0) {
+            if (currentKnead && currentKnead.blobs.length > 0) {
                 const avgCents =
-                    kneadState.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / kneadState.blobs.length;
+                    currentKnead.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / currentKnead.blobs.length;
 
-                for (const blob of kneadState.blobs) {
+                for (const blob of currentKnead.blobs) {
                     if (!blob.pitchCenterCents) {continue;}
 
-                    // Map time to X (zoomed for visibility)
-                    const x = blob.startTime * 300;
-                    const w = (blob.endTime - blob.startTime) * 300;
+                    // Map time to X
+                    const x = blob.startTime * currentPPS;
+                    const w = (blob.endTime - blob.startTime) * currentPPS;
 
                     // Map cents to Y
                     const y = height / 2 - ((blob.pitchCenterCents - avgCents) / 100) * rowHeight;
 
                     // Draw outer blob shape
-                    ctx.fillStyle = accentCol;
+                    ctx.fillStyle = dragStart.current?.blobId === blob.id ? '#ffffff' : accentCol;
                     ctx.globalAlpha = blob.voicedConfidence > 0.5 ? 0.8 : 0.3;
                     ctx.beginPath();
                     ctx.roundRect(x, y - rowHeight / 2 + 2, w, rowHeight - 4, 4);
@@ -94,7 +109,7 @@ export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
 
                     // Draw internal pitch curve
                     if (blob.pitchCurveCents.length > 0) {
-                        ctx.strokeStyle = '#ffffff';
+                        ctx.strokeStyle = dragStart.current?.blobId === blob.id ? accentCol : '#ffffff';
                         ctx.lineWidth = 2;
                         ctx.globalAlpha = 1.0;
                         ctx.beginPath();
@@ -115,6 +130,18 @@ export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
                 ctx.fillText('No pitch data analyzed.', width / 2, height / 2);
             }
 
+            // Draw Playhead
+            if (currentTransport.isPlaying || currentTransport.playheadPosition > 0) {
+                const playheadSec = (currentTransport.playheadPosition * 60) / currentTransport.tempo;
+                const px = playheadSec * currentPPS;
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, height);
+                ctx.stroke();
+            }
+
             animationFrameId = requestAnimationFrame(render);
         };
 
@@ -123,14 +150,14 @@ export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
         return () => {
             cancelAnimationFrame(animationFrameId);
         };
-    }, [kneadState, hasKnead]);
+    }, [hasKnead]); // Only re-run if hasKnead changes. Internal changes handled by refs.
 
     useLayoutEffect(() => {
         const resizeCanvas = () => {
             if (canvasRef.current) {
                 const parent = canvasRef.current.parentElement;
                 if (parent) {
-                    canvasRef.current.width = parent.clientWidth;
+                    canvasRef.current.width = Math.max(800, parent.clientWidth * zoom);
                     canvasRef.current.height = parent.clientHeight;
                 }
             }
@@ -138,65 +165,131 @@ export const KneadEditor = ({ trackId }: { trackId: string }): ReactElement => {
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
         return () => window.removeEventListener('resize', resizeCanvas);
-    }, []);
+    }, [zoom]);
+
+    const handlePointerDown = (e: PointerEvent<HTMLCanvasElement>) => {
+        if (!kneadState) {return;}
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const avgCents =
+            kneadState.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / kneadState.blobs.length;
+
+        const hit = kneadState.blobs.find((blob) => {
+            const bx = blob.startTime * pixelsPerSecond;
+            const bw = (blob.endTime - blob.startTime) * pixelsPerSecond;
+            const by = canvasRef.current!.height / 2 - ((blob.pitchCenterCents - avgCents) / 100) * rowHeight;
+            return x >= bx && x <= bx + bw && y >= by - rowHeight / 2 && y <= by + rowHeight / 2;
+        });
+
+        if (hit) {
+            dragStart.current = { x, y, blobId: hit.id, startCents: hit.pitchCenterCents };
+            setIsDragging(true);
+            canvasRef.current!.setPointerCapture(e.pointerId);
+        }
+    };
+
+    const handlePointerMove = (e: PointerEvent<HTMLCanvasElement>) => {
+        if (!isDragging || !dragStart.current || !kneadState) {return;}
+
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const dy = y - dragStart.current.y;
+
+        const centsOffset = Math.round((-dy / rowHeight) * 100);
+        const snappedOffset = Math.round(centsOffset / 100) * 100;
+
+        if (snappedOffset !== 0) {
+            updateClipKneadState(clipId, (state) => ({
+                ...state,
+                blobs: state.blobs.map((b) =>
+                    b.id === dragStart.current!.blobId
+                        ? { ...b, pitchCenterCents: dragStart.current!.startCents + snappedOffset }
+                        : b
+                ),
+            }));
+        }
+    };
+
+    const handlePointerUp = () => {
+        dragStart.current = null;
+        setIsDragging(false);
+    };
 
     return (
-        <div className="flex flex-col flex-1 w-full relative bg-surface-sunken overflow-hidden">
-            {hasKnead && kneadState && kneadState.blobs.length > 0 ? (
-                <div className="absolute top-0 left-0 right-0 h-10 bg-surface-base/90 backdrop-blur-md border-b flex items-center px-4 gap-6 z-20 shadow-sm">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
-                            Retune
-                        </span>
-                        <Slider
-                            className="w-24"
-                            value={[kneadState.retuneSpeedMs ?? 25]}
-                            min={0}
-                            max={200}
-                            step={1}
-                            onValueChange={([val]) =>
-                                updateTrackKneadState(trackId, (s) => ({ ...s, retuneSpeedMs: val ?? 25 }))
-                            }
-                        />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
-                            Human
-                        </span>
-                        <Slider
-                            className="w-24"
-                            value={[kneadState.humanizePercent ?? 40]}
-                            min={0}
-                            max={100}
-                            step={1}
-                            onValueChange={([val]) =>
-                                updateTrackKneadState(trackId, (s) => ({ ...s, humanizePercent: val ?? 40 }))
-                            }
-                        />
-                    </div>
-                    <div className="flex items-center gap-2 px-3 border-l border-border">
-                        <DawCompactCheckbox
-                            checked={kneadState.formantPreserve ?? true}
-                            onChange={(e) =>
-                                updateTrackKneadState(trackId, (s) => ({ ...s, formantPreserve: e.target.checked }))
-                            }
-                            className="cursor-pointer"
-                            id="formant-toggle"
-                        />
-                        <label
-                            htmlFor="formant-toggle"
-                            className="text-[10px] uppercase font-bold text-muted-foreground cursor-pointer"
-                        >
-                            Formants
-                        </label>
-                    </div>
+        <div className="flex flex-col flex-1 w-full relative bg-surface-sunken overflow-hidden" ref={containerRef}>
+            <div className="absolute top-0 left-0 right-0 h-10 bg-surface-base/90 backdrop-blur-md border-b flex items-center px-4 gap-6 z-20 shadow-sm">
+                {hasKnead && kneadState && kneadState.blobs.length > 0 ? (
+                    <>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
+                                Retune
+                            </span>
+                            <Slider
+                                className="w-24"
+                                value={[kneadState.retuneSpeedMs ?? 25]}
+                                min={0}
+                                max={200}
+                                step={1}
+                                onValueChange={([val]) =>
+                                    updateClipKneadState(clipId, (s) => ({ ...s, retuneSpeedMs: val ?? 25 }))
+                                }
+                            />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
+                                Human
+                            </span>
+                            <Slider
+                                className="w-24"
+                                value={[kneadState.humanizePercent ?? 40]}
+                                min={0}
+                                max={100}
+                                step={1}
+                                onValueChange={([val]) =>
+                                    updateClipKneadState(clipId, (s) => ({ ...s, humanizePercent: val ?? 40 }))
+                                }
+                            />
+                        </div>
+                        <div className="flex items-center gap-2 px-3 border-l border-border">
+                            <DawCompactCheckbox
+                                checked={kneadState.formantPreserve ?? true}
+                                onChange={(e) =>
+                                    updateClipKneadState(clipId, (s) => ({ ...s, formantPreserve: e.target.checked }))
+                                }
+                                className="cursor-pointer"
+                                id="formant-toggle"
+                            />
+                            <label
+                                htmlFor="formant-toggle"
+                                className="text-[10px] uppercase font-bold text-muted-foreground cursor-pointer"
+                            >
+                                Formants
+                            </label>
+                        </div>
+                    </>
+                ) : null}
+                <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Zoom</span>
+                    <Slider
+                        className="w-24"
+                        value={[zoom * 100]}
+                        min={50}
+                        max={400}
+                        step={10}
+                        onValueChange={([val]) => setZoom((val ?? 100) / 100)}
+                    />
                 </div>
-            ) : null}
+            </div>
 
-            <div className="flex-1 w-full relative overflow-auto">
+            <div className="flex-1 w-full relative overflow-auto pt-10">
                 <canvas
                     ref={canvasRef}
-                    className="absolute top-0 left-0 w-full h-[600px] cursor-crosshair min-w-[800px]"
+                    className="absolute top-0 left-0 cursor-crosshair"
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
                 />
             </div>
 

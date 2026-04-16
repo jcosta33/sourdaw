@@ -612,9 +612,37 @@ export class KneadInstance {
     /**
      * @returns {number}
      */
+    get_f0() {
+        const ret = wasm.kneadinstance_get_f0(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
     get_input_left_ptr() {
         const ret = wasm.kneadinstance_get_input_left_ptr(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.kneadinstance_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_periodicity() {
+        const ret = wasm.kneadinstance_get_periodicity(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_voiced() {
+        const ret = wasm.kneadinstance_is_voiced(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * @param {number} sample_rate

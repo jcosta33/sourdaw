@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+import { updateClip } from '#/modules/Arrangement/useCases';
 
 export type NoteBlob = {
     id: string;
@@ -15,8 +16,8 @@ export type NoteBlob = {
     muted: boolean;
 };
 
-export type KneadTrackState = {
-    trackId: string;
+export type KneadClipState = {
+    clipId: string;
     blobs: NoteBlob[];
     retuneSpeedMs: number;
     toleranceCents: number;
@@ -26,15 +27,15 @@ export type KneadTrackState = {
 };
 
 export type KneadStoreState = {
-    activeTrackId: string | null;
-    tracks: Record<string, KneadTrackState>;
+    activeClipId: string | null;
+    clips: Record<string, KneadClipState>;
     isAnalyzing: boolean;
     analysisProgress: number;
 };
 
 export const defaultKneadState: KneadStoreState = {
-    activeTrackId: null,
-    tracks: {},
+    activeClipId: null,
+    clips: {},
     isAnalyzing: false,
     analysisProgress: 0,
 };
@@ -43,19 +44,19 @@ export const kneadStore = createStore<KneadStoreState>({
     initialData: defaultKneadState,
 });
 
-export function setActiveKneadTrack(trackId: string | null): void {
+export function setActiveKneadClip(clipId: string | null): void {
     const state = kneadStore.value;
     if (state) {
-        kneadStore.set({ ...state, activeTrackId: trackId });
+        kneadStore.set({ ...state, activeClipId: clipId });
     }
 }
 
-export function updateTrackKneadState(trackId: string, updater: (state: KneadTrackState) => KneadTrackState): void {
+export function updateClipKneadState(clipId: string, updater: (state: KneadClipState) => KneadClipState): void {
     const state = kneadStore.value;
     if (!state) {return;}
 
-    const trackState = state.tracks[trackId] ?? {
-        trackId,
+    const clipState = state.clips[clipId] ?? {
+        clipId,
         blobs: [],
         retuneSpeedMs: 25,
         toleranceCents: 25,
@@ -64,11 +65,20 @@ export function updateTrackKneadState(trackId: string, updater: (state: KneadTra
         formantPreserve: true,
     };
 
+    const nextKneadState = updater(clipState);
+
+    // 1. Update local kneadStore (for fast UI reactivity)
     kneadStore.set({
         ...state,
-        tracks: {
-            ...state.tracks,
-            [trackId]: updater(trackState),
+        clips: {
+            ...state.clips,
+            [clipId]: nextKneadState,
         },
     });
+
+    // 2. Persist to trackStore / Automerge
+    updateClip(clipId, (clip) => ({
+        ...clip,
+        kneadState: nextKneadState,
+    }));
 }
