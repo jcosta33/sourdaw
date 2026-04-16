@@ -45,7 +45,8 @@ class LevainProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _bypassed = false;
     _pendingMessages = [];
-    _queue = []; // Sorted by sampleFrame (integer sample count)
+    _queue = new Array(8192).fill(null); // Sorted by sampleFrame (integer sample count)
+    _queueLength = 0;
 
     constructor() {
         super();

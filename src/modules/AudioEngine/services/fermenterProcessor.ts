@@ -68,14 +68,17 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg) {
-        let lo = 0,
-            hi = this._queue.length;
-        while (lo < hi) {
-            const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {lo = mid + 1;}
-            else {hi = mid;}
+        if (this._queueLength >= this._queue.length) {
+            console.warn('FermenterProcessor queue full');
+            return;
         }
-        this._queue.splice(lo, 0, msg);
+        let i = this._queueLength - 1;
+        while (i >= 0 && this._queue[i].sampleFrame > msg.sampleFrame) {
+            this._queue[i + 1] = this._queue[i];
+            i--;
+        }
+        this._queue[i + 1] = msg;
+        this._queueLength++;
     }
 
     _handleMessage(msg) {
@@ -118,13 +121,20 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     _drainQueue(blockEndFrame) {
-        // Audio-thread: drain with index + single splice instead of per-element shift() (O(n²))
         let drained = 0;
-        while (drained < this._queue.length && this._queue[drained].sampleFrame <= blockEndFrame) {
+        while (drained < this._queueLength && this._queue[drained].sampleFrame <= blockEndFrame) {
             this._dispatch(this._queue[drained]);
+            this._queue[drained] = null;
             drained++;
         }
-        if (drained > 0) {this._queue.splice(0, drained);}
+        if (drained > 0) {
+            const remaining = this._queueLength - drained;
+            for (let i = 0; i < remaining; i++) {
+                this._queue[i] = this._queue[drained + i];
+                this._queue[drained + i] = null;
+            }
+            this._queueLength = remaining;
+        }
     }
 
     process(_inputs, outputs) {
