@@ -32,7 +32,8 @@ export type BuiltinDeviceNode = {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
-        setParam: (name: string, value: number) => void;
+        setParam: (name: string, value: number, sampleFrame?: number) => void;
+        setPatch?: (patch: Record<string, unknown>) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
@@ -131,6 +132,7 @@ export type AudioEngine = {
     addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void;
     removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
+    updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
     updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void;
     ensureBusStrip(busId: string): BusStrip;

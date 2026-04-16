@@ -54,3 +54,9 @@ export function loadFermenterPatch(deviceId: string, patch: FermenterPatch): voi
     const state = instances[deviceId] ?? { ...DEFAULT_FERMENTER_STATE, patch: { ...DEFAULT_PATCH } };
     fermenterStore.set({ ...instances, [deviceId]: { ...state, patch } });
 }
+
+export function setFermenterTelemetry(deviceId: string, peakL: number, peakR: number, scopeBuffer: Float32Array): void {
+    const instances = fermenterStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_FERMENTER_STATE, patch: { ...DEFAULT_PATCH } };
+    fermenterStore.set({ ...instances, [deviceId]: { ...state, peakL, peakR, scopeBuffer } });
+}

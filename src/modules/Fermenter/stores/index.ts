@@ -1,1 +1,1 @@
-export { fermenterStore } from './fermenterStore';
+export { fermenterStore, setFermenterTelemetry } from './fermenterStore';

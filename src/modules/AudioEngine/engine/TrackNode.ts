@@ -385,6 +385,15 @@ export class TrackNode {
         }
     }
 
+    public updatePatch(deviceId: string, patch: Record<string, unknown>): void {
+        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        if (!dn) return;
+
+        if (dn.fermenterControls) {
+            dn.fermenterControls.setPatch?.(patch);
+        }
+    }
+
     public scheduleParam(deviceId: string, paramId: string, value: number, time: number): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
@@ -392,6 +401,28 @@ export class TrackNode {
         }
         if (dn.wamControls) {
             dn.wamControls.scheduleParam(paramId, value, time);
+        } else if (dn.type.startsWith('faust-')) {
+            const worklet = dn.nodes[0];
+            if (worklet && worklet instanceof AudioWorkletNode) {
+                let targetParam: AudioParam | null = null;
+                const exact = worklet.parameters.get(paramId);
+                if (exact) {
+                    targetParam = exact;
+                } else {
+                    for (const [key, param] of worklet.parameters) {
+                        if (key.endsWith(`/${paramId}`)) {
+                            targetParam = param;
+                            break;
+                        }
+                    }
+                }
+                if (targetParam) {
+                    targetParam.setValueAtTime(value, time);
+                }
+            }
+        } else if (dn.fermenterControls) {
+            const sampleFrame = Math.round(time * this.deps.context.sampleRate);
+            dn.fermenterControls.setParam(paramId, value, sampleFrame);
         }
     }
 

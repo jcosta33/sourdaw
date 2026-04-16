@@ -105,6 +105,7 @@ export const EnvelopeSection = ({
                                 max={max}
                                 step={key === 'Sustain' ? 0.01 : 0.005}
                                 defaultValue={key === 'Sustain' ? 0.7 : 0.2}
+                                scale={key === 'Sustain' ? 'linear' : 'log'}
                                 size="lg"
                                 tone="sage"
                             />
