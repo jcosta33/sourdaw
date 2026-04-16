@@ -2,10 +2,21 @@
 name: consolidated-issues-audit
 description: Consolidated audit of all open issues across the codebase, verified against source code on 2026-04-16.
 type: audit
-status: open
+status: partially-addressed
 ---
 
 # Consolidated Issues Audit
+
+## Session status (2026-04-16 fix pass)
+
+A bug-fix session driven by task `.agents/tasks/fix-consolidated-audit-issues.md` has worked through this audit. Each issue below is annotated with a `**Status:**` line. Summary:
+
+- **Fixed (13):** I-07, I-09, I-10, I-11, I-13, I-17, I-18, I-20, I-23, I-24; Timeline §2, §3, §5.
+- **Partially fixed (1):** Timeline §1 — `nudgeClip` and `insertTime` fixed; `deleteTimeRange` and `rippleDeleteClips` deferred.
+- **Deferred (architectural / feature work):** I-01, I-02, I-03, I-04, I-05, I-06, I-14, I-15, I-16, I-19, I-21, I-25, I-26, I-27, I-28, I-29, I-30; Timeline §4, §6, §7, §8.
+- **Deferred (real DSP issues, non-trivial):** I-08 (LR4 cascade), I-12 (Crumbs pitch AA), I-22 (limiter deque).
+
+The fix session's `Self-review` and verification outputs live in the task file. This audit is kept open until the deferred items either have specs, follow-up tasks, or are explicitly triaged out.
 
 ## Scope
 
@@ -81,7 +92,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Move audio transport off IPC. Use `SharedArrayBuffer` rings (analogous to the recording path) between the worklet and the Rust cpal thread; drive param updates via a separate low-rate control channel.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — architectural; requires a dedicated spec and SAB transport design.
 
 ---
 
@@ -97,7 +108,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Collapse to one backend-dispatch use case that owns the chain, status-store transitions, and error mapping. Call sites should only pass mode + messages + options.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — architectural; needs a unified `invokeLlm` use case. I-18 (schema fallback) was fixed in place without collapsing the dispatchers.
 
 ---
 
@@ -113,7 +124,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Key state by device/instance ID (e.g. `Record<DeviceId, LevainPatch>`). The param bridges must look up state by the device they're acting on, not assume "the" one.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — cross-cutting refactor across Levain, Toaster, Fermenter stores; needs a spec.
 
 ---
 
@@ -128,7 +139,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Reuse Automerge's own change/heads mechanism for AI undo, or snapshot only the documents actually touched by the DSO plan. Do not snapshot the whole bundle for a one-note edit.
 
-**Status:** **Verified** against HEAD. File reference corrected from the original audit.
+**Status:** **Verified** against HEAD. File reference corrected from the original audit. **Deferred (2026-04-16)** — needs an Automerge change/heads strategy decision.
 
 ---
 
@@ -143,7 +154,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Define a uniform device-node interface (`setParam`, `scheduleParam`, `setBypass`, `dispose`) that every plugin's node implements; `TrackNode` then only calls the interface. Move per-plugin logic back into plugin modules.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — large refactor; needs `DeviceNode` interface spec.
 
 ---
 
@@ -160,7 +171,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Query `get_latency()` on plugin ready, sum across the chain, and compensate recording + automation paths. Requires a host-wide PDC bus.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — needs a host-wide PDC spec.
 
 ---
 
@@ -176,7 +187,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** (a) Verify whether this file actually compiles (the field mismatch suggests a broken build or a gating story). (b) Give the reverb two independent filter pairs (`high_cut_l`, `high_cut_r`, `low_cut_l`, `low_cut_r`) and filter both channels.
 
-**Status:** **Verified** against HEAD. **Possible build break** — flagged for urgent investigation.
+**Status:** **FIXED (2026-04-16)** — confirmed build break (4× E0609). `proof_chamber.rs` now declares `high_cut_l/_r` and `low_cut_l/_r`; both channels are filtered in `process()`. `cargo check -p proof-chamber` is clean.
 
 ---
 
@@ -191,7 +202,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Restructure to parallel LR4s with allpass compensation on the non-split branches, or use a Linkwitz-Riley topology that sums to flat allpass by construction (standard multiband approach).
 
-**Status:** **Verified** in `crates/daw-dsp/src/proof/crossover.rs`; the Bacteria file was not re-read in this pass.
+**Status:** **Verified** in `crates/daw-dsp/src/proof/crossover.rs`; the Bacteria file was not re-read in this pass. **Deferred (2026-04-16)** — real issue but requires crossover topology redesign; not a minimal fix.
 
 ---
 
@@ -206,7 +217,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Quantise to `lsb` after the dither addition. One-line fix, but exposes the question of whether any test has ever asserted the output grid.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — `process_sample` now returns `(dithered / lsb).round() * lsb`, matching the `NoiseShapedDither` implementation it was supposed to mirror.
 
 ---
 
@@ -220,7 +231,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Replace the formula with `m_scaled = m`, `s_scaled = s * width`. If a "mono → stereo" axis is desired, use a separate control.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — `apply_width` now leaves mid unscaled and scales only side by `width`. Centre image preserved at all widths.
 
 ---
 
@@ -234,7 +245,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Two filter instances, or a stereo SVF variant. Current topology introduces channel cross-talk proportional to filter resonance.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — `CrumbsVoice` now holds independent `filter_l` / `filter_r`; coefficients kept in sync via `set_filter_params`. No state cross-talk. (Note: `cargo check -p daw-dsp` is still blocked by an unrelated pre-existing `grand_boule/voice.rs` break, logged as a follow-up.)
 
 ---
 
@@ -248,7 +259,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** For large pitch-up, either oversample the source, run a variable-cutoff lowpass before the interpolator, or switch to a windowed-sinc interpolator with anti-image filtering.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — real issue but requires a pre-resample LPF design cheap enough to run per voice.
 
 ---
 
@@ -262,7 +273,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Invert the dependency: `CrdtDocument` module exposes a public use-case API (`saveAll`, `loadAll`, or similar) from its `useCases/` and `index.ts`; the storage adapter imports that instead. Run `pnpm deps:validate` afterwards.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — the adapter now goes through `getCrdtDoc`, `hasCrdtDoc`, `mutateCrdtDoc`, and `getSemanticContext` from `#/modules/CrdtDocument/useCases/*`. Deep per-file imports (not the barrel) avoid a module-init cycle where the barrel re-exports `projectProjection`, which transitively loads stores that call `createAutomergeStorage()` at module scope. `mutateCrdtDoc` gained an optional `message` parameter so semantic context still flows through. `pnpm deps:validate` reports 0 errors.
 
 ---
 
@@ -277,7 +288,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Wire both stores through `createLocalStorage` / `createAutomergeStorage` adapters with a `toCrdt` shim to strip ephemeral fields.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — depends on a storage-shim design for each store; not a minimal fix.
 
 ---
 
@@ -292,7 +303,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Publish telemetry via a SAB or an event-emitter that components can selectively subscribe to at UI rate, not through the global store. Batch morph messages into one keyframe message.
 
-**Status:** **Partially verified** — re-render risk verified by pattern; morph/postMessage claims not re-measured this pass.
+**Status:** **Partially verified** — re-render risk verified by pattern; morph/postMessage claims not re-measured this pass. **Deferred (2026-04-16)** — needs a SAB/event-emitter telemetry design.
 
 ---
 
@@ -307,7 +318,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Split each message into its own subscribed component; keyed by message id; only the streaming-target message re-renders per token. Cache markdown parse by `msg.id + content.length`.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — requires a message-component split and markdown parse cache.
 
 ---
 
@@ -321,7 +332,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Add `aria-expanded={expanded}`, `aria-controls="reasoning-body-{id}"`, a stable region id, and `aria-label="Toggle reasoning"`.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — `useId`-generated region id, `aria-expanded`, `aria-controls`, and `aria-label` are all present on the `<button>`, and the expanded body is a labelled `role="region"`.
 
 ---
 
@@ -335,7 +346,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Either implement the fallback (second streaming call without `response_format.schema`), or remove the promise from the comment and the expectation from the UX.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — on schema-constrained failure, the code now retries once without `response_format`. If both attempts fail, it throws a single combined error that includes both failure messages.
 
 ---
 
@@ -349,7 +360,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Route generic devices through a pre-built bypass gain (two nodes, one connect-time decision) so bypass becomes a one-param change instead of a graph rebuild. The "scheduleRebuildChain" microtask coalescing helps but does not eliminate the rebuild.
 
-**Status:** **Verified** against HEAD (nuanced — no longer affects modern plugins, still affects Faust/WAM/factory devices).
+**Status:** **Verified** against HEAD (nuanced — no longer affects modern plugins, still affects Faust/WAM/factory devices). **Deferred (2026-04-16)** — related to I-05; will fall out of the `DeviceNode` interface.
 
 ---
 
@@ -364,7 +375,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Replace with a ring buffer or an index-based queue (`_queue[_head++]`), or free-list.
 
-**Status:** **Verified** against HEAD (low severity — one allocation per block, not per event).
+**Status:** **FIXED (2026-04-16)** — both `toasterProcessor.ts` and `levainProcessor.ts` now use a read-head index (`_queueHead`). The array is only cleared (`length = 0`) when fully drained; zero allocations in steady-state playback.
 
 ---
 
@@ -379,7 +390,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** At schedule time, compute the precise AudioContext `sampleFrame` for each hit and pass it through `triggerToasterPad`. The worklet already honours `sampleFrame` queuing.
 
-**Status:** **Verified** — infrastructure is ready; the caller is the missing link.
+**Status:** **Verified** — infrastructure is ready; the caller is the missing link. **Deferred (2026-04-16)** — small but needs care around transport-sync.
 
 ---
 
@@ -393,7 +404,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Replace with a monotonic deque (Lemire algorithm) for O(1) amortised max-in-window. Standard limiter implementation.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — real issue but perf, not correctness; monotonic-deque implementation is non-trivial.
 
 ---
 
@@ -407,7 +418,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Accept mono by duplicating `input[0]` to both channels (the existing `_passthrough` already does this for the bypass path). Fail loudly (once) if a required input is genuinely missing.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — `proofChamberProcessor.process()` now accepts `input.length >= 1` and duplicates `input[0]` into the right channel when the upstream is mono.
 
 ---
 
@@ -421,7 +432,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** `const bands = patch.dynBands.map(b => ({ ...b, threshold: v }))`. The sibling code in `ProofDynSection.tsx:28` already does it correctly — use the same pattern.
 
-**Status:** **Verified** against HEAD.
+**Status:** **FIXED (2026-04-16)** — the `dynBands` and `excBands` handlers in `ProofPanel.tsx` now build new band objects via `.map()` instead of mutating in place.
 
 ---
 
@@ -437,7 +448,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Pick one. The `Plugin/` namespace looks like a legacy experiment — verify and remove if so.
 
-**Status:** **Verified** three files exist; intent unclear.
+**Status:** **Verified** three files exist; intent unclear. **Deferred (2026-04-16)** — requires a product decision, not a code fix.
 
 ---
 
@@ -452,7 +463,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Decide which params are automatable and declare them. Read automation using `values[i]` per sample inside the inner loop for automatable params.
 
-**Status:** **Verified** against HEAD (audit's original "no AudioParams exposed" is too strong).
+**Status:** **Verified** against HEAD (audit's original "no AudioParams exposed" is too strong). **Deferred (2026-04-16)** — needs a policy on which params are automatable, then an AudioParam audit.
 
 ---
 
@@ -466,7 +477,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Either subscribe with a selector that isolates the active clip's notes, or move the canvas into its own component that only re-renders on note-structure change. "Excessive `useStore`" in the original audit was wrong — there are only 2 — but the re-render cost is real.
 
-**Status:** **Partially verified** against HEAD (framing corrected).
+**Status:** **Partially verified** against HEAD (framing corrected). **Deferred (2026-04-16)** — needs a selector design.
 
 ---
 
@@ -480,7 +491,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Remove legacy keys once a cookie-policy review confirms they are not in production use. The file header mentions legal review is required before removal — route through legal before deleting.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — requires legal review per the file header.
 
 ---
 
@@ -494,7 +505,7 @@ Ordered by impact × confidence-of-evidence:
 
 **Needed:** Parameterise by the track's input channel count (mono/stereo) and allocate the SAB ring accordingly. Include a UI toggle in input selection.
 
-**Status:** **Verified** against HEAD.
+**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — needs a UI policy for input channel selection.
 
 ---
 
@@ -513,7 +524,7 @@ Items carried over from sub-audits, not re-proved against code in this cycle. Th
 
 **Needed:** Per-claim re-verification by someone reading the specific DSP code, ideally as separate per-area audits.
 
-**Status:** **Not re-verified this pass** — carried over.
+**Status:** **Not re-verified this pass** — carried over. **Deferred (2026-04-16)** — belongs in per-plugin audits, not this consolidated file.
 
 ## Open questions
 
@@ -587,6 +598,7 @@ Many timeline operations shift clips in time without shifting their associated M
     - `src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts`
     - `src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts`
 - **Needed**: All clip movement logic must call `shiftClipMidiNotes` and `shiftClipAutomation` appropriately, or the underlying data model needs to be refactored so that notes/automation belong to the clip conceptually and use relative positioning.
+- **Status (2026-04-16)**: **Partially FIXED**. `nudgeClip` now calls both `shiftClipMidiNotes` and `shiftClipAutomation` when the clip actually moves; `insertTime` now calls the new `shiftMidiNotesAfterBeat` use case so MIDI notes and CC/pitch-bend events follow the same global time insert that clips, markers, and automation already did. **Deferred for `deleteTimeRange` and `rippleDeleteClips`** — same class of bug, but the fix requires a three-way partition per clip (notes before / inside / after the deleted range) and is scoped as a follow-up.
 
 ### 2. [CRITICAL] MIDI Split/Cut Data Loss
 
@@ -594,6 +606,7 @@ When a MIDI clip is split using the Cut tool, the new "right" clip is created wi
 
 - **File**: `src/modules/Arrangement/useCases/clipEditing/splitClip.ts`
 - **Needed**: `splitClip` must identify all notes within the original clip's range and re-associate/clone the notes that fall into the new right clip's range to the new clip ID.
+- **Status (2026-04-16)**: **FIXED**. New MIDI use case `splitMidiNotesAtBeat` partitions notes between the source and the new clip id, splitting any note that straddles the cut into a left (truncated) and right (new-clip) half. `splitClip` calls it whenever a MIDI clip is split.
 
 ### 3. [CRITICAL] MIDI Duplication Data Loss
 
@@ -601,6 +614,7 @@ Duplicating a MIDI clip creates a new clip ID and copies automation, but it comp
 
 - **File**: `src/modules/Arrangement/useCases/clip/duplicateClipCore.ts`
 - **Needed**: `duplicateClipCore` must read notes from `midiStore`, clone them with the new absolute `startBeat`, and associate them with the new clip ID.
+- **Status (2026-04-16)**: **FIXED**. `duplicateClipCore` now reads `getNotesForClip(clipId)`, shifts each note by `newStartBeat - originalStartBeat`, and batches them into the new clip id via `batchAddMidiNotes`.
 
 ### 4. [MAJOR] MIDI Drag Preview "Stay Behind" Bug
 
@@ -608,6 +622,7 @@ During a MIDI clip drag, the clip boundary (rectangle) moves with the mouse, but
 
 - **File**: `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` (in `drawMidiNotePreview`)
 - **Needed**: `drawMidiNotePreview` needs to know if a clip is being dragged and by how much, or `buildTimelineRenderModel` must shift the notes in the render model itself during the preview phase.
+- **Status (2026-04-16)**: **Deferred** — preview-layer reshape. Cleanest fix is to add a `visualShift` to `ClipRenderModel` populated by `buildTimelineRenderModel` during the preview phase, then have `drawMidiNotePreview` add it to each note's x. Deferred to a follow-up paired with §8.
 
 ### 5. [MAJOR] Audio Waveform "Squash" Bug
 
@@ -615,6 +630,7 @@ The waveform renderer always shows the entire audio buffer squashed into the cli
 
 - **File**: `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` (in `drawWaveformPeaks`) and `src/modules/AudioEngine/stores/audioBufferCache.ts`
 - **Needed**: `getWaveformPeaks` should accept `startSample` and `endSample` parameters. `drawWaveformPeaks` should calculate these based on `clip.audioOffsetBeats` and `clip.duration`.
+- **Status (2026-04-16)**: **FIXED**. `getWaveformPeaks(id, numBins, { startSample, endSample })` now supports windowed peak generation and caches per window. `ClipRenderModel` carries `audioOffsetBeats` and `stretchRatio`; `drawWaveformPeaks` computes the sample window from clip beats using `tempo` and `sampleRate` so trimmed / offset / stretched clips render the correct slice.
 
 ### 6. [MAJOR] MIDI Stretching Not Implemented
 
@@ -622,6 +638,7 @@ Dragging the edge of a MIDI clip with the Stretch tool (or Shift+drag) only chan
 
 - **File**: `src/modules/Arrangement/useCases/clip/moveClip.ts` and `src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchRatio.ts`
 - **Needed**: Implement a `scaleClipMidiNotes(clipId, ratio)` use case that is called when a stretch operation is committed.
+- **Status (2026-04-16)**: **Deferred** — feature work, needs a spec first (the scale should anchor on clip `startBeat`; interplay with audio `stretchRatio` needs to be specified).
 
 ### 7. [MINOR] MIDI Looping Visual Distortion
 
@@ -629,6 +646,7 @@ When a MIDI clip is trimmed to be longer than its `loopLength`, `drawMidiNotePre
 
 - **File**: `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` (in `drawMidiNotePreview`)
 - **Needed**: Change the coordinate calculation to use `relStart * pixelsPerBeat` (absolute pixels from clip left) instead of a percentage of the width.
+- **Status (2026-04-16)**: **Deferred** — bundled with §4 / §8 in the preview-layer reshape.
 
 ### 8. [MINOR] Missing Preview for Stretching/Trimming
 
@@ -636,6 +654,7 @@ While "move" drags have a robust preview, "stretch" and "trim" operations only u
 
 - **File**: `src/modules/Arrangement/useCases/buildTimelineRenderModel.ts`
 - **Needed**: The preview model should support a `stretchRatio` or `visualOffset` that the drawing functions can respect.
+- **Status (2026-04-16)**: **Partially groundwork in place** — `ClipRenderModel` now carries `audioOffsetBeats` and `stretchRatio`, so the render model is no longer the blocker. Wiring the preview phase to update these during a stretch/trim drag is the remaining piece, deferred with §4 / §7.
 
 ## Priorities
 
