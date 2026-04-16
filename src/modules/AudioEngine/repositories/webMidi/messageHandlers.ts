@@ -40,8 +40,10 @@ import {
     type ActiveNoteData,
 } from '../../models/WebMidiTypes';
 import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
+import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 
 const midiMessageHandlerDependencies = {
+    getCompensationDelay,
     getMidiStoreState,
     setMidiStoreState,
     getTrackStoreState,
