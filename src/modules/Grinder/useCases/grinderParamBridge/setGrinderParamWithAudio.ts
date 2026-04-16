@@ -1,9 +1,7 @@
 import { inject } from '#/infra/di/inject';
-import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 import { type GrinderPatch } from '../../models/GrinderPatch';
 import { setGrinderParam } from '../../stores/grinderStore';
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
-import type { DeviceRef, PersistDeviceParamFn, UpdateDeviceParamFn } from './helpers';
 
 import {
     AMP_MODELS,
@@ -16,6 +14,8 @@ import {
     ROUTING_MODES,
     TONE_STACK_TYPES,
     createFindDeviceRef,
+    createFlushParam,
+    paramBatcher,
 } from './helpers';
 
 const BOOLEAN_PATCH_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
@@ -28,20 +28,6 @@ const BOOLEAN_PATCH_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
     'neuralEnabled',
     'limiterEnabled',
 ]);
-
-// §33.2 — Shared rAF-batch primitive.
-type GrinderBatchEntry = { ref: DeviceRef; key: string; value: number };
-const paramBatcher = createRafBatcher<GrinderBatchEntry>();
-
-function createFlushParam(
-    updateDeviceParamFn: UpdateDeviceParamFn,
-    persistDeviceParamFn: PersistDeviceParamFn
-) {
-    return function flushParam(_compositeKey: string, entry: GrinderBatchEntry): void {
-        updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
-        persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);
-    };
-}
 
 function getIndexedValue<T extends readonly string[]>(options: T, raw: number): T[number] {
     const rounded = Math.round(raw);

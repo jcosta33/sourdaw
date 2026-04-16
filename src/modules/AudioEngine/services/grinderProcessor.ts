@@ -52,11 +52,77 @@ const PARAM_MAP = {
     gateEnabled: 'gateEnabled',
     gateThreshold: 'gateThreshold',
     bypass: 'bypass',
+
+    // Pre-pedals
+    preCompressorEnabled: 'preCompressorEnabled',
+    preCompressorThreshold: 'preCompressorThreshold',
+    preCompressorRatio: 'preCompressorRatio',
+    preCompressorAttack: 'preCompressorAttack',
+    preCompressorRelease: 'preCompressorRelease',
+    preOverdriveEnabled: 'preOverdriveEnabled',
+    preOverdriveDrive: 'preOverdriveDrive',
+    preOverdriveTone: 'preOverdriveTone',
+    preOverdriveLevel: 'preOverdriveLevel',
+    preDistortionEnabled: 'preDistortionEnabled',
+    preDistortionDrive: 'preDistortionDrive',
+    preDistortionTone: 'preDistortionTone',
+    preDistortionLevel: 'preDistortionLevel',
+    preFuzzEnabled: 'preFuzzEnabled',
+    preFuzzFuzz: 'preFuzzFuzz',
+    preFuzzTone: 'preFuzzTone',
+    preFuzzLevel: 'preFuzzLevel',
+
+    // Post-pedals
+    postCompressorEnabled: 'postCompressorEnabled',
+    postCompressorThreshold: 'postCompressorThreshold',
+    postCompressorRatio: 'postCompressorRatio',
+    postCompressorAttack: 'postCompressorAttack',
+    postCompressorRelease: 'postCompressorRelease',
+    postOverdriveEnabled: 'postOverdriveEnabled',
+    postOverdriveDrive: 'postOverdriveDrive',
+    postOverdriveTone: 'postOverdriveTone',
+    postOverdriveLevel: 'postOverdriveLevel',
+    postDistortionEnabled: 'postDistortionEnabled',
+    postDistortionDrive: 'postDistortionDrive',
+    postDistortionTone: 'postDistortionTone',
+    postDistortionLevel: 'postDistortionLevel',
+    postFuzzEnabled: 'postFuzzEnabled',
+    postFuzzFuzz: 'postFuzzFuzz',
+    postFuzzTone: 'postFuzzTone',
+    postFuzzLevel: 'postFuzzLevel',
+
+    // Mics
+    mic1Enabled: 'mic1Enabled',
+    mic1PositionX: 'mic1PositionX',
+    mic1PositionY: 'mic1PositionY',
+    mic1Distance: 'mic1Distance',
+    mic1Gain: 'mic1Gain',
+    mic2Enabled: 'mic2Enabled',
+    mic2PositionX: 'mic2PositionX',
+    mic2PositionY: 'mic2PositionY',
+    mic2Distance: 'mic2Distance',
+    mic2Gain: 'mic2Gain',
+    micBlend: 'micBlend',
+    roomAmount: 'roomAmount',
 };
 
 const MAX_GRINDER_BLOCK_SIZE = 2048;
 
 class GrinderProcessor extends AudioWorkletProcessor {
+    static get parameterDescriptors() {
+        return [
+            { name: 'gain', defaultValue: 5, minValue: 0, maxValue: 10 },
+            { name: 'bass', defaultValue: 5, minValue: 0, maxValue: 10 },
+            { name: 'mid', defaultValue: 5, minValue: 0, maxValue: 10 },
+            { name: 'treble', defaultValue: 5, minValue: 0, maxValue: 10 },
+            { name: 'presence', defaultValue: 5, minValue: 0, maxValue: 10 },
+            { name: 'resonance', defaultValue: 5, minValue: 0, maxValue: 10 },
+            { name: 'master', defaultValue: 5, minValue: 0, maxValue: 10 },
+            { name: 'inputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
+            { name: 'outputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
+        ];
+    }
+
     _instance = null; // GrinderInstance (generated wasm-bindgen class)
     _memory = null; // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
@@ -99,7 +165,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         if (output[1] && rightIn) {output[1].set(rightIn);}
     }
 
-    process(inputs, outputs) {
+    process(inputs, outputs, parameters) {
         const input = inputs[0];
         const output = outputs[0];
 
@@ -120,6 +186,15 @@ class GrinderProcessor extends AudioWorkletProcessor {
         try {
             const inst = this._instance;
             const mem = this._memory.buffer;
+
+            // Update AudioParams
+            for (const name in parameters) {
+                const values = parameters[name];
+                if (values.length === 0) {continue;}
+                const value = values.length > 1 ? values[frames - 1] : values[0];
+                const rustName = PARAM_MAP[name] ?? name;
+                inst.set_param(rustName, value);
+            }
 
             const inLeftPtr = inst.get_input_left_ptr();
             const inRightPtr = inst.get_input_right_ptr();

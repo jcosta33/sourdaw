@@ -90,7 +90,12 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
         workletNode: node,
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
+                const param = node.parameters.get(name);
+                if (param) {
+                    param.setTargetAtTime(value, ctx.currentTime, 0.01);
+                } else {
+                    node.port.postMessage({ type: 'param', name, value });
+                }
             }
         },
         setBypass(state: boolean) {
