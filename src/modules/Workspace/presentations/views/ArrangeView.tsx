@@ -26,31 +26,44 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport/stores';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { setTrackListWidth } from '../../useCases/togglePanel/panelToggles/setTrackListWidth';
+import { setSessionViewWidth } from '../../useCases/togglePanel/panelToggles/setSessionViewWidth';
 import { closeScratchPad } from '../../useCases/togglePanel/panelToggles/closeScratchPad';
 import { ResizeHandle } from '../components/ResizeHandle';
 import { Piano, Upload, Headphones } from 'lucide-react';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
+import { SessionView } from './SessionView';
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
 import { clamp } from '#/utils/Math/clamp';
 
 const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;
 
+const SESSION_VIEW_MIN = 200;
+const SESSION_VIEW_MAX = 800;
+
 export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();
-    const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight } = useWorkspaceState();
+    const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight, dualViewOpen, sessionViewWidth } = useWorkspaceState();
 
     const hasUserTracks = tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length > 0;
 
     const [localTrackListWidth, setLocalTrackListWidth] = useState(trackListWidth);
     const trackListWidthRef = useRef(localTrackListWidth);
+
+    const [localSessionWidth, setLocalSessionWidth] = useState(sessionViewWidth);
+    const sessionWidthRef = useRef(localSessionWidth);
+
     const timelineContainerRef = useRef<HTMLDivElement>(null);
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
 
     useEffect(() => {
         setLocalTrackListWidth(trackListWidth);
     }, [trackListWidth]);
+
+    useEffect(() => {
+        setLocalSessionWidth(sessionViewWidth);
+    }, [sessionViewWidth]);
 
     const handleTrackListResize = (delta: number): void => {
         setLocalTrackListWidth((prev) => {
@@ -62,6 +75,18 @@ export const ArrangeView = (): ReactElement => {
 
     const handleTrackListResizeEnd = (): void => {
         setTrackListWidth(trackListWidthRef.current);
+    };
+
+    const handleSessionResize = (delta: number): void => {
+        setLocalSessionWidth((prev) => {
+            const next = clamp(prev + delta, SESSION_VIEW_MIN, SESSION_VIEW_MAX);
+            sessionWidthRef.current = next;
+            return next;
+        });
+    };
+
+    const handleSessionResizeEnd = (): void => {
+        setSessionViewWidth(sessionWidthRef.current);
     };
 
     useLayoutEffect(() => {
@@ -104,6 +129,18 @@ export const ArrangeView = (): ReactElement => {
 
     return (
         <div className="flex h-full">
+            {dualViewOpen ? (
+                <>
+                    <div className="flex flex-col border-r border-border/20 bg-surface-base" style={{ width: localSessionWidth }}>
+                        <SessionView />
+                    </div>
+                    <ResizeHandle
+                        direction="vertical"
+                        onResize={handleSessionResize}
+                        onResizeEnd={handleSessionResizeEnd}
+                    />
+                </>
+            ) : null}
             {trackListOpen ? (
                 <>
                     <TrackListView

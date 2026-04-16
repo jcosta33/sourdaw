@@ -26,7 +26,20 @@ export function getAutomationValueAtBeat(laneId: string, beat: number): number |
         }
     }
     const lane = _laneByIdCache.get(laneId);
-    if (!lane || lane.points.length === 0) {
+    if (!lane) {
+        return null;
+    }
+
+    // R-F3.3: Follow linked lane if set
+    if (lane.linkedLaneId) {
+        const sourceVal = getAutomationValueAtBeat(lane.linkedLaneId, beat);
+        if (sourceVal !== null) {
+            const scale = lane.linkScale ?? 1;
+            return sourceVal * scale;
+        }
+    }
+
+    if (lane.points.length === 0) {
         return null;
     }
 

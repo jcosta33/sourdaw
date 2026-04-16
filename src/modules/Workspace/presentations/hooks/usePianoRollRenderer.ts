@@ -59,6 +59,8 @@ type RendererDeps = {
     stepInput: boolean;
     stepBeat: number;
     showGhostNotes: boolean;
+    /** A9: additional clip IDs open simultaneously in the piano roll */
+    openedClipIds?: string[];
     /** MIDI state — notesByClipId map */
     midiNotesByClipId: Record<string, MidiNote[]> | null;
     /** Track state — track list */
@@ -107,6 +109,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     clipIdRef.current = deps.clipId;
     const trackIdRef = useRef(deps.trackId);
     trackIdRef.current = deps.trackId;
+    const openedClipIdsRef = useRef(deps.openedClipIds ?? []);
+    openedClipIdsRef.current = deps.openedClipIds ?? [];
 
     // ── OffscreenCanvas grid cache ──────────────────────────────────────
     const gridCacheRef = useRef<OffscreenCanvas | null>(null);
@@ -238,11 +242,16 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 // Scale for HiDPI before drawing dynamic layers
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-                // Ghost notes + active notes + overlays
+                // Ghost notes + secondary open clips + active notes + overlays
                 ctx.save();
                 ctx.translate(0, RULER_HEIGHT);
                 if (ghost && tracks) {
                     drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId);
+                }
+                // A9: draw notes from other simultaneously-open clips at 55% opacity
+                const openedIds = openedClipIdsRef.current;
+                if (openedIds.length > 0 && midiState && tracks) {
+                    drawOpenedClipNotes(ctx, pitchToRow, bw, midiState.notesByClipId, tracks, cId, openedIds, selIds);
                 }
                 drawActiveNotes(ctx, pitchToRow, notes, bw, selIds, tracks, tId, cId, deps.dragPreviewRef.current);
                 if (si) {
@@ -476,6 +485,50 @@ function drawGhostNote(
     ctx.strokeStyle = colorWithAlpha(color, strokeAlpha);
     ctx.lineWidth = 0.5;
     ctx.stroke();
+}
+
+/**
+ * A9: Draw notes from other clips that are simultaneously open in the piano roll.
+ * These notes are editable (not read-only ghost notes) so they render at higher opacity.
+ */
+function drawOpenedClipNotes(
+    ctx: CanvasRenderingContext2D,
+    pitchToRow: Map<number, number>,
+    beatWidth: number,
+    notesByClipId: Record<string, MidiNote[]>,
+    tracks: Array<{ id: string; kind: string; color: string; clips: Array<{ id: string; type: string; color: string }> }>,
+    primaryClipId: string,
+    openedClipIds: string[],
+    selectedNoteIds: Set<string>
+): void {
+    for (const openedId of openedClipIds) {
+        if (openedId === primaryClipId) continue;
+        const openedNotes = notesByClipId[openedId];
+        if (!openedNotes) continue;
+        // Find the clip color from tracks
+        let clipColor = 'oklch(0.7 0.12 250)'; // default blue-ish
+        for (const track of tracks) {
+            const clip = track.clips.find((c) => c.id === openedId);
+            if (clip) { clipColor = clip.color || track.color; break; }
+        }
+        for (const note of openedNotes) {
+            const row = pitchToRow.get(note.pitch) ?? -1;
+            if (row === -1) continue;
+            const x = note.startBeat * beatWidth;
+            const y = row * ROW_HEIGHT;
+            const w = note.duration * beatWidth;
+            const isSelected = selectedNoteIds.has(note.id);
+            const fillAlpha = isSelected ? 0.75 : 0.5;
+            const strokeAlpha = isSelected ? 0.9 : 0.65;
+            ctx.fillStyle = colorWithAlpha(clipColor, fillAlpha);
+            ctx.beginPath();
+            ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+            ctx.fill();
+            ctx.strokeStyle = colorWithAlpha(clipColor, strokeAlpha);
+            ctx.lineWidth = isSelected ? 1 : 0.5;
+            ctx.stroke();
+        }
+    }
 }
 
 type DragPreview = {

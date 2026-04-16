@@ -18,6 +18,7 @@ import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
 import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
 import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
+import { applyModulation } from '#/modules/Automation';
 
 export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
 
@@ -221,6 +222,7 @@ export function startPlayheadScheduler(): void {
         );
         applyVcaGains();
         applyAutomation(newPosition);
+        applyModulation(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;
 

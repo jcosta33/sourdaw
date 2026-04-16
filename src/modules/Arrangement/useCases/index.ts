@@ -52,12 +52,16 @@ export { setClipGain } from './clipEditing/setClipGain';
 export { splitClip } from './clipEditing/splitClip';
 export { trimClipEnd } from './clipEditing/trimClipEnd';
 export { trimClipStart } from './clipEditing/trimClipStart';
+export { toggleInlineEditing } from './clipEditing/toggleInlineEditing';
+export { resetOverride } from './clipEditing/resetOverride';
+export { getGrooveOffsetAtBeat } from './groove/applyGrooveTemplate';
 export { deleteTimeRange } from './clipEditing/deleteTimeRange';
 export { crossfadeClips } from './clipEditing/crossfadeClips';
 export { glueClips } from './clipEditing/glueClips';
 export { lockClip } from './clipEditing/lockClip';
 export { muteClip } from './clipEditing/muteClip';
 export { nudgeClip } from './clipEditing/nudgeClip';
+export { slipClipContent } from './clipEditing/slipClipContent';
 
 export { setClipLoop } from './clipLoop/setClipLoop';
 export { setClipLoopLength } from './clipLoop/setClipLoopLength';
@@ -171,6 +175,7 @@ export { soloTrackExclusive } from './toggleTrackState/soloTrackExclusive';
 export { toggleChordTrackFollow } from './toggleTrackState/toggleChordTrackFollow';
 export { toggleInputMonitoring } from './toggleTrackState/toggleInputMonitoring';
 export { toggleSoloSafe } from './toggleTrackState/toggleSoloSafe';
+export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 

@@ -48,6 +48,21 @@ export type LibraryRoot = {
 
 export type SampleSyncStatus = 'discovered' | 'indexed' | 'analyzed' | 'offline' | 'error';
 
+export type SpectralDescriptors = {
+    centroid?: number;
+    flatness?: number;
+    crest?: number;
+    rms?: number;
+    transientDensity?: number;
+    inharmonicity?: number;
+};
+
+export type SampleAnalysis = {
+    bpm?: number;
+    key?: string;
+    descriptors?: SpectralDescriptors;
+};
+
 export type SampleRecord = {
     id: string;
     libraryRootId: string;
@@ -72,6 +87,18 @@ export type SampleRecord = {
         channels?: number;
         bitDepth?: number;
     };
+
+    /** G1: Intelligence metadata */
+    analysis?: SampleAnalysis;
+
+    /** G3: Map coordinates (normalized -1..1) */
+    spatialMap?: {
+        x: number;
+        y: number;
+    };
+
+    /** G2: Timbral embedding availability */
+    embeddingStatus?: 'pending' | 'ready' | 'error';
 
     tags: string[];
     favorite: boolean;

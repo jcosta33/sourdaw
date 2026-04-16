@@ -12,7 +12,8 @@
 import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
-import { midiStore } from '#/modules/MIDI/stores';
+import { midiStore } from '#/modules/MIDI';
+import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { useStore } from '#/infra/store/useStore';
 
@@ -23,10 +24,14 @@ import { PianoRollContextMenu } from './PianoRollContextMenu';
 import { NOTE_NAMES, GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
+import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
+import { setNoteVelocity, setNotePressure, setNoteSlide, setNotePitchBend } from '#/modules/MIDI';
 
 type PianoRollProps = {
     clipId: string;
     trackId: string;
+    /** A9: additional clip IDs to show simultaneously (multi-clip editing) */
+    openedClipIds?: string[];
     selectedNoteIds: Set<string>;
     onSelectedNoteIdsChange: Dispatch<SetStateAction<Set<string>>>;
     onScrollChange?: (scrollLeft: number) => void;
@@ -56,6 +61,7 @@ type PianoRollChordType =
 export const PianoRoll = ({
     clipId,
     trackId,
+    openedClipIds,
     selectedNoteIds,
     onSelectedNoteIdsChange,
     onScrollChange,
@@ -78,13 +84,27 @@ export const PianoRoll = ({
     const [paintMode, setPaintMode] = useState(false);
     const [lassoMode, setLassoMode] = useState(false);
     const [isFolded, setIsFolded] = useState(false);
+    const [constrainToScale, setConstrainToScale] = useState(false);
+    const [notePreviewEnabled, setNotePreviewEnabled] = useState(true);
+    const [showExpressionView, setShowExpressionView] = useState(false);
+    const [activeExpressionLane, setActiveExpressionLane] = useState<'velocity' | 'pressure' | 'slide' | 'pitchBend'>('velocity');
 
     const beatWidth = Math.max(1, 40 * zoom);
+    /** A9: focused clip receives newly drawn notes; defaults to primary clipId */
+    const [focusedClipId, setFocusedClipId] = useState<string>(clipId);
 
     // ── Store subscriptions ──────────────────────────────────────────
     const midiState = useStore(midiStore, { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const notes = midiState?.notesByClipId[clipId] ?? [];
+    // A9: build notes map for all simultaneously-open clips (excludes primary clipId)
+    const openedClipNotes: Record<string, MidiNote[]> | undefined = openedClipIds && openedClipIds.length > 0
+        ? Object.fromEntries(
+            openedClipIds
+                .filter((id) => id !== clipId)
+                .map((id) => [id, midiState?.notesByClipId[id] ?? []])
+          )
+        : undefined;
 
     // ── Report layout to parent ──────────────────────────────────────
     useLayoutEffect(() => {
@@ -125,6 +145,7 @@ export const PianoRoll = ({
         notes,
         clipId,
         trackId,
+        openedClipIds,
         beatWidth,
         gridSnap,
         scaleType,
@@ -158,6 +179,8 @@ export const PianoRoll = ({
         clipId,
         trackId,
         notes,
+        openedClipNotes,
+        focusedClipId,
         beatWidth,
         gridSnap,
         scaleType,
@@ -178,6 +201,8 @@ export const PianoRoll = ({
         drawPreviewRef,
         rubberBandRef,
         dragPreviewRef,
+        constrainToScale,
+        notePreviewEnabled,
     });
 
     // ── Render ────────────────────────────────────────────────────────
@@ -194,6 +219,8 @@ export const PianoRoll = ({
                 onScaleTypeChange={setScaleType}
                 isFolded={isFolded}
                 onToggleFolded={() => setIsFolded((p) => !p)}
+                constrainToScale={constrainToScale}
+                onToggleConstrainToScale={() => setConstrainToScale((p: boolean) => !p)}
                 stepInput={stepInput}
                 onToggleStepInput={() => setStepInput((p) => !p)}
                 showGhostNotes={showGhostNotes}
@@ -206,56 +233,102 @@ export const PianoRoll = ({
                 onTogglePaintMode={() => setPaintMode((p) => !p)}
                 lassoMode={lassoMode}
                 onToggleLassoMode={() => setLassoMode((p) => !p)}
+                notePreviewEnabled={notePreviewEnabled}
+                onToggleNotePreview={() => setNotePreviewEnabled((p: boolean) => !p)}
                 zoom={zoom}
                 onZoomChange={setZoom}
+                openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
+                focusedClipId={focusedClipId}
+                onFocusedClipIdChange={setFocusedClipId}
+                showExpressionView={showExpressionView}
+                onToggleExpressionView={() => setShowExpressionView((p) => !p)}
+                activeExpressionLane={activeExpressionLane}
+                onActiveExpressionLaneChange={setActiveExpressionLane}
             />
 
-            <div
-                className="flex flex-1 overflow-auto"
-                onScroll={(e) => {
-                    const sl = (e.target as HTMLElement).scrollLeft;
-                    setScrollX(sl);
-                    onScrollChange?.(sl);
-                }}
-            >
-                {/* Piano keys sidebar */}
-                <DawSideRail className="sticky left-0 z-10 w-10">
-                    <DawGridHeaderCell className="px-0" style={{ height: RULER_HEIGHT }} />
-                    {visiblePitches.map((pitch, row) => {
-                        const noteIndex = pitch % 12;
-                        const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
-                        return (
-                            <div
-                                key={row}
-                                className={cn(
-                                    'flex items-center justify-end pr-1 text-[10px]',
-                                    isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60'
-                                )}
-                                style={{ height: ROW_HEIGHT }}
-                            >
-                                {NOTE_NAMES[noteIndex]}
-                                {Math.floor(pitch / 12) - 1}
-                            </div>
-                        );
-                    })}
-                </DawSideRail>
+            <div className="flex flex-1 flex-col overflow-hidden">
+                <div
+                    className="flex flex-1 overflow-auto"
+                    onScroll={(e) => {
+                        const sl = (e.target as HTMLElement).scrollLeft;
+                        setScrollX(sl);
+                        onScrollChange?.(sl);
+                    }}
+                >
+                    {/* Piano keys sidebar */}
+                    <DawSideRail className="sticky left-0 z-10 w-10">
+                        <DawGridHeaderCell className="px-0" style={{ height: RULER_HEIGHT }} />
+                        {visiblePitches.map((pitch, row) => {
+                            const noteIndex = pitch % 12;
+                            const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
+                            return (
+                                <div
+                                    key={row}
+                                    className={cn(
+                                        'flex items-center justify-end pr-1 text-[10px]',
+                                        isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60'
+                                    )}
+                                    style={{ height: ROW_HEIGHT }}
+                                >
+                                    {NOTE_NAMES[noteIndex]}
+                                    {Math.floor(pitch / 12) - 1}
+                                </div>
+                            );
+                        })}
+                    </DawSideRail>
 
-                {/* Canvas */}
-                <canvas
-                    ref={canvasRef}
-                    className="outline-none"
-                    style={{ cursor: hoverCursor }}
-                    tabIndex={0}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
-                    onDoubleClick={handleDoubleClick}
-                    onWheel={handleWheel}
-                    onKeyDown={handleKeyDown}
-                    onContextMenu={handleContextMenu}
-                    aria-label="Piano roll editor"
-                />
+                    {/* Canvas */}
+                    <canvas
+                        ref={canvasRef}
+                        className="outline-none"
+                        style={{ cursor: hoverCursor }}
+                        tabIndex={0}
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseUp}
+                        onDoubleClick={handleDoubleClick}
+                        onWheel={handleWheel}
+                        onKeyDown={handleKeyDown}
+                        onContextMenu={handleContextMenu}
+                        aria-label="Piano roll editor"
+                    />
+                </div>
+
+                {/* I4: Expression View bottom panel */}
+                {showExpressionView && (
+                    <div className="h-32 border-t border-border/20 bg-surface-well flex">
+                        <div className="w-10 shrink-0 border-r border-border/10 flex flex-col items-center py-1">
+                            <span className="text-[8px] text-muted-foreground uppercase vertical-text">
+                                {activeExpressionLane}
+                            </span>
+                        </div>
+                        <div className="flex-1 overflow-x-hidden">
+                            <NotePropertyLane
+                                clipId={clipId}
+                                trackId={trackId}
+                                selectedNoteIds={selectedNoteIds}
+                                beatWidth={beatWidth}
+                                contentWidth={GRID_BEATS * beatWidth}
+                                getValue={(n) => {
+                                    if (activeExpressionLane === 'velocity') return n.velocity ?? 100;
+                                    if (activeExpressionLane === 'pressure') return n.pressure ?? 0;
+                                    if (activeExpressionLane === 'slide') return n.slide ?? 0;
+                                    if (activeExpressionLane === 'pitchBend') return ((n.pitchBend ?? 0) + 8192) / 128; // Scale to 0-127
+                                    return 0;
+                                }}
+                                setValue={(cid, nid, val) => {
+                                    if (activeExpressionLane === 'velocity') setNoteVelocity(cid, nid, val);
+                                    if (activeExpressionLane === 'pressure') setNotePressure(cid, nid, val);
+                                    if (activeExpressionLane === 'slide') setNoteSlide(cid, nid, val);
+                                    if (activeExpressionLane === 'pitchBend') setNotePitchBend(cid, nid, val * 128 - 8192);
+                                }}
+                                label={activeExpressionLane}
+                                undoLabel={`Change ${activeExpressionLane}`}
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
 
             {ctxMenu ? (

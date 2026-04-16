@@ -30,6 +30,8 @@ type PianoRollChordType =
     | 'min9'
     | '7sus4';
 
+type ClipOption = { id: string; name: string };
+
 type PianoRollToolbarProps = {
     gridSnap: number;
     onGridSnapChange: (v: number) => void;
@@ -39,6 +41,8 @@ type PianoRollToolbarProps = {
     onScaleTypeChange: (v: string) => void;
     isFolded: boolean;
     onToggleFolded: () => void;
+    constrainToScale: boolean;
+    onToggleConstrainToScale: () => void;
     stepInput: boolean;
     onToggleStepInput: () => void;
     showGhostNotes: boolean;
@@ -51,8 +55,19 @@ type PianoRollToolbarProps = {
     onTogglePaintMode: () => void;
     lassoMode: boolean;
     onToggleLassoMode: () => void;
+    notePreviewEnabled: boolean;
+    onToggleNotePreview: () => void;
     zoom: number;
     onZoomChange: (v: number) => void;
+    /** A9: when multiple clips are open, show a selector for which clip receives new notes */
+    openedClips?: ClipOption[];
+    focusedClipId?: string;
+    onFocusedClipIdChange?: (id: string) => void;
+    /** I4: Expression View toggle */
+    showExpressionView?: boolean;
+    onToggleExpressionView?: () => void;
+    activeExpressionLane?: 'velocity' | 'pressure' | 'slide' | 'pitchBend';
+    onActiveExpressionLaneChange?: (lane: 'velocity' | 'pressure' | 'slide' | 'pitchBend') => void;
 };
 
 export const PianoRollToolbar = ({
@@ -64,6 +79,8 @@ export const PianoRollToolbar = ({
     onScaleTypeChange,
     isFolded,
     onToggleFolded,
+    constrainToScale,
+    onToggleConstrainToScale,
     stepInput,
     onToggleStepInput,
     showGhostNotes,
@@ -76,8 +93,17 @@ export const PianoRollToolbar = ({
     onTogglePaintMode,
     lassoMode,
     onToggleLassoMode,
+    notePreviewEnabled,
+    onToggleNotePreview,
     zoom,
     onZoomChange,
+    openedClips,
+    focusedClipId,
+    onFocusedClipIdChange,
+    showExpressionView,
+    onToggleExpressionView,
+    activeExpressionLane,
+    onActiveExpressionLaneChange,
 }: PianoRollToolbarProps): ReactElement => (
     <DawControlStrip>
         <span className="text-[10px] text-muted-foreground">Snap:</span>
@@ -141,6 +167,20 @@ export const PianoRollToolbar = ({
             Fold
         </Button>
 
+        <Button
+            variant={constrainToScale ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleConstrainToScale}
+            className={cn(
+                'text-[10px] px-2',
+                constrainToScale && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
+            )}
+            aria-pressed={constrainToScale}
+            aria-label="Constrain notes to scale"
+        >
+            Constrain
+        </Button>
+
         <div
             className="w-px h-4 mx-1"
             style={{
@@ -183,6 +223,20 @@ export const PianoRollToolbar = ({
             aria-label="Toggle ghost notes"
         >
             Ghost
+        </Button>
+
+        <Button
+            variant={notePreviewEnabled ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleNotePreview}
+            className={cn(
+                'text-[10px] px-2',
+                notePreviewEnabled && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+            )}
+            aria-pressed={notePreviewEnabled}
+            aria-label="Toggle note hover preview"
+        >
+            Preview
         </Button>
 
         <Button
@@ -241,6 +295,67 @@ export const PianoRollToolbar = ({
         >
             Lasso
         </Button>
+
+        <div
+            className="w-px h-4 mx-1"
+            style={{
+                background:
+                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
+            }}
+        />
+
+        <Button
+            variant={showExpressionView ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleExpressionView}
+            className={cn(
+                'text-[10px] px-2',
+                showExpressionView && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
+            )}
+            aria-pressed={showExpressionView}
+            aria-label="Toggle Expression View (I4)"
+        >
+            Expression
+        </Button>
+
+        {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
+            <DawCompactSelect
+                value={activeExpressionLane}
+                onChange={(e) => onActiveExpressionLaneChange(e.target.value as any)}
+                size="micro"
+                aria-label="Active expression lane"
+            >
+                <option value="velocity">Velocity</option>
+                <option value="pressure">Pressure (MPE)</option>
+                <option value="slide">Slide (MPE)</option>
+                <option value="pitchBend">Pitch Bend (MPE)</option>
+            </DawCompactSelect>
+        ) : null}
+
+        {openedClips && openedClips.length > 1 && focusedClipId !== undefined && onFocusedClipIdChange !== undefined ? (
+            <>
+                <div
+                    className="w-px h-4 mx-1"
+                    style={{
+                        background:
+                            'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
+                    }}
+                />
+                <span className="text-[10px] text-muted-foreground">Edit:</span>
+                <DawCompactSelect
+                    value={focusedClipId}
+                    onChange={(e) => onFocusedClipIdChange(e.target.value)}
+                    size="micro"
+                    aria-label="Focused clip for note input"
+                >
+                    {openedClips.map((clip) => (
+                        <option key={clip.id} value={clip.id}>
+                            {clip.name}
+                        </option>
+                    ))}
+                </DawCompactSelect>
+            </>
+        ) : null}
 
         <div className="flex-1" />
         <span className="text-[10px] text-muted-foreground">Zoom:</span>

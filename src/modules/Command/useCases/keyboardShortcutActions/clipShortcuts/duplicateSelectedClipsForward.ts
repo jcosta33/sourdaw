@@ -1,0 +1,93 @@
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip, removeClip } from '#/modules/Arrangement/useCases';
+import { duplicateClipAutomation } from '#/modules/Automation/useCases';
+import { pushUndoEntry } from '../../pushUndoEntry';
+
+/**
+ * Duplicates all selected clips forward by the selection's total time span (R-B2).
+ *
+ * Selection span = latestEnd - earliestStart.
+ * All clips are offset forward by that span.
+ * Repeated invocations stack — each press adds another copy immediately after the previous.
+ */
+export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
+    if (selectedClipIds.length === 0) {
+        return;
+    }
+
+    const state = trackStore.value;
+    if (!state) {
+        return;
+    }
+
+    // Collect selected clips with their track info
+    type ClipInfo = {
+        clipId: string;
+        trackId: string;
+        startBeat: number;
+        endBeat: number;
+        name: string;
+        type: 'audio' | 'midi';
+        audioBufferId?: string;
+    };
+
+    const selected: ClipInfo[] = [];
+    for (const track of state.tracks) {
+        for (const clip of track.clips) {
+            if (selectedClipIds.includes(clip.id)) {
+                selected.push({
+                    clipId: clip.id,
+                    trackId: track.id,
+                    startBeat: clip.startBeat,
+                    endBeat: clip.endBeat,
+                    name: clip.name,
+                    type: clip.type,
+                    audioBufferId: clip.audioBufferId,
+                });
+            }
+        }
+    }
+
+    if (selected.length === 0) {
+        return;
+    }
+
+    const earliestStart = Math.min(...selected.map((c) => c.startBeat));
+    const latestEnd = Math.max(...selected.map((c) => c.endBeat));
+    const span = latestEnd - earliestStart;
+
+    if (span <= 0) {
+        return;
+    }
+
+    const createdIds: string[] = [];
+
+    for (const info of selected) {
+        const newClip = addClip({
+            trackId: info.trackId,
+            startBeat: info.startBeat + span,
+            endBeat: info.endBeat + span,
+            name: `${info.name} (copy)`,
+            type: info.type,
+            audioBufferId: info.audioBufferId,
+        });
+        if (newClip) {
+            createdIds.push(newClip.id);
+            duplicateClipAutomation(info.clipId, newClip.id);
+        }
+    }
+
+    if (createdIds.length === 0) {
+        return;
+    }
+
+    pushUndoEntry(
+        `Duplicate ${createdIds.length} clip${createdIds.length > 1 ? 's' : ''} forward`,
+        () => {
+            for (const id of createdIds) {
+                removeClip(id);
+            }
+        },
+        () => duplicateSelectedClipsForward(selectedClipIds)
+    );
+}

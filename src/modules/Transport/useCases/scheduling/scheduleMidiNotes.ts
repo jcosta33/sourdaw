@@ -12,7 +12,7 @@ import {
     getCurrentTime,
     getDrumKitByIndex,
 } from '#/modules/AudioEngine/useCases';
-import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     getDrumKitDefByIndex,
@@ -375,16 +375,21 @@ export async function scheduleMidiNotes(
                     ? null
                     : track.devices.find((d) => d.type.startsWith('faust-'));
 
+            const midiOffset = clip.midiOffsetBeats ?? 0;
+
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
 
                 for (const note of notes) {
-                    if (note.startBeat >= loopLen) {
+                    if (note.startBeat - midiOffset >= loopLen) {
                         continue;
                     }
 
-                    const noteStartBeat = clip.startBeat + iterOffset + note.startBeat;
-                    if (noteStartBeat >= clip.endBeat) {
+                    const rawStartBeat = clip.startBeat + iterOffset + (note.startBeat - midiOffset);
+                    const grooveOffset = getGrooveOffsetAtBeat(rawStartBeat);
+                    const noteStartBeat = rawStartBeat + grooveOffset;
+
+                    if (noteStartBeat >= clip.endBeat || noteStartBeat < clip.startBeat + iterOffset) {
                         continue;
                     }
 

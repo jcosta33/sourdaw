@@ -140,6 +140,17 @@ export const NotePropertyLane = ({
         }
     }, [notes, selectedNoteIds, beatWidth, contentWidth, clipColor, selectedColor, getValue, label]);
 
+    const hitNoteAtX = (mx: number): (typeof notes)[0] | null => {
+        for (const note of notes) {
+            const nx = note.startBeat * beatWidth;
+            const barW = Math.max(3, note.duration * beatWidth - 2);
+            if (mx >= nx + 1 && mx <= nx + 1 + barW) {
+                return note;
+            }
+        }
+        return null;
+    };
+
     const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>): void => {
         if (!clipId) {
             return;
@@ -151,48 +162,134 @@ export const NotePropertyLane = ({
         }
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
         const h = container.getBoundingClientRect().height;
 
-        let hitNote: (typeof notes)[0] | null = null;
-        for (const note of notes) {
-            const x = note.startBeat * beatWidth;
-            const barW = Math.max(3, note.duration * beatWidth - 2);
-            if (mx >= x + 1 && mx <= x + 1 + barW) {
-                hitNote = note;
-                break;
-            }
-        }
+        const hitNote = hitNoteAtX(mx);
 
         if (!hitNote) {
             return;
         }
 
-        const noteId = hitNote.id;
-        const origValue = getValue(hitNote);
+        // ── A7: Shift+drag ramp ────────────────────────────────────────────
+        // If Shift is held and 2+ notes are selected, draw a velocity ramp:
+        // the first selected note is the anchor (start), the drag target defines the end.
+        if (e.shiftKey && sortedSelected.length >= 2) {
+            const firstNote = sortedSelected[0]!;
+            const lastNote = sortedSelected[sortedSelected.length - 1]!;
+            const startVal = getValue(firstNote);
+            const beatSpan = lastNote.startBeat - firstNote.startBeat;
+            const initialValues = new Map<string, number>(sortedSelected.map((n: MidiNote) => [n.id, getValue(n)] as [string, number]));
 
-        const ratio = 1 - Math.max(0, Math.min(1, (my - 2) / (h - 4)));
-        const value = Math.round(ratio * 127);
-        setValue(clipId, noteId, value);
+            const applyRamp = (endVal: number): void => {
+                for (const n of sortedSelected) {
+                    let interpolated = startVal;
+                    if (beatSpan > 0) {
+                        const t = (n.startBeat - firstNote.startBeat) / beatSpan;
+                        interpolated = startVal + (endVal - startVal) * t;
+                    }
+                    setValue(clipId, n.id, Math.round(interpolated));
+                }
+            };
+
+            const getEndVal = (clientY: number): number => {
+                const containerRect = container.getBoundingClientRect();
+                const ry = clientY - containerRect.top;
+                return Math.round((1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)))) * 127);
+            };
+
+            // Apply initial ramp from anchor position
+            applyRamp(getEndVal(e.clientY));
+
+            const onMove = (me: globalThis.MouseEvent): void => {
+                applyRamp(getEndVal(me.clientY));
+            };
+
+            const onUp = (): void => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
+                const changes: { id: string; oldVal: number; newVal: number }[] = [];
+                for (const [id, oldVal] of initialValues.entries()) {
+                    const finalNote = stateNotes.find((n) => n.id === id);
+                    if (finalNote) {
+                        const newVal = getValue(finalNote);
+                        if (newVal !== oldVal) {
+                            changes.push({ id, oldVal, newVal });
+                        }
+                    }
+                }
+                if (changes.length > 0) {
+                    pushUndoEntry(
+                        `${undoLabel} ramp`,
+                        () => {
+                            for (const c of changes) {
+                                setValue(clipId, c.id, c.oldVal);
+                            }
+                        },
+                        () => {
+                            for (const c of changes) {
+                                setValue(clipId, c.id, c.newVal);
+                            }
+                        }
+                    );
+                }
+            };
+
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+            return;
+        }
+
+        // ── A8: Continuous velocity painting (single or drag-through) ─────
+        const noteId = hitNote.id;
+        const origValues = new Map<string, number>(notes.map((n) => [n.id, getValue(n)]));
+
+        const getVal = (clientY: number): number => {
+            const containerRect = container.getBoundingClientRect();
+            const ry = clientY - containerRect.top;
+            return Math.round((1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)))) * 127);
+        };
+
+        setValue(clipId, noteId, getVal(e.clientY));
 
         const onMove = (me: globalThis.MouseEvent): void => {
             const containerRect = container.getBoundingClientRect();
-            const ry = me.clientY - containerRect.top;
-            const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));
-            const v = Math.round(r * 127);
-            setValue(clipId, noteId, v);
+            const rx = me.clientX - containerRect.left;
+            const v = getVal(me.clientY);
+            // Paint the note currently under the cursor (horizontal movement)
+            const noteAtX = hitNoteAtX(rx);
+            if (noteAtX) {
+                setValue(clipId, noteAtX.id, v);
+            }
         };
 
         const onUp = (): void => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
-            const finalNote = (midiStore.value?.notesByClipId[clipId] ?? []).find((n) => n.id === noteId);
-            const finalValue = finalNote ? getValue(finalNote) : origValue;
-            if (finalValue !== origValue) {
+            const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
+            const changes: { id: string; oldVal: number; newVal: number }[] = [];
+            for (const n of stateNotes) {
+                const oldVal = origValues.get(n.id);
+                if (oldVal !== undefined) {
+                    const newVal = getValue(n);
+                    if (newVal !== oldVal) {
+                        changes.push({ id: n.id, oldVal, newVal });
+                    }
+                }
+            }
+            if (changes.length > 0) {
                 pushUndoEntry(
                     undoLabel,
-                    () => setValue(clipId, noteId, origValue),
-                    () => setValue(clipId, noteId, finalValue)
+                    () => {
+                        for (const c of changes) {
+                            setValue(clipId, c.id, c.oldVal);
+                        }
+                    },
+                    () => {
+                        for (const c of changes) {
+                            setValue(clipId, c.id, c.newVal);
+                        }
+                    }
                 );
             }
         };

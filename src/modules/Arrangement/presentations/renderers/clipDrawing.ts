@@ -150,7 +150,7 @@ export const drawClip = (
     if (clip.type === 'midi' && clip.midiNotes.length > 0) {
         drawMidiNotePreview(ctx, clip, x, trackY, w, trackHeight, padding);
     } else if (clip.type === 'audio' && clip.audioBufferId && audioBufferCache.has(clip.audioBufferId)) {
-        drawWaveformPeaks(ctx, clip.audioBufferId, x, trackY, w, trackHeight, padding);
+        drawWaveformPeaks(ctx, clip, model, x, trackY, w, trackHeight, padding);
     } else if (w > 20) {
         drawWaveformHint(ctx, x, trackY, w, trackHeight, padding);
     }
@@ -319,20 +319,30 @@ const drawMidiNotePreview = (
         return;
     }
 
+    const isInline = clip.isInlineEditing ?? false;
+
     let minPitch = 127;
     let maxPitch = 0;
-    for (const n of notes) {
-        if (n.pitch < minPitch) {
-            minPitch = n.pitch;
+    if (isInline) {
+        // When inline, use a fixed range or a reasonable default if notes are sparse
+        minPitch = Math.min(...notes.map(n => n.pitch)) - 2;
+        maxPitch = Math.max(...notes.map(n => n.pitch)) + 2;
+        // Ensure at least an octave range for visibility
+        if (maxPitch - minPitch < 12) {
+            const center = Math.round((maxPitch + minPitch) / 2);
+            minPitch = center - 6;
+            maxPitch = center + 6;
         }
-        if (n.pitch > maxPitch) {
-            maxPitch = n.pitch;
+    } else {
+        for (const n of notes) {
+            if (n.pitch < minPitch) minPitch = n.pitch;
+            if (n.pitch > maxPitch) maxPitch = n.pitch;
         }
     }
     const pitchRange = Math.max(maxPitch - minPitch, 1);
 
-    const contentTop = trackY + 18;
-    const contentHeight = trackHeight - padding - 18;
+    const contentTop = trackY + (isInline ? padding : 18);
+    const contentHeight = trackHeight - padding - (isInline ? padding : 18);
     if (contentHeight < 4) {
         return;
     }
@@ -342,53 +352,115 @@ const drawMidiNotePreview = (
         return;
     }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+    if (isInline) {
+        // Draw inline piano roll grid
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.fillRect(clipX, contentTop, clipW, contentHeight);
+
+        // Horizontal lines for pitches
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 0.5;
+        const noteHeight = contentHeight / (pitchRange + 1);
+        for (let i = 0; i <= pitchRange + 1; i++) {
+            const ly = contentTop + i * noteHeight;
+            ctx.beginPath();
+            ctx.moveTo(clipX, ly);
+            ctx.lineTo(clipX + clipW, ly);
+            ctx.stroke();
+        }
+    }
+
+    ctx.fillStyle = isInline ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.22)';
+    if (isInline) {
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    }
+
     const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
+    const midiOffset = clip.midiOffsetBeats ?? 0;
     let loopOffset = 0;
     let iterations = 0;
 
     while (loopOffset < clipDuration && iterations < 100) {
         for (const note of notes) {
-            const relStart = note.startBeat - clip.startBeat + loopOffset;
-            if (relStart >= clipDuration) {continue;}
+            const relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset;
+            if (relStart >= clipDuration) continue;
 
             const nx = clipX + (relStart / clipDuration) * clipW;
-            const nw = Math.max(1, (note.duration / clipDuration) * clipW);
-            const pitchNorm = (note.pitch - minPitch) / pitchRange;
-            const ny = contentTop + contentHeight - pitchNorm * contentHeight - 2;
+            const nw = Math.max(isInline ? 2 : 1, (note.duration / clipDuration) * clipW);
+            const pitchNorm = (note.pitch - minPitch) / (pitchRange + 1);
+            const ny = contentTop + contentHeight - (pitchNorm + 1 / (pitchRange + 1)) * contentHeight;
+            const nh = Math.max(1, contentHeight / (pitchRange + 1)) - (isInline ? 1 : 0);
 
             // Only draw if within clip visual bounds
             if (relStart + note.duration > 0 && nx < clipX + clipW) {
                 const drawW = Math.min(nw, clipX + clipW - nx);
-                ctx.fillRect(nx, ny, drawW, Math.max(1, contentHeight / (pitchRange + 4)));
+                if (isInline) {
+                    ctx.beginPath();
+                    ctx.roundRect(nx, ny, drawW, nh, 1);
+                    ctx.fill();
+                    // Note border when inline
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                } else {
+                    ctx.fillRect(nx, ny, drawW, nh);
+                }
             }
         }
         loopOffset += loopLen;
         iterations++;
-        if (!clip.loopEnabled || loopLen <= 0) {break;}
+        if (!clip.loopEnabled || loopLen <= 0) break;
+    }
+
+    if (isInline) {
+        ctx.shadowBlur = 0;
     }
 };
 
 const drawWaveformPeaks = (
     ctx: CanvasRenderingContext2D,
-    audioBufferId: string,
+    clip: ClipRenderModel,
+    model: TimelineRenderModel,
     x: number,
     trackY: number,
     w: number,
     trackHeight: number,
     padding: number
 ): void => {
-    if (w < 4) {
+    if (w < 4 || !clip.audioBufferId) {
         return;
     }
-    const numBins = Math.min(Math.floor(w), 400);
-    const peaks = audioBufferCache.getWaveformPeaks(audioBufferId, numBins);
+    const audioBufferId = clip.audioBufferId;
+    const numBins = Math.min(Math.floor(w), 600);
+
+    // R-A10: Implement waveform slip by shifting the index into peaks array.
+    // getWaveformPeaks returns peaks for the whole buffer.
+    const buffer = audioBufferCache.get(audioBufferId);
+    if (!buffer) return;
+
+    const bpm = model.tempo;
+    const totalBeats = (buffer.length / buffer.sampleRate) * (bpm / 60);
+    const audioOffset = clip.audioOffsetBeats ?? 0;
+    
+    // How many beats are visible in this clip
+    const visibleBeats = clip.endBeat - clip.startBeat;
+    
+    // We want to sample 'numBins' from the buffer starting at 'audioOffset' and spanning 'visibleBeats'.
+    // audioBufferCache.getWaveformPeaks is too simple for this.
+    // For now, let's just draw the full buffer peaks and translate/clip them.
+    const peaks = audioBufferCache.getWaveformPeaks(audioBufferId, Math.round(numBins * (totalBeats / visibleBeats)));
 
     const midY = trackY + trackHeight / 2 + 4;
-    const amplitude = (trackHeight - padding * 2) * 0.35;
-    const binWidth = w / numBins;
 
-    // Waveform filled shape with semi-transparent gradient from center to peaks
+    const amplitude = (trackHeight - padding * 2) * 0.35;
+
+    ctx.save();
+    // Clip to clip bounds
+    ctx.beginPath();
+    ctx.rect(x + padding, trackY + padding, w - padding * 2, trackHeight - padding * 2);
+    ctx.clip();
+
     const waveGrad = ctx.createLinearGradient(0, midY - amplitude, 0, midY + amplitude);
     waveGrad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
     waveGrad.addColorStop(0.35, 'rgba(255, 255, 255, 0.12)');
@@ -396,17 +468,24 @@ const drawWaveformPeaks = (
     waveGrad.addColorStop(0.65, 'rgba(255, 255, 255, 0.12)');
     waveGrad.addColorStop(1, 'rgba(255, 255, 255, 0.28)');
     ctx.fillStyle = waveGrad;
+
+    const startIdx = Math.max(0, Math.floor((audioOffset / totalBeats) * peaks.length));
+    const binsToDraw = Math.floor((visibleBeats / totalBeats) * peaks.length);
+    const drawBinWidth = w / binsToDraw;
+
     ctx.beginPath();
     ctx.moveTo(x + padding, midY);
-    for (let i = 0; i < numBins; i++) {
-        ctx.lineTo(x + padding + i * binWidth, midY - peaks[i]! * amplitude);
+    for (let i = 0; i < binsToDraw; i++) {
+        const peak = peaks[startIdx + i] ?? 0;
+        ctx.lineTo(x + padding + i * drawBinWidth, midY - peak * amplitude);
     }
-    ctx.lineTo(x + padding + (numBins - 1) * binWidth, midY);
-    for (let i = numBins - 1; i >= 0; i--) {
-        ctx.lineTo(x + padding + i * binWidth, midY + peaks[i]! * amplitude);
+    for (let i = binsToDraw - 1; i >= 0; i--) {
+        const peak = peaks[startIdx + i] ?? 0;
+        ctx.lineTo(x + padding + i * drawBinWidth, midY + peak * amplitude);
     }
     ctx.closePath();
     ctx.fill();
+    ctx.restore();
 };
 
 const drawWaveformHint = (

@@ -1,5 +1,6 @@
 // stores/automationStore
 export { automationStore } from './stores/automationStore';
+export { modulationStore } from './stores/modulationStore';
 export type { AutomationStoreState } from './stores/automationStore';
 
 // useCases/automation/addAutomationLane
@@ -79,6 +80,8 @@ export { zoomToUsedRange } from './useCases/automationZoom/zoomToUsedRange';
 export { resetYZoom } from './useCases/automationZoom/resetYZoom';
 export { adjustYZoom } from './useCases/automationZoom/adjustYZoom';
 export { toggleVirginTerritory } from './useCases/automationZoom/toggleVirginTerritory';
+export { applyModulation } from './useCases/modulation/applyModulation';
+export { getModulationForParam } from './useCases/modulation/getModulationForParam';
 
 // useCases/getAutomationLanes
 export { getAutomationLanes } from './useCases/getAutomationLanes';

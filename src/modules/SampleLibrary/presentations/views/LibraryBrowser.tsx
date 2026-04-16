@@ -26,8 +26,12 @@ import {
 import { connectFolder } from '../../useCases/connectFolder/connectFolder';
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { requestPermission } from '../../useCases/requestPermission';
+import { analyzeSample } from '../../useCases/analyzeSample';
+import { projectSpatialMap } from '../../useCases/projectSpatialMap';
+import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { SampleRow } from '../components/SampleRow';
 import { LibraryRootCard } from '../components/LibraryRootCard';
+import { SpatialMapRenderer } from './SpatialMapRenderer';
 import { type PreviewHandle } from '#/modules/Workspace/presentations/hooks/usePreviewAudio';
 
 type LibraryBrowserProps = {
@@ -54,6 +58,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     const state = useStore(libraryStore, defaultLibraryState);
 
     const [showSearch, setShowSearch] = useState(false);
+    const [showMap, setShowMap] = useState(false);
 
     if (!state) {
         return <div />;
@@ -76,12 +81,18 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
     if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        visibleFiles = rootSamples.filter(
-            (s) =>
-                s.displayName.toLowerCase().includes(q) ||
-                s.relativePath.toLowerCase().includes(q) ||
-                s.tags.some((t) => t.toLowerCase().includes(q))
-        );
+        if (q.startsWith('similar:')) {
+            const sampleId = searchQuery.split(':')[1];
+            const similarIds = findSimilarSamples(sampleId!);
+            visibleFiles = rootSamples.filter((s) => similarIds.includes(s.id));
+        } else {
+            visibleFiles = rootSamples.filter(
+                (s) =>
+                    s.displayName.toLowerCase().includes(q) ||
+                    s.relativePath.toLowerCase().includes(q) ||
+                    s.tags.some((t) => t.toLowerCase().includes(q))
+            );
+        }
     } else {
         // Collect unique immediate subfolders at the current level
         const subfolderSet = new Set<string>();
@@ -141,6 +152,24 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         }
     };
 
+    const handleAnalyzeFolder = async (): Promise<void> => {
+        for (const sample of visibleFiles) {
+            void analyzeSample(sample.id);
+        }
+    };
+
+    const handleProjectMap = (): void => {
+        void projectSpatialMap();
+    };
+
+    const handleFindSimilar = (sampleId: string): void => {
+        const similarIds = findSimilarSamples(sampleId);
+        if (similarIds.length > 0) {
+            setSearchQuery(`similar:${sampleId}`);
+            // Logic to filter visible files by these IDs would go here
+        }
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* ── Header ── */}
@@ -160,9 +189,32 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                         showSearch ? 'bg-white/10 text-foreground' : 'text-muted-foreground/50 hover:text-foreground'
                     }`}
                     onClick={() => setShowSearch(!showSearch)}
+                    title="Search library"
                 >
                     <Search className="size-3" />
                 </button>
+
+                <button
+                    type="button"
+                    className={`size-5 rounded flex items-center justify-center transition-colors ${
+                        showMap ? 'bg-accent-cyan/20 text-accent-cyan' : 'text-muted-foreground/50 hover:text-foreground'
+                    }`}
+                    onClick={() => setShowMap(!showMap)}
+                    title="Timbral Spatial Map (G3)"
+                >
+                    <span className="text-[8px] font-bold">MAP</span>
+                </button>
+
+                {activeRoot && visibleFiles.length > 0 && (
+                    <button
+                        type="button"
+                        className="h-5 px-1.5 rounded text-[9px] text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors"
+                        onClick={handleAnalyzeFolder}
+                        title="Analyze current folder (G1)"
+                    >
+                        Analyze
+                    </button>
+                )}
                 <button
                     type="button"
                     className={`size-5 rounded flex items-center justify-center transition-colors ${
@@ -259,6 +311,29 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
             {/* ── File explorer ── */}
             {activeRoot ? (
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    {/* G3: Spatial Map View */}
+                    {showMap ? (
+                        <div className="p-2 shrink-0 border-b border-border/10">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-[9px] font-medium text-muted-foreground">Timbral Proximity Map</span>
+                                <button 
+                                    className="text-[8px] text-accent-cyan hover:underline"
+                                    onClick={handleProjectMap}
+                                >
+                                    Re-project UMAP
+                                </button>
+                            </div>
+                            <SpatialMapRenderer 
+                                width={240} 
+                                height={180} 
+                                onSampleClick={(id) => {
+                                    const s = rootSamples.find(x => x.id === id);
+                                    if (s) playSample(s);
+                                }}
+                            />
+                        </div>
+                    ) : null}
+
                     {/* Breadcrumb — shown when navigated into a subfolder */}
                     {currentFolder ? (
                         <div className="flex items-center gap-1 px-2 py-1 shrink-0 border-b border-border/10 flex-wrap">
@@ -330,6 +405,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                 }}
                                 onStop={preview.stop}
                                 onToggleFavorite={() => toggleSampleFavorite(sample.id)}
+                                onFindSimilar={() => handleFindSimilar(sample.id)}
                                 onDragStart={(e) => {
                                     e.dataTransfer.setData(
                                         'application/x-sourdaw-sample',
@@ -338,6 +414,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                             id: sample.id,
                                             path: sample.relativePath,
                                             libraryRootId: sample.libraryRootId,
+                                            bpm: sample.analysis?.bpm,
+                                            key: sample.analysis?.key,
                                         })
                                     );
                                     e.dataTransfer.effectAllowed = 'copy';

@@ -44,6 +44,8 @@ export type Track = {
     vcaGroupId: string | null;
     midiOutputTrackId: string | null;
     followChordTrack: boolean;
+    /** H3: Toggle for showing alternative lanes in timeline. */
+    showVariationLanes?: boolean;
 };
 
 export type StretchMode = 'off' | 'repitch' | 'timestretch';
@@ -62,6 +64,7 @@ export type Clip = {
      *  Set on import; used to request the file from peers in a collab session. */
     assetHash?: string;
     audioOffsetBeats?: number;
+    midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     gain: number;
@@ -75,8 +78,12 @@ export type Clip = {
     followAction?: FollowAction;
     generating?: boolean;
     isGhost?: boolean;
-    /** If set, this clip is a linked instance of another clip. */
+    /** A11: toggle for in-place MIDI editing in arrangement. */
+    isInlineEditing?: boolean;
+    /** If set, this clip is a linked instance of another clip (H1). */
     parentClipId?: string;
+    /** H1: helper flag for linked status. */
+    isLinkedInstance?: boolean;
     /** Which properties are locally overridden on this instance. */
     overrides?: Record<string, boolean>;
 };

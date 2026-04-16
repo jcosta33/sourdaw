@@ -43,6 +43,10 @@ export type WorkspaceState = {
     chatPanelOpen: boolean;
     chatPanelWidth: number;
     rippleEditing: boolean;
+    /** D1: Toggle for Session + Arrangement side-by-side view. */
+    dualViewOpen: boolean;
+    /** D1: Width of the Session view in dual mode. */
+    sessionViewWidth: number;
     automationVisibility: AutomationVisibility;
     automationSubLanes: Record<string, string[]>; // trackId → parameterIds shown inline
     scratchPadOpen: boolean;
@@ -94,6 +98,8 @@ export const defaultWorkspaceState: WorkspaceState = {
     chatPanelOpen: false,
     chatPanelWidth: 320,
     rippleEditing: false,
+    dualViewOpen: false,
+    sessionViewWidth: 320,
     automationVisibility: 'hidden' as AutomationVisibility,
     automationSubLanes: {},
     scratchPadOpen: false,

@@ -20,6 +20,8 @@ export type AutomationObject = {
     points: AutomationPoint[];
     poolId?: string; // Shared ID for linked/pooled copies
     loopLength?: number; // If set, object content loops at this length
+    /** H2: Which properties are locally overridden on this instance. */
+    overrides?: Record<string, boolean>;
     name: string;
 };
 
@@ -33,9 +35,12 @@ export type AutomationLane = {
     points: AutomationPoint[];
     trimPoints?: AutomationPoint[]; // Trim offset curves for non-destructive mixing rides
     objects: AutomationObject[]; // Bounded reusable automation containers
+    ghostPoints?: AutomationPoint[]; // F3.2: AI-suggested or inactive take points
     visible: boolean;
     enabled: boolean;
     collapsed: boolean; // Accordion state — collapsed shows sparkline
+    linkedLaneId?: string; // F3.3: ID of another lane this one follows
+    linkScale?: number; // F3.3: Scaling factor for linked automation (e.g., -1 for inversion)
     virginTerritory: boolean; // When true, gaps between points defer to manual control
     minValue: number;
     maxValue: number;
