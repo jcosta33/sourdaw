@@ -20,13 +20,17 @@ vi.mock('#/modules/Automation/useCases/automation/removeAutomationLane', () => (
     removeAutomationLane: (...args: unknown[]) => mockRemoveAutomationLane(...args),
 }));
 
-const mockUseStore = vi.fn(() => ({ lanes: [] }));
+const mockUseStore = vi.fn((store: any, defaultState: any) => defaultState);
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
 vi.mock('#/modules/Automation/stores/automationStore', () => ({
-    automationStore: {},
+    automationStore: { id: 'automation' },
+}));
+
+vi.mock('#/modules/Automation/stores/modulationStore', () => ({
+    modulationStore: { id: 'modulation' },
 }));
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({
@@ -105,7 +109,7 @@ describe('DeviceParameterControl', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockUseStore.mockReturnValue({ lanes: [] });
+        mockUseStore.mockImplementation((store: any, defaultState: any) => defaultState);
     });
 
     it('should render without crashing', () => {
@@ -181,8 +185,15 @@ describe('DeviceParameterControl', () => {
     });
 
     it('should call removeAutomationLane when automation button is clicked with active lane', () => {
-        mockUseStore.mockReturnValue({
-            lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
+        mockUseStore.mockImplementation((store: any, defaultState: any) => {
+            if (store.id === 'automation') {
+                return {
+                    lanes: [
+                        { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
+                    ],
+                };
+            }
+            return defaultState;
         });
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByLabelText(/Automate Gain/i));

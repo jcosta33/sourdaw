@@ -45,6 +45,7 @@ import { setTrackState } from '../../useCases/setTrackState';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
+import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
