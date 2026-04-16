@@ -10,7 +10,6 @@ import { Sparkles, Loader2, Music, Mic, AudioLines, Download } from 'lucide-reac
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
-import { openPreferencesDialog } from '#/modules/Workspace/useCases/dialogs/openPreferencesDialog';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
     renderKokoroTts,
@@ -422,20 +421,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                             voicebanks.length === 0 ? (
                                 <DawEmptyState
                                     compact
-                                    title="No singing voices downloaded"
-                                    description="Download a singing voice to render your MIDI notes as vocals."
-                                    action={
-                                        <Button
-                                            variant="secondary"
-                                            size="xs"
-                                            className="h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                            onClick={openPreferencesDialog}
-                                        >
-                                            <Download className="size-3 mr-1" aria-hidden="true" />
-                                            Browse Singing Voices
-                                            <DawMicroBadge tone="muted" className="ml-1.5">~150 MB each</DawMicroBadge>
-                                        </Button>
-                                    }
+                                    title="Singing voices coming soon"
+                                    description="AI singing voice synthesis is under development. Use the Spoken mode to generate vocal scratch tracks from text."
                                 />
                             ) : (
                                 <div className="space-y-2">

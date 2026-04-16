@@ -325,7 +325,7 @@ async function runKokoroOnnx(
 
     const seqLen = inputIds.length;
     const inputIdsTensor = new ort.Tensor('int64', inputIds, [1, seqLen]);
-    const styleTensor = new ort.Tensor('float32', style, [1, 256]);
+    const styleTensor = new ort.Tensor('float32', style, [1, 1, 256]);
     const speedTensor = new ort.Tensor('float32', new Float32Array([speed]), [1]);
 
     const outputs = await session.run({
