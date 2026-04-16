@@ -10,4 +10,9 @@ export type OfflineDeviceNode = {
     namedNodes?: Record<string, AudioNode>;
     /** Stop oscillators and release resources when the device is removed. */
     dispose?: () => void;
+    wamControls?: {
+        setParam: (name: string, value: number) => void;
+        scheduleParam: (name: string, value: number, time: number) => void;
+        destroy?: () => void;
+    };
 };

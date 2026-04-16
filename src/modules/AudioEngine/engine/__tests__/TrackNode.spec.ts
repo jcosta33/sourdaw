@@ -22,7 +22,6 @@ describe('TrackNode', () => {
             getBusGainNode: vi.fn(),
             getTrackGainNode: vi.fn(),
             getSendsForTrack: vi.fn().mockReturnValue([]),
-            pendingFaustParams: new Map(),
             pendingDevicePromises: new Set(),
         };
         vi.clearAllMocks();

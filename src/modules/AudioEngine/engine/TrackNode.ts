@@ -3,7 +3,6 @@ import { unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { unregisterProofDevice } from '#/modules/Proof/useCases';
 import { DEVICE_FACTORIES } from '../useCases/deviceResolvers/helpers';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
-import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { logger } from '#/infra/logger/appLogger';
@@ -11,11 +10,10 @@ import { logger } from '#/infra/logger/appLogger';
 export type TrackNodeDeps = {
     context: AudioContext;
     masterGainNode: GainNode;
-    getBusGainNode: (busId: string) => GainNode | undefined;
-    getTrackGainNode: (trackId: string) => GainNode | undefined;
-    getSendsForTrack: (trackId: string) => SendNode[];
-    pendingFaustParams: Map<string, Map<string, number>>;
-    pendingDevicePromises: Set<Promise<unknown>>;
+    getBusGainNode: (id: string) => GainNode | undefined;
+    getTrackGainNode: (id: string) => GainNode | undefined;
+    getSendsForTrack: (tId: string) => SendNode[];
+    pendingDevicePromises: Set<Promise<any>>;
 };
 
 export class TrackNode {
@@ -209,7 +207,7 @@ export class TrackNode {
             return;
         }
 
-        const { context, pendingFaustParams, pendingDevicePromises } = this.deps;
+        const { context, pendingDevicePromises } = this.deps;
         let dn: BuiltinDeviceNode;
 
         if (deviceType === 'builtin-sidechain-compressor') {
@@ -264,47 +262,6 @@ export class TrackNode {
                     }
                 })
                 .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
-            pendingDevicePromises.add(loadPromise);
-            loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
-        } else if (deviceType.startsWith('faust-')) {
-            const loadingBypassNode = context.createGain();
-            dn = {
-                deviceId,
-                type: deviceType,
-                nodes: [loadingBypassNode],
-                inputNode: loadingBypassNode,
-                outputNode: loadingBypassNode,
-            };
-
-            const loadPromise = createFaustDeviceNode(context, deviceType)
-                .then((realDn) => {
-                    if (!realDn) {
-                        return;
-                    }
-                    const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
-                    if (idx !== -1) {
-                        const builtinDn = realDn as BuiltinDeviceNode;
-                        builtinDn.deviceId = deviceId;
-                        builtinDn.type = deviceType;
-                        this.strip.deviceNodes[idx] = builtinDn;
-                        this.scheduleRebuildChain();
-
-                        const pending = pendingFaustParams.get(deviceId);
-                        if (pending) {
-                            const worklet = builtinDn.nodes[0];
-                            if (worklet instanceof AudioWorkletNode) {
-                                for (const [pId, val] of pending) {
-                                    const param = worklet.parameters.get(pId);
-                                    if (param) {
-                                        param.setTargetAtTime(val, context.currentTime, 0.01);
-                                    }
-                                }
-                            }
-                            pendingFaustParams.delete(deviceId);
-                        }
-                    }
-                })
-                .catch((error) => logger.warn(`[WebAudioEngine] Faust error: ${error}`));
             pendingDevicePromises.add(loadPromise);
             loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
         } else {
@@ -366,6 +323,9 @@ export class TrackNode {
         if (dn.grandBouleControls) {
             dn.grandBouleControls.destroy();
         }
+        if (dn.wamControls) {
+            dn.wamControls.destroy?.();
+        }
         if (dn.type === 'proof') {
             unregisterProofDevice(deviceId);
         }
@@ -373,7 +333,6 @@ export class TrackNode {
             n.disconnect();
         }
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
-        this.deps.pendingFaustParams.delete(deviceId);
         this.rebuildChain();
     }
 
@@ -383,24 +342,8 @@ export class TrackNode {
             return;
         }
 
-        if (dn.type.startsWith('faust-')) {
-            if (dn.nodes.length === 1 && dn.nodes[0] instanceof GainNode) {
-                let map = this.deps.pendingFaustParams.get(deviceId);
-                if (!map) {
-                    map = new Map();
-                    this.deps.pendingFaustParams.set(deviceId, map);
-                }
-                map.set(paramId, value);
-                return;
-            }
-            const worklet = dn.nodes[0];
-            if (!(worklet instanceof AudioWorkletNode)) {
-                return;
-            }
-            const param = worklet.parameters.get(paramId);
-            if (param) {
-                param.setTargetAtTime(value, this.deps.context.currentTime, 0.01);
-            }
+        if (dn.wamControls) {
+            dn.wamControls.setParam(paramId, value);
             return;
         }
 
@@ -447,25 +390,8 @@ export class TrackNode {
         if (!dn) {
             return;
         }
-        if (dn.type.startsWith('faust-')) {
-            const worklet = dn.nodes[0];
-            if (worklet && worklet instanceof AudioWorkletNode) {
-                let targetParam: AudioParam | null = null;
-                const exact = worklet.parameters.get(paramId);
-                if (exact) {
-                    targetParam = exact;
-                } else {
-                    for (const [key, param] of worklet.parameters) {
-                        if (key.endsWith(`/${paramId}`)) {
-                            targetParam = param;
-                            break;
-                        }
-                    }
-                }
-                if (targetParam) {
-                    targetParam.setValueAtTime(value, time);
-                }
-            }
+        if (dn.wamControls) {
+            dn.wamControls.scheduleParam(paramId, value, time);
         }
     }
 
@@ -508,6 +434,9 @@ export class TrackNode {
             if (dn.levainControls) {
                 dn.levainControls.destroy();
                 unregisterLevainDevice();
+            }
+            if (dn.wamControls) {
+                dn.wamControls.destroy?.();
             }
             for (const n of dn.nodes) {
                 n.disconnect();

@@ -42,5 +42,44 @@ export async function createFaustDevice(
         inputNode: audioNode,
         outputNode: audioNode,
         nodes: [audioNode],
+        wamControls: {
+            setParam: (name: string, value: number) => {
+                if (node && typeof (node as any).setParamValue === 'function') {
+                    try {
+                        (node as any).setParamValue(name, value);
+                    } catch (e) {
+                        logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, e);
+                    }
+                }
+            },
+            scheduleParam: (name: string, value: number, time: number) => {
+                if (audioNode instanceof AudioWorkletNode) {
+                    let targetParam: AudioParam | null = null;
+                    const exact = audioNode.parameters.get(name);
+                    if (exact) {
+                        targetParam = exact;
+                    } else {
+                        for (const [key, param] of audioNode.parameters) {
+                            if (key.endsWith(`/${name}`)) {
+                                targetParam = param;
+                                break;
+                            }
+                        }
+                    }
+                    if (targetParam) {
+                        targetParam.setValueAtTime(value, time);
+                    }
+                }
+            },
+            destroy: () => {
+                if ('destroy' in audioNode && typeof (audioNode as any).destroy === 'function') {
+                    try {
+                        (audioNode as any).destroy();
+                    } catch (e) {
+                        logger.warn(`[FaustDevice] Failed to destroy node:`, e);
+                    }
+                }
+            },
+        },
     };
 }
