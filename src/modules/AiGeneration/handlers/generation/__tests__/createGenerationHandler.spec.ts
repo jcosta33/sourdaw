@@ -3,14 +3,30 @@ import { createGenerationHandler } from '../createGenerationHandler';
 import * as helpers from '../generationHandlerHelpers';
 import * as arrangement from '#/modules/Arrangement/useCases';
 
-vi.mock('../generationHandlerHelpers', () => ({
-    getPlayheadBeat: vi.fn(),
-    resolveOrCreateMidiTrack: vi.fn(),
+vi.mock('../generationHandlerHelpers', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../generationHandlerHelpers')>();
+    return {
+        ...actual,
+        getPlayheadBeat: vi.fn(),
+        resolveOrCreateMidiTrack: vi.fn(),
+    };
+});
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        addTrack: vi.fn(),
+        getTrackStoreState: vi.fn(),
+    };
+});
+
+vi.mock('#/modules/Workspace/useCases', () => ({
+    selectClipWithFocus: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    addTrack: vi.fn(),
-    getTrackStoreState: vi.fn(),
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
 }));
 
 describe('createGenerationHandler', () => {

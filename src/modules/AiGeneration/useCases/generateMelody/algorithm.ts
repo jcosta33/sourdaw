@@ -260,5 +260,20 @@ export function generateMelody(options: GenerateMelodyOptions & { seed?: number 
         position += slot.duration;
     }
 
+    // §14.3 / G7 — low-density runs can turn every rhythm slot into a rest,
+    // producing an empty clip that looks identical to a generator failure.
+    // Guarantee a seed note on the downbeat so the user always sees audible
+    // output; they can still retune density to replace it with something
+    // richer.
+    if (notes.length === 0 && totalBeats > 0) {
+        const seedDuration = Math.min(1, totalBeats);
+        notes.push({
+            pitch: scaleNotes[currentScaleIndex]!,
+            startBeat: 0,
+            duration: seedDuration,
+            velocity: velocityForStyle(style, 0, rng),
+        });
+    }
+
     return { notes, seed: usedSeed };
 }

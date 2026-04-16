@@ -25,10 +25,11 @@ import {
     type GenerationParams,
 } from '../../models/midiPatternLibrary';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { selectClip } from '#/modules/Workspace/useCases';
+import { selectClipWithFocus } from '#/modules/Workspace/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 // ── Mini piano-roll preview ──
 
@@ -249,12 +250,22 @@ export const PatternBrowser = (): ReactElement => {
     const handleInsertTemplate = (template: PatternTemplate): void => {
         const tState = trackStore.value;
         const selectedTrackId = tState?.selectedTrackId;
-        let targetTrack = tState?.tracks.find((t) => t.id === selectedTrackId && t.kind === 'midi');
-        if (!targetTrack) {
-            targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
+        let targetTrackId: string | undefined = tState?.tracks.find(
+            (t) => t.id === selectedTrackId && t.kind === 'midi'
+        )?.id;
+        if (!targetTrackId) {
+            targetTrackId = tState?.tracks.find((t) => t.kind === 'midi')?.id;
         }
-        if (!targetTrack) {
-            return;
+        // §14.3 / G4 — the AI generation handler auto-creates a MIDI track
+        // when none exists. The pattern browser used to silently return,
+        // which made the whole panel feel broken on audio-only sessions.
+        if (!targetTrackId) {
+            const created = addTrack({ name: `Pattern: ${template.name}`, kind: 'midi' });
+            if (!created) {
+                notifyUser('Could not insert pattern — no MIDI track available', 'error');
+                return;
+            }
+            targetTrackId = created.id;
         }
 
         const transport = getTransportState();
@@ -263,20 +274,26 @@ export const PatternBrowser = (): ReactElement => {
         const endBeat = startBeat + template.lengthBeats;
 
         const clip = addClip({
-            trackId: targetTrack.id,
+            trackId: targetTrackId,
             startBeat,
             endBeat,
             name: `🎵 ${template.name} (${key})`,
             type: 'midi',
         });
 
-        if (clip) {
-            for (const note of notes) {
-                addMidiNote(clip.id, note.pitch, note.startBeat, note.durationBeats, note.velocity);
-            }
-            // Open the new clip in the clip editor
-            selectClip(clip.id);
+        if (!clip) {
+            notifyUser('Could not insert pattern — clip creation failed', 'error');
+            return;
         }
+
+        for (const note of notes) {
+            addMidiNote(clip.id, note.pitch, note.startBeat, note.durationBeats, note.velocity);
+        }
+        // §14.3 / G3 — use `selectClipWithFocus` so selection-aware surfaces
+        // (TakesSection, multi-select, shortcut targets) see the new clip as
+        // well, not just the single `selectedClipId` scalar.
+        selectClipWithFocus(clip.id);
+        notifyUser(`Inserted ${template.name} (${notes.length} notes)`, 'success');
     };
 
     const keyOptions = ALL_KEYS.map((k) => ({ id: k, label: k }));

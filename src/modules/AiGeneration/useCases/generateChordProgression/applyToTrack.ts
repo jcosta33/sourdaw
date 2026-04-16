@@ -3,11 +3,16 @@ import { addMidiNote } from '#/modules/MIDI/useCases';
 import { type GenerateChordProgressionOptions } from './algorithm';
 import { generateChordProgression } from './algorithm';
 
+export type ApplyChordProgressionResult = {
+    clipId: string;
+    noteCount: number;
+};
+
 export function applyChordProgressionToTrack(
     trackId: string,
     options: GenerateChordProgressionOptions,
     startBeat: number = 0
-): void {
+): ApplyChordProgressionResult | null {
     const bars = options.bars ?? 4;
     const totalBeats = bars * 4;
 
@@ -24,7 +29,7 @@ export function applyChordProgressionToTrack(
     });
 
     if (!clip) {
-        return;
+        return null;
     }
 
     const MIN_NOTE_DURATION = 0.25;
@@ -33,4 +38,6 @@ export function applyChordProgressionToTrack(
         const duration = Math.max(MIN_NOTE_DURATION, note.duration);
         addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
     }
+
+    return { clipId: clip.id, noteCount: notes.length };
 }

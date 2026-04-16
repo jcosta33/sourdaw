@@ -14,6 +14,17 @@ import type {
     CrumbsMode,
 } from '../models/CrumbsTypes';
 
+// Every entry point here walks through `tauriInvoke`, which throws a generic
+// "window.__TAURI_INTERNALS__ is undefined" error in non-Tauri contexts. We
+// short-circuit with a readable message so browser callers get a diagnosable
+// failure instead of a raw runtime throw. Data-returning calls throw; void
+// calls return early.
+const ensureTauri = (command: string): void => {
+    if (!isTauri()) {
+        throw new Error(`Crumbs IPC "${command}" is only available in the Sourdaw desktop app`);
+    }
+};
+
 export async function createCrumbsInstance(instanceId: string, sampleRate: number): Promise<void> {
     if (!isTauri()) {
         return;
@@ -29,6 +40,7 @@ export async function destroyCrumbsInstance(instanceId: string): Promise<void> {
 }
 
 export async function loadSample(instanceId: string, filePath: string): Promise<CrumbsLoadResult> {
+    ensureTauri('load_sample');
     const result = await tauriInvoke('load_sample', { instanceId, filePath });
     return result as CrumbsLoadResult;
 }
@@ -67,6 +79,7 @@ export async function getWaveformPeaks(
     level: number,
     channel: number = 0
 ): Promise<number[]> {
+    ensureTauri('get_waveform_peaks');
     const result = await tauriInvoke('get_waveform_peaks', { instanceId, sampleId, level, channel });
 
     // Binary IPC returns ArrayBuffer — convert to f32 array.
@@ -83,16 +96,19 @@ export async function detectOnsets(
     sampleId: number,
     algorithm: OnsetAlgorithm
 ): Promise<OnsetDetectionResult> {
+    ensureTauri('detect_onsets');
     const result = await tauriInvoke('detect_onsets', { instanceId, sampleId, algorithm });
     return result as OnsetDetectionResult;
 }
 
 export async function detectSamplePitch(instanceId: string, sampleId: number): Promise<PitchDetectionResult> {
+    ensureTauri('detect_sample_pitch');
     const result = await tauriInvoke('detect_sample_pitch', { instanceId, sampleId });
     return result as PitchDetectionResult;
 }
 
 export async function getCrumbsMetering(instanceId: string): Promise<MeteringResult> {
+    ensureTauri('get_crumbs_metering');
     const result = await tauriInvoke('get_crumbs_metering', { instanceId });
     return result as MeteringResult;
 }
@@ -105,6 +121,7 @@ export async function crumbsAllSoundOff(instanceId: string): Promise<void> {
 }
 
 export async function getCrumbsPosition(instanceId: string): Promise<number> {
+    ensureTauri('get_crumbs_position');
     const result = await tauriInvoke('get_crumbs_position', { instanceId });
     return result as number;
 }
@@ -113,6 +130,7 @@ export async function detectSmartLoopPoints(
     instanceId: string,
     sampleId: number
 ): Promise<LoopPointDetectionResult | null> {
+    ensureTauri('detect_smart_loop_points');
     const result = await tauriInvoke('detect_smart_loop_points', { instanceId, sampleId });
     return result as LoopPointDetectionResult | null;
 }

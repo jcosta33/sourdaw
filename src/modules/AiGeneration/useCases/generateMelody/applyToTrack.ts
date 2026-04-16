@@ -3,7 +3,16 @@ import { addMidiNote } from '#/modules/MIDI/useCases';
 import { type GenerateMelodyOptions } from './algorithm';
 import { generateMelody } from './algorithm';
 
-export function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptions, startBeat: number = 0): void {
+export type ApplyMelodyResult = {
+    clipId: string;
+    noteCount: number;
+};
+
+export function applyMelodyToTrack(
+    trackId: string,
+    options: GenerateMelodyOptions,
+    startBeat: number = 0
+): ApplyMelodyResult | null {
     const bars = options.bars ?? 4;
     const totalBeats = bars * 4;
 
@@ -20,7 +29,7 @@ export function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptio
     });
 
     if (!clip) {
-        return;
+        return null;
     }
 
     const MIN_NOTE_DURATION = 0.25;
@@ -29,4 +38,6 @@ export function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptio
         const duration = Math.max(MIN_NOTE_DURATION, note.duration);
         addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
     }
+
+    return { clipId: clip.id, noteCount: notes.length };
 }

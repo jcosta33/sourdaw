@@ -12,7 +12,7 @@ export const handleGenerateMelody = createGenerationHandler<'generateMelody'>({
         const scale: ScaleType = VALID_SCALES.has(action.payload.scale ?? '') ? (action.payload.scale as ScaleType) : 'major';
         const key = typeof action.payload.key === 'number' ? Math.max(0, Math.min(11, action.payload.key)) : 0;
 
-        applyMelodyToTrack(
+        return applyMelodyToTrack(
             trackId,
             { style: style as 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient', key, scale, bars: action.payload.bars },
             playheadBeat
