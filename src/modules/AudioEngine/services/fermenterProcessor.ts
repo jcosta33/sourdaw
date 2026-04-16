@@ -36,7 +36,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _memory = null; // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
     _faulted = false;
-    _queue = []; // Sorted by sampleFrame (integer sample count)
+    _queue = new Array(8192).fill(null);
+    _queueLength = 0;
 
     constructor() {
         super();

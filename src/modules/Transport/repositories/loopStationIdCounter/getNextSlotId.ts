@@ -3,8 +3,6 @@
  * All use cases that create loop slots or layers must use these counters.
  */
 
-let slotId = 1;
-
 export function getNextSlotId(): string {
-    return `loop-${slotId++}`;
+    return `loop-${crypto.randomUUID()}`;
 }

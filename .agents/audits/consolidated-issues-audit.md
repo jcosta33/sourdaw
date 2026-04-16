@@ -23,6 +23,9 @@ This document tracks all currently verified unresolved issues, bugs, and archite
 - **Markdown Rendering:** `ReactMarkdown` re-walks every message on every parent re-render.
 
 ## 2. Audio Engine, Recording & Routing
+- **RESOLVED:** `Transport/useCases/playheadScheduler.ts` used `setTimeout` for the main sequencer tick. Background throttling limits tabs to 1000ms. Refactored to use a dedicated Web Worker (`schedulerWorker.ts`) to provide a reliable, unthrottled clock.
+- **RESOLVED:** Multiple CRDT deterministic ID generation violations. `Arrangement/useCases/recording/startRecording.ts`, `Arrangement/useCases/timeOperations/duplicateTimeRange.ts`, and multiple stores/repositories (`AudioEngine/stores/audioWarp.ts`, `Transport/repositories/*IdCounter`) now correctly use `crypto.randomUUID()`.
+- **RESOLVED:** `Transport/useCases/scheduling/scheduleAudioClips.ts` repeatedly created new `GainNode` objects inside the high-frequency tick loop. Refactored to use a reusable `GainNode` pool.
 - **Instrument Timing:** Offline rendering uses quantized suspends instead of pre-queuing note events on the worklet.
 - **Latency Compensation (PDC):** 
   - Recorded audio, MIDI, and automation are not latency-compensated.
@@ -34,7 +37,7 @@ This document tracks all currently verified unresolved issues, bugs, and archite
 - **Architecture:** `TrackNode` has hardcoded branches for specific plugins (e.g., `faust-`), violating the WAM abstraction.
 
 ## 3. Plugins: Toaster
-- **CRITICAL:** `ToasterProcessor.ts` uses `splice` to drain queues on the audio thread, causing allocations.
+- **CRITICAL:** `ToasterProcessor.ts` uses `splice` to drain queues on the audio thread, causing allocations and GC pauses.
 - **CRITICAL:** Singleton logic in `loadToasterKit` limits usage to one instance globally.
 - **CRITICAL:** Param bridge mutates global store instead of per-device state.
 - **CRITICAL:** Sequencer uses `setTimeout` instead of sample-accurate Web Audio timing.
@@ -65,6 +68,7 @@ This document tracks all currently verified unresolved issues, bugs, and archite
   - IR data is loaded but never sent to the AudioWorklet.
 
 ## 5. Plugins: Levain
+- **RESOLVED:** `LevainProcessor.ts` used `splice` to drain queues on the audio thread. Refactored to use a non-allocating circular array.
 - **CRITICAL:** Multi-track state & persistence corruption (Singleton architecture).
 - **CRITICAL:** MIDI timing jitter (no jitter buffer in Rust engine).
 - **HIGH:** Tone/Attack/Release Macros are non-functional (stubbed in Rust).
@@ -99,6 +103,7 @@ This document tracks all currently verified unresolved issues, bugs, and archite
 - **MEDIUM:** Panic button ineffective; Global MIDI event leak & calibration bypass.
 
 ## 9. Plugins: Fermenter
+- **CRITICAL:** `fermenterProcessor.ts` uses `splice` to drain queues on the audio thread, causing allocations and GC pauses.
 - **HIGH:** Macros dropped during preset load & morph (name mismatch).
 - **HIGH:** Catastrophic re-render on telemetry updates (meters in `fermenterStore`).
 - **HIGH:** Messaging storm during morphing (80+ postMessage calls per tick).

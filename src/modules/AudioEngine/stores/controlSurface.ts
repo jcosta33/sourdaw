@@ -78,8 +78,6 @@ export const controlSurfaceStore = createStore<ControlSurfaceState>({
     },
 });
 
-let endpointId = 1;
-
 export function getNextOscEndpointId(): string {
-    return `osc-${endpointId++}`;
+    return `osc-${crypto.randomUUID()}`;
 }
