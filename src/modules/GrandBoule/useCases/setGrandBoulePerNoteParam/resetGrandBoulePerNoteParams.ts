@@ -1,3 +1,5 @@
+import { type Store } from '#/infra/store/types';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 
 import {
@@ -14,6 +16,7 @@ type ResetGrandBoulePerNoteParamsInput = {
     perNoteMap: GrandBoulePerNoteMap;
     /** Setter for the per-note map. */
     setPerNoteMap: (next: GrandBoulePerNoteMap) => void;
+    store: Store<GrandBouleState>;
 };
 
 /** Reset all per-note parameters for a given key back to defaults. */

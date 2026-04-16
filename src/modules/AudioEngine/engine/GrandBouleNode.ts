@@ -165,12 +165,16 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
         disconnect() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch (err) {
+                console.error('[GrandBouleNode] Disconnect failed:', err);
+            }
         },
         destroy() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch (err) {
+                console.error('[GrandBouleNode] Disconnect failed during destroy:', err);
+            }
             node.port.close();
             engineWorker.postMessage({ type: 'stop' });
             engineWorker.terminate();

@@ -511,7 +511,7 @@ export const PianoModel3D = ({
         return () => {
             cancelAnimationFrame(rafId);
         };
-    }, [activeNotes, sustainPedal]);
+    }, []);
 
     const canvasToPixel = (clientX: number, clientY: number): [number, number] => {
         const canvas = canvasRef.current;

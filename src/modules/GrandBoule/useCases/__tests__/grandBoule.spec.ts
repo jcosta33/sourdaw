@@ -28,22 +28,21 @@ describe('GrandBoule Use Cases', () => {
     });
 
     describe('triggerGrandBouleNote', () => {
-        it('applies velocity curve and calls engine', () => {
-            mocks.grandBouleStoreValue.value = { parameters: { velocityCurve: 2.0 } } as any;
-            
+        it('applies midi calibration curve and calls engine', () => {
+            mocks.grandBouleStoreValue.value = { midiCalibration: { velocityFloor: 0, velocityCeiling: 1, velocityCurveExponent: 2.0 } } as any;
+
             triggerGrandBouleNote({
                 engine: mocks.engine as any,
+                store: mocks.grandBouleStoreValue as any,
                 midiNote: 60,
                 velocity: 0.5,
             });
-
-            // 0.5^2.0 = 0.25
             expect(mocks.engine.noteOn).toHaveBeenCalledWith({ midiNote: 60, velocity: 0.25 });
         });
 
         it('bails if engine not ready', () => {
             mocks.engine.isReady.mockReturnValue(false);
-            triggerGrandBouleNote({ engine: mocks.engine as any, midiNote: 60, velocity: 1 });
+            triggerGrandBouleNote({ engine: mocks.engine as any, store: mocks.grandBouleStoreValue as any, midiNote: 60, velocity: 1 });
             expect(mocks.engine.noteOn).not.toHaveBeenCalled();
         });
     });

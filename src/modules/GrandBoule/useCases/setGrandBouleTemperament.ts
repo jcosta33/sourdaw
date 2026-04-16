@@ -1,3 +1,5 @@
+import { type GrandBouleState, type TemperamentIndex } from '../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 /**
  * Set the historical temperament for the Grand Boule piano (spec §4).
  *
@@ -6,21 +8,21 @@
  * current tuning until re-triggered.
  */
 
-import { grandBouleStore, type TemperamentIndex } from '../stores/grandBouleStore';
 import { resolveGrandBouleEngine } from './resolveGrandBouleEngine';
 
 type SetGrandBouleTemperamentInput = {
     deviceId: string;
     temperament: TemperamentIndex;
+    store: Store<GrandBouleState>;
 };
 
 export const setGrandBouleTemperament = (input: SetGrandBouleTemperamentInput): void => {
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return;
     }
 
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         temperament: input.temperament,
     });
