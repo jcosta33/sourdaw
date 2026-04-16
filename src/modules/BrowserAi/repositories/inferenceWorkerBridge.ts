@@ -205,6 +205,22 @@ export const inferenceWorkerBridge = {
         return response as Extract<WorkerResponse, { type: 'ddsp-result' }>;
     },
 
+    async runGenericInference(input: {
+        modelId: string;
+        requestId: string;
+        inputs: Record<string, import('../models/InferenceRequest').TensorData>;
+    }): Promise<Extract<WorkerResponse, { type: 'inference-result' }>> {
+        const worker = await getOnnxWorker();
+        const request: WorkerRequest = {
+            type: 'run-inference',
+            modelId: input.modelId,
+            requestId: input.requestId,
+            feeds: input.inputs,
+        };
+        const response = await sendRequest(worker, workerState.onnx, request);
+        return response as Extract<WorkerResponse, { type: 'inference-result' }>;
+    },
+
     async releaseOnnxSession(modelId: string): Promise<void> {
         if (!workerState.onnx.worker) {
             return;

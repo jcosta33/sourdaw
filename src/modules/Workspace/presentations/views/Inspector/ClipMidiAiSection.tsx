@@ -14,6 +14,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import {
     renderKokoroTts,
     renderDiffSingerPhrase,
+    renderDdspInstrument,
     downloadModel,
     capabilityStore,
     modelRegistryStore,
@@ -21,6 +22,9 @@ import {
     AiRenderClipPreview,
     KOKORO_MODEL_ENTRY,
     NSF_HIFIGAN_VOCODER,
+    DDSP_INSTRUMENT_INDEX,
+    DDSP_MODEL_URL,
+    DDSP_MODEL_SIZE_BYTES,
     type RenderQuality,
 } from '#/modules/BrowserAi';
 import { useStore } from '#/infra/store/useStore';
@@ -62,6 +66,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const [diffSingerLyrics, setDiffSingerLyrics] = useState('');
     const [isRenderingSvs, setIsRenderingSvs] = useState(false);
     const [vocalMode, setVocalMode] = useState<'spoken' | 'sung'>('spoken');
+    const [selectedInstrumentId, setSelectedInstrumentId] = useState(0);
+    const [isRenderingDdsp, setIsRenderingDdsp] = useState(false);
+    const [ddspResults, setDdspResults] = useState<RenderResult[]>([]);
     const [ttsResults, setTtsResults] = useState<RenderResult[]>([]);
     const [svsResults, setSvsResults] = useState<RenderResult[]>([]);
 
@@ -110,6 +117,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setIsRenderingSvs(false);
         setTtsResults([]);
         setSvsResults([]);
+        setIsRenderingDdsp(false);
+        setDdspResults([]);
     }, [clip.id]);
 
     const handleDownloadKokoro = (): void => {
@@ -128,6 +137,59 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             url: NSF_HIFIGAN_VOCODER.url,
             sizeBytes: NSF_HIFIGAN_VOCODER.sizeBytes,
         });
+    };
+
+    const handleDownloadDdsp = (): void => {
+        void downloadModel({
+            modelId: 'ddsp-decoder',
+            family: 'ddsp',
+            url: DDSP_MODEL_URL,
+            sizeBytes: DDSP_MODEL_SIZE_BYTES,
+        });
+    };
+
+    const handleRenderInstrument = async (): Promise<void> => {
+        const midiState = midiStore.value;
+        const notes = midiState?.notesByClipId[clip.id] ?? [];
+        if (notes.length === 0) {
+            notifyUser('No MIDI notes in this clip to render', 'error');
+            return;
+        }
+
+        const tempoState = tempoMapStore.value;
+        const bpm = tempoState?.changes[0]?.tempo ?? 120;
+        const beatsPerSecond = bpm / 60;
+        const durationSec = (clip.endBeat - clip.startBeat) / beatsPerSecond;
+        const instrument = DDSP_INSTRUMENT_INDEX[selectedInstrumentId]!;
+
+        setIsRenderingDdsp(true);
+        setDdspResults([]);
+        try {
+            // Single render for instruments (deterministic, no seed variation)
+            const result = await renderDdspInstrument({
+                phraseId: `${clip.id}-ddsp`,
+                instrumentId: selectedInstrumentId,
+                instrumentName: instrument.name,
+                notes: notes.map((n) => ({
+                    pitch: n.pitch,
+                    velocity: n.velocity,
+                    startSec: (n.startBeat - clip.startBeat) / beatsPerSecond,
+                    durationSec: n.duration / beatsPerSecond,
+                })),
+                durationSec,
+            });
+            setDdspResults([{
+                audio: result.audio,
+                sampleRate: result.sampleRate,
+                label: 'A',
+                name: instrument.name,
+            }]);
+            notifyAiChange(`${instrument.name} rendered`, ['Drag onto an audio track to use']);
+        } catch (err) {
+            notifyUser(err instanceof Error ? err.message : 'Instrument render failed', 'error');
+        } finally {
+            setIsRenderingDdsp(false);
+        }
     };
 
     const handlePreviewVoice = async (): Promise<void> => {
@@ -515,6 +577,62 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                 </div>
                             )
                         )}
+                    </DawPluginSectionCard>
+                )}
+
+                {/* Instruments (DDSP ONNX + JS DSP) */}
+                {isUnsupported ? null : (
+                    <DawPluginSectionCard
+                        title="Instruments"
+                        detail={<Music className="size-3 text-[var(--color-accent-cyan)]" aria-hidden="true" />}
+                        detailMode="badge"
+                    >
+                        <div className="space-y-2">
+                            <div className="space-y-1">
+                                <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Instrument</label>
+                                <DawCompactSelect
+                                    value={String(selectedInstrumentId)}
+                                    onChange={(e) => setSelectedInstrumentId(Number(e.target.value))}
+                                    aria-label="Instrument"
+                                    className="w-full"
+                                >
+                                    {DDSP_INSTRUMENT_INDEX.map((inst) => (
+                                        <option key={inst.id} value={String(inst.id)}>{inst.name}</option>
+                                    ))}
+                                </DawCompactSelect>
+                            </div>
+                            <Button
+                                variant="secondary"
+                                size="xs"
+                                className="w-full h-6 text-[10px] bg-[var(--color-accent-cyan)]/20 hover:bg-[var(--color-accent-cyan)]/40 text-[var(--color-accent-cyan)] mb-1"
+                                onClick={handleDownloadDdsp}
+                            >
+                                <Download className="size-3 mr-1" aria-hidden="true" />
+                                Download Instrument Model
+                                <DawMicroBadge tone="muted" className="ml-1.5">~8 MB</DawMicroBadge>
+                            </Button>
+                            <Button
+                                variant="secondary"
+                                size="xs"
+                                className="w-full h-6 text-[10px] bg-[var(--color-accent-cyan)]/20 hover:bg-[var(--color-accent-cyan)]/40 text-[var(--color-accent-cyan)]"
+                                onClick={handleRenderInstrument}
+                                disabled={isRenderingDdsp}
+                            >
+                                {isRenderingDdsp ? (
+                                    <><Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…</>
+                                ) : (
+                                    <><Music className="size-3 mr-1" aria-hidden="true" /> Render Instrument</>
+                                )}
+                            </Button>
+                            {ddspResults.length > 0 ? (
+                                <div className="space-y-1 pt-1">
+                                    <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">Drag onto an audio track</p>
+                                    {ddspResults.map((r) => (
+                                        <AiRenderClipPreview key={r.label} audio={r.audio} sampleRate={r.sampleRate} label={r.label} name={r.name} />
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
                     </DawPluginSectionCard>
                 )}
             </div>

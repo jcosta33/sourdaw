@@ -14,7 +14,7 @@
  */
 
 // Use cases
-export { initBrowserAi, DDSP_INSTRUMENT_CATALOG, KOKORO_MODEL_ENTRY, NSF_HIFIGAN_VOCODER } from './useCases/initBrowserAi';
+export { initBrowserAi, DDSP_INSTRUMENT_CATALOG, KOKORO_MODEL_ENTRY, NSF_HIFIGAN_VOCODER, DDSP_INSTRUMENT_INDEX, DDSP_MODEL_URL, DDSP_MODEL_SIZE_BYTES } from './useCases/initBrowserAi';
 export type { RenderQuality } from './useCases/initBrowserAi';
 export { detectCapabilities } from './useCases/detectCapabilities';
 export { downloadModel } from './useCases/downloadModel';

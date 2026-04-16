@@ -37,7 +37,40 @@ export const KOKORO_MODEL_URL =
 export const KOKORO_MODEL_SIZE_BYTES = 86_000_000;
 
 /**
- * Factory DDSP instrument catalog.
+ * DDSP decoder ONNX model — single model covers all 13 instruments
+ * via an instrument_id embedding. Exported from MIDI-DDSP.
+ *
+ * URL must be updated after running scripts/export-ddsp-onnx.py and uploading.
+ */
+export const DDSP_MODEL_URL =
+    'https://huggingface.co/jcosta33/vocoder-models/resolve/main/ddsp-decoder/ddsp_decoder.onnx';
+
+export const DDSP_MODEL_SIZE_BYTES = 8_000_000; // ~8 MB (estimate, update after export)
+
+/**
+ * MIDI-DDSP instrument index — maps instrument name to the embedding ID
+ * used by the multi-instrument DDSP decoder ONNX model.
+ * Order matches MIDI-DDSP's training: magenta/midi-ddsp SynthesisGenerator.
+ */
+export const DDSP_INSTRUMENT_INDEX: Array<{ id: number; name: string; family: string }> = [
+    { id: 0, name: 'Violin', family: 'strings' },
+    { id: 1, name: 'Viola', family: 'strings' },
+    { id: 2, name: 'Cello', family: 'strings' },
+    { id: 3, name: 'Double Bass', family: 'strings' },
+    { id: 4, name: 'Flute', family: 'woodwinds' },
+    { id: 5, name: 'Oboe', family: 'woodwinds' },
+    { id: 6, name: 'Clarinet', family: 'woodwinds' },
+    { id: 7, name: 'Saxophone', family: 'woodwinds' },
+    { id: 8, name: 'Bassoon', family: 'woodwinds' },
+    { id: 9, name: 'Trumpet', family: 'brass' },
+    { id: 10, name: 'Horn', family: 'brass' },
+    { id: 11, name: 'Trombone', family: 'brass' },
+    { id: 12, name: 'Tuba', family: 'brass' },
+];
+
+/**
+ * Factory DDSP instrument catalog (legacy TF.js format — retained for reference).
+ * New renders use the ONNX decoder + JS DSP synthesis pipeline.
  */
 export const DDSP_INSTRUMENT_CATALOG: Omit<DdspInstrument, 'status' | 'downloadProgress'>[] = [
     {
