@@ -1,0 +1,122 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { analyzePitchForClip } from '../analyzePitchForClip';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { kneadStore } from '#/modules/Knead/stores';
+
+vi.mock('@tauri-apps/api/core', () => ({
+    invoke: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+    listen: vi.fn(),
+}));
+
+describe('analyzePitchForClip', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        
+        // Setup mock stores
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', type: 'audio', fileId: 'test.wav' },
+                        { id: 'c2', type: 'midi', fileId: undefined },
+                    ]
+                }
+            ]
+        } as any);
+
+        kneadStore.set({
+            isAnalyzing: false,
+            analysisProgress: 0,
+        } as any);
+    });
+
+    it('should ignore if clip is not found or not audio', async () => {
+        const result = await analyzePitchForClip('invalid-clip');
+        expect(result).toBeNull();
+        expect(invoke).not.toHaveBeenCalled();
+        
+        const result2 = await analyzePitchForClip('c2');
+        expect(result2).toBeNull();
+        expect(invoke).not.toHaveBeenCalled();
+    });
+
+    it('should set analyzing state, invoke command, and listen for progress', async () => {
+        const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
+        
+        let resolveInvoke: any;
+        const invokePromise = new Promise(resolve => { resolveInvoke = resolve; });
+        vi.mocked(invoke).mockReturnValue(invokePromise as any);
+        
+        let progressCallback: any = null;
+        const unlistenMock = vi.fn();
+        vi.mocked(listen).mockImplementation((event, cb) => {
+            progressCallback = cb;
+            return Promise.resolve(unlistenMock);
+        });
+        
+        const promise = analyzePitchForClip('c1');
+        
+        // Check state was set to analyzing
+        expect(kneadStore.value.isAnalyzing).toBe(true);
+        expect(kneadStore.value.analysisProgress).toBe(0);
+        
+        // Wait for listen to be registered
+        await new Promise(resolve => setTimeout(resolve, 0));
+        
+        expect(listen).toHaveBeenCalledWith('pitch-analysis-progress', expect.any(Function));
+        
+        // Trigger progress callback before invoke resolves
+        if (progressCallback) {
+            progressCallback({ payload: { progress: 0.5 } });
+            expect(kneadStore.value.analysisProgress).toBe(0.5);
+        }
+        
+        // Now resolve invoke
+        resolveInvoke(mockContour);
+        
+        const result = await promise;
+        
+        expect(invoke).toHaveBeenCalledWith('analyze_pitch', { audioPath: 'test.wav' });
+        expect(result).toEqual(mockContour);
+        
+        // Wait another tick for finally block to finish store update if needed
+        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect((kneadStore.value as any).pitchContour).toEqual(mockContour);
+        
+        // Check final state
+        expect(kneadStore.value.isAnalyzing).toBe(false);
+        expect(kneadStore.value.analysisProgress).toBe(1);
+        expect(unlistenMock).toHaveBeenCalled();
+    });
+
+    it('should handle errors and restore state', async () => {
+        vi.mocked(invoke).mockRejectedValue(new Error('Test error'));
+        vi.mocked(listen).mockResolvedValue(vi.fn());
+        
+        // Suppress console.error
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        
+        await expect(analyzePitchForClip('c1')).rejects.toThrow('Test error');
+        
+        expect(consoleSpy).toHaveBeenCalled();
+        consoleSpy.mockRestore();
+        
+        // Should restore analyzing state
+        expect(kneadStore.value.isAnalyzing).toBe(false);
+        expect(kneadStore.value.analysisProgress).toBe(1);
+    });
+    
+    it('should handle missing track store safely', async () => {
+        trackStore.set({} as any);
+        const result = await analyzePitchForClip('c1');
+        expect(result).toBeNull();
+    });
+});

@@ -213,7 +213,7 @@ impl PianoVoice {
             }
             VoiceStage::Active => {
                 // Loud active voices are hardest to steal; quiet ones go first.
-                200.0 - 200.0 * self.envelope.clamp(0.0, 1.0)
+                200.0 - 200.0 * self.amplitude.clamp(0.0, 1.0)
             }
         }
     }
@@ -346,7 +346,6 @@ impl PianoVoice {
     pub fn kill(&mut self) {
         self.stage = VoiceStage::Idle;
         self.amplitude = 0.0;
-        self.envelope = 0.0;
         self.age_samples = 0;
         self.last_string_displacement = 0.0;
         self.hammer = HammerState::idle();
@@ -465,26 +464,6 @@ impl PianoVoice {
         }
 
         self.age_samples = self.age_samples.saturating_add(1);
-        output
-    }
-}
-(1);
-        output
-    }
-}
-.age_samples = self.age_samples.saturating_add(1);
-        output
-    }
-}
-saturating_add(1);
-        output
-    }
-}
-(1);
-        output
-    }
-}
-.age_samples = self.age_samples.saturating_add(1);
         output
     }
 }
