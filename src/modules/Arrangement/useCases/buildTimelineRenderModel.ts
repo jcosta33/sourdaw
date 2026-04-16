@@ -181,6 +181,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                             duration: n.duration,
                         })),
                         audioBufferId: clip.audioBufferId,
+                        audioOffsetBeats: clip.audioOffsetBeats,
+                        stretchRatio: clip.stretchRatio,
                         loopEnabled: clip.loopEnabled,
                         loopLength: clip.loopLength,
                         fadeInBeats: clip.fadeInBeats,
