@@ -1,13 +1,9 @@
-/**
- * Dutch Oven reverb parameter types and space presets.
- */
-
-export type AlgorithmType = 'plate' | 'fdn-8' | 'fdn-16' | 'spring';
+export type ProofChamberAlgorithm = 'plate' | 'fdn-8' | 'fdn-16' | 'spring';
 
 export type SpaceType = 'hall' | 'room' | 'plate' | 'chamber' | 'cathedral' | 'shimmer' | 'infinite' | 'spring';
 
-export type ProofChamberParams = {
-    algorithm: AlgorithmType;
+export type ProofChamberEngineState = {
+    algorithm: ProofChamberAlgorithm;
     space: SpaceType;
     mix: number;
     decay: number;
@@ -30,7 +26,7 @@ export type ProofChamberParams = {
     vintage: number; // 0=modern, 1=80s, 2=70s
 };
 
-export const DEFAULT_PARAMS: ProofChamberParams = {
+export const DEFAULT_PARAMS: ProofChamberEngineState = {
     algorithm: 'plate',
     space: 'hall',
     mix: 0.3,
@@ -54,14 +50,14 @@ export const DEFAULT_PARAMS: ProofChamberParams = {
     vintage: 0,
 };
 
-export const ALGORITHM_MAP: Record<AlgorithmType, number> = {
+export const ALGORITHM_MAP: Record<ProofChamberAlgorithm, number> = {
     plate: 0,
     'fdn-8': 1,
     'fdn-16': 2,
     spring: 3,
 };
 
-export const SPACE_PRESETS: Record<SpaceType, Partial<ProofChamberParams>> = {
+export const SPACE_PRESETS: Record<SpaceType, Partial<ProofChamberEngineState>> = {
     hall: { size: 0.75, decay: 0.7, damping: 0.3, diffusion: 0.75, modDepth: 0.3, predelay: 20 },
     room: { size: 0.35, decay: 0.4, damping: 0.5, diffusion: 0.6, modDepth: 0.2, predelay: 5 },
     plate: { size: 0.5, decay: 0.6, damping: 0.15, diffusion: 0.85, modDepth: 0.5, predelay: 0 },
@@ -79,7 +75,7 @@ export const SPACE_PRESETS: Record<SpaceType, Partial<ProofChamberParams>> = {
     },
     infinite: { size: 0.6, decay: 0.999, damping: 0.0, diffusion: 0.75, modDepth: 0.0, freeze: true, predelay: 0 },
     spring: {
-        algorithm: 'spring' as AlgorithmType,
+        algorithm: 'spring' as ProofChamberAlgorithm,
         size: 0.5,
         decay: 0.7,
         damping: 0.3,
@@ -112,3 +108,19 @@ export const PARAM_MAP: Record<string, string> = {
     algorithm: 'algorithm',
     vintage: 'vintage',
 };
+
+export type ProofChamberPluginState = {
+    id: string;
+    engineState: ProofChamberEngineState;
+    uiLevel: 1 | 2 | 3 | 4 | 5; // Progressive disclosure level
+    isBypassed: boolean;
+};
+
+export function createDefaultChamberState(id: string): ProofChamberPluginState {
+    return {
+        id,
+        isBypassed: false,
+        uiLevel: 1,
+        engineState: { ...DEFAULT_PARAMS },
+    };
+}

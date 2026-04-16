@@ -47,6 +47,11 @@ export { disconnectPush } from './pushIntegration/disconnectPush';
 
 export { registerBuiltinPlugins } from './wamPluginHost/builtinDescriptors';
 
+export { registerChamberInstance } from './proofChamber/registerChamberInstance';
+export { updateChamberEngine } from './proofChamber/updateChamberEngine';
+export { setChamberUILevel } from './proofChamber/setChamberUILevel';
+export { updateProofChamberParam } from './proofChamberParamBridge';
+
 export type { WAMDescriptor, WAMInstance } from './wamPluginHost/hostOperations/helpers';
 export { initWAMEnvironment } from './wamPluginHost/hostOperations/initWAMEnvironment';
 export { registerWAMPlugin } from './wamPluginHost/hostOperations/registerWAMPlugin';

@@ -1,16 +1,16 @@
 import {
-    type ProofChamberParams,
+    type ProofChamberEngineState,
     DEFAULT_PARAMS,
     SPACE_PRESETS,
     type SpaceType,
-    type AlgorithmType,
-} from '../../models/ProofChamberPatch';
+    type ProofChamberAlgorithm,
+} from '../../models/ProofChamberState';
 
 export type ProofChamberPreset = {
     id: string;
     name: string;
     category: 'hall' | 'room' | 'plate' | 'spring' | 'creative' | 'user';
-    params: ProofChamberParams;
+    params: ProofChamberEngineState;
 };
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,7 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
             ...DEFAULT_PARAMS,
             ...SPACE_PRESETS.hall,
             space: 'hall' as SpaceType,
-            algorithm: 'fdn-8' as AlgorithmType,
+            algorithm: 'fdn-8' as ProofChamberAlgorithm,
         },
     },
     {
@@ -52,7 +52,7 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
             ...DEFAULT_PARAMS,
             ...SPACE_PRESETS.room,
             space: 'room' as SpaceType,
-            algorithm: 'fdn-8' as AlgorithmType,
+            algorithm: 'fdn-8' as ProofChamberAlgorithm,
         },
     },
     {
@@ -124,7 +124,7 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
             ...DEFAULT_PARAMS,
             ...(SPACE_PRESETS.spring ?? {}),
             space: 'spring' as SpaceType,
-            algorithm: 'spring' as AlgorithmType,
+            algorithm: 'spring' as ProofChamberAlgorithm,
         },
     },
     {
@@ -135,7 +135,7 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
             ...DEFAULT_PARAMS,
             ...(SPACE_PRESETS.spring ?? {}),
             space: 'spring' as SpaceType,
-            algorithm: 'spring' as AlgorithmType,
+            algorithm: 'spring' as ProofChamberAlgorithm,
             damping: 0.6,
             highCut: 5000,
             vintage: 2,
@@ -184,7 +184,7 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
         params: {
             ...DEFAULT_PARAMS,
             space: 'cathedral' as SpaceType,
-            algorithm: 'fdn-16' as AlgorithmType,
+            algorithm: 'fdn-16' as ProofChamberAlgorithm,
             decay: 0.95,
             mix: 0.6,
             modDepth: 0.5,
