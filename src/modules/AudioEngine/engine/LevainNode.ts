@@ -15,7 +15,7 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
+    noteOn: (note: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
@@ -140,3 +140,4 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         ready: readyPromise,
     };
 }
+

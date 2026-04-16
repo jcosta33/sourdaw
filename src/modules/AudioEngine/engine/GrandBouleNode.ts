@@ -119,13 +119,13 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
 
     return {
         workletNode: node,
-        noteOn(midiNote: number, velocity: number, _sampleFrame?: number) {
+        noteOn(midiNote: number, velocity: number, sampleFrame?: number) {
             if (!bypassed) {
-                post({ type: 'noteOn', midiNote, velocity });
+                post({ type: 'noteOn', midiNote, velocity, sampleFrame });
             }
         },
-        noteOff(midiNote: number, _sampleFrame?: number) {
-            post({ type: 'noteOff', midiNote });
+        noteOff(midiNote: number, sampleFrame?: number) {
+            post({ type: 'noteOff', midiNote, sampleFrame });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {

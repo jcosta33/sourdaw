@@ -11,6 +11,7 @@ import { isGrinderDevice, createGrinderNode } from '../../engine/GrinderNode';
 import { isProofDevice, createProofNode } from '../../engine/ProofNode';
 import { isProofChamberDevice, createProofChamberNode } from '../../engine/ProofChamberNode';
 import { isScoringDevice, createScoringNode } from '../../engine/ScoringNode';
+import { isGrandBouleDevice, createGrandBouleNode } from '../../engine/GrandBouleNode';
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
@@ -35,15 +36,15 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
         }
     }
 
-    noteOn(noteOrPad: number, velocity: number, midiNote?: number): void {
+    noteOn(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void {
         if (typeof this.dspNode.noteOn === 'function') {
-            this.dspNode.noteOn(noteOrPad, velocity, midiNote);
+            this.dspNode.noteOn(noteOrPad, velocity, midiNote, sampleFrame);
         }
     }
 
-    noteOff(noteOrPad: number): void {
+    noteOff(noteOrPad: number, sampleFrame?: number): void {
         if (typeof this.dspNode.noteOff === 'function') {
-            this.dspNode.noteOff(noteOrPad);
+            this.dspNode.noteOff(noteOrPad, sampleFrame);
         }
     }
 
@@ -75,6 +76,8 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
         result = await createProofChamberNode(ctx);
     } else if (isScoringDevice(device.type)) {
         result = await createScoringNode(ctx);
+    } else if (isGrandBouleDevice(device.type)) {
+        result = await createGrandBouleNode(ctx);
     }
 
     if (!result) {

@@ -46,6 +46,10 @@ export class TrackNode {
         const panNode = context.createStereoPanner();
         panNode.pan.value = 0;
 
+        const meterSab = new SharedArrayBuffer(4);
+        const meterNode = new AudioWorkletNode(context, 'metering-processor');
+        meterNode.port.postMessage({ type: 'init', sab: meterSab, channels: 2 });
+
         const analyserNode = context.createAnalyser();
         analyserNode.fftSize = 256;
         analyserNode.smoothingTimeConstant = 0.8;
@@ -54,7 +58,8 @@ export class TrackNode {
         preFaderTap.connect(faderNode);
         faderNode.connect(postFaderGain);
         postFaderGain.connect(panNode);
-        panNode.connect(analyserNode);
+        panNode.connect(meterNode);
+        meterNode.connect(analyserNode);
 
         this.strip = {
             trackId,
@@ -63,11 +68,12 @@ export class TrackNode {
             faderNode,
             postFaderGain,
             panNode,
+            meterNode,
             analyserNode,
             muted: false,
             soloed: false,
             deviceNodes: [],
-            meterBuffer: new Float32Array(analyserNode.frequencyBinCount),
+            meterBuffer: new Float32Array(meterSab),
         };
 
         this.routeOutput();
@@ -91,15 +97,8 @@ export class TrackNode {
     }
 
     public getPeakLevel(): number {
-        const data = this.strip.meterBuffer;
-        this.strip.analyserNode.getFloatTimeDomainData(data as any);
-        let peak = 0;
-        for (let i = 0; i < data.length; i++) {
-            const abs = Math.abs(data[i]!);
-            if (abs > peak) {
-                peak = abs;
-            }
-        }
+        const peak = this.strip.meterBuffer[0]!;
+        this.strip.meterBuffer[0] = 0;
         return peak;
     }
 
@@ -163,6 +162,7 @@ export class TrackNode {
         s.faderNode.disconnect();
         s.postFaderGain.disconnect();
         s.panNode.disconnect();
+        s.meterNode.disconnect();
         s.analyserNode.disconnect();
 
         for (const dn of s.deviceNodes) {

@@ -131,10 +131,10 @@ function dispatch(msg: Record<string, unknown>): void {
     if (!instance) {return;}
     switch (msg.type) {
         case 'noteOn':
-            instance.note_on(msg.midiNote as number, msg.velocity as number);
+            instance.note_on(msg.midiNote as number, msg.velocity as number, msg.sampleFrame as number);
             break;
         case 'noteOff':
-            instance.note_off(msg.midiNote as number);
+            instance.note_off(msg.midiNote as number, msg.sampleFrame as number);
             break;
         case 'param':
             instance.set_param(PARAM_MAP[msg.name as string] ?? (msg.name as string), msg.value as number);

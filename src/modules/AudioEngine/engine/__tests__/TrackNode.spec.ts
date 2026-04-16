@@ -8,6 +8,14 @@ describe('TrackNode', () => {
 
     beforeEach(() => {
         ctx = createMockAudioContext() as any;
+        
+        (global as any).AudioWorkletNode = class {
+            port = { postMessage: vi.fn() };
+            connect = vi.fn();
+            disconnect = vi.fn();
+        };
+        (global as any).SharedArrayBuffer = class extends ArrayBuffer {};
+
         deps = {
             context: ctx as any,
             masterGainNode: ctx.createGain() as any,
@@ -27,12 +35,13 @@ describe('TrackNode', () => {
         expect(track.strip.muted).toBe(false);
         
         // Initial wiring check (simplified)
-        // gainNode -> preFaderTap -> faderNode -> postFaderGain -> panNode -> analyserNode -> masterGain
+        // gainNode -> preFaderTap -> faderNode -> postFaderGain -> panNode -> meterNode -> analyserNode -> masterGain
         expect(track.strip.gainNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
         expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.faderNode);
         expect(track.strip.faderNode.connect).toHaveBeenCalledWith(track.strip.postFaderGain);
         expect(track.strip.postFaderGain.connect).toHaveBeenCalledWith(track.strip.panNode);
-        expect(track.strip.panNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
+        expect(track.strip.panNode.connect).toHaveBeenCalledWith(track.strip.meterNode);
+        expect(track.strip.meterNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(deps.masterGainNode);
     });
 
