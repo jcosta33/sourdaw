@@ -7105,6 +7105,7 @@ dependencies = [
  "ort",
  "raw-window-handle",
  "reqwest 0.12.28",
+ "rtrb",
  "rubato 0.15.0",
  "rusty_link",
  "serde",

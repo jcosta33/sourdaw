@@ -35,7 +35,7 @@ import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
 import { GlutenPanel } from '#/modules/Gluten/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views';
-import { SamplerPanel } from '#/modules/Sampler/presentations/views';
+import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
 import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
 
 import { ProofPanel } from '#/modules/Proof/presentations/views';
@@ -481,7 +481,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setSamplerHeight}
                                 onClose={closeActivePanel}
                             >
-                                <SamplerPanel deviceId={samplerDeviceId} />
+                                <CrumbsPanel deviceId={samplerDeviceId} />
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -675,3 +675,4 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         </MobileGate>
     );
 };
+

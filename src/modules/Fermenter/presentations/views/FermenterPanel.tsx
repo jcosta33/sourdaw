@@ -30,7 +30,7 @@ import { FmSection } from '../components/FmSection';
 import { KarplusSection } from '../components/KarplusSection';
 import { GranularSection } from '../components/GranularSection';
 import { AdditiveSection } from '../components/AdditiveSection';
-import { SamplerSection } from '../components/SamplerSection';
+import { CrumbsSection } from '../components/CrumbsSection';
 import { LfoSection } from '../components/LfoSection';
 import { WarpSection } from '../components/WarpSection';
 import { ModulationSection } from '../components/ModulationSection';
@@ -258,7 +258,7 @@ function renderEngineControls(patch: FermenterPatch, onParam: (key: string, valu
 
     if (patch.oscEngine === 6) {
         return (
-            <SamplerSection
+            <CrumbsSection
                 mode={patch.samplerMode}
                 start={patch.samplerStart}
                 end={patch.samplerEnd}
