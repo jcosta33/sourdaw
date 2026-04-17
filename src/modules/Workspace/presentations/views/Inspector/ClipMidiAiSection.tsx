@@ -3,6 +3,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawProgressBar } from '#/components/daw/DawProgressBar';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { Button } from '#/components/ui/button';
@@ -57,7 +58,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [variationTokenCount, setVariationTokenCount] = useState(0);
     const [isRenderingTts, setIsRenderingTts] = useState(false);
-    // DiffSinger SVS uses diffusion-based synthesis with configurable step count.
     const [svsRenderQuality, setSvsRenderQuality] = useState<RenderQuality>('standard');
     const [ttsText, setTtsText] = useState('');
     const [ttsVoiceId, setTtsVoiceId] = useState('af_heart');
@@ -252,6 +252,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         }
     };
 
+    const downloadingVoicebank = voicebanks.find((vb) => vb.status === 'downloading');
+
     // Label for the Variations button — "Streaming… N chars" during cloud streaming
     // (tokens arrive incrementally), plain "Generating…" for native/webllm (one shot).
     const variationsButtonLabel = isGeneratingVariations
@@ -335,24 +337,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         {/* ── Spoken mode (Kokoro TTS) ── */}
                         {vocalMode === 'spoken' ? (
                             kokoroStatus === 'downloading' ? (
-                                <div className="space-y-1.5">
-                                    <p className="text-[9px] text-muted-foreground">Downloading voice model…</p>
-                                    <div
-                                        className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
-                                        role="progressbar"
-                                        aria-valuenow={Math.round(kokoroProgress * 100)}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                    >
-                                        <div
-                                            className="h-full bg-[var(--color-accent-peach)] transition-all"
-                                            style={{ width: `${Math.round(kokoroProgress * 100)}%` }}
-                                        />
-                                    </div>
-                                    <p className="text-[9px] text-muted-foreground/60 tabular-nums">
-                                        {Math.round(kokoroProgress * 100)}%
-                                    </p>
-                                </div>
+                                <DawProgressBar progress={kokoroProgress} label="Downloading voice model…" color="--color-accent-peach" />
                             ) : kokoroStatus !== 'ready' ? (
                                 <DawEmptyState
                                     compact
@@ -426,25 +411,10 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         ) : (
                             /* ── Sung mode (DiffSinger SVS) ── */
                             !voicebanks.some((vb) => vb.status === 'ready') ? (
-                                (() => {
-                                    const downloadingVb = voicebanks.find((vb) => vb.status === 'downloading');
-                                    if (downloadingVb) {
-                                        return (
-                                            <div className="space-y-1.5">
-                                                <p className="text-[9px] text-muted-foreground">
-                                                    Downloading {downloadingVb.name}…
-                                                </p>
-                                                <div className="w-full h-1 bg-border/40 rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(downloadingVb.downloadProgress * 100)} aria-valuemin={0} aria-valuemax={100}>
-                                                    <div className="h-full bg-[var(--color-accent-lavender)] transition-all" style={{ width: `${Math.round(downloadingVb.downloadProgress * 100)}%` }} />
-                                                </div>
-                                                <p className="text-[9px] text-muted-foreground/60 tabular-nums">
-                                                    {Math.round(downloadingVb.downloadProgress * 100)}%
-                                                </p>
-                                            </div>
-                                        );
-                                    }
-                                    return (
-                                        <DawEmptyState
+                                downloadingVoicebank ? (
+                                    <DawProgressBar progress={downloadingVoicebank.downloadProgress} label={`Downloading ${downloadingVoicebank.name}…`} color="--color-accent-lavender" />
+                                ) : (
+                                    <DawEmptyState
                                             compact
                                             title="Download a singing voice"
                                             description="Render your MIDI notes as a singing vocal."
@@ -485,8 +455,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                 </div>
                                             }
                                         />
-                                    );
-                                })()
+                                )
                             ) : (
                                 <div className="space-y-2">
                                     <div className="space-y-1">
@@ -525,13 +494,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                     </div>
 
                                     {vocoderStatus === 'downloading' ? (
-                                        <div className="space-y-1.5">
-                                            <p className="text-[9px] text-muted-foreground">Downloading singing engine…</p>
-                                            <div className="w-full h-1 bg-border/40 rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(vocoderProgress * 100)} aria-valuemin={0} aria-valuemax={100}>
-                                                <div className="h-full bg-[var(--color-accent-lavender)] transition-all" style={{ width: `${Math.round(vocoderProgress * 100)}%` }} />
-                                            </div>
-                                            <p className="text-[9px] text-muted-foreground/60 tabular-nums">{Math.round(vocoderProgress * 100)}%</p>
-                                        </div>
+                                        <DawProgressBar progress={vocoderProgress} label="Downloading singing engine…" color="--color-accent-lavender" />
                                     ) : vocoderStatus !== 'ready' ? (
                                         <div className="space-y-1.5">
                                             <p className="text-[9px] text-muted-foreground/70">

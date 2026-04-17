@@ -35,6 +35,11 @@ export function updateModelStatus(modelId: string, patch: Partial<Pick<BrowserMo
         );
 
         const updatedVoicebanks = state.diffSingerVoicebanks.map((vb) => {
+            // Skip voicebanks that don't contain this modelId
+            const allModelIds = [vb.models.linguistic.id, vb.models.dur.id, vb.models.acoustic.id, vb.models.pitch.id, vb.models.variance.id];
+            if (!allModelIds.includes(modelId)) {
+                return vb;
+            }
             const models = {
                 linguistic: vb.models.linguistic.id === modelId ? { ...vb.models.linguistic, ...patch } : vb.models.linguistic,
                 dur: vb.models.dur.id === modelId ? { ...vb.models.dur, ...patch } : vb.models.dur,

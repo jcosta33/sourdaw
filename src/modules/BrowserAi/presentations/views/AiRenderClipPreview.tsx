@@ -7,7 +7,7 @@
  * cached in audioBufferCache, and the bufferId is set as drag data.
  */
 
-import { type DragEvent, type ReactElement, useRef, useState } from 'react';
+import { type DragEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 import { GripVertical, Play, Square } from 'lucide-react';
 import { getAudioContext, createBufferSource } from '#/modules/AudioEngine/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -38,6 +38,13 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     const bufferIdRef = useRef<string | null>(null);
 
     const durationSec = audio.length / sampleRate;
+
+    // Stop playback on unmount (buffer stays in cache — may be referenced by a timeline clip)
+    useEffect(() => {
+        return () => {
+            sourceRef.current?.stop();
+        };
+    }, []);
 
     const ensureBufferId = (): string => {
         if (!bufferIdRef.current) {

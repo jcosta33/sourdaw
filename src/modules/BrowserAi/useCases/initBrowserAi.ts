@@ -108,19 +108,25 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
                 downloadProgress: vocoderCached ? 1 : 0,
             };
 
-            // ── 5. Build DiffSinger voicebank entries from catalog ─────────
-            const diffSingerVoicebanks: DiffSingerVoicebank[] = DIFFSINGER_VOICEBANK_CATALOG.map((cat) => ({
-                ...cat,
-                status: 'not-downloaded' as const,
-                downloadProgress: 0,
-                models: {
-                    linguistic: { ...cat.models.linguistic },
-                    dur: { ...cat.models.dur },
-                    pitch: { ...cat.models.pitch },
-                    variance: { ...cat.models.variance },
-                    acoustic: { ...cat.models.acoustic },
-                },
-            }));
+            // ── 5. Build DiffSinger voicebank entries, checking OPFS cache ──
+            const diffSingerVoicebanks: DiffSingerVoicebank[] = [];
+            for (const cat of DIFFSINGER_VOICEBANK_CATALOG) {
+                const modelKeys = ['linguistic', 'dur', 'pitch', 'variance', 'acoustic'] as const;
+                const models: DiffSingerVoicebank['models'] = {} as DiffSingerVoicebank['models'];
+                let allCached = true;
+                for (const key of modelKeys) {
+                    const m = cat.models[key];
+                    const cached = await checkModelCached({ family: m.family, modelId: m.id }).catch(() => false);
+                    models[key] = { ...m, status: cached ? 'ready' : 'not-downloaded', downloadProgress: cached ? 1 : 0 };
+                    if (!cached) allCached = false;
+                }
+                diffSingerVoicebanks.push({
+                    ...cat,
+                    status: allCached ? 'ready' : 'not-downloaded',
+                    downloadProgress: allCached ? 1 : 0,
+                    models,
+                });
+            }
 
             // ── 6. Populate model registry store ───────────────────────────
             modelRegistryStore.set({
