@@ -4,10 +4,7 @@ import { createCallbackUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
 import { isTauri } from '#/utils/tauriBridge';
 import { getBufferForClip } from '#/modules/Arrangement/useCases';
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-// @ts-ignore
-import { commit_pitch_edit_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
+import { processPitchEditWasm } from '#/modules/AudioEngine/useCases';
 
 type NoteSegment = {
     start_time_ms: number;
@@ -58,20 +55,7 @@ export async function commitPitchEditCommand(
             if (!result || !result.buffer) {
                 throw new Error('Could not get audio buffer for clip');
             }
-            const channelData = result.buffer.getChannelData(0);
-            const newSamples = commit_pitch_edit_wasm(
-                channelData, 
-                result.buffer.sampleRate, 
-                JSON.stringify(segments), 
-                JSON.stringify(contour)
-            );
-            
-            const ctx = audioEngine.context;
-            const newBuffer = ctx.createBuffer(1, newSamples.length, result.buffer.sampleRate);
-            newBuffer.copyToChannel(newSamples, 0);
-            
-            // Cache it in memory so that when fileId changes, the player finds it instantly
-            audioBufferCache.set(outputAudioPath, newBuffer);
+            processPitchEditWasm(result.buffer, segments, contour, outputAudioPath);
         }
 
         const undoFn = () => {

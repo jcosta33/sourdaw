@@ -4,7 +4,7 @@ import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
 import { Button } from '#/components/ui/button';
-import { commitPitchEditCommand } from '#/modules/Command/useCases/pitch/commitPitchEdit';
+import { commitPitchEditCommand } from '#/modules/Command/useCases';
 
 type PitchEditorProps = {
     clipId: string;
