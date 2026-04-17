@@ -173,10 +173,9 @@ impl GrandBouleEngine {
         // Combine una-corda pedal scale, preset hammer hardness offset, and
         // piano model hammer scale. offset -1 → 0.5×, 0 → 1×, +1 → 2×.
         let hardness_scale = (2.0_f32).powf(self.hammer_hardness_offset);
-        let overrides = &self.per_note_overrides[(key as usize).saturating_sub(1).min(87)];
         let stiffness_scale =
-            self.pedals.hammer_stiffness_scale() * hardness_scale * self.hammer_hardness_scale * overrides.hammer_hardness;
-        let mass_scale = self.hammer_mass_scale * overrides.hammer_mass;
+            self.pedals.hammer_stiffness_scale() * hardness_scale * self.hammer_hardness_scale;
+        let mass_scale = self.hammer_mass_scale;
         self.pedals.press_key(key);
         self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
         self.noise

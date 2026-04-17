@@ -1083,6 +1083,46 @@ export class ToasterInstance {
 }
 if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.prototype.free;
 
+/**
+ * @param {Float32Array} samples
+ * @param {number} sample_rate
+ * @returns {string}
+ */
+export function analyze_pitch_wasm(samples, sample_rate) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.analyze_pitch_wasm(ptr0, len0, sample_rate);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * @param {Float32Array} samples
+ * @param {number} sample_rate
+ * @param {string} segments_json
+ * @param {string} contour_json
+ * @returns {Float32Array}
+ */
+export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json) {
+    const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(segments_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(contour_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2);
+    var v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v4;
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -1132,6 +1172,11 @@ const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
 const ToasterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_toasterinstance_free(ptr >>> 0, 1));
+
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
 
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;

@@ -32,6 +32,7 @@ import {
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
+import { PitchEditor } from './PitchEditor';
 
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
 // Structurally compatible with the value returned by `getWarpState`.
@@ -406,6 +407,8 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         <span className="text-sm font-medium text-primary">Drop audio file here</span>
                     </div>
                 ) : null}
+                
+                <PitchEditor clipId={clipId} />
             </div>
 
             {waveCtxMenu ? (
