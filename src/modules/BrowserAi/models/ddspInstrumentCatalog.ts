@@ -91,6 +91,48 @@ export const DDSP_INSTRUMENT_CATALOG: Omit<DdspInstrument, 'status' | 'downloadP
 ];
 
 /**
+ * DiffSinger voicebank catalog — downloadable singing voice packs.
+ *
+ * Each voicebank contains 5 ONNX models (linguistic, dur, pitch, variance, acoustic).
+ * Models are hosted on HuggingFace for CORS-accessible browser downloads.
+ * The shared NSF-HiFiGAN vocoder is downloaded separately (see NSF_HIFIGAN_URL).
+ */
+const HF_DIFFSINGER = 'https://huggingface.co/jcosta33/vocoder-models/resolve/main/diffsinger';
+
+function diffSingerModel(voicebankId: string, key: string, sizeBytes: number) {
+    return {
+        id: `${voicebankId}-${key}`,
+        name: `${key}`,
+        family: `diffsinger/${voicebankId}` as const,
+        sizeBytes,
+        url: `${HF_DIFFSINGER}/${voicebankId}/${key}.onnx`,
+        license: 'CC-BY-NC-SA-4.0' as const,
+        attribution: '',
+        nativeSampleRate: 44100,
+        status: 'not-downloaded' as const,
+        downloadProgress: 0,
+    };
+}
+
+export const DIFFSINGER_VOICEBANK_CATALOG = [
+    {
+        id: 'spore',
+        name: 'SPORE',
+        language: 'en' as const,
+        license: 'CC-BY-NC-SA-4.0' as const,
+        attribution: 'SPORE v0.1.1 by knoxstation — CC BY-NC-ND 4.0',
+        totalSizeBytes: 331_000_000,
+        models: {
+            linguistic: diffSingerModel('spore', 'linguistic', 24_000_000),
+            dur: diffSingerModel('spore', 'dur', 5_000_000),
+            pitch: diffSingerModel('spore', 'pitch', 47_000_000),
+            variance: diffSingerModel('spore', 'variance', 22_000_000),
+            acoustic: diffSingerModel('spore', 'acoustic', 233_000_000),
+        },
+    },
+];
+
+/**
  * Kokoro TTS voice catalog — 21 voices, all sharing the same model weights.
  */
 export const KOKORO_VOICE_CATALOG: Array<{ id: string; name: string; gender: 'male' | 'female'; accent: string }> = [

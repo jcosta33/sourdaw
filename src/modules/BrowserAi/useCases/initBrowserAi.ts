@@ -17,13 +17,14 @@ import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 import {
     DDSP_INSTRUMENT_CATALOG,
+    DIFFSINGER_VOICEBANK_CATALOG,
     KOKORO_VOICE_CATALOG,
     NSF_HIFIGAN_URL,
     NSF_HIFIGAN_SIZE_BYTES,
     KOKORO_MODEL_URL,
     KOKORO_MODEL_SIZE_BYTES,
 } from '../models/ddspInstrumentCatalog';
-import { type DdspInstrument, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
+import { type DdspInstrument, type DiffSingerVoicebank, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
 import { midiStore } from '#/modules/MIDI/stores';
 
 /** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
@@ -107,16 +108,30 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
                 downloadProgress: vocoderCached ? 1 : 0,
             };
 
-            // ── 5. Populate model registry store ───────────────────────────
+            // ── 5. Build DiffSinger voicebank entries from catalog ─────────
+            const diffSingerVoicebanks: DiffSingerVoicebank[] = DIFFSINGER_VOICEBANK_CATALOG.map((cat) => ({
+                ...cat,
+                status: 'not-downloaded' as const,
+                downloadProgress: 0,
+                models: {
+                    linguistic: { ...cat.models.linguistic },
+                    dur: { ...cat.models.dur },
+                    pitch: { ...cat.models.pitch },
+                    variance: { ...cat.models.variance },
+                    acoustic: { ...cat.models.acoustic },
+                },
+            }));
+
+            // ── 6. Populate model registry store ───────────────────────────
             modelRegistryStore.set({
                 ddspInstruments,
                 kokoroModel,
-                diffSingerVoicebanks: [],
+                diffSingerVoicebanks,
                 vocoder,
                 storageUsedBytes: 0,
             });
 
-            logger.info(`[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel.status}`);
+            logger.info(`[BrowserAi] Registry initialized: Kokoro: ${kokoroModel.status}, Vocoder: ${vocoder.status}, Voicebanks: ${String(diffSingerVoicebanks.length)}`);
 
             // ── 6. Subscribe to midiStore — mark rendered phrases stale on edit ──
             // The unsubscribe function is stored at module scope so it is not garbage-collected

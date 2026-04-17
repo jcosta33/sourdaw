@@ -10,7 +10,8 @@ export type ModelFamily =
     | 'diffsinger-pitch'
     | 'diffsinger-acoustic'
     | 'diffsinger-variance'
-    | 'diffsinger/vocoder';
+    | 'diffsinger/vocoder'
+    | `diffsinger/${string}`;
 
 export type ModelDownloadStatus = 'not-downloaded' | 'downloading' | 'ready' | 'error' | 'stale';
 

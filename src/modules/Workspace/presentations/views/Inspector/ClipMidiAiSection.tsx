@@ -418,11 +418,36 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                             )
                         ) : (
                             /* ── Sung mode (DiffSinger SVS) ── */
-                            voicebanks.length === 0 ? (
+                            voicebanks.every((vb) => vb.status === 'not-downloaded') ? (
                                 <DawEmptyState
                                     compact
-                                    title="Singing voices coming soon"
-                                    description="AI singing voice synthesis is under development. Use the Spoken mode to generate vocal scratch tracks from text."
+                                    title="Download a singing voice"
+                                    description="Render your MIDI notes as a singing vocal. Requires a voice pack (~330 MB) and a singing engine (~52 MB)."
+                                    action={
+                                        <div className="space-y-1.5">
+                                            {voicebanks.map((vb) => (
+                                                <Button
+                                                    key={vb.id}
+                                                    variant="secondary"
+                                                    size="xs"
+                                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                                    onClick={() => {
+                                                        // Download all models in the voicebank sequentially
+                                                        const models = Object.values(vb.models);
+                                                        void (async () => {
+                                                            for (const m of models) {
+                                                                await downloadModel({ modelId: m.id, family: m.family, url: m.url, sizeBytes: m.sizeBytes });
+                                                            }
+                                                        })();
+                                                    }}
+                                                >
+                                                    <Download className="size-3 mr-1" aria-hidden="true" />
+                                                    {vb.name} ({vb.language.toUpperCase()})
+                                                    <DawMicroBadge tone="muted" className="ml-1.5">~{Math.round(vb.totalSizeBytes / 1024 / 1024)} MB</DawMicroBadge>
+                                                </Button>
+                                            ))}
+                                        </div>
+                                    }
                                 />
                             ) : (
                                 <div className="space-y-2">
