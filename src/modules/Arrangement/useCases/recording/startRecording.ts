@@ -44,7 +44,7 @@ export function startRecording(): Clip[] {
             }
         }
 
-        const clipId = `rec-clip-${recordClipId++}`;
+        const clipId = `rec-clip-${crypto.randomUUID()}`;
         const clip: Clip = {
             id: clipId,
             trackId: track.id,

@@ -1,12 +1,44 @@
-# The Master Synthesizer Plugin -- Ultimate Implementation Guide
+# Fermenter — Flagship Master Synth Spec
 
-> **Codebase Annotation:** The Master Synth (Fermenter) is **Heavily Implemented** in the codebase (`crates/daw-dsp/src/fermenter` and `src/modules/Fermenter`). It features the LayerStack, MacroStrip, and wavetable playback. However, it currently uses a basic static wavetable crossfader rather than the fully realized Vital-style spectral morphing engine detailed below. Anti-aliasing via mip-maps, true PM (FM) routing matrices, and GPU-accelerated additive synthesis are **Missing / Pending**.
+> **Codebase annotation:** Fermenter is **Heavily Implemented** (`crates/daw-dsp/src/fermenter`, `src/modules/Fermenter`). LayerStack, MacroStrip, and wavetable playback ship today. Vital-style spectral morphing, wavetable mip-maps, true PM/FM routing matrices, and GPU-accelerated additive synthesis are **Missing / Pending**.
+
+---
+
+## Context
+
+Fermenter is Sourdaw's flagship hybrid synthesizer — the Factory suite's centerpiece instrument. Producers expect a single synth that combines wavetable (Vital-class), virtual analog, FM/PM, additive, granular, sample playback, noise, and physical modeling under one patch format and one UI, with the same DSP compiled to both native and WebAssembly. This spec consolidates the DSP contracts, engine list, parameter system, and RT-safety rules.
+
+Grounded in: `.agents/research/factory/fermenter.md` (structural backbone, DSP formulas / Rust skeletons, Vital spectral engine analysis — consolidated from the earlier `master-plugin*.md` working drafts) and `.agents/research/factory/advanced-instruments.md` thermal-drift requirements (§2.2).
+
+## Goal
+
+After implementation, Fermenter ships every engine defined below under a single patch format, passes the RT-safety contract on native and WASM, and offers parity or superiority vs Vital / Phase Plant / Omnisphere in feature surface and sound quality for the engines in scope.
+
+## Scope
+
+**In scope:** all engines, shared building blocks, parameter smoothing, effects, modulation, macro system, and patch format described below. Thermal drift modeled per §2.2 with ≥ 3 independent drift generators at pairwise-incommensurate frequencies.
+
+**Out of scope:**
+
+- Plugin-hosting behavior (see `../../consolidated/implementation-gaps.md` §4).
+- Instrument-rack integration details beyond Fermenter-as-instrument (see `../features/device-racks.md`).
+
+## Acceptance criteria (release gate)
+
+- [ ] Every Part / Section below has an integration test demonstrating its DSP contract.
+- [ ] RT-safety audit passes (no allocation, no locks, no blocking on the audio thread) — enforced by the repo's standard RT test harness.
+- [ ] Patch-format round-trip: export → re-import yields byte-identical synth state.
+- [ ] Native and WASM builds produce the same output for the same patch + MIDI (within WASM SIMD tolerance).
+- [ ] Thermal drift FFT test (§2.2) shows peaks at the configured frequencies; two-voice beating is audible when voices run long enough.
+- [ ] `cargo test --workspace` and `pnpm typecheck` pass.
+
+---
 
 > **Audience**: An AI coding agent building this plugin from scratch in Rust.
 > **Contract**: Every algorithm has the math, the data structures, and compilable Rust code.
 > No "see external reference." No hand-waving. Everything is inline.
 >
-> **Consolidated from**: master-plugin.md (structural backbone), master-plugin-research.md (deep Rust code, DSP formulas, academic references), master-plugin-research-2.md (Vital spectral engine complete analysis).
+> **Consolidated from**: `.agents/research/factory/fermenter.md` — synthesised from three earlier working drafts (`master-plugin.md`, `master-plugin-research.md`, `master-plugin-research-2.md`) that were merged during research reorganisation. The single research file is now the source of truth for DSP formulas, Rust skeletons, and Vital-style spectral engine analysis.
 >
 > **Contradiction resolutions**:
 >
@@ -1165,6 +1197,77 @@ Phase reset modes:
 
 - Free-running: keep phase between notes (analog-like).
 - Reset: set phase to 0 on note-on (punchy, consistent transients).
+
+### Incommensurate thermal drift (normative)
+
+The single-LFO drift sketch shown earlier in the `VaOscState` / `va_osc_process` example (around lines 976–1074) is **illustrative only** and does NOT meet the analog-fidelity bar. The reference code uses a single sinusoidal `drift_lfo_freq = 0.3 Hz` shared across voices, which causes every voice to drift with identical spectral content — the opposite of real hardware. The authoritative requirement is the model below. Any production implementation MUST satisfy it; the illustrative single-LFO path must not ship as the default drift source.
+
+Real analog VCOs drift ±2–5 cents from thermal noise, power-supply ripple, and component aging. The defining property — what separates "digital with vibrato" from "analog" — is that the drift spectrum has peaks at **multiple, incommensurate (non-rationally-related) frequencies** and every voice is in a different phase relative to every other voice. Two oscillators nominally at the same pitch never cancel perfectly; they beat.
+
+#### Requirements
+
+1. **N independent drift generators per voice.** Each VA voice MUST sum the outputs of at least **N = 3** independent periodic drift generators. Recommended baseline frequencies (Hz): `{0.05, 0.13, 0.31}`. Additional generators (e.g. a 4th at ~0.71 Hz) are permitted. A single LFO is NOT acceptable regardless of its shape or smoothing.
+
+2. **Incommensurate frequencies.** The set of drift frequencies `{f_1, …, f_N}` MUST be pairwise incommensurate: no pair `(f_i, f_j)` may satisfy `f_i / f_j ∈ ℚ` within a tolerance of ±0.5%. Specifically, ratios must avoid small-integer approximations — `0.05 / 0.10 = 1/2` is forbidden, but `0.05 / 0.13 ≈ 0.3846…` is acceptable. The baseline set `{0.05, 0.13, 0.31}` meets this criterion (ratios ≈ 0.3846, 0.1613, 0.4194; no small-integer approximation). Rationale: with rationally related frequencies the composite drift is periodic at their LCM and produces a comb spectrum rather than the dense, non-periodic drift of real hardware.
+
+3. **Per-voice independent seed and phase.** Every voice MUST carry an independent `drift_seed: u64` (allocated at voice construction from a voice-pool RNG — not shared, not derived from voice index) and the initial phase of each of its N drift generators MUST be derived deterministically from that seed. Two voices allocated at the same time for the same note MUST have different seeds and therefore different drift phases. A shared module-level `drift_lfo_phase` is a violation.
+
+4. **Small per-voice frequency jitter.** Each voice's drift frequencies SHOULD be the baseline set multiplied by a per-voice jitter factor `1 + δ_i`, with `δ_i ∈ [−0.05, +0.05]` drawn once from the voice's `drift_seed`. This ensures two voices never drift in lockstep even if they happened to start with identical phases, and keeps the incommensurate property robust against floating-point quantization.
+
+5. **Amplitude mapping.** Total drift in cents per voice MUST be `drift_cents = drift_amount × MAX_CENTS × Σ_i (w_i × sin(2π × f_i × t + φ_i))` where `Σ w_i = 1`, `MAX_CENTS = 5.0`, and `drift_amount ∈ [0, 1]` is the user-facing parameter. At `drift_amount = 0` all voices are frequency-locked; at `drift_amount = 1` the peak-to-peak excursion reaches ±5 cents.
+
+6. **Independence from other modulation.** The drift generators MUST be separate state from LFO modulators, portamento, and the pitch-envelope. They are the lowest modulation layer, summed after all user-accessible modulation, and cannot be disabled except by setting `drift_amount = 0`.
+
+7. **RT-safe.** The drift generators update at control rate (once per block, ≤128 samples) — not per sample — and must not allocate or lock. State is `[f32; N]` phase accumulators per voice; the block-rate computation is N sines per voice per block.
+
+#### Reference structure
+
+```rust
+// Normative replacement for VaOscState drift fields.
+// N = 3 is the minimum. See requirement 1.
+pub struct VoiceDrift {
+    pub phases: [f32; DRIFT_N],       // 0..1, independent per generator
+    pub freqs: [f32; DRIFT_N],        // Hz, per-voice jittered (req. 4)
+    pub weights: [f32; DRIFT_N],      // sum to 1.0 (req. 5)
+}
+
+pub const DRIFT_N: usize = 3;
+pub const DRIFT_BASE_FREQS: [f32; DRIFT_N] = [0.05, 0.13, 0.31];
+pub const DRIFT_MAX_CENTS: f32 = 5.0;
+
+impl VoiceDrift {
+    pub fn new(seed: u64) -> Self {
+        let mut rng = SplitMix64::new(seed);
+        let mut phases = [0.0; DRIFT_N];
+        let mut freqs = [0.0; DRIFT_N];
+        for i in 0..DRIFT_N {
+            phases[i] = rng.next_f32();                         // req. 3
+            let jitter = (rng.next_f32() - 0.5) * 0.10;         // ±5%, req. 4
+            freqs[i] = DRIFT_BASE_FREQS[i] * (1.0 + jitter);
+        }
+        Self { phases, freqs, weights: [1.0 / DRIFT_N as f32; DRIFT_N] }
+    }
+
+    // Call once per control-rate tick. Returns drift in cents before amount scaling.
+    pub fn tick(&mut self, dt_seconds: f32) -> f32 {
+        let mut acc = 0.0;
+        for i in 0..DRIFT_N {
+            self.phases[i] = (self.phases[i] + self.freqs[i] * dt_seconds).fract();
+            acc += self.weights[i] * (self.phases[i] * core::f32::consts::TAU).sin();
+        }
+        acc * DRIFT_MAX_CENTS
+    }
+}
+```
+
+#### Acceptance criteria
+
+- [ ] **FFT shows incommensurate drift spectrum.** Render a single voice holding a 440 Hz sine for ≥ 120 s at 48 kHz with `drift_amount = 1.0`. Extract the instantaneous frequency track (e.g. via Hilbert transform or per-cycle zero-crossing detection), subtract the mean, and FFT the resulting drift signal. The spectrum MUST show at least three peaks within ±5% of the configured frequencies (e.g. bins near 0.05, 0.13, 0.31 Hz for the baseline set), and none of those frequencies may be harmonically related within the 0.5% tolerance of requirement 2.
+- [ ] **Two identical-pitch voices produce audible beating, not silence on inversion.** Allocate two voices with different `drift_seed` values, both set to MIDI note 69 (440 Hz) with `drift_amount = 1.0`, hold for 30 s, mix one inverted against the other, and measure residual RMS. The residual MUST be ≥ −24 dB relative to either voice alone (proving the outputs differ) and MUST exhibit slow amplitude modulation consistent with beating at frequencies on the order of a few Hz (the beat envelope must have measurable periodicity below 10 Hz). A voice pair whose residual is < −60 dB at any point in the window fails this criterion.
+- [ ] **`drift_amount = 0` is fully deterministic.** With `drift_amount = 0`, two voices at identical pitch, velocity, and phase-reset mode MUST produce bit-identical output (hash comparison) across the first 1 s of rendering.
+- [ ] **No shared state.** Code review confirms no module-level, engine-level, or voice-pool-level variable carries drift phase or value. All drift state is per-`Voice`.
+- [ ] **Pairwise frequency ratio check.** A unit test enumerates all pairs `(f_i, f_j)` from the baseline set (after per-voice jitter) and asserts `|f_i / f_j − p/q| ≥ 0.005` for all `p, q ∈ {1, …, 7}`.
+- [ ] **Illustrative single-LFO path removed from default.** The `va_osc_process` example's `drift_lfo_freq = 0.3_f32` branch MUST NOT be reachable in the shipped `Fermenter` engine. Either it is deleted, or it is gated behind a `legacy_single_lfo` feature flag disabled by default.
 
 **Performance and WASM voice budget (from Doc 2)**:
 

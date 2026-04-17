@@ -19,6 +19,14 @@ describe('mutateCrdtDoc', () => {
         mutateCrdtDoc({ id: 'root', changeFn });
 
         expect(automergeRepository.changeDoc).toHaveBeenCalledTimes(1);
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined);
+    });
+
+    it('forwards the optional change message to the repository', () => {
+        const changeFn = vi.fn();
+
+        mutateCrdtDoc({ id: 'root', changeFn, message: 'edited clip name' });
+
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, 'edited clip name');
     });
 });

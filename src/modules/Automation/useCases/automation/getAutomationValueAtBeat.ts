@@ -12,7 +12,11 @@ type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number]
 let _lastLanesRef: readonly AutomationLane[] | null = null;
 const _laneByIdCache = new Map<string, AutomationLane>();
 
-export function getAutomationValueAtBeat(laneId: string, beat: number): number | null {
+export function getAutomationValueAtBeat(
+    laneId: string,
+    beat: number,
+    _visited: Set<string> = new Set(),
+): number | null {
     const state = automationStore.value;
     if (!state) {
         return null;
@@ -26,7 +30,25 @@ export function getAutomationValueAtBeat(laneId: string, beat: number): number |
         }
     }
     const lane = _laneByIdCache.get(laneId);
-    if (!lane || lane.points.length === 0) {
+    if (!lane) {
+        return null;
+    }
+
+    // R-F3.3: Follow linked lane if set
+    if (lane.linkedLaneId) {
+        // Guard against circular links (A→B→A) — break the cycle.
+        if (_visited.has(lane.linkedLaneId)) {
+            return 0;
+        }
+        _visited.add(laneId);
+        const sourceVal = getAutomationValueAtBeat(lane.linkedLaneId, beat, _visited);
+        if (sourceVal !== null) {
+            const scale = lane.linkScale ?? 1;
+            return sourceVal * scale;
+        }
+    }
+
+    if (lane.points.length === 0) {
         return null;
     }
 

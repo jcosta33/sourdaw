@@ -15,6 +15,12 @@ export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
+export { freezeTrack } from './freezeBounce/freezeTrack';
+export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
+export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
+export { flattenTrack } from './freezeBounce/flattenTrack';
+export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
+export { bounceInPlace, bounceToNewTrack, bounceSelection } from './freezeBounce/bounceOperations';
 export { setTrackInput } from './setTrackInput';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
@@ -52,12 +58,16 @@ export { setClipGain } from './clipEditing/setClipGain';
 export { splitClip } from './clipEditing/splitClip';
 export { trimClipEnd } from './clipEditing/trimClipEnd';
 export { trimClipStart } from './clipEditing/trimClipStart';
+export { toggleInlineEditing } from './clipEditing/toggleInlineEditing';
+export { resetOverride } from './clipEditing/resetOverride';
+export { getGrooveOffsetAtBeat } from './groove/applyGrooveTemplate';
 export { deleteTimeRange } from './clipEditing/deleteTimeRange';
 export { crossfadeClips } from './clipEditing/crossfadeClips';
 export { glueClips } from './clipEditing/glueClips';
 export { lockClip } from './clipEditing/lockClip';
 export { muteClip } from './clipEditing/muteClip';
 export { nudgeClip } from './clipEditing/nudgeClip';
+export { slipClipContent } from './clipEditing/slipClipContent';
 
 export { setClipLoop } from './clipLoop/setClipLoop';
 export { setClipLoopLength } from './clipLoop/setClipLoopLength';
@@ -109,9 +119,7 @@ export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParamet
 export { persistDeviceParam } from './device/setDeviceParameter/persistDeviceParam';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
-export { freezeTrack } from './freezeBounce/freezeTrack/freezeTrack';
-export { unfreezeTrack } from './freezeBounce/freezeTrack/unfreezeTrack';
-export { bounceSelection } from './freezeBounce/bounceOperations';
+
 
 export { deleteTime } from './timeOperations/deleteTime';
 export { insertTime, duplicateTimeRange } from './timeOperations/duplicateTimeRange';
@@ -172,6 +180,7 @@ export { soloTrackExclusive } from './toggleTrackState/soloTrackExclusive';
 export { toggleChordTrackFollow } from './toggleTrackState/toggleChordTrackFollow';
 export { toggleInputMonitoring } from './toggleTrackState/toggleInputMonitoring';
 export { toggleSoloSafe } from './toggleTrackState/toggleSoloSafe';
+export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
@@ -235,3 +244,4 @@ export { isDeviceSupportedOnCurrentPlatform } from './isDeviceSupportedOnCurrent
 // ── Command handler access ────────────────────────────────────────────────────
 
 export { getArrangementHandlers } from './getArrangementHandlers';
+export { initStalenessDetection } from './freezeBounce/initStalenessDetection';

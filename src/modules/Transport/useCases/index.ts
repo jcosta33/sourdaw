@@ -52,4 +52,5 @@ export { getTransportState } from './transportQueries/getTransportState';
 export { getTransportStoreValue } from './transportQueries/getTransportStoreValue';
 export { getTempoMapState } from './transportQueries/getTempoMapState';
 export { getTempoAtBeat } from './transportQueries/getTempoAtBeat';
+export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBeat';
 export { updateTransportState } from './transportQueries/updateTransportState';

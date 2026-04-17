@@ -16,6 +16,7 @@ import {
     SCALE_LABELS,
     ALL_GENRES,
     filterTemplates,
+    resolveTemplateScale,
     type PatternTemplate,
     type PatternCategory,
     type PatternGenre,
@@ -25,10 +26,11 @@ import {
     type GenerationParams,
 } from '../../models/midiPatternLibrary';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { selectClip } from '#/modules/Workspace/useCases';
+import { selectClipWithFocus } from '#/modules/Workspace/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 // ── Mini piano-roll preview ──
 
@@ -183,9 +185,15 @@ const TemplateCard = ({
 }: {
     template: PatternTemplate;
     genParams: GenerationParams;
-    onInsert: (t: PatternTemplate) => void;
+    onInsert: (t: PatternTemplate, notes: PatternNote[]) => void;
 }): ReactElement => {
-    const notes = template.generate(genParams);
+    // §14.3.1 — generate once per (template, genParams) combo so the preview
+    // and the "Insert" button operate on the same notes. Random templates
+    // previously generated twice and inserted a different pattern than the
+    // one shown in the mini piano-roll.
+    // §14.6 / G6 — honour the template's `scaleOverride` so identity-carrying
+    // templates (Blues, Dorian Vamp, etc.) do not run on an incompatible scale.
+    const notes = template.generate({ ...genParams, scale: resolveTemplateScale(template, genParams) });
 
     return (
         <DawPickerCard
@@ -201,7 +209,7 @@ const TemplateCard = ({
                     variant="ghost"
                     size="icon-xs"
                     className="h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--color-accent-lavender)]/20 hover:text-[var(--color-accent-lavender)]"
-                    onClick={() => onInsert(template)}
+                    onClick={() => onInsert(template, notes)}
                     title="Insert at playhead"
                     aria-label={`Insert ${template.name} at playhead`}
                 >
@@ -246,37 +254,60 @@ export const PatternBrowser = (): ReactElement => {
         genres: activeGenre ? [activeGenre] : undefined,
     });
 
-    const handleInsertTemplate = (template: PatternTemplate): void => {
+    const handleInsertTemplate = (template: PatternTemplate, notes: PatternNote[]): void => {
         const tState = trackStore.value;
         const selectedTrackId = tState?.selectedTrackId;
-        let targetTrack = tState?.tracks.find((t) => t.id === selectedTrackId && t.kind === 'midi');
-        if (!targetTrack) {
-            targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
+        let targetTrackId: string | undefined = tState?.tracks.find(
+            (t) => t.id === selectedTrackId && t.kind === 'midi'
+        )?.id;
+        if (!targetTrackId) {
+            targetTrackId = tState?.tracks.find((t) => t.kind === 'midi')?.id;
         }
-        if (!targetTrack) {
-            return;
+        // §14.3 / G4 — the AI generation handler auto-creates a MIDI track
+        // when none exists. The pattern browser used to silently return,
+        // which made the whole panel feel broken on audio-only sessions.
+        if (!targetTrackId) {
+            const created = addTrack({ name: `Pattern: ${template.name}`, kind: 'midi' });
+            if (!created) {
+                notifyUser('Could not insert pattern — no MIDI track available', 'error');
+                return;
+            }
+            targetTrackId = created.id;
         }
 
         const transport = getTransportState();
         const startBeat = transport ? transport.playheadPosition : 0;
-        const notes = template.generate(genParams);
         const endBeat = startBeat + template.lengthBeats;
 
         const clip = addClip({
-            trackId: targetTrack.id,
+            trackId: targetTrackId,
             startBeat,
             endBeat,
             name: `🎵 ${template.name} (${key})`,
             type: 'midi',
         });
 
-        if (clip) {
-            for (const note of notes) {
-                addMidiNote(clip.id, note.pitch, note.startBeat, note.durationBeats, note.velocity);
-            }
-            // Open the new clip in the clip editor
-            selectClip(clip.id);
+        if (!clip) {
+            notifyUser('Could not insert pattern — clip creation failed', 'error');
+            return;
         }
+
+        // §14.4 — single-shot store write so inserting a 48-beat pattern
+        // doesn't flood subscribers with one `midiStore.set` per note.
+        batchAddMidiNotes(
+            clip.id,
+            notes.map((note) => ({
+                pitch: note.pitch,
+                startBeat: note.startBeat,
+                duration: note.durationBeats,
+                velocity: note.velocity,
+            })),
+        );
+        // §14.3 / G3 — use `selectClipWithFocus` so selection-aware surfaces
+        // (TakesSection, multi-select, shortcut targets) see the new clip as
+        // well, not just the single `selectedClipId` scalar.
+        selectClipWithFocus(clip.id);
+        notifyUser(`Inserted ${template.name} (${notes.length} notes)`, 'success');
     };
 
     const keyOptions = ALL_KEYS.map((k) => ({ id: k, label: k }));

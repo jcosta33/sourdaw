@@ -17,8 +17,10 @@ export const BeatRulerBar = (): React.ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const loopDragRef = useRef<{ startBeat: number } | null>(null);
-    /** Ephemeral loop preview during drag — avoids flooding transportStore with 60Hz writes. */
+    /** Ephemeral loop preview during shift+drag — avoids flooding transportStore with 60Hz writes. */
     const loopPreviewRef = useRef<{ start: number; end: number } | null>(null);
+    /** Active scrub drag (R-B6): normal drag scrubs the playhead without setting a loop. */
+    const scrubDragRef = useRef<boolean>(false);
     /**
      * §182.1 — per-canvas cache of last-seen dimensions + the background
      * gradient for that height, so the rAF draw loop doesn't
@@ -265,24 +267,39 @@ export const BeatRulerBar = (): React.ReactElement => {
         }
         const beat = getBeat(e.clientX);
 
-        // Set playhead immediately on click
+        // Always seek playhead on click
         seekPlayhead(beat);
 
-        // But also prepare for a drag to create a loop region
-        loopDragRef.current = { startBeat: beat };
+        if (e.shiftKey) {
+            // Shift+drag: set/extend loop region (R-B5 predecessor behavior)
+            loopDragRef.current = { startBeat: beat };
+        } else {
+            // Normal drag: scrub (R-B6) — playhead follows the cursor
+            scrubDragRef.current = true;
+        }
     };
 
     const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
-        if (!loopDragRef.current) {
-            return;
-        }
-        // Only consider it a drag if mouse is actually down (buttons === 1)
+        // Only process if mouse button is held
         if (e.buttons !== 1) {
             loopDragRef.current = null;
             loopPreviewRef.current = null;
+            scrubDragRef.current = false;
             return;
         }
+
         const beat = getBeat(e.clientX);
+
+        if (scrubDragRef.current) {
+            // R-B6: scrub — continuously seek the playhead to follow the cursor
+            seekPlayhead(Math.max(0, beat));
+            return;
+        }
+
+        if (!loopDragRef.current) {
+            return;
+        }
+
         const start = loopDragRef.current.startBeat;
         const lo = Math.min(start, beat);
         const hi = Math.max(start, beat);
@@ -299,6 +316,7 @@ export const BeatRulerBar = (): React.ReactElement => {
     };
 
     const handleMouseUp = () => {
+        scrubDragRef.current = false;
         if (loopDragRef.current) {
             loopDragRef.current = null;
             // Commit the final loop region to the store exactly once on mouseup.
@@ -321,7 +339,7 @@ export const BeatRulerBar = (): React.ReactElement => {
             onDoubleClick={() => {
                 disableLooping();
             }}
-            title="Drag to set loop region · Shift+drag to extend · Click to move playhead"
+            title="Click to seek · Drag to scrub · Shift+drag to set loop region · Double-click to disable loop"
         >
             <canvas ref={setCanvas} className="block w-full" style={{ height: HEIGHT }} />
         </TimelineChromeSurface>

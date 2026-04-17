@@ -75,6 +75,7 @@ export type AppAction =
     | { type: 'armTrack'; payload: { trackId: string; armed: boolean } }
     | { type: 'freezeTrack'; payload: { trackId: string } }
     | { type: 'unfreezeTrack'; payload: { trackId: string } }
+    | { type: 'flattenTrack'; payload: { trackId: string } }
     | { type: 'bounceInPlace'; payload: { trackId: string } }
     | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
     | { type: 'setTempo'; payload: { bpm: number } }

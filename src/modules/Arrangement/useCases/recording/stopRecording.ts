@@ -4,9 +4,26 @@ import { getTransportState } from '#/modules/Transport/useCases';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 
-export function stopRecording(clipIds: string[]): void {
-    // Clear the recording overlay immediately so the canvas stops growing the clip.
+/**
+ * Finalise in-flight recording clips.
+ *
+ * `activeRecordingRef` is the single source of truth for "which clips are
+ * actively recording". This function reads the ref, clears it immediately
+ * (so the timeline overlay stops growing the clip), then materialises the
+ * final `endBeat` into the track store and take lanes.
+ *
+ * Callers do not pass clip IDs — they just signal "recording is stopping"
+ * by calling this function. That keeps Transport from mirroring the same
+ * state; the only writers to `activeRecordingRef` are `startRecording` and
+ * this use case.
+ */
+export function stopRecording(): void {
+    const clipIds = activeRecordingRef.current;
     activeRecordingRef.current = [];
+
+    if (clipIds.length === 0) {
+        return;
+    }
 
     const trackState = getTrackState();
     const transportState = getTransportState();
@@ -15,17 +32,16 @@ export function stopRecording(clipIds: string[]): void {
     }
 
     const endBeat = transportState.playheadPosition;
+    const clipIdSet = new Set(clipIds);
 
     setTrackState({
         ...trackState,
         tracks: trackState.tracks.map((t) => ({
             ...t,
             clips: t.clips.map((c) => {
-                if (!clipIds.includes(c.id)) {return c;}
-                // Audio clips get an exact endBeat from the buffer duration via a
-                // deferred updateClip in toggleRecording — use the playhead as a
-                // provisional value here. MIDI clips have no buffer callback, so
-                // enforce a minimum of 1 beat to prevent zero-length clips.
+                if (!clipIdSet.has(c.id)) {
+                    return c;
+                }
                 const minEnd = c.type === 'midi' ? c.startBeat + 1 : c.startBeat;
                 return { ...c, endBeat: Math.max(minEnd, endBeat) };
             }),
@@ -38,7 +54,7 @@ export function stopRecording(clipIds: string[]): void {
             lanes: tlState.lanes.map((lane) => ({
                 ...lane,
                 takes: lane.takes.map((take) =>
-                    clipIds.includes(take.clipId)
+                    clipIdSet.has(take.clipId)
                         ? { ...take, endBeat: Math.max(take.startBeat + 1, endBeat) }
                         : take
                 ),

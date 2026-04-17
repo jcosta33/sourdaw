@@ -3,10 +3,8 @@
  * All use cases that create setlist items must use this counter.
  */
 
-let itemId = 1;
-
 export function getNextSetlistItemId(): string {
-    return `sli-${itemId++}`;
+    return `sli-${crypto.randomUUID()}`;
 }
 
 export const SETLIST_ITEM_COLORS = [

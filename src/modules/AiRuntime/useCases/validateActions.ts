@@ -19,6 +19,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     armTrack: true,
     freezeTrack: true,
     unfreezeTrack: true,
+    flattenTrack: true,
     bounceInPlace: true,
     duplicateTrack: true,
     reorderTrack: true,

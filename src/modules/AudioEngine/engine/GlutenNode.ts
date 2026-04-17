@@ -10,6 +10,7 @@
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 import { telemetryAllocator, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/gluten/gluten_bg.wasm';
 
@@ -38,6 +39,11 @@ export function isGlutenDevice(deviceType: string): boolean {
 }
 
 export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GlutenNodeResult> {
+    // Gluten's meter readout lives in a SAB telemetry slot; without SAB the
+    // worklet still runs but the UI silently freezes at the default values.
+    // Fail fast with a typed error so `buildDeviceChain` surfaces the reason.
+    requireSharedArrayBuffer('Gluten');
+
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }

@@ -3,6 +3,7 @@ import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../stores/trackStore';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { snapSplitBeatToZeroCrossing } from '../../services/snapSplitBeatToZeroCrossing';
+import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 
 export function splitClip(clipId: string, splitBeat: number): string | null {
     const state = getTrackState();
@@ -11,6 +12,8 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
     }
 
     let newRightClipId: string | null = null;
+    let splitClipType: 'audio' | 'midi' | null = null;
+    let adjustedSplit: number | null = null;
 
     const newTracks = state.tracks.map((t) => {
         const clip = t.clips.find((c) => c.id === clipId);
@@ -26,6 +29,8 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
 
         const rightId = getNextClipId();
         newRightClipId = rightId;
+        splitClipType = clip.type;
+        adjustedSplit = adjustedSplitBeat;
 
         const leftClip: Clip = {
             ...clip,
@@ -56,6 +61,19 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
             ...state,
             tracks: newTracks,
         });
+
+        // For MIDI clips the notes are keyed by clip id with absolute startBeat —
+        // after trimming the source clip, any note past the split point would
+        // become invisible. Partition the notes across the two clip ids so
+        // every note stays visible and playable.
+        if (splitClipType === 'midi' && adjustedSplit !== null) {
+            splitMidiNotesAtBeat({
+                sourceClipId: clipId,
+                newClipId: newRightClipId,
+                splitBeat: adjustedSplit,
+            });
+        }
+
         return newRightClipId;
     }
 

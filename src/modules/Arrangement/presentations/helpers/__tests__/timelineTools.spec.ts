@@ -51,7 +51,7 @@ describe('timelineTools', () => {
 
         it('should call splitClip if a clip is hit', () => {
             vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1' } as any);
-            const track = { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }] };
+            const track = { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }], kind: 'audio' };
             vi.mocked(trackStore).value = { tracks: [track as any] };
             
             handleCutTool(10, 10, 4);
@@ -62,7 +62,7 @@ describe('timelineTools', () => {
     describe('handleDrawTool', () => {
         it('should update drawDragRef and select track if track is hit', () => {
             vi.mocked(hitTestTrack).mockReturnValue('t1');
-            const track = { id: 't1', kind: 'audio' };
+            const track = { id: 't1', kind: 'audio', clips: [] };
             vi.mocked(trackStore).value = { tracks: [track as any] };
             const ref = { current: null };
 

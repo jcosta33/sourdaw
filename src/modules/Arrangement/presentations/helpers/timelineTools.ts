@@ -14,8 +14,10 @@ import { removeClip } from '../../useCases/clip/removeClip';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { automationStore, addAutomationPoint, addAutomationLane } from '#/modules/Automation';
+import { addMidiNote, removeMidiNote } from '#/modules/MIDI';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { trackStore } from '../../stores/trackStore';
+import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 
@@ -67,8 +69,30 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
 
 // ── Draw tool ─────────────────────────────────────────────────────────────────
 
-export const handleDrawTool = (_x: number, y: number, beat: number, drawDragRef: DrawDragRef): boolean => {
-    const trackId = hitTestTrack(y);
+export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: DrawDragRef): boolean => {
+    const hit = hitTestClip(x, y);
+    const trackId = hit?.trackId ?? hitTestTrack(y);
+    
+    if (hit?.noteId && hit.clipId) {
+        // Hitting a note with draw tool: delete it (logic pro style)
+        const noteId = hit.noteId;
+        const clipId = hit.clipId;
+        removeMidiNote(clipId, noteId);
+        return true;
+    }
+
+    if (hit?.clipId && !hit.noteId) {
+        const trackState = trackStore.value;
+        const clip = trackState?.tracks.flatMap(t => t.clips).find(c => c.id === hit.clipId);
+        if (clip?.isInlineEditing && clip.type === 'midi') {
+            // Draw a new note inside the inline clip
+            const pitch = hit.pitch ?? 60;
+            const startBeat = snapToGrid(beat);
+            addMidiNote(hit.clipId, pitch, startBeat, 0.25, 100);
+            return true;
+        }
+    }
+
     if (trackId) {
         const track = trackStore.value?.tracks.find((t) => t.id === trackId);
         const clipType = track?.kind === 'midi' ? 'midi' : 'audio';

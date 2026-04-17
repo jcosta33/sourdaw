@@ -127,6 +127,7 @@ export async function bounceToNewTrack(trackId: string): Promise<void> {
         devices: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',

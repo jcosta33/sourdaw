@@ -3,8 +3,6 @@
  * All use cases that create punch captures or punch regions must use these counters.
  */
 
-let captureId = 1;
-
 export function getNextCaptureId(): string {
-    return `cap-${captureId++}`;
+    return `cap-${crypto.randomUUID()}`;
 }

@@ -28,6 +28,8 @@ export const defaultWorkspaceState: WorkspaceState = {
     chatPanelOpen: false,
     chatPanelWidth: 320,
     rippleEditing: false,
+    dualViewOpen: false,
+    sessionViewWidth: 320,
     automationVisibility: 'hidden',
     automationSubLanes: {},
     scratchPadOpen: false,

@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
     unfreezeTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/freezeBounce/freezeTrack/unfreezeTrack', () => ({
+vi.mock('../../../useCases/freezeBounce/unfreezeTrack', () => ({
     unfreezeTrack: mocks.unfreezeTrack,
 }));
 

@@ -68,7 +68,7 @@ describe('BeatRulerBar', () => {
 
     it('should have correct title attribute', () => {
         const { container } = render(<BeatRulerBar />);
-        expect(container.firstChild).toHaveAttribute('title', expect.stringContaining('Drag to set loop'));
+        expect(container.firstChild).toHaveAttribute('title', expect.stringContaining('drag to set loop'));
     });
 
     it('should call seekPlayhead on mouse down', async () => {

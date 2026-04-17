@@ -1,3 +1,4 @@
+pub mod pitch_edit;
 pub mod engine;
 pub mod psola;
 pub mod utils;

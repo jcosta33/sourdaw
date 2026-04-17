@@ -47,7 +47,11 @@ pub struct CrumbsVoice {
 
     // DSP components
     amp_envelope: AhdsrEnvelope,
-    filter: TptSvf,
+    // Independent L/R filter instances — coefficients are kept in sync via
+    // `set_params`, but state (ic1eq/ic2eq) must NOT be shared across channels
+    // or stereo content cross-talks through the filter memory.
+    filter_l: TptSvf,
+    filter_r: TptSvf,
     filter_type: FilterType,
     filter_enabled: bool,
 
@@ -89,7 +93,8 @@ impl CrumbsVoice {
             loop_end: 0,
             loop_crossfade: LOOP_CROSSFADE_DEFAULT,
             amp_envelope: AhdsrEnvelope::new(sample_rate),
-            filter: TptSvf::new(sample_rate),
+            filter_l: TptSvf::new(sample_rate),
+            filter_r: TptSvf::new(sample_rate),
             filter_type: FilterType::Lowpass,
             filter_enabled: false,
             gain_smoother: ParamSmoother::with_value(sample_rate, 0.01, 1.0),
@@ -143,13 +148,16 @@ impl CrumbsVoice {
 
         // Reset DSP state
         self.amp_envelope.note_on();
-        self.filter.reset();
+        self.filter_l.reset();
+        self.filter_r.reset();
         self.steal_fade = 1.0;
         self.stealing = false;
         self.energy = 0.0;
 
         // Apply filter settings
-        self.filter
+        self.filter_l
+            .set_params(params.filter_cutoff, params.filter_resonance);
+        self.filter_r
             .set_params(params.filter_cutoff, params.filter_resonance);
         self.filter_type = params.filter_type;
         self.filter_enabled = params.filter_cutoff < 19999.0 || params.filter_resonance > 0.01;
@@ -239,13 +247,13 @@ impl CrumbsVoice {
             left
         };
 
-        // Apply filter
+        // Apply filter — independent state per channel so L/R don't cross-talk
+        // through filter memory. Coefficients are identical (kept in sync by
+        // `set_filter_params`), so this is ~2x filter cost but correct stereo.
         let (filtered_left, filtered_right) = if self.filter_enabled {
-            let fl = self.filter.process_mono(left, self.filter_type);
-            // Stereo: process right through the same filter state (coupled stereo).
-            // Slight L/R coupling, but avoids double the filter cost.
+            let fl = self.filter_l.process_mono(left, self.filter_type);
             let fr = if sample_data.is_stereo() {
-                self.filter.process_mono(right, self.filter_type)
+                self.filter_r.process_mono(right, self.filter_type)
             } else {
                 fl
             };
@@ -333,7 +341,8 @@ impl CrumbsVoice {
     }
 
     pub fn set_filter_params(&mut self, cutoff: f32, resonance: f32) {
-        self.filter.set_params(cutoff, resonance);
+        self.filter_l.set_params(cutoff, resonance);
+        self.filter_r.set_params(cutoff, resonance);
         self.filter_enabled = cutoff < 19999.0 || resonance > 0.01;
     }
 

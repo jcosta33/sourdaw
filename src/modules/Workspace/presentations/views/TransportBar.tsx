@@ -36,6 +36,7 @@ export const TransportBar = (): ReactElement => {
         timeDisplayMode,
         rippleEditing,
         virtualKeyboardOpen,
+        dualViewOpen,
         soloMode,
     } = useWorkspaceState();
     const transport = useTransportState();
@@ -89,6 +90,7 @@ export const TransportBar = (): ReactElement => {
                         chatPanelOpen={chatPanelOpen}
                         trackListOpen={trackListOpen}
                         virtualKeyboardOpen={virtualKeyboardOpen}
+                        dualViewOpen={dualViewOpen}
                     />
                 </div>
             </div>

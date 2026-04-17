@@ -28,6 +28,32 @@ export const sessionState: { requestedAssets: Set<string> } = {
     requestedAssets: new Set<string>(),
 };
 
+/**
+ * Global pool for GainNodes to prevent main-thread GC allocations 
+ * during high-frequency audio scheduling ticks.
+ */
+const gainNodePool: GainNode[] = [];
+
+function acquireGainNode(ctx: BaseAudioContext): GainNode {
+    const node = gainNodePool.pop();
+    if (node) {
+        node.gain.cancelScheduledValues(ctx.currentTime);
+        node.gain.setValueAtTime(1, ctx.currentTime);
+        return node;
+    }
+    return ctx.createGain();
+}
+
+function releaseGainNode(node: GainNode, ctx: BaseAudioContext): void {
+    try {
+        node.disconnect();
+        node.gain.cancelScheduledValues(ctx.currentTime);
+        gainNodePool.push(node);
+    } catch {
+        // node might already be disconnected
+    }
+}
+
 export function scheduleAudioClips(
     fromBeat: number,
     toBeat: number,
@@ -44,13 +70,14 @@ export function scheduleAudioClips(
     }
 
     const changes = tempoMapStore.value?.changes ?? [];
+    const ctx = getAudioContext();
 
     for (const track of tracks) {
         if (track.kind !== 'audio' || track.muted) {
             continue;
         }
 
-        if (track.frozen && track.frozenBufferId) {
+        if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
             if (!scheduledFrozenTracks.has(track.id)) {
                 const scheduled = scheduleFrozenTrack(
                     track,
@@ -135,12 +162,13 @@ export function scheduleAudioClips(
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
                 const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
                 const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
-                const fadeGain = getAudioContext().createGain();
+                
+                const fadeGain = acquireGainNode(ctx);
                 (source as SourceWithFade).fadeGainNode = fadeGain;
 
                 const envGainDb = getGainAtBeat(clip.id, iterOffsetBeats);
                 const hasEnvGain = envGainDb !== 0;
-                const envGainNode = hasEnvGain ? getAudioContext().createGain() : null;
+                const envGainNode = hasEnvGain ? acquireGainNode(ctx) : null;
                 if (envGainNode) {
                     envGainNode.gain.value = Math.pow(10, envGainDb / 20);
                 }
@@ -182,6 +210,9 @@ export function scheduleAudioClips(
                             playDuration * stretchRatio + clipAudioOffsetSeconds - bufferOffset
                         );
                     } else {
+                        // Source isn't started, release resources immediately
+                        releaseGainNode(fadeGain, ctx);
+                        if (envGainNode) releaseGainNode(envGainNode, ctx);
                         continue;
                     }
                 }
@@ -232,10 +263,10 @@ export function scheduleAudioClips(
                         activeAudioSources.splice(idx, 1);
                     }
                     if (fadeGain) {
-                        fadeGain.disconnect();
+                        releaseGainNode(fadeGain, ctx);
                     }
                     if (envGainNode) {
-                        envGainNode.disconnect();
+                        releaseGainNode(envGainNode, ctx);
                     }
                 };
             }

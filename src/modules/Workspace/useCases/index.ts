@@ -12,6 +12,7 @@ export { toggleRippleEditing } from './rippleEditing';
 export { getScratchPadHandlers } from './getScratchPadHandlers';
 
 export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelForType';
+export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
 
 // ── Editing Tool ──────────────────────────────────────────────────────────────
 
@@ -41,6 +42,7 @@ export {
     selectClip,
     selectClipWithFocus,
     setClipSelection,
+    setSessionViewWidth,
     setSnapValue,
     setSoloMode,
     setTrackListWidth,
@@ -52,6 +54,7 @@ export {
     toggleClipInSelection,
     toggleCollaborationPanel,
     toggleCommandPalette,
+    toggleDualView,
     toggleInspector,
     toggleMixer,
     toggleSidebar,

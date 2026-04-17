@@ -41,6 +41,28 @@ export function snapToScale(pitch: number, scalePitches: number[]): number {
     return best;
 }
 
+/**
+ * Count how many distinct scale tones fit inside a single octave of a
+ * pre-computed `scalePitches` array (diatonic = 7, pentatonic = 5, blues = 6,
+ * etc.). Used by {@link chordFromDegrees} to wrap by octave instead of
+ * clamping the top index — the old behaviour silently collapsed chord tones
+ * that would have landed above the scale range onto the same top pitch.
+ */
+function detectNotesPerOctave(scalePitches: number[]): number {
+    if (scalePitches.length === 0) {
+        return 1;
+    }
+    const first = scalePitches[0]!;
+    let count = 0;
+    for (const pitch of scalePitches) {
+        if (pitch - first >= 12) {
+            break;
+        }
+        count++;
+    }
+    return count === 0 ? scalePitches.length : count;
+}
+
 /** Build chord from scale degrees (0-indexed) at a beat */
 export function chordFromDegrees(
     degrees: number[],
@@ -50,9 +72,20 @@ export function chordFromDegrees(
     dur: number,
     vel = 80
 ): PatternNote[] {
+    if (scalePitches.length === 0) {
+        return [];
+    }
+    const notesPerOctave = detectNotesPerOctave(scalePitches);
     return degrees.map((deg) => {
-        const idx = Math.min(deg + octaveBase, scalePitches.length - 1);
-        return { pitch: scalePitches[Math.max(0, idx)]!, velocity: vel, startBeat: beat, durationBeats: dur };
+        const absoluteDegree = deg + octaveBase;
+        // §14.4 — wrap scale degrees by octave instead of clamping to the top
+        // pitch. A chord like `[0, 2, 4, 7]` on a short pentatonic scale near
+        // the top of the range used to collapse to four copies of the highest
+        // scale tone; now it climbs into the next octave naturally.
+        const octavesFromBase = Math.floor(absoluteDegree / notesPerOctave);
+        const degreeInOctave = ((absoluteDegree % notesPerOctave) + notesPerOctave) % notesPerOctave;
+        const pitch = scalePitches[degreeInOctave]! + 12 * octavesFromBase;
+        return { pitch, velocity: vel, startBeat: beat, durationBeats: dur };
     });
 }
 

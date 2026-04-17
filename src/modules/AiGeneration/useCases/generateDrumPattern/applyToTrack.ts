@@ -1,13 +1,18 @@
 import { addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
+
+export type ApplyDrumPatternResult = {
+    clipId: string;
+    noteCount: number;
+};
 
 export function applyDrumPatternToTrack(
     trackId: string,
     options: GenerateDrumPatternOptions,
     startBeat: number = 0
-): void {
+): ApplyDrumPatternResult | null {
     const bars = options.bars ?? 4;
     const [numerator] = options.timeSignature ?? [4, 4];
     const totalBeats = bars * numerator;
@@ -21,11 +26,20 @@ export function applyDrumPatternToTrack(
     });
 
     if (!clip) {
-        return;
+        return null;
     }
 
     const { notes } = generateDrumPattern(options);
-    for (const note of notes) {
-        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, note.duration, note.velocity);
-    }
+    // §14.4 — single-shot store write (see `applyChordProgressionToTrack`).
+    batchAddMidiNotes(
+        clip.id,
+        notes.map((note) => ({
+            pitch: note.pitch,
+            startBeat: startBeat + note.startBeat,
+            duration: note.duration,
+            velocity: note.velocity,
+        })),
+    );
+
+    return { clipId: clip.id, noteCount: notes.length };
 }

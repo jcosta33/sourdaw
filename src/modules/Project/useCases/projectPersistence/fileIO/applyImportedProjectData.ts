@@ -59,7 +59,13 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         // but load only the buffer IDs referenced by clips in this project so
         // we don't mass-load unrelated takes from previous sessions.
         const referencedIds = (data.tracks?.tracks ?? [])
-            .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+            .flatMap((t) => {
+                const ids = t.clips.map((c) => c.audioBufferId);
+                if (t.freezeState?.frozenBufferId) {
+                    ids.push(t.freezeState.frozenBufferId);
+                }
+                return ids;
+            })
             .filter((id): id is string => Boolean(id));
         await audioBufferCache.restoreFromIdb(ctx, referencedIds.length > 0 ? referencedIds : undefined);
     }
