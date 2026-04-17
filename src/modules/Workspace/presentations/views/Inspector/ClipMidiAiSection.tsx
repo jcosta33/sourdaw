@@ -418,7 +418,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                             )
                         ) : (
                             /* ── Sung mode (DiffSinger SVS) ── */
-                            voicebanks.every((vb) => vb.status === 'not-downloaded') ? (
+                            !voicebanks.some((vb) => vb.status === 'ready') ? (
                                 <DawEmptyState
                                     compact
                                     title="Download a singing voice"

@@ -299,7 +299,7 @@ const KOKORO_SESSION_ID = 'kokoro-82m-q8';
  *
  * Model inputs:
  *   input_ids  int64[1, seq_len]  — phoneme token IDs with 0-padding at both ends
- *   style      float32[1, 256]    — voice style embedding (indexed by token count)
+ *   style      float32[1, 1, 256]  — voice style embedding (indexed by token count)
  *   speed      float32[1]         — speed multiplier
  *
  * Output: float32 audio at 24 kHz.

@@ -34,16 +34,28 @@ export function updateModelStatus(modelId: string, patch: Partial<Pick<BrowserMo
             m.id === modelId ? { ...m, ...patch } : m
         );
 
-        const updatedVoicebanks = state.diffSingerVoicebanks.map((vb) => ({
-            ...vb,
-            models: {
+        const updatedVoicebanks = state.diffSingerVoicebanks.map((vb) => {
+            const models = {
                 linguistic: vb.models.linguistic.id === modelId ? { ...vb.models.linguistic, ...patch } : vb.models.linguistic,
                 dur: vb.models.dur.id === modelId ? { ...vb.models.dur, ...patch } : vb.models.dur,
                 acoustic: vb.models.acoustic.id === modelId ? { ...vb.models.acoustic, ...patch } : vb.models.acoustic,
                 pitch: vb.models.pitch.id === modelId ? { ...vb.models.pitch, ...patch } : vb.models.pitch,
                 variance: vb.models.variance.id === modelId ? { ...vb.models.variance, ...patch } : vb.models.variance,
-            },
-        }));
+            };
+            // Derive voicebank-level status from its constituent models
+            const allModels = Object.values(models);
+            const allReady = allModels.every((m) => m.status === 'ready');
+            const anyError = allModels.some((m) => m.status === 'error');
+            const anyDownloading = allModels.some((m) => m.status === 'downloading');
+            const vbStatus = allReady ? 'ready' as const
+                : anyError ? 'error' as const
+                : anyDownloading ? 'downloading' as const
+                : vb.status;
+            const vbProgress = anyDownloading
+                ? allModels.reduce((sum, m) => sum + (m.downloadProgress ?? 0), 0) / allModels.length
+                : allReady ? 1 : vb.downloadProgress;
+            return { ...vb, models, status: vbStatus, downloadProgress: vbProgress };
+        });
 
         const kokoroModel = state.kokoroModel?.id === modelId
             ? { ...state.kokoroModel, ...patch }
