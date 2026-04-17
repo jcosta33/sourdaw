@@ -13,10 +13,6 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
     useWorkspaceState: vi.fn(),
 }));
 
-vi.mock('../../hooks/useAppKeyboardShortcuts', () => ({
-    useAppKeyboardShortcuts: vi.fn(),
-}));
-
 vi.mock('../../hooks/useAppEventHandlers', () => ({
     useAppEventHandlers: vi.fn(),
 }));

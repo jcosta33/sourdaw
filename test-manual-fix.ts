@@ -13,15 +13,15 @@ const sourceFile = project.getSourceFiles()[0];
 // Just manually add the imports and vi.mock for this one to test the theory
 sourceFile.addImportDeclaration({
     moduleSpecifier: '#/modules/Transport/repositories/transport/getTransportState',
-    namedImports: ['getTransportState']
+    namedImports: ['getTransportState'],
 });
 sourceFile.addImportDeclaration({
     moduleSpecifier: '#/modules/Transport/repositories/transport/updateTransportState',
-    namedImports: ['updateTransportState']
+    namedImports: ['updateTransportState'],
 });
 sourceFile.insertStatements(sourceFile.getImportDeclarations().length, [
     `vi.mock('#/modules/Transport/repositories/transport/getTransportState');`,
-    `vi.mock('#/modules/Transport/repositories/transport/updateTransportState');`
+    `vi.mock('#/modules/Transport/repositories/transport/updateTransportState');`,
 ]);
 
 sourceFile.saveSync();

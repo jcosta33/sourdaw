@@ -5,6 +5,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+import { isTauri } from '#/utils/tauriBridge';
 import { getCrumbsPosition } from '../repositories/crumbsBridge';
 
 type PositionListener = (frame: number) => void;
@@ -43,6 +44,13 @@ function getOrCreateSession(instanceId: string): PollingSession {
 function startPolling(instanceId: string): void {
     const session = getOrCreateSession(instanceId);
     if (session.pollTimer !== null) {
+        return;
+    }
+
+    // Crumbs position data is sourced from the Rust audio host via Tauri IPC.
+    // On the browser build the bridge has nothing to answer with, so the 30 Hz
+    // poll would otherwise spam a warn per tick — just stay idle.
+    if (!isTauri()) {
         return;
     }
 

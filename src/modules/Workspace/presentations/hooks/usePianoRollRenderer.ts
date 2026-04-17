@@ -121,6 +121,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     const prevDragRef = useRef<unknown>(undefined);
     const prevDrawPreviewRef = useRef<unknown>(undefined);
     const prevRubberRef = useRef<unknown>(undefined);
+    const prevGhostRef = useRef<boolean | null>(null);
 
     // ── Stable draw() ref — updated each rAF tick ───────────────────────
     const drawFnRef = useRef<() => void>(() => {});
@@ -193,6 +194,11 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             const dragDirty = deps.dragPreviewRef.current !== prevDragRef.current;
             const drawDirty = deps.drawPreviewRef.current !== prevDrawPreviewRef.current;
             const rubberDirty = deps.rubberBandRef.current !== prevRubberRef.current;
+            // Ghost-note toggle is a boolean input to the render loop; without a
+            // dirty flag, turning ghost notes off while nothing else changes
+            // leaves them drawn on the cached dynamic layer until the next
+            // unrelated invalidation.
+            const ghostDirty = ghost !== prevGhostRef.current;
 
             const needsRepaint =
                 gridDirty ||
@@ -202,7 +208,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 selDirty ||
                 dragDirty ||
                 drawDirty ||
-                rubberDirty;
+                rubberDirty ||
+                ghostDirty;
 
             if (needsRepaint) {
                 // Update sentinels
@@ -213,6 +220,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 prevDragRef.current = deps.dragPreviewRef.current;
                 prevDrawPreviewRef.current = deps.drawPreviewRef.current;
                 prevRubberRef.current = deps.rubberBandRef.current;
+                prevGhostRef.current = ghost;
 
                 // Rebuild grid cache when layout changed
                 if (gridDirty) {
@@ -266,6 +274,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             prevDrawPreviewRef.current = undefined;
             prevRubberRef.current = undefined;
             prevSelIdsRef.current = null;
+            prevGhostRef.current = null;
         };
 
         rafId = requestAnimationFrame(tick);

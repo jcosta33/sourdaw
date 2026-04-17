@@ -13,6 +13,9 @@ import {
     cleanupUnusedFreezeFiles,
 } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
+import { logCapabilities } from '#/utils/capabilities';
+
+logCapabilities();
 
 window.addEventListener('beforeunload', () => {
     // Attempt GC on window close

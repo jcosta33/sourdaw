@@ -7,6 +7,7 @@ import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
+import { logger } from '#/app/registerDependencies';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
@@ -34,6 +35,11 @@ const recordingOverlayCache: {
     tracks: null,
     handles: [],
 };
+
+// One-shot latch so drift between `transportStore.isRecording` and
+// `activeRecordingRef` is reported once per episode instead of every
+// animation frame. Reset below when the ref drains.
+let recordingInvariantReported = false;
 
 function applyRecordingOverlay(
     cachedModel: TimelineRenderModel,
@@ -181,6 +187,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                             duration: n.duration,
                         })),
                         audioBufferId: clip.audioBufferId,
+                        audioOffsetBeats: clip.audioOffsetBeats,
+                        stretchRatio: clip.stretchRatio,
                         loopEnabled: clip.loopEnabled,
                         loopLength: clip.loopLength,
                         fadeInBeats: clip.fadeInBeats,
@@ -221,8 +229,20 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
 
     const recClips = activeRecordingRef.current;
     if (recClips.length > 0) {
+        // Drift invariant: Transport says we are not recording but the
+        // recording ref still holds clip IDs, meaning a stop path left clips
+        // un-finalised. Surface once so a broken finalisation is visible
+        // without spamming every rAF.
+        if (transportState && transportState.isRecording === false && !recordingInvariantReported) {
+            recordingInvariantReported = true;
+            logger.warn(
+                `[recording] drift detected — transportStore.isRecording=false but activeRecordingRef has ${recClips.length} clip(s): ${recClips.join(', ')}`
+            );
+        }
         return applyRecordingOverlay(cachedModel, recClips);
     }
+
+    recordingInvariantReported = false;
 
     const preview = clipDragPreviewRef.current;
     if (!preview || preview.positions.size === 0) {

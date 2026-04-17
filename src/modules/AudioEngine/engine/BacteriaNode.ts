@@ -8,6 +8,7 @@
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 import { telemetryAllocator, BACTERIA_IDX, BACTERIA_BAND_COUNT, type TelemetrySlot } from './telemetryAllocator';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 /** Linear amplitude → dB with a -100 dB floor (matches input/output dB range). */
 function linearToDb(linear: number): number {
@@ -42,6 +43,10 @@ export function isBacteriaDevice(deviceType: string): boolean {
 }
 
 export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<BacteriaNodeResult> {
+    // Bacteria's per-band meter telemetry lives in a SAB slot. Guard here so
+    // the worklet setup doesn't run pointlessly in an un-isolated environment.
+    requireSharedArrayBuffer('Bacteria');
+
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }

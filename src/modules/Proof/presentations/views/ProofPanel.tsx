@@ -540,8 +540,7 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     bypassed={patch.dynBypassed}
                     value={patch.dynBands[0]?.threshold ?? -20}
                     onChange={(v) => {
-                        const bands = [...patch.dynBands];
-                        bands.forEach((b) => (b.threshold = v));
+                        const bands = patch.dynBands.map((b) => ({ ...b, threshold: v }));
                         setProofParamWithPatch(deviceId, 'dynBands' as never, bands as never);
                     }}
                     min={-60}
@@ -571,11 +570,11 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     bypassed={patch.excBypassed}
                     value={patch.excBands[1]?.drive ?? 0.2}
                     onChange={(v) => {
-                        const bands = [...patch.excBands];
-                        bands.forEach((b) => {
-                            b.drive = v;
-                            b.enabled = v > 0.01;
-                        });
+                        const bands = patch.excBands.map((b) => ({
+                            ...b,
+                            drive: v,
+                            enabled: v > 0.01,
+                        }));
                         setProofParamWithPatch(deviceId, 'excBands' as never, bands as never);
                     }}
                     min={0}

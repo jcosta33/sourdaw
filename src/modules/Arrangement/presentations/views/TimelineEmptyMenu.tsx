@@ -212,7 +212,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 onClick={act(() => {
                     executeAppAction({
                         type: 'generateDrumPattern',
-                        payload: { style: 'rock', bars: 4, trackId: trackId ?? undefined },
+                        payload: { style: 'rock', bars: 4, trackId: trackId ?? undefined, startBeat: beat },
                     });
                 })}
             >
@@ -224,12 +224,38 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 onClick={act(() => {
                     executeAppAction({
                         type: 'generateChordProgression',
-                        payload: { style: 'pop', key: 0, scale: 'major', bars: 4, trackId: trackId ?? undefined },
+                        payload: {
+                            style: 'pop',
+                            key: 0,
+                            scale: 'major',
+                            bars: 4,
+                            trackId: trackId ?? undefined,
+                            startBeat: beat,
+                        },
                     });
                 })}
             >
                 <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
                 Generate Chord Progression
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    executeAppAction({
+                        type: 'generateMelody',
+                        payload: {
+                            style: 'simple',
+                            key: 0,
+                            scale: 'major',
+                            bars: 4,
+                            trackId: trackId ?? undefined,
+                            startBeat: beat,
+                        },
+                    });
+                })}
+            >
+                <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
+                Generate Melody
             </DawMenuButton>
             <DawMenuSeparator className="border-border/50" />
             <DawMenuButton role="menuitem" onClick={handleImportAudio}>

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyChordProgressionToTrack } from '../applyToTrack';
 
-const { addMidiNoteMock } = vi.hoisted(() => ({
-    addMidiNoteMock: vi.fn(),
+const { batchAddMidiNotesMock } = vi.hoisted(() => ({
+    batchAddMidiNotesMock: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -10,7 +10,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
-    addMidiNote: addMidiNoteMock,
+    batchAddMidiNotes: batchAddMidiNotesMock,
 }));
 
 describe('applyChordProgressionToTrack', () => {
@@ -21,6 +21,6 @@ describe('applyChordProgressionToTrack', () => {
     it('does not add notes when addClip fails', () => {
         applyChordProgressionToTrack('t1', { style: 'pop', key: 0, scale: 'major', bars: 1 }, 0);
 
-        expect(addMidiNoteMock).not.toHaveBeenCalled();
+        expect(batchAddMidiNotesMock).not.toHaveBeenCalled();
     });
 });

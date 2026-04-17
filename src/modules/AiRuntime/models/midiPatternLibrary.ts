@@ -27,6 +27,7 @@ export {
     SCALE_INTERVALS,
     PATTERN_CATEGORIES,
     ALL_GENRES,
+    resolveTemplateScale,
 } from './MidiPatternType';
 export type {
     KeyName,

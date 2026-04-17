@@ -103,58 +103,72 @@ export async function loadInstrumentFromManifest(
     // Send clear command before adding new samples.
     nodePort.postMessage({ type: 'clearZones' });
 
-    // Load and decode all samples.
+    // Pre-assign a stable sampleId to every unique file so fetches can run
+    // in parallel without racing on a shared counter. Path segments are
+    // individually `encodeURIComponent`-ed so filenames containing `#`,
+    // spaces, or other reserved characters don't 404.
     const sampleIdMap = new Map<string, number>();
-    let nextSampleId = 0;
-    let loaded = 0;
-    const total = allZones.length;
-
+    const uniqueFiles: string[] = [];
     for (const { zone } of allZones) {
-        if (sampleIdMap.has(zone.file)) {
-            loaded++;
-            if (onProgress) {
-                onProgress(loaded / total);
-            }
-            continue;
-        }
-
-        const url = `${basePath}/${zone.file}`;
-
-        try {
-            const { data, frameCount, channels, sampleRate } = await fetchAndDecode(url);
-
-            // Send sample data to worklet.
-            const transferable = data.buffer;
-            nodePort.postMessage(
-                {
-                    type: 'addSample',
-                    sampleId: nextSampleId,
-                    data: data,
-                    frameCount,
-                    channels,
-                    sampleRate,
-                },
-                [transferable]
-            );
-
-            sampleIdMap.set(zone.file, nextSampleId);
-            nextSampleId++;
-        } catch (err) {
-            logger.warn(`[Levain] Failed to load sample ${zone.file}:`, err);
-            // DO NOT abort the whole instrument if one file 404s or is bad.
-        } finally {
-            loaded++;
-            if (onProgress) {
-                onProgress(loaded / total);
-            }
+        if (!sampleIdMap.has(zone.file)) {
+            sampleIdMap.set(zone.file, uniqueFiles.length);
+            uniqueFiles.push(zone.file);
         }
     }
 
-    // Send zone definitions.
+    const encodePath = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
+
+    let completed = 0;
+    const total = uniqueFiles.length;
+    const loadedFiles = new Set<string>();
+
+    const results = await Promise.allSettled(
+        uniqueFiles.map(async (file) => {
+            const url = `${basePath}/${encodePath(file)}`;
+            try {
+                const decoded = await fetchAndDecode(url);
+                return { file, decoded };
+            } finally {
+                completed++;
+                if (onProgress) {
+                    onProgress(completed / total);
+                }
+            }
+        })
+    );
+
+    for (const result of results) {
+        if (result.status === 'rejected') {
+            logger.warn('[Levain] Failed to load sample:', result.reason);
+            continue;
+        }
+        const { file, decoded } = result.value;
+        const sampleId = sampleIdMap.get(file);
+        if (sampleId === undefined) {
+            continue;
+        }
+        const transferable = decoded.data.buffer;
+        nodePort.postMessage(
+            {
+                type: 'addSample',
+                sampleId,
+                data: decoded.data,
+                frameCount: decoded.frameCount,
+                channels: decoded.channels,
+                sampleRate: decoded.sampleRate,
+            },
+            [transferable]
+        );
+        loadedFiles.add(file);
+    }
+
+    // Send zone definitions. Skip zones whose sample file failed to load
+    // — we pre-assigned every file a sampleId, so we can't rely on the map
+    // alone to detect failures anymore.
     let zoneId = 0;
     for (const { zone, artId } of allZones) {
         const sampleId = sampleIdMap.get(zone.file);
-        if (sampleId === undefined) {
+        if (sampleId === undefined || !loadedFiles.has(zone.file)) {
             continue;
         }
 
