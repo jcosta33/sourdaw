@@ -67,6 +67,18 @@ export function createDefaultGrandBouleState(): GrandBouleState {
 /** @deprecated Use createDefaultGrandBouleState() for fresh instances */
 export const defaultGrandBouleState: GrandBouleState = createDefaultGrandBouleState();
 
-export const grandBouleStore = createStore<GrandBouleState>({
-    initialData: createDefaultGrandBouleState(),
-});
+const storesByDevice = new Map<string, ReturnType<typeof createStore<GrandBouleState>>>();
+
+export function createGrandBouleStore(deviceId: string) {
+    let store = storesByDevice.get(deviceId);
+    if (!store) {
+        store = createStore<GrandBouleState>({
+            initialData: createDefaultGrandBouleState(),
+        });
+        storesByDevice.set(deviceId, store);
+    }
+    return store;
+}
+
+/** @deprecated Use createGrandBouleStore(deviceId) instead. Shim for backwards compatibility. */
+export const grandBouleStore = createGrandBouleStore('default');

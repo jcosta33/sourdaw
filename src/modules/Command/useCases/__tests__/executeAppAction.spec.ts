@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeAppAction } from '../executeAppAction';
 
 const mocks = vi.hoisted(() => ({
-    logger: { error: vi.fn() },
+    logger: {
+        error: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+        setWriters: vi.fn(),
+    },
     setSemanticContext: vi.fn(),
     clearSemanticContext: vi.fn(),
     pushActionHistoryEntry: vi.fn(),

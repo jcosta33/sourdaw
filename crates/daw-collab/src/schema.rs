@@ -65,6 +65,13 @@ pub const KEY_LENGTH: &str = "length";
 pub const KEY_OFFSET: &str = "offset";
 pub const KEY_LOOP: &str = "loop";
 
+pub const KEY_KNEAD_STATE: &str = "kneadState";
+// Keys within kneadState
+pub const KEY_RETUNE_SPEED_MS: &str = "retuneSpeedMs";
+pub const KEY_HUMANIZE_PERCENT: &str = "humanizePercent";
+pub const KEY_FORMANT_PRESERVE: &str = "formantPreserve";
+pub const KEY_KNEAD_BLOBS: &str = "blobs";
+
 /// Map of note ID → note data (for MIDI clips)
 pub const KEY_NOTES: &str = "notes";
 

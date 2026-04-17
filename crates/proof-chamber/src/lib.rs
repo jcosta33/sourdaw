@@ -96,8 +96,18 @@ impl ProofChamberInstance {
         match &mut self.engine {
             ReverbEngine::Plate(p) => p.set_param(name, value),
             ReverbEngine::Fdn8(f) | ReverbEngine::Fdn16(f) => f.set_param(name, value),
-            ReverbEngine::Spring(s) => s.set_param(name, value),
-            ReverbEngine::Convolution(c) => c.set_param(name, value),
+            ReverbEngine::Spring(s) => {
+                s.set_param(name, value);
+                if name == "diffusion" {
+                    s.set_param("dispersion", value);
+                }
+            }
+            ReverbEngine::Convolution(c) => {
+                c.set_param(name, value);
+                if name == "decay" {
+                    c.set_param("ir_stretch", 0.25 + value * 3.75);
+                }
+            }
             ReverbEngine::Hybrid(h) => h.set_param(name, value),
             ReverbEngine::Reverse(r) => r.set_param(name, value),
         }

@@ -1,14 +1,15 @@
+import { type GrandBouleState } from '../../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { createDefaultGrandBouleConfig } from '../../../models/GrandBouleConfig';
 import { createDefaultMidiCalibration } from '../../../models/GrandBouleMidiCalibration';
 import { createDefaultMorphState } from '../../../models/GrandBouleMorphState';
 import { createNeutralPresetParameters } from '../../../models/GrandBoulePreset';
-import { grandBouleStore } from '../../../stores/grandBouleStore';
 import { clamp, updateCalibration } from '../helpers';
 
 function resetGrandBouleStore(): void {
-    grandBouleStore.set({
+    input.store.set({
         config: createDefaultGrandBouleConfig(),
         parameters: createNeutralPresetParameters(),
         pedals: { sustain: 0, unaCorda: false, sostenuto: false },
@@ -43,14 +44,14 @@ describe('calibrateGrandBouleMidi helpers', () => {
 
         it('should merge partial calibration into the store', () => {
             updateCalibration({ velocityFloor: 0.12 });
-            expect(grandBouleStore.value?.midiCalibration.velocityFloor).toBe(0.12);
-            expect(grandBouleStore.value?.midiCalibration.velocityCeiling).toBe(1);
+            expect(input.store.value?.midiCalibration.velocityFloor).toBe(0.12);
+            expect(input.store.value?.midiCalibration.velocityCeiling).toBe(1);
         });
 
         it('should not mutate when grandBouleStore value is null', () => {
-            grandBouleStore.set(null);
+            input.store.set(null);
             updateCalibration({ velocityFloor: 0.2 });
-            expect(grandBouleStore.value).toBeNull();
+            expect(input.store.value).toBeNull();
         });
     });
 });

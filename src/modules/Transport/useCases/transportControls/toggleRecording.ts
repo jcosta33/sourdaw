@@ -8,35 +8,48 @@ import {
     scheduleClick,
     startAudioRecording,
     stopAudioRecording,
+    getCompensationDelay,
 } from '#/modules/AudioEngine/useCases';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 import { startPlayback } from './startPlayback';
 
-let activeRecordingClipIds: string[] = [];
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 
 function beginActualRecording(): void {
     const clips = startRecording();
-    activeRecordingClipIds = clips.map((c) => c.id);
     updateTransportState({ isRecording: true });
+
+    const ctx = getAudioContext();
+    const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
 
     const armedTracks = getTrackStoreState()?.tracks.filter((t) => t.armed) ?? [];
     for (const track of armedTracks) {
         if (track.kind === 'audio') {
+            const trackLatencySec = getCompensationDelay(track.id);
+            const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
+
             const recClip = clips.find((c) => c.trackId === track.id);
             startAudioRecording(track.id, (buffer) => {
                 const bufferId = `rec-${crypto.randomUUID()}`;
                 audioBufferCache.set(bufferId, buffer);
 
                 if (recClip) {
-                    updateClip(recClip.id, (c) => ({ ...c, audioBufferId: bufferId }));
-
                     const transport = getTransportState();
                     const bpm = transport?.tempo ?? 120;
+                    
+                    const offsetBeats = totalLatencySec * (bpm / 60);
+                    const newStartBeat = Math.max(0, recClip.startBeat - offsetBeats);
                     const durationBeats = buffer.duration * (bpm / 60);
-                    const exactEndBeat = recClip.startBeat + durationBeats;
+                    const exactEndBeat = newStartBeat + durationBeats;
+
+                    // Update in one go
                     Promise.resolve().then(() => {
-                        updateClip(recClip.id, (c) => ({ ...c, endBeat: exactEndBeat }));
+                        updateClip(recClip.id, (c) => ({ 
+                            ...c, 
+                            audioBufferId: bufferId,
+                            startBeat: newStartBeat,
+                            endBeat: exactEndBeat
+                        }));
                     });
                 }
             });
@@ -52,8 +65,7 @@ export function toggleRecording(): void {
 
     if (state.isRecording) {
         stopAudioRecording();
-        stopRecording(activeRecordingClipIds);
-        activeRecordingClipIds = [];
+        stopRecording();
         if (countInTimerId !== null) {
             clearTimeout(countInTimerId);
             countInTimerId = null;

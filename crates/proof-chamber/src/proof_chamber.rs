@@ -358,9 +358,12 @@ pub struct ProofChamber {
     lfo_phase_r: f32,
     excursion: f32,
 
-    // Output EQ
-    high_cut: HighCut,
-    low_cut: LowCut,
+    // Output EQ — independent L/R instances so the right channel is not
+    // left unfiltered (and so `set_param` can actually address both).
+    high_cut_l: HighCut,
+    high_cut_r: HighCut,
+    low_cut_l: LowCut,
+    low_cut_r: LowCut,
 
     // Shimmer
     shimmer: GranularShifter,
@@ -464,8 +467,10 @@ impl ProofChamber {
 
             excursion,
 
-            high_cut: HighCut::new(12000.0, sample_rate),
-            low_cut: LowCut::new(80.0, sample_rate),
+            high_cut_l: HighCut::new(12000.0, sample_rate),
+            high_cut_r: HighCut::new(12000.0, sample_rate),
+            low_cut_l: LowCut::new(80.0, sample_rate),
+            low_cut_r: LowCut::new(80.0, sample_rate),
 
             shimmer: GranularShifter::new(sample_rate),
 
@@ -503,11 +508,13 @@ impl ProofChamber {
             }
             "high_cut" => {
                 self.high_cut_freq = value.clamp(1000.0, 20000.0);
-                self.high_cut.set_freq(value, self.sample_rate);
+                self.high_cut_l.set_freq(value, self.sample_rate);
+                self.high_cut_r.set_freq(value, self.sample_rate);
             }
             "low_cut" => {
                 self.low_cut_freq = value.clamp(20.0, 1000.0);
-                self.low_cut.set_freq(value, self.sample_rate);
+                self.low_cut_l.set_freq(value, self.sample_rate);
+                self.low_cut_r.set_freq(value, self.sample_rate);
             }
             "width" => self.width = value.clamp(0.0, 2.0),
             "freeze" => {
@@ -687,12 +694,11 @@ impl ProofChamber {
                 wet_r += sample * gain;
             }
 
-            // Output EQ
-            wet_l = self.high_cut.process(wet_l);
-            wet_l = self.low_cut.process(wet_l);
-            // Note: sharing the same filter state for L and R is incorrect for stereo.
-            // For proper stereo, we'd need separate filter instances. For now, this is
-            // a mono-compatible approximation. TODO: add stereo filter instances.
+            // Output EQ — stereo (independent filter instances per channel).
+            wet_l = self.high_cut_l.process(wet_l);
+            wet_l = self.low_cut_l.process(wet_l);
+            wet_r = self.high_cut_r.process(wet_r);
+            wet_r = self.low_cut_r.process(wet_r);
 
             // Stereo width
             let mid = (wet_l + wet_r) * 0.5;

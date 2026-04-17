@@ -89,6 +89,7 @@ impl Pad {
             "bus_route" => self.bus_route = (value as u8).min(4),
             "engine_type" => {
                 self.engine_type = match value as u32 {
+                    // Generic engines (legacy / non-808 voices)
                     0 => DrumEngineType::Kick,
                     1 => DrumEngineType::Snare,
                     2 => DrumEngineType::HiHat,
@@ -102,6 +103,23 @@ impl Pad {
                     10 => DrumEngineType::Clave,
                     11 => DrumEngineType::Shaker,
                     12 => DrumEngineType::Rim,
+                    // Circuit-faithful engines
+                    13 => DrumEngineType::Kick808,
+                    14 => DrumEngineType::Kick909,
+                    15 => DrumEngineType::Snare808,
+                    16 => DrumEngineType::HiHat808,
+                    17 => DrumEngineType::HiHat909,
+                    18 => DrumEngineType::Clap808,
+                    19 => DrumEngineType::Clap909,
+                    20 => DrumEngineType::Tom808Low,
+                    21 => DrumEngineType::Tom808Mid,
+                    22 => DrumEngineType::Tom808High,
+                    23 => DrumEngineType::Cowbell808,
+                    24 => DrumEngineType::Clave808,
+                    25 => DrumEngineType::Rimshot808,
+                    26 => DrumEngineType::Maracas808,
+                    27 => DrumEngineType::Cr78Drum,
+                    28 => DrumEngineType::Cr78Metallic,
                     _ => DrumEngineType::Kick,
                 };
             }

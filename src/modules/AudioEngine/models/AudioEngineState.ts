@@ -21,12 +21,19 @@ export type BuiltinDeviceNode = {
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
     };
+    /** Generic controls for Web Audio Modules (WAM) / Faust */
+    wamControls?: {
+        setParam: (name: string, value: number) => void;
+        scheduleParam: (name: string, value: number, time: number) => void;
+        destroy?: () => void;
+    };
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
     fermenterControls?: {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
-        setParam: (name: string, value: number) => void;
+        setParam: (name: string, value: number, sampleFrame?: number) => void;
+        setPatch?: (patch: Record<string, unknown>) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
@@ -78,6 +85,7 @@ export type TrackChannelStrip = {
     /** Post-device mute node — sits after all devices, before pan. Mute/solo targets this. */
     postFaderGain: GainNode;
     panNode: StereoPannerNode;
+    meterNode: AudioWorkletNode;
     analyserNode: AnalyserNode;
     muted: boolean;
     soloed: boolean;
@@ -124,6 +132,7 @@ export type AudioEngine = {
     addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void;
     removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
+    updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
     updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void;
     ensureBusStrip(busId: string): BusStrip;

@@ -4,21 +4,34 @@
  */
 
 export type DrumEngineType =
+    // Circuit-faithful 808
     | 'kick-808'
-    | 'kick-909'
-    | 'kick-analog'
     | 'snare-808'
-    | 'snare-analog'
     | 'hihat-closed'
     | 'hihat-open'
     | 'clap'
-    | 'tom'
-    | 'cymbal'
     | 'cowbell'
     | 'clave'
     | 'rimshot'
+    | 'maracas'
+    | 'tom-808-low'
+    | 'tom-808-mid'
+    | 'tom-808-high'
+    // Circuit-faithful 909
+    | 'kick-909'
+    | 'clap-909'
+    | 'hihat-909'
+    // CR-78
+    | 'cr78-drum'
+    | 'cr78-metallic'
+    // Generic / analog voices
+    | 'kick-analog'
+    | 'snare-analog'
+    | 'tom'
+    | 'cymbal'
     | 'shaker'
     | 'perc-generic'
+    // Melodic / textural
     | 'modal-tabla'
     | 'modal-bongo'
     | 'modal-woodblock'
@@ -143,9 +156,9 @@ export const DEFAULT_ENGINE_TYPES: DrumEngineType[] = [
     'hihat-open',
     'clap',
     'rimshot',
-    'tom',
-    'tom',
-    'tom',
+    'tom-808-low',
+    'tom-808-mid',
+    'tom-808-high',
     'cymbal',
     'cymbal',
     'cowbell',

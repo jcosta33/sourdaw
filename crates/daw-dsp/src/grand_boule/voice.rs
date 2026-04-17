@@ -209,11 +209,11 @@ impl PianoVoice {
                 // capped at ~24 hours' worth of samples at 96kHz inside f32
                 // representation — divide by sample_rate for seconds.
                 let age_seconds = self.age_samples as f32 / self.sample_rate.max(1.0);
-                400.0 - age_seconds.min(200.0)
+                400.0 + age_seconds.min(200.0)
             }
             VoiceStage::Active => {
                 // Loud active voices are hardest to steal; quiet ones go first.
-                200.0 - 200.0 * self.amplitude.clamp(0.0, 1.0)
+                200.0 - 200.0 * self.envelope.clamp(0.0, 1.0)
             }
         }
     }
@@ -346,6 +346,7 @@ impl PianoVoice {
     pub fn kill(&mut self) {
         self.stage = VoiceStage::Idle;
         self.amplitude = 0.0;
+        self.envelope = 0.0;
         self.age_samples = 0;
         self.last_string_displacement = 0.0;
         self.hammer = HammerState::idle();

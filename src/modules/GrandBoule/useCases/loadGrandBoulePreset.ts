@@ -1,10 +1,12 @@
+import { type GrandBouleState } from '../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { findBuiltinGrandBoulePreset } from '../repositories/findBuiltinGrandBoulePreset';
-import { grandBouleStore } from '../stores/grandBouleStore';
 
 type LoadGrandBoulePresetInput = {
     engine: GrandBouleEngineHandle;
     presetId: string;
+    store: Store<GrandBouleState>;
 };
 
 export function loadGrandBoulePreset(input: LoadGrandBoulePresetInput): boolean {
@@ -12,13 +14,13 @@ export function loadGrandBoulePreset(input: LoadGrandBoulePresetInput): boolean 
     if (preset === null) {
         return false;
     }
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return false;
     }
 
     // Update the store.
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         parameters: { ...preset.parameters },
         config: { ...state.config, activePresetId: preset.id },

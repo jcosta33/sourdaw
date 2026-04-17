@@ -342,6 +342,7 @@ impl ToasterEngine {
             self.sample_rate,
             pad_cfg.filter_cutoff,
             pad_cfg.filter_resonance,
+            pad_cfg.is_open,
         );
 
         // Pitch from MIDI note: 60 = pad's base pitch, each semitone shifts ±1
@@ -360,7 +361,6 @@ impl ToasterEngine {
         self.voices[voice_idx].set_engine_param("pitch_amount", pad_cfg.pitch_amount);
         self.voices[voice_idx].set_engine_param("pitch_decay", pad_cfg.pitch_decay);
         self.voices[voice_idx].set_engine_param("noise_level", pad_cfg.noise_level);
-        self.voices[voice_idx].set_engine_param("open", if pad_cfg.is_open { 1.0 } else { 0.0 });
     }
 
     pub fn note_off(&mut self, pad: u8) {

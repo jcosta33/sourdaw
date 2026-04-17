@@ -1,0 +1,193 @@
+/// Sample data storage and sample pool.
+///
+/// Holds decoded PCM audio in memory. Stereo samples are stored as
+/// separate left/right channel vectors for cache-friendly per-channel access.
+use super::types::{SampleCategory, SampleId, SampleMeta};
+
+// ── Sample Data ────────────────────────────────────────────────────────
+
+/// Decoded PCM audio data for a single sample.
+#[derive(Debug, Clone)]
+pub struct SampleData {
+    /// Left channel (or mono) PCM frames.
+    pub left: Vec<f32>,
+    /// Right channel PCM frames. Empty for mono samples.
+    pub right: Vec<f32>,
+    /// Metadata about this sample.
+    pub meta: SampleMeta,
+}
+
+impl SampleData {
+    /// Create a mono sample from raw PCM data.
+    pub fn from_mono(data: Vec<f32>, sample_rate: u32) -> Self {
+        let frame_count = data.len() as u32;
+        Self {
+            left: data,
+            right: Vec::new(),
+            meta: SampleMeta {
+                sample_rate,
+                channels: 1,
+                frame_count,
+                duration_secs: frame_count as f64 / sample_rate as f64,
+                detected_root: None,
+                detected_bpm: None,
+                category: SampleCategory::Unknown,
+            },
+        }
+    }
+
+    /// Create a stereo sample from separate channel data.
+    pub fn from_stereo(left: Vec<f32>, right: Vec<f32>, sample_rate: u32) -> Self {
+        let frame_count = left.len().min(right.len()) as u32;
+        Self {
+            left,
+            right,
+            meta: SampleMeta {
+                sample_rate,
+                channels: 2,
+                frame_count,
+                duration_secs: frame_count as f64 / sample_rate as f64,
+                detected_root: None,
+                detected_bpm: None,
+                category: SampleCategory::Unknown,
+            },
+        }
+    }
+
+    /// Create a stereo sample from interleaved data (L R L R ...).
+    pub fn from_interleaved(interleaved: &[f32], sample_rate: u32, channels: u32) -> Self {
+        if channels == 1 {
+            return Self::from_mono(interleaved.to_vec(), sample_rate);
+        }
+
+        let frame_count = interleaved.len() / channels as usize;
+        let mut left = Vec::with_capacity(frame_count);
+        let mut right = Vec::with_capacity(frame_count);
+
+        for frame in interleaved.chunks(channels as usize) {
+            left.push(frame[0]);
+            if frame.len() > 1 {
+                right.push(frame[1]);
+            } else {
+                right.push(frame[0]);
+            }
+        }
+
+        Self {
+            left,
+            right,
+            meta: SampleMeta {
+                sample_rate,
+                channels: 2,
+                frame_count: frame_count as u32,
+                duration_secs: frame_count as f64 / sample_rate as f64,
+                detected_root: None,
+                detected_bpm: None,
+                category: SampleCategory::Unknown,
+            },
+        }
+    }
+
+    /// True if this is a stereo sample.
+    pub fn is_stereo(&self) -> bool {
+        !self.right.is_empty()
+    }
+
+    /// Total number of frames.
+    pub fn frame_count(&self) -> usize {
+        self.left.len()
+    }
+
+    /// Read a sample from the left channel at a given frame index.
+    /// Returns 0.0 for out-of-bounds access (safe for interpolation guard samples).
+    pub fn read_left(&self, frame: usize) -> f32 {
+        if frame < self.left.len() {
+            self.left[frame]
+        } else {
+            0.0
+        }
+    }
+
+    /// Read a sample from the right channel at a given frame index.
+    /// Falls back to left channel for mono samples.
+    pub fn read_right(&self, frame: usize) -> f32 {
+        if self.right.is_empty() {
+            self.read_left(frame)
+        } else if frame < self.right.len() {
+            self.right[frame]
+        } else {
+            0.0
+        }
+    }
+}
+
+// ── Sample Pool ────────────────────────────────────────────────────────
+
+/// Arena-based sample storage indexed by SampleId.
+///
+/// Samples are never removed during playback — only added.
+/// The pool is owned by the management thread and shared read-only
+/// with the audio thread via Arc (for the in-memory path).
+#[derive(Debug, Clone)]
+pub struct SamplePool {
+    samples: Vec<Option<std::sync::Arc<SampleData>>>,
+    next_id: SampleId,
+}
+
+impl SamplePool {
+    pub fn new() -> Self {
+        Self {
+            samples: Vec::new(),
+            next_id: 0,
+        }
+    }
+
+    /// Add a sample to the pool and return its ID.
+    pub fn add(&mut self, sample: std::sync::Arc<SampleData>) -> SampleId {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        if (id as usize) < self.samples.len() {
+            self.samples[id as usize] = Some(sample);
+        } else {
+            // Extend to fit
+            while self.samples.len() < id as usize {
+                self.samples.push(None);
+            }
+            self.samples.push(Some(sample));
+        }
+
+        id
+    }
+
+    /// Set a sample at a specific ID (useful for synced pools).
+    pub fn set(&mut self, id: SampleId, sample: std::sync::Arc<SampleData>) {
+        if (id as usize) < self.samples.len() {
+            self.samples[id as usize] = Some(sample);
+        } else {
+            while self.samples.len() < id as usize {
+                self.samples.push(None);
+            }
+            self.samples.push(Some(sample));
+        }
+        if id >= self.next_id {
+            self.next_id = id + 1;
+        }
+    }
+
+    /// Get a reference to a sample by ID.
+    pub fn get(&self, id: SampleId) -> Option<&std::sync::Arc<SampleData>> {
+        self.samples.get(id as usize).and_then(|slot| slot.as_ref())
+    }
+
+    /// Get the number of loaded samples.
+    pub fn count(&self) -> usize {
+        self.samples.iter().filter(|s| s.is_some()).count()
+    }
+}
+
+impl Default for SamplePool {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -1,5 +1,7 @@
+import { type Store } from '#/infra/store/types';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { setMidiCalibrationParam } from './helpers';
 
-export const setVelocityCurveExponent = (value: number): void => {
-    setMidiCalibrationParam('velocityCurveExponent', value);
+export const setVelocityCurveExponent = (input: { store: Store<GrandBouleState>; value: number }): void => {
+    setMidiCalibrationParam(input.store, 'velocityCurveExponent', input.value);
 };

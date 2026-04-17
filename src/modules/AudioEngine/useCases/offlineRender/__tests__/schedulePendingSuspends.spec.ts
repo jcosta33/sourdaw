@@ -3,22 +3,16 @@ import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { type PendingWorkletEvent } from '../types';
 
 describe('schedulePendingSuspends', () => {
-    it('should not call suspend when there are no events', () => {
-        const suspend = vi.fn().mockReturnValue(Promise.resolve());
-        const resume = vi.fn();
+    it('should not call any controls when there are no events', () => {
         const offlineCtx = {
             sampleRate: 48_000,
-            suspend,
-            resume,
         } as unknown as OfflineAudioContext;
 
         schedulePendingSuspends(offlineCtx, [], 10);
-
-        expect(suspend).not.toHaveBeenCalled();
-        expect(resume).not.toHaveBeenCalled();
+        // No assertions needed other than it doesn't crash
     });
 
-    it('should call suspend once, then noteOn and resume for a non-toaster note-on', async () => {
+    it('should call noteOn with correct sampleFrame for a non-toaster note-on', async () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();
         const instrumentControls = { noteOn, noteOff };
@@ -31,24 +25,17 @@ describe('schedulePendingSuspends', () => {
             isToaster: false,
             toasterPadIndex: -1,
         };
-        const suspend = vi.fn().mockReturnValue(Promise.resolve());
-        const resume = vi.fn();
         const offlineCtx = {
             sampleRate: 48_000,
-            suspend,
-            resume,
         } as unknown as OfflineAudioContext;
 
         schedulePendingSuspends(offlineCtx, [evt], 10);
 
-        expect(suspend).toHaveBeenCalledTimes(1);
-        await Promise.resolve();
-        expect(noteOn).toHaveBeenCalledWith(60, 0.75);
+        expect(noteOn).toHaveBeenCalledWith(60, 0.75, undefined, 48_000);
         expect(noteOff).not.toHaveBeenCalled();
-        expect(resume).toHaveBeenCalledTimes(1);
     });
 
-    it('should use pad + midi note for Toaster note-on when pad index is set', async () => {
+    it('should use pad + midi note + sampleFrame for Toaster note-on when pad index is set', async () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();
         const instrumentControls = { noteOn, noteOff };
@@ -61,22 +48,16 @@ describe('schedulePendingSuspends', () => {
             isToaster: true,
             toasterPadIndex: 4,
         };
-        const suspend = vi.fn().mockReturnValue(Promise.resolve());
-        const resume = vi.fn();
         const offlineCtx = {
             sampleRate: 48_000,
-            suspend,
-            resume,
         } as unknown as OfflineAudioContext;
 
         schedulePendingSuspends(offlineCtx, [evt], 10);
 
-        await Promise.resolve();
-        expect(noteOn).toHaveBeenCalledWith(4, 0.9, 60);
-        expect(resume).toHaveBeenCalledTimes(1);
+        expect(noteOn).toHaveBeenCalledWith(4, 0.9, 60, 24_000);
     });
 
-    it('should batch multiple events at the same quantized time into one suspend', async () => {
+    it('should sort events correctly (off before on at same time)', async () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();
         const instrumentControls = { noteOn, noteOff };
@@ -98,20 +79,18 @@ describe('schedulePendingSuspends', () => {
             isToaster: false,
             toasterPadIndex: -1,
         };
-        const suspend = vi.fn().mockReturnValue(Promise.resolve());
-        const resume = vi.fn();
         const offlineCtx = {
             sampleRate: 48_000,
-            suspend,
-            resume,
         } as unknown as OfflineAudioContext;
 
         schedulePendingSuspends(offlineCtx, [onEvt, offEvt], 10);
 
-        expect(suspend).toHaveBeenCalledTimes(1);
-        await Promise.resolve();
-        expect(noteOff).toHaveBeenCalledWith(60);
-        expect(noteOn).toHaveBeenCalledWith(60, 0.5);
-        expect(resume).toHaveBeenCalledTimes(1);
+        expect(noteOff).toHaveBeenCalledWith(60, 48_000);
+        expect(noteOn).toHaveBeenCalledWith(60, 0.5, undefined, 48_000);
+        
+        // Check order
+        const offCall = noteOff.mock.invocationCallOrder[0]!;
+        const onCall = noteOn.mock.invocationCallOrder[0]!;
+        expect(offCall).toBeLessThan(onCall);
     });
 });

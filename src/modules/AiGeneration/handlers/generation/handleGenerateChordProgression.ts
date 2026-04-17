@@ -15,7 +15,7 @@ export const handleGenerateChordProgression = createGenerationHandler<'generateC
             ? (action.payload.voicing as ChordVoicing)
             : 'close';
 
-        applyChordProgressionToTrack(
+        return applyChordProgressionToTrack(
             trackId,
             { style: style as ChordProgressionStyle, key, scale, bars: action.payload.bars, voicing },
             playheadBeat

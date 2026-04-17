@@ -1,3 +1,5 @@
+import { type GrandBouleState } from '../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule sustain pedal position (CC64).
  *
@@ -6,20 +8,20 @@
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
-import { grandBouleStore } from '../stores/grandBouleStore';
 
 type SetGrandBouleSustainInput = {
     engine: GrandBouleEngineHandle;
     position: number;
+    store: Store<GrandBouleState>;
 };
 
 export const setGrandBouleSustain = (input: SetGrandBouleSustainInput): void => {
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return;
     }
     const clamped = Math.max(0, Math.min(1, input.position));
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         pedals: { ...state.pedals, sustain: clamped },
     });

@@ -68,13 +68,17 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        if (!input || input.length < 2 || !output || output.length < 2) {return true;}
+        // Accept mono by duplicating input[0] to the right channel.
+        // Previously this early-returned on `input.length < 2`, silently dropping
+        // audio from any mono upstream.
+        if (!input || input.length < 1 || !input[0] || !output || output.length < 2) {return true;}
 
-        const frames = input[0].length;
+        const leftIn = input[0];
+        const rightIn = input[1] ?? input[0];
+        const frames = leftIn.length;
 
         try {
-            // process() takes Float32Array inputs directly — no manual malloc needed
-            const leftPtr = this._instance.process(input[0], input[1] ?? input[0], frames);
+            const leftPtr = this._instance.process(leftIn, rightIn, frames);
             const rightPtr = this._instance.get_right_ptr();
 
             const mem = this._memory.buffer;

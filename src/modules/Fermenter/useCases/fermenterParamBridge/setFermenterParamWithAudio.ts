@@ -1,7 +1,6 @@
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { setFermenterParam } from '../../stores/fermenterStore';
-import { getAllTracks, persistDeviceParam } from '#/modules/Arrangement/useCases';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { getFermenterDependencies } from '../fermenterDependencies';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 import type { DeviceRef } from './helpers';
 import { createFindDeviceRef } from './helpers';
@@ -10,9 +9,17 @@ import { createFindDeviceRef } from './helpers';
 type FermenterBatchEntry = { ref: DeviceRef; key: string; value: number };
 const paramBatcher = createRafBatcher<FermenterBatchEntry>();
 
-const findDeviceRef = createFindDeviceRef(getAllTracks);
+let findDeviceRef: ReturnType<typeof createFindDeviceRef> | null = null;
+
+function getFindDeviceRef() {
+    if (!findDeviceRef) {
+        findDeviceRef = createFindDeviceRef(getFermenterDependencies().getAllTracks);
+    }
+    return findDeviceRef;
+}
 
 function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
+    const { updateDeviceParam, persistDeviceParam } = getFermenterDependencies();
     updateDeviceParam(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
     persistDeviceParam(entry.ref.deviceId, entry.key, entry.value);
 }
@@ -24,7 +31,7 @@ function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
 export function setFermenterParamWithAudio(deviceId: string, key: keyof FermenterPatch, value: number): void {
     setFermenterParam(deviceId, key, value);
 
-    const ref = findDeviceRef(deviceId);
+    const ref = getFindDeviceRef()(deviceId);
     if (!ref) {
         return;
     }

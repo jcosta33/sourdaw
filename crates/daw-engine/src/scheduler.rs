@@ -175,7 +175,7 @@ impl AudioScheduler {
             }
             match &mut effect.instance {
                 PluginCore::Knead(engine) => {
-                    engine.process_analysis_frame(left);
+                    engine.process_block(left, right);
                 }
                 PluginCore::Native(plugin) => {
                     if effect.pending_midi.is_empty() {

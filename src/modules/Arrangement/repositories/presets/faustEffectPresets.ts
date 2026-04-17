@@ -152,7 +152,6 @@ export const FAUST_EFFECT_PRESETS: SoundPreset[] = [
             faustEffect('faust-tape-delay', 'Space Echo', {
                 delay: 0.5,
                 feedback: 0.85,
-                wow_flutter: 0.6,
                 tone: 2500,
                 dry_wet: 0.4,
             }),
@@ -172,7 +171,6 @@ export const FAUST_EFFECT_PRESETS: SoundPreset[] = [
             faustEffect('faust-tape-delay', 'Dub Delay', {
                 delay: 0.375, // Assuming tempo-synced or roughly dotted 8th at 120bpm
                 feedback: 0.7,
-                wow_flutter: 0.3,
                 tone: 1500,
                 dry_wet: 0.5,
             }),

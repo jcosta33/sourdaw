@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyDrumPatternToTrack } from '../applyToTrack';
 
-const { addMidiNoteMock } = vi.hoisted(() => ({
-    addMidiNoteMock: vi.fn(),
+const { batchAddMidiNotesMock } = vi.hoisted(() => ({
+    batchAddMidiNotesMock: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -10,7 +10,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
-    addMidiNote: addMidiNoteMock,
+    batchAddMidiNotes: batchAddMidiNotesMock,
 }));
 
 describe('applyDrumPatternToTrack', () => {
@@ -25,6 +25,6 @@ describe('applyDrumPatternToTrack', () => {
             0
         );
 
-        expect(addMidiNoteMock).not.toHaveBeenCalled();
+        expect(batchAddMidiNotesMock).not.toHaveBeenCalled();
     });
 });

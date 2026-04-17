@@ -10,5 +10,5 @@ pub mod model_download;
 pub mod native_llm;
 pub mod plugin_gui;
 pub mod plugins;
-pub mod sampler;
+pub mod crumbs;
 pub mod speech;

@@ -45,9 +45,9 @@ describe('NativeDspDeviceStrategy', () => {
         strategy.destroy();
 
         expect(setBypass).toHaveBeenCalledWith(true);
-        expect(noteOn).toHaveBeenNthCalledWith(1, 60, 100, undefined);
-        expect(noteOn).toHaveBeenNthCalledWith(2, 60, 100, 72);
-        expect(noteOff).toHaveBeenCalledWith(60);
+        expect(noteOn).toHaveBeenNthCalledWith(1, 60, 100, undefined, undefined);
+        expect(noteOn).toHaveBeenNthCalledWith(2, 60, 100, 72, undefined);
+        expect(noteOff).toHaveBeenCalledWith(60, undefined);
         expect(destroy).toHaveBeenCalled();
     });
 

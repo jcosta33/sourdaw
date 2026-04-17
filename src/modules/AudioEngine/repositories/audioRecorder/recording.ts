@@ -137,7 +137,7 @@ export const startAudioRecording = inject({ logger })(
                 recordingSession.recordingWorker.onmessage = ({ data }: MessageEvent): void => {
                     const msg = data as
                         | { type: 'ready' }
-                        | { type: 'pcm'; samples: Float32Array; sampleRate: number }
+                        | { type: 'wav'; buffer: ArrayBuffer }
                         | { type: 'error'; message: string };
 
                     if (msg.type === 'ready') {
@@ -145,9 +145,9 @@ export const startAudioRecording = inject({ logger })(
                         recordingSession.recordingNode?.port.postMessage({ type: 'start' });
                         recordingSession.recordingWorker?.postMessage({ type: 'start' });
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
-                    } else if (msg.type === 'pcm') {
-                        // Worker has flushed OPFS → build AudioBuffer on the main thread.
-                        buildAndDeliver(msg.samples, msg.sampleRate, ctx);
+                    } else if (msg.type === 'wav') {
+                        // Worker has flushed OPFS → decode WAV on the main thread.
+                        decodeAndDeliver(msg.buffer, ctx);
                     } else if (msg.type === 'error') {
                         logger.error(new Error(`Recording worker error: ${msg.message}`));
                         cleanupNodes();
@@ -188,18 +188,21 @@ export function stopAudioRecording(): void {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function buildAndDeliver(samples: Float32Array, sampleRate: number, ctx: AudioContext): void {
+async function decodeAndDeliver(wavBuffer: ArrayBuffer, ctx: AudioContext): Promise<void> {
     const cb = recordingSession.onRecordingComplete;
     recordingSession.onRecordingComplete = null;
 
-    if (!cb || samples.length === 0) {
+    if (!cb || wavBuffer.byteLength <= 44) {
         terminateWorker();
         return;
     }
 
-    const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-    buffer.getChannelData(0).set(samples);
-    cb(buffer);
+    try {
+        const buffer = await ctx.decodeAudioData(wavBuffer);
+        cb(buffer);
+    } catch (err) {
+        logger.error(new Error('Failed to decode recorded audio', { cause: err }));
+    }
 
     terminateWorker();
 }

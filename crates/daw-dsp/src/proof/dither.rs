@@ -30,10 +30,16 @@ impl TpdfDither {
 
     #[inline]
     pub fn process_sample(&mut self, x: f32) -> f32 {
+        // Quantisation step: 2^-(bits-1) for signed range [-1, +1).
         let lsb = 2.0_f32.powi(-(self.bit_depth as i32 - 1));
+        // TPDF: sum of two independent uniform [-0.5, +0.5] samples scaled by lsb.
         let r1 = self.next_random();
         let r2 = self.next_random();
-        x + (r1 + r2) * lsb
+        let dithered = x + (r1 + r2) * lsb;
+        // Round to the quantisation grid — this is what makes dither meaningful.
+        // Without it, we would only be adding noise, not reducing harmonic artefacts
+        // from bit-depth reduction.
+        (dithered / lsb).round() * lsb
     }
 }
 

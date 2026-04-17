@@ -4,21 +4,24 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/utils/UI/resolveToken';
+import { useFermenterBuffer } from '../hooks/useFermenterTelemetry';
 
 type OscilloscopeProps = {
-    buffer: Float32Array | null;
+    deviceId: string;
     width?: number;
     height?: number;
     color?: string;
 };
 
 export const Oscilloscope = ({
-    buffer,
+    deviceId,
     width = 200,
     height = 64,
     color = 'var(--color-accent-lavender)',
 }: OscilloscopeProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    const buffer = useFermenterBuffer(deviceId);
 
     useEffect(() => {
         const canvas = canvasRef.current;

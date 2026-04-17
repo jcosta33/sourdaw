@@ -4,6 +4,20 @@
 import { eventBus, logger } from './registerDependencies';
 import { initToasterSubscribers } from '#/modules/Toaster/useCases';
 import { initBrowserAi } from '#/modules/BrowserAi';
+import { setFermenterDependencies } from '#/modules/Fermenter/useCases/fermenterDependencies';
+import { getAllTracks, persistDeviceParam, persistDevicePatch } from '#/modules/Arrangement/useCases';
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
+import { logCapabilities } from '#/utils/capabilities';
+
+logCapabilities();
+
+setFermenterDependencies({
+    getAllTracks,
+    persistDeviceParam,
+    persistDevicePatch,
+    updateDeviceParam,
+    updateDevicePatch,
+});
 
 initToasterSubscribers();
 

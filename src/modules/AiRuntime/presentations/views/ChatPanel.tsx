@@ -1,4 +1,4 @@
-import { type ReactElement, type CSSProperties, useState, useRef, useEffect, type KeyboardEvent } from 'react';
+import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -22,6 +22,7 @@ import { ChatComposer } from '../components/ChatComposer';
 const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }): ReactElement => {
     const [expanded, setExpanded] = useState(isStreaming ?? false);
     const prevStreamingRef = useRef(isStreaming);
+    const regionId = useId();
 
     useEffect(() => {
         // Auto-collapse when we finish streaming
@@ -35,6 +36,9 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
         <button
             type="button"
             onClick={() => setExpanded(!expanded)}
+            aria-expanded={expanded}
+            aria-controls={regionId}
+            aria-label={expanded ? 'Collapse reasoning' : 'Expand reasoning'}
             className="flex flex-col w-full max-w-[92%] mb-1 text-left"
         >
             <div className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors">
@@ -45,11 +49,16 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
                 ) : null}
             </div>
             {expanded ? (
-                <div className="mt-1 px-2 py-1.5 rounded bg-surface-inset/50 border border-border/20 text-[9px] text-muted-foreground/40 leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto w-full">
+                <div
+                    id={regionId}
+                    role="region"
+                    aria-label="Reasoning content"
+                    className="mt-1 px-2 py-1.5 rounded bg-surface-inset/50 border border-border/20 text-[9px] text-muted-foreground/40 leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto w-full"
+                >
                     {reasoning}
-                    {isStreaming && (
+                    {isStreaming ? (
                         <span className="inline-block w-1 h-2.5 bg-muted-foreground/40 ml-1 translate-y-[2px] animate-pulse" />
-                    )}
+                    ) : null}
                 </div>
             ) : null}
         </button>

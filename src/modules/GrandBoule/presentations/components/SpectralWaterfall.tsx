@@ -15,8 +15,7 @@ const DISPLAY_COLS = 176; // 2 pixels per piano key (88 × 2)
 const HISTORY_FRAMES = 128;
 
 type SpectralWaterfallProps = {
-    /** Latest FFT magnitude frame, normalised to [0, 1]. */
-    fftFrame: Float32Array | null;
+    analyser: AnalyserNode | null;
     className?: string;
 };
 
@@ -58,12 +57,12 @@ function colorMap(mag: number): [number, number, number, number] {
     return [r, g, b, a];
 }
 
-export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProps): ReactElement => {
+export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    const frameRef = useRef(fftFrame);
-    frameRef.current = fftFrame;
+    const analyserRef = useRef(analyser);
+    analyserRef.current = analyser;
 
     // Log-frequency history ring: each row has DISPLAY_COLS values.
     const historyRef = useRef<Float32Array[]>(
@@ -104,13 +103,32 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
         const imgData = offscreenCtx.createImageData(DISPLAY_COLS, HISTORY_FRAMES);
 
         let raf = 0;
+        let dbBuffer: Float32Array | null = null;
+        let normBuffer: Float32Array | null = null;
+        let lastAnalyser: AnalyserNode | null = null;
+
         const render = (): void => {
-            const frame = frameRef.current;
+            const currentAnalyser = analyserRef.current;
             const { width, height } = canvas;
 
+            // Initialize or re-initialize buffers if analyser changes
+            if (currentAnalyser && currentAnalyser !== lastAnalyser) {
+                currentAnalyser.fftSize = 512;
+                const binCount = currentAnalyser.frequencyBinCount;
+                dbBuffer = new Float32Array(binCount);
+                normBuffer = new Float32Array(binCount);
+                lastAnalyser = currentAnalyser;
+            }
+
             // Ingest new frame: resample from linear FFT bins to log-frequency columns.
-            if (frame !== null && frame.length > 0) {
-                const binCount = frame.length;
+            if (currentAnalyser && dbBuffer && normBuffer) {
+                currentAnalyser.getFloatFrequencyData(dbBuffer as any);
+                const binCount = dbBuffer.length;
+                
+                for (let i = 0; i < binCount; i += 1) {
+                    normBuffer[i] = Math.max(0, Math.min(1, (dbBuffer[i]! + 100) / 100));
+                }
+
                 // Rebuild LUT if bin count or sample rate changed.
                 if (binLutRef.current === null || binLutRef.current.length !== DISPLAY_COLS) {
                     const lut = new Float64Array(DISPLAY_COLS);
@@ -123,7 +141,7 @@ export const SpectralWaterfall = ({ fftFrame, className }: SpectralWaterfallProp
                 const head = headRef.current;
                 const slot = historyRef.current[head]!;
                 for (let c = 0; c < DISPLAY_COLS; c++) {
-                    slot[c] = sampleBin(frame, lut[c]!);
+                    slot[c] = sampleBin(normBuffer, lut[c]!);
                 }
                 headRef.current = (head + 1) % HISTORY_FRAMES;
             }

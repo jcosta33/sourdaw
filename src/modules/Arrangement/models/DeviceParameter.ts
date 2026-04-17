@@ -33,7 +33,7 @@ import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
 import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
 import { GRINDER_DESCRIPTOR } from './pluginDescriptors/grinderDescriptor';
 import { CRUST_DESCRIPTOR } from './pluginDescriptors/crustDescriptor';
-import { SAMPLER_DESCRIPTOR } from './pluginDescriptors/samplerDescriptor';
+import { CRUMBS_DESCRIPTOR } from './pluginDescriptors/crumbsDescriptor';
 import { GRAND_BOULE_DESCRIPTOR } from './pluginDescriptors/grandBouleDescriptor';
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
@@ -137,7 +137,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     PROOF_DESCRIPTOR,
     YEAST_DESCRIPTOR,
     CRUST_DESCRIPTOR,
-    SAMPLER_DESCRIPTOR,
+    CRUMBS_DESCRIPTOR,
     GRAND_BOULE_DESCRIPTOR,
 ];
 
@@ -161,3 +161,4 @@ export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean 
     if (isNativeRuntime) {return true;} // native can run both web and native plugins
     return platform === 'web'; // web can only run web plugins
 }
+

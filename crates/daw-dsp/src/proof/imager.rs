@@ -141,11 +141,14 @@ impl StereoImager {
 
 #[inline]
 fn apply_width(l: f32, r: f32, width: f32) -> (f32, f32) {
+    // Standard M/S width: leave mid unscaled, scale side by `width`.
+    // width=0 → pure mono (mid only); width=1 → original; width>1 → widened.
+    // The previous formula zeroed the mid channel at width=2, destroying the
+    // centre image.
     let m = (l + r) * INV_SQRT2;
     let s = (l - r) * INV_SQRT2;
-    let s_scaled = s * width;
-    let m_scaled = m * (2.0 - width).max(0.0);
-    let out_l = (m_scaled + s_scaled) * INV_SQRT2;
-    let out_r = (m_scaled - s_scaled) * INV_SQRT2;
+    let s_scaled = s * width.max(0.0);
+    let out_l = (m + s_scaled) * INV_SQRT2;
+    let out_r = (m - s_scaled) * INV_SQRT2;
     (out_l, out_r)
 }

@@ -1,0 +1,1 @@
+export { CrumbsPanel } from './CrumbsPanel';

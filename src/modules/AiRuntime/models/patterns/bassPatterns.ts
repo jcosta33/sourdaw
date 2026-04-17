@@ -60,8 +60,9 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['groove', 'slap'],
         description: 'Syncopated funk bass',
         lengthBeats: 4,
+        scaleOverride: 'pentatonic-minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'pentatonic-minor', 28, 48);
+            const sp = getScalePitches(p.key, p.scale, 28, 48);
             const r = sp[0]!;
             return [
                 { pitch: r, velocity: 110, startBeat: 0, durationBeats: 0.25 },
@@ -225,8 +226,9 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['reese', 'dark'],
         description: 'Aggressive DnB bass pattern',
         lengthBeats: 8,
+        scaleOverride: 'minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'minor', 28, 48);
+            const sp = getScalePitches(p.key, p.scale, 28, 48);
             return [
                 { pitch: sp[0]!, velocity: 100, startBeat: 0, durationBeats: 1.5 },
                 { pitch: sp[Math.min(6, sp.length - 1)]!, velocity: 85, startBeat: 2, durationBeats: 0.5 },

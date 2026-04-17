@@ -126,8 +126,28 @@ export type PatternTemplate = {
     tags: string[];
     description: string;
     lengthBeats: number;
+    /**
+     * When set, the template's musical identity depends on a specific scale
+     * (e.g. "12-Bar Blues" must use `blues`, "Dorian Vamp" must use `dorian`).
+     * Callers resolve the effective scale as
+     *   `scaleOverride ?? params.scale`
+     * before invoking `generate`. Templates without an override honour the
+     * user-selected `params.scale` — previously some templates silently
+     * replaced it (`p.scale === 'major' ? 'minor' : p.scale`) which produced
+     * unexpected output.
+     */
+    scaleOverride?: ScaleType;
     generate: (params: GenerationParams) => PatternNote[];
 };
+
+/**
+ * Resolve the scale a template should actually be generated with. Call sites
+ * should pass `{ ...params, scale: resolveTemplateScale(template, params) }`
+ * into `template.generate`.
+ */
+export function resolveTemplateScale(template: PatternTemplate, params: GenerationParams): ScaleType {
+    return template.scaleOverride ?? params.scale;
+}
 
 export type PatternFilters = {
     category?: PatternCategory;

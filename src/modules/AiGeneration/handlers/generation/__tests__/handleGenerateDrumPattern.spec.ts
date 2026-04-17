@@ -30,6 +30,14 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
+vi.mock('#/modules/Workspace/useCases', () => ({
+    selectClipWithFocus: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
 describe('handleGenerateDrumPattern', () => {
     beforeEach(() => {
         vi.clearAllMocks();

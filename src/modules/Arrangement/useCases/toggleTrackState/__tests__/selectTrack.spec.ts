@@ -17,14 +17,37 @@ vi.mock('../../../repositories/track/getTrackById', () => ({
     getTrackById: (...args: any[]) => mockGetTrackById(...args)
 }));
 
+const mockStoreValue = { selectedTrackId: null as string | null };
+vi.mock('../../../stores/trackStore', () => ({
+    trackStore: {
+        get value() {
+            return mockStoreValue;
+        },
+    },
+}));
+
+const mockEmit = vi.fn();
+vi.mock('#/app/registerDependencies', () => ({
+    eventBus: {
+        emit: (...args: any[]) => mockEmit(...args),
+        on: vi.fn(() => () => {}),
+        off: vi.fn(),
+    },
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 describe('selectTrack', () => {
     beforeEach(() => {
         vi.mocked(setMidiInputTrack).mockClear();
         mockUpdateTrackState.mockReset();
         mockGetTrackById.mockReset();
+        mockEmit.mockReset();
+        mockStoreValue.selectedTrackId = null;
     });
 
     it('should update selection and skip midi routing when id is null', () => {
+        mockStoreValue.selectedTrackId = 't-prev';
+
         selectTrack(null);
 
         expect(mockUpdateTrackState).toHaveBeenCalledWith({ selectedTrackId: null });
@@ -49,5 +72,24 @@ describe('selectTrack', () => {
         selectTrack('t-audio');
 
         expect(setMidiInputTrack).not.toHaveBeenCalled();
+    });
+
+    it('emits track.selectionChanged when the selection actually changes', () => {
+        mockStoreValue.selectedTrackId = 't-old';
+
+        selectTrack('t-new');
+
+        expect(mockEmit).toHaveBeenCalledWith('track.selectionChanged', {
+            trackId: 't-new',
+            previousTrackId: 't-old',
+        });
+    });
+
+    it('does not emit track.selectionChanged when the same track is reselected', () => {
+        mockStoreValue.selectedTrackId = 't-same';
+
+        selectTrack('t-same');
+
+        expect(mockEmit).not.toHaveBeenCalled();
     });
 });

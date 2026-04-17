@@ -5,8 +5,8 @@ import { showLevainPanel } from '../devicePanels/showLevainPanel';
 import { showDutchOvenPanel } from '../devicePanels/showDutchOvenPanel';
 import { showGlutenPanel } from '../devicePanels/showGlutenPanel';
 import { showBacteriaPanel } from '../devicePanels/showBacteriaPanel';
-import { showGrinderPanel } from '../devicePanels/showGrinderPanel';
 import { showProofPanel } from '../devicePanels/showProofPanel';
+
 import { showYeastPanel } from '../devicePanels/showYeastPanel';
 import { showScoringPanel } from '../devicePanels/showScoringPanel';
 import { showCrustPanel } from '../devicePanels/showCrustPanel';
@@ -22,7 +22,6 @@ import { onPanelShowLevain } from '../devicePanels/onPanelShowLevain';
 import { onPanelShowDutchOven } from '../devicePanels/onPanelShowDutchOven';
 import { onPanelShowGluten } from '../devicePanels/onPanelShowGluten';
 import { onPanelShowBacteria } from '../devicePanels/onPanelShowBacteria';
-import { onPanelShowGrinder } from '../devicePanels/onPanelShowGrinder';
 import { onPanelShowProof } from '../devicePanels/onPanelShowProof';
 import { onPanelShowYeast } from '../devicePanels/onPanelShowYeast';
 import { onPanelShowScoring } from '../devicePanels/onPanelShowScoring';
@@ -48,7 +47,7 @@ const showPanelCases: Array<{ label: string; show: (deviceId: string | null) => 
     { label: 'dutch oven', show: showDutchOvenPanel, event: 'panel.showDutchOven' },
     { label: 'gluten', show: showGlutenPanel, event: 'panel.showGluten' },
     { label: 'bacteria', show: showBacteriaPanel, event: 'panel.showBacteria' },
-    { label: 'grinder', show: showGrinderPanel, event: 'panel.showGrinder' },
+    { label: 'grinder', show: (id: string | null) => showDevicePanel('grinder', id), event: 'panel.showDevice' },
     { label: 'proof', show: showProofPanel, event: 'panel.showProof' },
     { label: 'yeast', show: showYeastPanel, event: 'panel.showYeast' },
     { label: 'scoring', show: showScoringPanel, event: 'panel.showScoring' },
@@ -68,7 +67,7 @@ const onPanelCases: Array<{
     { label: 'dutch oven', onPanel: onPanelShowDutchOven, event: 'panel.showDutchOven' },
     { label: 'gluten', onPanel: onPanelShowGluten, event: 'panel.showGluten' },
     { label: 'bacteria', onPanel: onPanelShowBacteria, event: 'panel.showBacteria' },
-    { label: 'grinder', onPanel: onPanelShowGrinder, event: 'panel.showGrinder' },
+    { label: 'grinder', onPanel: onShowDevicePanel, event: 'panel.showDevice' },
     { label: 'proof', onPanel: onPanelShowProof, event: 'panel.showProof' },
     { label: 'yeast', onPanel: onPanelShowYeast, event: 'panel.showYeast' },
     { label: 'scoring', onPanel: onPanelShowScoring, event: 'panel.showScoring' },

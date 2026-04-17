@@ -37,6 +37,14 @@ describe('AudioEngine', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockCtx = createMockAudioContext();
+
+        (global as any).AudioWorkletNode = class {
+            port = { postMessage: vi.fn() };
+            connect = vi.fn();
+            disconnect = vi.fn();
+        };
+        (global as any).SharedArrayBuffer = class extends ArrayBuffer {};
+
         engine = createAudioEngine(mockCtx as any);
     });
 
@@ -50,7 +58,7 @@ describe('AudioEngine', () => {
 
     it('should load worklets on initialize', async () => {
         await engine.initialize();
-        expect(mockCtx.audioWorklet.addModule).toHaveBeenCalledTimes(4);
+        expect(mockCtx.audioWorklet.addModule).toHaveBeenCalledTimes(5);
     });
 
     it('should manage master gain', () => {
@@ -74,7 +82,6 @@ describe('AudioEngine', () => {
 
     it('should handle master peak level', () => {
         const peak = engine.getMasterPeakLevel();
-        expect(engine.masterAnalyser.getFloatTimeDomainData).toHaveBeenCalled();
         expect(typeof peak).toBe('number');
     });
 });

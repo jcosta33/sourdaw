@@ -15,6 +15,7 @@ import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
+import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
@@ -43,6 +44,8 @@ export async function scheduleTrackClips(
     allTracks?: ReadonlyArray<Track>,
     deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>
 ): Promise<void> {
+    const compensationDelay = getCompensationDelay(track.id);
+
     if (track.frozen && track.frozenBufferId) {
         const frozenBuf = audioBufferCache.get(track.frozenBufferId);
         if (frozenBuf) {
@@ -249,7 +252,7 @@ export async function scheduleTrackClips(
                     break;
                 }
 
-                const iterStartTime = beatToSeconds(iterStartBeat, defaultTempo, changes);
+                const iterStartTime = beatToSeconds(iterStartBeat, defaultTempo, changes) + compensationDelay;
                 if (iterStartTime >= durationSeconds) {
                     break;
                 }
@@ -258,7 +261,7 @@ export async function scheduleTrackClips(
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
 
                 const remainingBeats = Math.min(loopLen, clip.endBeat - iterStartBeat);
-                const iterEndTime = beatToSeconds(iterStartBeat + remainingBeats, defaultTempo, changes);
+                const iterEndTime = beatToSeconds(iterStartBeat + remainingBeats, defaultTempo, changes) + compensationDelay;
                 const iterDurationSec = iterEndTime - iterStartTime;
                 const playDuration = Math.min(iterDurationSec, buffer.duration / safeStretchRatio);
 
@@ -300,7 +303,7 @@ export async function scheduleTrackClips(
                 if (isLastIter) {
                     if (clip.fadeOutBeats > 0) {
                         const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
-                        const fadeOutStartSec = beatToSeconds(fadeOutStartBeat, defaultTempo, changes);
+                        const fadeOutStartSec = beatToSeconds(fadeOutStartBeat, defaultTempo, changes) + compensationDelay;
                         const fadeOutOffset = Math.max(
                             startSec,
                             Math.max(fadeOutStartSec, endSec - playDuration * 0.5)

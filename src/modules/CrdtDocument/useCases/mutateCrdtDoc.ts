@@ -5,6 +5,11 @@ import { automergeRepository } from '../repositories/automergeRepository';
 export type MutateCrdtDocInput<DocShape> = {
     id: DocId;
     changeFn: ChangeFn<DocShape>;
+    /**
+     * Optional Automerge change message. Used by the snapshot/undo layer and
+     * the storage adapter to annotate changes with semantic context.
+     */
+    message?: string;
 };
 
 /**
@@ -14,5 +19,5 @@ export type MutateCrdtDocInput<DocShape> = {
  * code applies incremental changes to local documents.
  */
 export function mutateCrdtDoc<DocShape = Record<string, unknown>>(input: MutateCrdtDocInput<DocShape>): void {
-    automergeRepository.changeDoc<DocShape>(input.id, input.changeFn);
+    automergeRepository.changeDoc<DocShape>(input.id, input.changeFn, input.message);
 }

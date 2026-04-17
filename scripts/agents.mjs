@@ -92,7 +92,7 @@ function warn(msg) {
 }
 
 async function loadAdapter(agentName) {
-    const allowed = ['claude', 'gemini', 'codex', 'kimi'];
+    const allowed = ['claude', 'gemini', 'codex', 'kimi', 'opencode'];
     if (!allowed.includes(agentName)) {
         die(`Unknown agent "${agentName}". Supported: ${allowed.join(', ')}`);
     }
@@ -142,7 +142,7 @@ function formatTable(rows, cols) {
     return [header, sep, ...body].join('\n');
 }
 
-const KNOWN_AGENTS = ['claude', 'gemini', 'codex', 'kimi'];
+const KNOWN_AGENTS = ['claude', 'gemini', 'codex', 'kimi', 'opencode'];
 
 // ─── Config loaders ──────────────────────────────────────────────────────────
 
@@ -452,7 +452,7 @@ async function cmdOpen(argv) {
     }
 
     const slug = slugPositional[0];
-    if (!slug) die('Usage: agents open <slug> [claude|gemini|codex]');
+    if (!slug) die('Usage: agents open <slug> [claude|gemini|codex|opencode]');
 
     const repoRoot = getRepoRoot();
     const config = loadConfig(repoRoot);
@@ -1014,7 +1014,7 @@ QOL subcommands:
   pick                      fzf fuzzy-picker over active sandboxes
 
 Flags for \`new\`:
-  --agent <name>            Agent to launch: claude (default), gemini, codex
+  --agent <name>            Agent to launch: claude (default), gemini, codex, opencode
   --type <type>             Task type: feature, refactor, fix, audit, migration, spec
   --spec <path>             Spec file to embed in task (also accepted as positional)
   --base <branch>           Base branch (default: main)

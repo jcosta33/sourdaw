@@ -1,8 +1,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
+import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 
 export type DeviceNodeEntry = {
     deviceId: string;
@@ -16,8 +19,8 @@ export type DeviceNodeEntry = {
         setBypass: (bypassed: boolean) => void;
     };
     instrumentControls?: {
-        noteOn: (noteOrPad: number, velocity: number, midiNote?: number) => void;
-        noteOff: (noteOrPad: number) => void;
+        noteOn: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
+        noteOff: (noteOrPad: number, sampleFrame?: number) => void;
     };
 };
 
@@ -55,7 +58,31 @@ export const buildDeviceChain = inject({ logger })(
                 try {
                     strategy = await deviceRegistry.createDevice(ctx, device);
                 } catch (error) {
-                    logger.warn(`Device ${device.type} failed to load: ${error}`);
+                    // When the plugin fails because it requires cross-origin
+                    // isolation (SharedArrayBuffer), surface a user-visible message —
+                    // otherwise the device chain silently skipping the node is
+                    // invisible. Other failures stay at `warn` to avoid noise for
+                    // routine issues (missing assets, stale worklets during HMR, etc.).
+                    if (isPluginRequiresIsolationError(error)) {
+                        logger.error(error);
+                        // When SharedArrayBuffer is globally unavailable, the
+                        // `CapabilityBanner` at the top of AppShell already
+                        // tells the user — all SAB-backed plugins will fail
+                        // equally, so per-plugin toasts would just spam. The
+                        // per-insert toast remains useful in the rare case
+                        // where SAB is present but some other isolation
+                        // prerequisite is missing.
+                        if (hasSharedArrayBuffer()) {
+                            notifyUser(
+                                `${error.pluginName} could not load: this plugin needs cross-origin isolation. ` +
+                                    'If you hit this in dev, restart the dev server after editing vite.config.ts; ' +
+                                    'otherwise check COOP/COEP headers on the host.',
+                                'error'
+                            );
+                        }
+                    } else {
+                        logger.warn(`Device ${device.type} failed to load: ${error}`);
+                    }
                     continue;
                 }
 
@@ -90,8 +117,8 @@ export const buildDeviceChain = inject({ logger })(
                         setBypass: (bypassed) => strategy!.setBypass?.(bypassed),
                     },
                     instrumentControls: {
-                        noteOn: (note, vel, midi) => strategy!.noteOn?.(note, vel, midi),
-                        noteOff: (note) => strategy!.noteOff?.(note),
+                        noteOn: (note, vel, midi, sampleFrame) => strategy!.noteOn?.(note, vel, midi, sampleFrame),
+                        noteOff: (note, sampleFrame) => strategy!.noteOff?.(note, sampleFrame),
                     },
                 });
             }

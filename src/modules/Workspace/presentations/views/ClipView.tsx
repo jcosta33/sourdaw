@@ -118,7 +118,7 @@ export const ClipView = (): ReactElement => {
                         onContentWidthChange={setPianoRollContentWidth}
                     />
                 ) : selectedClip && audioEditMode === 'pitch' ? (
-                    <KneadEditor trackId={selectedTrack.id} />
+                    <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />
                 ) : selectedClip ? (
                     <WaveformEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} />
                 ) : (

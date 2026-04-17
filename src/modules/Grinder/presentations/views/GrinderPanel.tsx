@@ -13,8 +13,15 @@ import {
     replaceGrinderPatchLocally,
     type GrinderState,
 } from '../../stores/grinderStore';
+import {
+    grinderTelemetryStore,
+    getGrinderTelemetry,
+    type GrinderTelemetry,
+} from '../../stores/grinderTelemetryStore';
 import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
+import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderMicParamWithAudio';
 import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
+import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 import {
     type GrinderAmpModel,
@@ -213,19 +220,6 @@ function toDbPercent(db: number): number {
     return Math.max(0, Math.min(1, (db + 72) / 72));
 }
 
-function upsertPedal(
-    pedals: readonly GrinderPedal[],
-    type: GrinderPedalType,
-    defaults: GrinderPedal,
-    update: (pedal: GrinderPedal) => GrinderPedal
-): GrinderPedal[] {
-    const existing = pedals.find((pedal) => pedal.type === type);
-    if (!existing) {
-        return [...pedals, update(defaults)];
-    }
-    return pedals.map((pedal) => (pedal.type === type ? update(pedal) : pedal));
-}
-
 function GrinderKnob({
     deviceId,
     value,
@@ -270,15 +264,41 @@ function StatusMeter({ label, value, accent }: { label: string; value: number; a
             <div className="text-[9px] uppercase tracking-[0.24em] text-white/48">{label}</div>
             <div className="h-1.5 overflow-hidden rounded-full bg-white/6">
                 <div
-                    className="h-full rounded-full transition-all duration-150"
-                    style={{ width: `${value * 100}%`, background: accent }}
+                    className="h-full rounded-full transition-all duration-[40ms]"
+                    style={{ width: `${Math.max(0, Math.min(100, value * 100))}%`, background: accent }}
                 />
             </div>
         </div>
     );
 }
 
-function ToneResponseStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }): ReactElement {
+function GrinderTelemetryMeter({
+    deviceId,
+    label,
+    telemetryKey,
+    accent,
+    transform = (v) => v,
+}: {
+    deviceId: string;
+    label: string;
+    telemetryKey: keyof GrinderTelemetry;
+    accent: string;
+    transform?: (v: number) => number;
+}): ReactElement {
+    const allTelemetry = useStore(grinderTelemetryStore, {});
+    const telemetry = allTelemetry?.[deviceId] ?? getGrinderTelemetry(deviceId);
+    const value = telemetry[telemetryKey];
+
+    return <StatusMeter label={label} value={transform(value)} accent={accent} />;
+}
+
+function ToneResponseStage({
+    deviceId,
+    patch,
+}: {
+    deviceId: string;
+    patch: GrinderPatch;
+}): ReactElement {
     const points = [
         [0, 78 - patch.bass * 4],
         [24, 64 - patch.bass * 2],
@@ -303,37 +323,58 @@ function ToneResponseStage({ patch, state }: { patch: GrinderPatch; state: Grind
                 </div>
                 <DawPluginLed tone="amber">{patch.bright ? 'Bright' : patch.fat ? 'Fat' : 'Classic'}</DawPluginLed>
             </div>
-            <svg
-                viewBox="0 0 100 84"
-                className="h-[150px] w-full rounded-[18px] bg-black/35 p-2"
-                aria-label="Tone stack response"
-            >
-                <defs>
-                    <linearGradient id="grinder-tone-fill" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="rgba(229,168,75,0.30)" />
-                        <stop offset="100%" stopColor="rgba(229,168,75,0.02)" />
-                    </linearGradient>
-                </defs>
-                <rect x="0" y="0" width="100" height="84" rx="8" fill="rgba(255,255,255,0.02)" />
-                <path d="M 0 42 L 100 42" stroke="rgba(255,255,255,0.08)" strokeDasharray="2 3" />
-                <path d="M 50 8 L 50 76" stroke="rgba(255,255,255,0.05)" strokeDasharray="2 3" />
-                <path
-                    d={`M ${points.map(([x, y]) => `${x} ${y}`).join(' L ')}`}
-                    fill="none"
-                    stroke="var(--color-accent-amber)"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                />
-                <path
-                    d={`M ${points[0]?.[0] ?? 0} 84 L ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} L ${points[points.length - 1]?.[0] ?? 100} 84 Z`}
-                    fill="url(#grinder-tone-fill)"
-                />
-            </svg>
-            <div className="grid grid-cols-3 gap-3">
-                <StatusMeter label="Input" value={toDbPercent(state.inputDb)} accent="var(--color-accent-cyan)" />
-                <StatusMeter label="Pre" value={toDbPercent(state.preampDb)} accent="var(--color-accent-amber)" />
-                <StatusMeter label="Power" value={toDbPercent(state.powerAmpDb)} accent="var(--color-accent-peach)" />
+            <div className="flex flex-1 items-center gap-3 min-h-0">
+                <svg
+                    viewBox="0 0 100 84"
+                    className="h-full flex-1 rounded-[18px] bg-black/35 p-2"
+                    preserveAspectRatio="none"
+                    aria-label="Tone stack response"
+                >
+                    <defs>
+                        <linearGradient id="grinder-tone-fill" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stopColor="rgba(229,168,75,0.30)" />
+                            <stop offset="100%" stopColor="rgba(229,168,75,0.02)" />
+                        </linearGradient>
+                    </defs>
+                    <rect x="0" y="0" width="100" height="84" rx="8" fill="rgba(255,255,255,0.02)" />
+                    <path d="M 0 42 L 100 42" stroke="rgba(255,255,255,0.08)" strokeDasharray="2 3" />
+                    <path d="M 50 8 L 50 76" stroke="rgba(255,255,255,0.05)" strokeDasharray="2 3" />
+                    <path
+                        d={`M ${points.map(([x, y]) => `${x} ${y}`).join(' L ')}`}
+                        fill="none"
+                        stroke="var(--color-accent-amber)"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                    <path
+                        d={`M ${points[0]?.[0] ?? 0} 84 L ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} L ${points[points.length - 1]?.[0] ?? 100} 84 Z`}
+                        fill="url(#grinder-tone-fill)"
+                    />
+                </svg>
+                <div className="flex shrink-0 flex-col gap-3">
+                    <GrinderTelemetryMeter
+                        deviceId={deviceId}
+                        label="Input"
+                        telemetryKey="inputDb"
+                        accent="var(--color-accent-cyan)"
+                        transform={toDbPercent}
+                    />
+                    <GrinderTelemetryMeter
+                        deviceId={deviceId}
+                        label="Pre"
+                        telemetryKey="preampDb"
+                        accent="var(--color-accent-amber)"
+                        transform={toDbPercent}
+                    />
+                    <GrinderTelemetryMeter
+                        deviceId={deviceId}
+                        label="Power"
+                        telemetryKey="powerAmpDb"
+                        accent="var(--color-accent-peach)"
+                        transform={toDbPercent}
+                    />
+                </div>
             </div>
         </div>
     );
@@ -412,8 +453,22 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
         </div>
     );
 }
+function CabStage({
+    deviceId,
+    patch,
+}: {
+    deviceId: string;
+    patch: GrinderPatch;
+}): ReactElement {
+    const handleDrag = (micIndex: 1 | 2, e: React.MouseEvent) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
 
-function CabStage({ patch }: { patch: GrinderPatch }): ReactElement {
+        setGrinderMicParamWithAudio(deviceId, micIndex, 'positionX', x);
+        setGrinderMicParamWithAudio(deviceId, micIndex, 'positionY', y);
+    };
+
     return (
         <div className="grid h-full grid-cols-[1.05fr_0.95fr] gap-3">
             <div className="grinder-window flex flex-col gap-3 p-3">
@@ -429,20 +484,26 @@ function CabStage({ patch }: { patch: GrinderPatch }): ReactElement {
                 <div
                     className="relative flex h-[180px] w-full items-center justify-center overflow-hidden rounded-[20px] border border-white/8 bg-[radial-gradient(circle_at_50%_42%,rgba(111,177,198,0.18),transparent_34%),radial-gradient(circle_at_50%_50%,rgba(229,168,75,0.14),transparent_54%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]"
                     aria-label="Speaker field preview"
+                    onMouseMove={(e) => {
+                        if (e.buttons === 1) {
+                            handleDrag(1, e);
+                        }
+                    }}
                 >
                     <div className="absolute inset-[14%] rounded-full border border-white/8" />
                     <div className="absolute inset-[24%] rounded-full border border-white/12" />
                     <div className="absolute inset-[36%] rounded-full border border-[var(--color-accent-amber)]/30" />
                     <div
-                        className="absolute flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/18 shadow-[0_0_24px_rgba(111,177,198,0.25)]"
+                        className="absolute flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center rounded-full border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/18 shadow-[0_0_24px_rgba(111,177,198,0.25)]"
                         style={{ left: `${patch.mic1.positionX * 100}%`, top: `${patch.mic1.positionY * 100}%` }}
                     >
                         <span className="text-[10px] font-semibold text-[var(--color-accent-cyan)]">1</span>
                     </div>
                     {patch.mic2.enabled ? (
                         <div
-                            className="absolute flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/18"
+                            className="absolute flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center rounded-full border border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/18"
                             style={{ left: `${patch.mic2.positionX * 100}%`, top: `${patch.mic2.positionY * 100}%` }}
+                            onMouseDown={(e) => e.stopPropagation()}
                         >
                             <span className="text-[10px] font-semibold text-[var(--color-accent-peach)]">2</span>
                         </div>
@@ -452,6 +513,74 @@ function CabStage({ patch }: { patch: GrinderPatch }): ReactElement {
                     <StatusMeter label="Thump" value={patch.backEmf} accent="var(--color-accent-cyan)" />
                     <StatusMeter label="Breakup" value={patch.coneBreakup} accent="var(--color-accent-peach)" />
                     <StatusMeter label="Damp" value={patch.cabDamping} accent="var(--color-accent-lavender)" />
+                </div>
+                <div className="flex gap-2">
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">Mic 1</span>
+                        <div className="flex gap-2">
+                            <RotaryKnob
+                                value={patch.mic1.positionX}
+                                onChange={(v) => setGrinderMicParamWithAudio(deviceId, 1, 'positionX', v)}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0.3}
+                                size="sm"
+                            />
+                            <RotaryKnob
+                                value={patch.mic1.positionY}
+                                onChange={(v) => setGrinderMicParamWithAudio(deviceId, 1, 'positionY', v)}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0.1}
+                                size="sm"
+                            />
+                            <RotaryKnob
+                                value={patch.mic1.distance}
+                                onChange={(v) => setGrinderMicParamWithAudio(deviceId, 1, 'distance', v)}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0.2}
+                                size="sm"
+                            />
+                        </div>
+                    </div>
+                    {patch.mic2.enabled && (
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">Mic 2</span>
+                            <div className="flex gap-2">
+                                <RotaryKnob
+                                    value={patch.mic2.positionX}
+                                    onChange={(v) => setGrinderMicParamWithAudio(deviceId, 2, 'positionX', v)}
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0.6}
+                                    size="sm"
+                                />
+                                <RotaryKnob
+                                    value={patch.mic2.positionY}
+                                    onChange={(v) => setGrinderMicParamWithAudio(deviceId, 2, 'positionY', v)}
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0.3}
+                                    size="sm"
+                                />
+                                <RotaryKnob
+                                    value={patch.mic2.distance}
+                                    onChange={(v) => setGrinderMicParamWithAudio(deviceId, 2, 'distance', v)}
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0.5}
+                                    size="sm"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="grinder-window flex flex-col gap-3 p-3">
@@ -472,9 +601,15 @@ function CabStage({ patch }: { patch: GrinderPatch }): ReactElement {
     );
 }
 
-function NeuralStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }): ReactElement {
+function NeuralStage({
+    deviceId,
+    patch,
+}: {
+    deviceId: string;
+    patch: GrinderPatch;
+}): ReactElement {
     const modelName = patch.neuralModelName || 'Factory Voice A';
-    const statusLabel = patch.engineMode === 'circuit' ? 'Idle' : state.neuralWarmupProgress >= 1 ? 'Ready' : 'Warming';
+    const statusLabel = patch.engineMode === 'circuit' ? 'Idle' : 'Active';
 
     return (
         <div className="grid h-full grid-cols-[1fr_0.94fr] gap-3">
@@ -504,14 +639,17 @@ function NeuralStage({ patch, state }: { patch: GrinderPatch; state: GrinderStat
                         />
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-2">
-                        <StatusMeter
+                        <GrinderTelemetryMeter
+                            deviceId={deviceId}
                             label="CPU"
-                            value={state.neuralCpuPercent / 100}
+                            telemetryKey="neuralCpuPercent"
                             accent="var(--color-accent-lavender)"
+                            transform={(v) => v / 100}
                         />
-                        <StatusMeter
+                        <GrinderTelemetryMeter
+                            deviceId={deviceId}
                             label="Warm"
-                            value={state.neuralWarmupProgress}
+                            telemetryKey="neuralWarmupProgress"
                             accent="var(--color-accent-cyan)"
                         />
                     </div>
@@ -537,7 +675,46 @@ function NeuralStage({ patch, state }: { patch: GrinderPatch; state: GrinderStat
     );
 }
 
-function LabStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }): ReactElement {
+function TelemetryReadout({ deviceId }: { deviceId: string }): ReactElement {
+    const allTelemetry = useStore(grinderTelemetryStore, {});
+    const telemetry = allTelemetry?.[deviceId] ?? getGrinderTelemetry(deviceId);
+    return (
+        <>
+            <div>gate-env {telemetry.gateEnvelopeDb.toFixed(1)} dB</div>
+            <div>latency {telemetry.latency.toFixed(0)} smp</div>
+        </>
+    );
+}
+
+function NeuralTelemetryReadout({ deviceId }: { deviceId: string }): ReactElement {
+    const allTelemetry = useStore(grinderTelemetryStore, {});
+    const telemetry = allTelemetry?.[deviceId] ?? getGrinderTelemetry(deviceId);
+    return (
+        <>
+            Warmup {Math.round(telemetry.neuralWarmupProgress * 100)}% · CPU {Math.round(telemetry.neuralCpuPercent)}%
+        </>
+    );
+}
+
+function QuickTelemetryReadout({ deviceId }: { deviceId: string }): ReactElement {
+    const allTelemetry = useStore(grinderTelemetryStore, {});
+    const telemetry = allTelemetry?.[deviceId] ?? getGrinderTelemetry(deviceId);
+    return (
+        <>
+            <div className="font-mono text-sm text-white/62">gate {Math.round(telemetry.gateOpen * 100)}%</div>
+            <div className="font-mono text-sm text-white/62">sag {telemetry.sagVoltage.toFixed(2)}</div>
+            <div className="font-mono text-sm text-white/62">out {telemetry.outputDb.toFixed(1)} dB</div>
+        </>
+    );
+}
+
+function LabStage({
+    deviceId,
+    patch,
+}: {
+    deviceId: string;
+    patch: GrinderPatch;
+}): ReactElement {
     return (
         <div className="grid h-full grid-cols-[0.92fr_1.08fr] gap-3">
             <div className="grinder-window flex flex-col gap-3 p-3">
@@ -547,16 +724,28 @@ function LabStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }
                     </div>
                     <div className="mt-1 text-lg font-semibold text-white/90">Feel check</div>
                 </div>
-                <StatusMeter label="Gate" value={state.gateOpen} accent="var(--color-accent-cyan)" />
-                <StatusMeter
-                    label="Sag"
-                    value={Math.max(0, Math.min(1, state.sagVoltage))}
-                    accent="var(--color-accent-orange)"
+                <GrinderTelemetryMeter
+                    deviceId={deviceId}
+                    label="Gate"
+                    telemetryKey="gateOpen"
+                    accent="var(--color-accent-cyan)"
                 />
-                <StatusMeter label="Output" value={toDbPercent(state.outputDb)} accent="var(--color-accent-peach)" />
+                <GrinderTelemetryMeter
+                    deviceId={deviceId}
+                    label="Sag"
+                    telemetryKey="sagVoltage"
+                    accent="var(--color-accent-orange)"
+                    transform={(v) => Math.max(0, Math.min(1, v))}
+                />
+                <GrinderTelemetryMeter
+                    deviceId={deviceId}
+                    label="Output"
+                    telemetryKey="outputDb"
+                    accent="var(--color-accent-peach)"
+                    transform={toDbPercent}
+                />
                 <div className="rounded-[20px] border border-white/8 bg-black/25 p-3 font-mono text-[12px] text-white/62">
-                    <div>gate-env {state.gateEnvelopeDb.toFixed(1)} dB</div>
-                    <div>latency {state.latency.toFixed(0)} smp</div>
+                    <TelemetryReadout deviceId={deviceId} />
                     <div>xformer {patch.transformerDrive.toFixed(2)}</div>
                     <div>nfb {patch.negFeedback.toFixed(2)}</div>
                 </div>
@@ -719,11 +908,11 @@ function SectionTabs({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
 }
 
 function DriveDeck({
+    deviceId,
     patch,
-    replacePatch,
 }: {
+    deviceId: string;
     patch: GrinderPatch;
-    replacePatch: (next: GrinderPatch) => void;
 }): ReactElement {
     return (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -740,18 +929,14 @@ function DriveDeck({
                                 tone="amber"
                                 size="sm"
                                 onClick={() =>
-                                    replacePatch({
-                                        ...patch,
-                                        prePedals: upsertPedal(
-                                            patch.prePedals,
-                                            control.type,
-                                            control.defaults,
-                                            (current) => ({
-                                                ...current,
-                                                enabled: !current.enabled,
-                                            })
-                                        ),
-                                    })
+                                    setGrinderPedalParamWithAudio(
+                                        deviceId,
+                                        false,
+                                        control.type,
+                                        'enabled',
+                                        pedal.enabled ? 0 : 1,
+                                        control.defaults
+                                    )
                                 }
                             >
                                 {pedal.enabled ? 'On' : 'Off'}
@@ -763,18 +948,14 @@ function DriveDeck({
                                     <RotaryKnob
                                         value={pedal.params[param.key] ?? param.defaultValue}
                                         onChange={(next) =>
-                                            replacePatch({
-                                                ...patch,
-                                                prePedals: upsertPedal(
-                                                    patch.prePedals,
-                                                    control.type,
-                                                    control.defaults,
-                                                    (current) => ({
-                                                        ...current,
-                                                        params: { ...current.params, [param.key]: next },
-                                                    })
-                                                ),
-                                            })
+                                            setGrinderPedalParamWithAudio(
+                                                deviceId,
+                                                false,
+                                                control.type,
+                                                param.key,
+                                                next,
+                                                control.defaults
+                                            )
                                         }
                                         min={param.min}
                                         max={param.max}
@@ -801,12 +982,10 @@ function DriveDeck({
 function ControlDeck({
     deviceId,
     patch,
-    state,
     replacePatch,
 }: {
     deviceId: string;
     patch: GrinderPatch;
-    state: GrinderState;
     replacePatch: (next: GrinderPatch) => void;
 }): ReactElement {
     if (patch.uiSection === 'amp') {
@@ -949,7 +1128,7 @@ function ControlDeck({
     }
 
     if (patch.uiSection === 'drive') {
-        return <DriveDeck patch={patch} replacePatch={replacePatch} />;
+        return <DriveDeck deviceId={deviceId} patch={patch} />;
     }
 
     if (patch.uiSection === 'cab') {
@@ -1113,8 +1292,7 @@ function ControlDeck({
                         ))}
                     </div>
                     <div className="text-xs text-white/44">
-                        Warmup {Math.round(state.neuralWarmupProgress * 100)}% · CPU{' '}
-                        {Math.round(state.neuralCpuPercent)}%
+                        <NeuralTelemetryReadout deviceId={deviceId} />
                     </div>
                 </div>
                 <div className="grinder-window flex min-w-[320px] flex-1 flex-col gap-3 px-3 py-3">
@@ -1289,29 +1467,33 @@ function ControlDeck({
                 <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                     Quick read
                 </div>
-                <div className="font-mono text-sm text-white/62">gate {Math.round(state.gateOpen * 100)}%</div>
-                <div className="font-mono text-sm text-white/62">sag {state.sagVoltage.toFixed(2)}</div>
-                <div className="font-mono text-sm text-white/62">out {state.outputDb.toFixed(1)} dB</div>
+                <QuickTelemetryReadout deviceId={deviceId} />
             </div>
         </div>
     );
 }
 
-function HeroStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }): ReactElement {
+function HeroStage({
+    deviceId,
+    patch,
+}: {
+    deviceId: string;
+    patch: GrinderPatch;
+}): ReactElement {
     if (patch.uiSection === 'amp') {
-        return <ToneResponseStage patch={patch} state={state} />;
+        return <ToneResponseStage deviceId={deviceId} patch={patch} />;
     }
     if (patch.uiSection === 'drive') {
         return <DriveStage patch={patch} />;
     }
     if (patch.uiSection === 'cab') {
-        return <CabStage patch={patch} />;
+        return <CabStage deviceId={deviceId} patch={patch} />;
     }
     if (patch.uiSection === 'neural') {
-        return <NeuralStage patch={patch} state={state} />;
+        return <NeuralStage deviceId={deviceId} patch={patch} />;
     }
     if (patch.uiSection === 'lab') {
-        return <LabStage patch={patch} state={state} />;
+        return <LabStage deviceId={deviceId} patch={patch} />;
     }
 
     const activeAmp = AMP_MODELS.find((amp) => amp.id === patch.ampModel);
@@ -1328,12 +1510,25 @@ function HeroStage({ patch, state }: { patch: GrinderPatch; state: GrinderState 
                     Lab when you want to get more specific.
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                    <StatusMeter label="Input" value={toDbPercent(state.inputDb)} accent="var(--color-accent-cyan)" />
-                    <StatusMeter label="Gate" value={state.gateOpen} accent="var(--color-accent-amber)" />
-                    <StatusMeter
+                    <GrinderTelemetryMeter
+                        deviceId={deviceId}
+                        label="Input"
+                        telemetryKey="inputDb"
+                        accent="var(--color-accent-cyan)"
+                        transform={toDbPercent}
+                    />
+                    <GrinderTelemetryMeter
+                        deviceId={deviceId}
+                        label="Gate"
+                        telemetryKey="gateOpen"
+                        accent="var(--color-accent-amber)"
+                    />
+                    <GrinderTelemetryMeter
+                        deviceId={deviceId}
                         label="Output"
-                        value={toDbPercent(state.outputDb)}
+                        telemetryKey="outputDb"
                         accent="var(--color-accent-peach)"
+                        transform={toDbPercent}
                     />
                 </div>
             </div>
@@ -1363,21 +1558,63 @@ function HeroStage({ patch, state }: { patch: GrinderPatch; state: GrinderState 
     );
 }
 
-function StatusStrip({ state }: { state: GrinderState }): ReactElement {
+function StatusStrip({ deviceId }: { deviceId: string }): ReactElement {
     return (
         <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8">
-            <StatusMeter label="Input" value={toDbPercent(state.inputDb)} accent="var(--color-accent-cyan)" />
-            <StatusMeter label="Pre" value={toDbPercent(state.preampDb)} accent="var(--color-accent-amber)" />
-            <StatusMeter label="Power" value={toDbPercent(state.powerAmpDb)} accent="var(--color-accent-peach)" />
-            <StatusMeter label="Out" value={toDbPercent(state.outputDb)} accent="var(--color-accent-orange)" />
-            <StatusMeter label="Gate" value={state.gateOpen} accent="var(--color-accent-cyan)" />
-            <StatusMeter
-                label="Sag"
-                value={Math.max(0, Math.min(1, state.sagVoltage))}
-                accent="var(--color-accent-orange)"
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="Input"
+                telemetryKey="inputDb"
+                accent="var(--color-accent-cyan)"
+                transform={toDbPercent}
             />
-            <StatusMeter label="Warm" value={state.neuralWarmupProgress} accent="var(--color-accent-lavender)" />
-            <StatusMeter label="CPU" value={state.neuralCpuPercent / 100} accent="var(--color-accent-lavender)" />
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="Pre"
+                telemetryKey="preampDb"
+                accent="var(--color-accent-amber)"
+                transform={toDbPercent}
+            />
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="Power"
+                telemetryKey="powerAmpDb"
+                accent="var(--color-accent-peach)"
+                transform={toDbPercent}
+            />
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="Out"
+                telemetryKey="outputDb"
+                accent="var(--color-accent-orange)"
+                transform={toDbPercent}
+            />
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="Gate"
+                telemetryKey="gateOpen"
+                accent="var(--color-accent-cyan)"
+            />
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="Sag"
+                telemetryKey="sagVoltage"
+                accent="var(--color-accent-orange)"
+                transform={(v) => Math.max(0, Math.min(1, v))}
+            />
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="Warm"
+                telemetryKey="neuralWarmupProgress"
+                accent="var(--color-accent-lavender)"
+            />
+            <GrinderTelemetryMeter
+                deviceId={deviceId}
+                label="CPU"
+                telemetryKey="neuralCpuPercent"
+                accent="var(--color-accent-lavender)"
+                transform={(v) => v / 100}
+            />
         </div>
     );
 }
@@ -1398,18 +1635,18 @@ export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                 <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
                     <SectionTabs deviceId={deviceId} patch={patch} />
                     <div className="min-h-[280px] shrink-0 overflow-hidden">
-                        <HeroStage patch={patch} state={state} />
+                        <HeroStage deviceId={deviceId} patch={patch} />
                     </div>
                     <div className="shrink-0 rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.032),rgba(255,255,255,0.012))] p-3 shadow-[var(--shadow-elevation-raised)]">
                         <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                             Control deck
                         </div>
-                        <ControlDeck deviceId={deviceId} patch={patch} state={state} replacePatch={replacePatch} />
+                        <ControlDeck deviceId={deviceId} patch={patch} replacePatch={replacePatch} />
                     </div>
                 </section>
             </div>
             <div className="mt-3">
-                <StatusStrip state={state} />
+                <StatusStrip deviceId={deviceId} />
             </div>
         </div>
     );

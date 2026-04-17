@@ -315,7 +315,7 @@ export const InstrumentsTab = ({
 
         const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule'].filter((id) => {
             const name = id.replace('-', ' ');
-            return name.toLowerCase().includes(query) || (id === 'crumbs' && 'sampler'.includes(query));
+            return name.toLowerCase().includes(query) || (id === 'crumbs' && 'crumbs'.includes(query));
         });
 
         const totalCount = allResults.length + premiumMatches.length;
