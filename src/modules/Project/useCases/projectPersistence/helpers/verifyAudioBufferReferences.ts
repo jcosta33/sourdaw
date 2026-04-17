@@ -15,6 +15,11 @@ export function verifyAudioBufferReferences(): void {
                 missingClips.push(clip.name);
             }
         }
+        if (track.freezeState?.status === 'frozen' && track.freezeState.frozenBufferId) {
+            if (!audioBufferCache.has(track.freezeState.frozenBufferId)) {
+                missingClips.push(`Frozen track ${track.name}`);
+            }
+        }
     }
 
     if (missingClips.length > 0) {

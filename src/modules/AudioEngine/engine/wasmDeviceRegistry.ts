@@ -9,7 +9,7 @@
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { logger } from '#/infra/logger/appLogger';
-import { eventBus } from '#/app/bootstrap';
+import { eventBus } from '#/app/registerDependencies';
 
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';

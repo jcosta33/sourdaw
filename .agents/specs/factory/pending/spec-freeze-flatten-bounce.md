@@ -418,7 +418,7 @@ The track header MUST display:
 
 - [ ] **[MINOR]** Should freeze support undo history beyond project close? Currently flatten becomes irreversible after close (matches Ableton/Logic behavior).
 - [ ] **[MINOR]** Should frozen tracks allow clip duplication/copy-paste? Research shows mixed behavior across DAWs.
-- [ ] **[CRITICAL]** Disk space check threshold: 2x estimated size sufficient, or use 3x safety margin?
+- [x] **[CRITICAL]** Disk space check threshold: 2x estimated size sufficient, or use 3x safety margin? -> Resolved: 2x margin.
 
 ---
 

@@ -11,6 +11,8 @@ import { handleDisableTrack } from '../handlers/track/disableTrack';
 import { handleDuplicateTrack } from '../handlers/track/duplicateTrack';
 import { handleFoldTrack } from '../handlers/track/foldTrack';
 import { handleFreezeTrack } from '../handlers/track/freezeTrack';
+import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
+import { handleFlattenTrack } from '../handlers/track/flattenTrack';
 import { handleGroupTracks } from '../handlers/track/groupTracks';
 import { handleHideTrack } from '../handlers/track/hideTrack';
 import { handleMuteTrack } from '../handlers/track/muteTrack';
@@ -30,7 +32,6 @@ import { handleSetTrackPan } from '../handlers/track/handleSetTrackPan';
 import { handleSoloTrack } from '../handlers/track/soloTrack';
 import { handleToggleSoloSafe } from '../handlers/track/toggleSoloSafe';
 import { handleUngroupTracks } from '../handlers/track/ungroupTracks';
-import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
 import { handleZoomTracksVertical } from '../handlers/track/zoomTracksVertical';
 import { handleCreateTrackAlternative } from '../handlers/trackAlternative/handleCreateTrackAlternative';
 import { handleDeleteTrackAlternative } from '../handlers/trackAlternative/handleDeleteTrackAlternative';
@@ -96,6 +97,7 @@ export function getArrangementHandlers() {
         armTrack: handleArmTrack,
         freezeTrack: handleFreezeTrack,
         unfreezeTrack: handleUnfreezeTrack,
+        flattenTrack: handleFlattenTrack,
         bounceInPlace: handleBounceInPlace,
         duplicateTrack: handleDuplicateTrack,
         reorderTrack: handleReorderTrack,

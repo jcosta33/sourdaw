@@ -1,7 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { Button } from '#/components/ui/button';
-import { Snowflake, Zap } from 'lucide-react';
+import { Snowflake, Zap, AlertCircle } from 'lucide-react';
 import {
     renameTrack,
     setTrackColor,
@@ -71,22 +71,29 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                     </div>
 
                     {track.kind !== 'folder' ? (
-                        <Button
-                            variant={track.frozen ? 'secondary' : 'ghost'}
-                            size="xs"
-                            className="h-6"
-                            onClick={() => {
-                                if (track.frozen) {
-                                    unfreezeTrack(track.id);
-                                } else {
-                                    freezeTrack(track.id);
-                                }
-                            }}
-                            aria-pressed={track.frozen}
-                        >
-                            {track.frozen ? <Zap className="size-3 mr-1" /> : <Snowflake className="size-3 mr-1" />}
-                            {track.frozen ? 'Unfreeze' : 'Freeze'}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            {track.freezeState?.status === 'stale' && (
+                                <span className="text-[10px] text-destructive flex items-center font-medium" title="Track content has changed since freezing">
+                                    <AlertCircle className="size-3 mr-1" /> Stale
+                                </span>
+                            )}
+                            <Button
+                                variant={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                className="h-6"
+                                onClick={() => {
+                                    if (track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale') {
+                                        unfreezeTrack(track.id);
+                                    } else {
+                                        freezeTrack(track.id);
+                                    }
+                                }}
+                                aria-pressed={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale'}
+                            >
+                                {track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? <Zap className="size-3 mr-1" /> : <Snowflake className="size-3 mr-1" />}
+                                {track.freezeState?.status === 'stale' ? 'Update Freeze' : track.freezeState?.status === 'frozen' ? 'Unfreeze' : 'Freeze'}
+                            </Button>
+                        </div>
                     ) : null}
                 </div>
 
