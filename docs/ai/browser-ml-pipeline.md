@@ -50,11 +50,6 @@ This is the industry-standard deployment path. When you use Whisper transcriptio
 | NSF-HiFiGAN vocoder | [openvpi/vocoders](https://github.com/openvpi/vocoders) → [jcosta33/vocoder-models](https://huggingface.co/jcosta33/vocoder-models) | 52 MB | ONNX (extracted from .oudep) | Mel-spectrogram → audio waveform (for DiffSinger) |
 | DiffSinger voicebanks | Community | ~150 MB each | ONNX | MIDI + lyrics → singing mel-spectrogram |
 
-### Planned
-
-| Model | Source | Size | Conversion | Purpose |
-|-------|--------|------|------------|---------|
-| MIDI-DDSP decoder | [magenta/midi-ddsp](https://github.com/magenta/midi-ddsp) | ~8 MB | TF checkpoint → ONNX (via Colab) | MIDI → instrument synthesis parameters |
 
 ## How to add a new model
 
@@ -99,7 +94,7 @@ tf2onnx.convert.from_saved_model(
 )
 ```
 
-**If the model has complex dependencies** (like MIDI-DDSP): Use Google Colab where all deps are pre-installed. See `scripts/export_ddsp_to_onnx.ipynb` for an example.
+**If the model has complex dependencies**: Use Google Colab where compatible Python/TF versions are available.
 
 ### 3. Validate
 
@@ -139,31 +134,11 @@ https://huggingface.co/your-org/your-repo/resolve/main/path/in/repo/model.onnx
 4. Write a render use case (`src/modules/BrowserAi/useCases/`)
 5. Wire up the UI
 
-## The DDSP decomposition pattern
+## ML + DSP decomposition pattern
 
 Some models fuse ML inference with DSP (digital signal processing) in their computation graph. This makes ONNX conversion difficult because the DSP operations (FFT, sine wave generation, phase accumulation) may use custom ops that ONNX doesn't support.
 
-The solution: **split the model into ML + DSP**.
-
-```
-┌─────────────────┐     ┌──────────────────────┐
-│  ML (ONNX)      │     │  DSP (TypeScript)    │
-│                 │     │                      │
-│  (f0, loudness, │ ──→ │  Additive synthesis  │
-│   instrument)   │     │  (harmonic oscbank)  │
-│        ↓        │     │        +             │
-│  amplitudes     │     │  Subtractive synth   │
-│  harmonics[60]  │     │  (filtered noise)    │
-│  noise[65]      │     │        ↓             │
-└─────────────────┘     │  Audio waveform      │
-                        └──────────────────────┘
-```
-
-The ML part predicts *what parameters to use*. The DSP part *generates the audio*. This pattern:
-- Makes ONNX export trivial (the ML part is just Dense/GRU/Conv layers)
-- Allows a handcrafted fallback when the ML model isn't available
-- Runs the DSP in an AudioWorklet for real-time use (future)
-- Is exactly how Google's DDSP-VST works (TFLite + C++)
+The solution: **split the model into ML + DSP**. The ML part predicts parameters, the DSP part generates audio in TypeScript. This makes ONNX export trivial (the ML part is just Dense/GRU/Conv layers) and allows the DSP to run in an AudioWorklet for real-time use.
 
 ## Candidate models for future integration
 

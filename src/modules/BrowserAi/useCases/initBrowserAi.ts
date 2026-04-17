@@ -17,17 +17,12 @@ import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 import {
     DDSP_INSTRUMENT_CATALOG,
-    DDSP_INSTRUMENT_INDEX,
-    DDSP_MODEL_URL,
-    DDSP_MODEL_SIZE_BYTES,
     KOKORO_VOICE_CATALOG,
     NSF_HIFIGAN_URL,
     NSF_HIFIGAN_SIZE_BYTES,
     KOKORO_MODEL_URL,
     KOKORO_MODEL_SIZE_BYTES,
 } from '../models/ddspInstrumentCatalog';
-
-export { DDSP_INSTRUMENT_INDEX, DDSP_MODEL_URL, DDSP_MODEL_SIZE_BYTES };
 import { type DdspInstrument, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
 import { midiStore } from '#/modules/MIDI/stores';
 
