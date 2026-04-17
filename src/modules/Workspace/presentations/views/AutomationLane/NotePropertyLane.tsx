@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, type PointerEvent, useRef, useLayoutEffect, useMemo } from 'react';
+import { type ReactElement, type MouseEvent, type PointerEvent, useRef, useLayoutEffect } from 'react';
 import { midiStore } from '#/modules/MIDI/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
@@ -77,8 +77,8 @@ export const NotePropertyLane = ({
     const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
 
-    const selectedNotes = useMemo(() => notes.filter((n) => selectedNoteIds.has(n.id)), [notes, selectedNoteIds]);
-    const sortedSelected = useMemo(() => [...selectedNotes].sort((a, b) => a.startBeat - b.startBeat), [selectedNotes]);
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const sortedSelected = [...selectedNotes].sort((a, b) => a.startBeat - b.startBeat);
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -176,9 +176,9 @@ export const NotePropertyLane = ({
         if (e.shiftKey && sortedSelected.length >= 2) {
             const firstNote = sortedSelected[0]!;
             const lastNote = sortedSelected[sortedSelected.length - 1]!;
-            const startVal = getValue(firstNote);
-            const beatSpan = lastNote.startBeat - firstNote.startBeat;
             const initialValues = new Map<string, number>(sortedSelected.map((n: MidiNote) => [n.id, getValue(n)] as [string, number]));
+            const startVal = initialValues.get(firstNote.id) ?? getValue(firstNote);
+            const beatSpan = lastNote.startBeat - firstNote.startBeat;
 
             const applyRamp = (endVal: number): void => {
                 for (const n of sortedSelected) {
@@ -394,31 +394,31 @@ export const NotePropertyLane = ({
         <div ref={containerRef} className="relative h-full w-full" role="group" aria-label={`${label} lane`}>
             <canvas ref={canvasRef} className="cursor-ns-resize" onMouseDown={handleMouseDown} />
             
-            {sortedSelected.length > 1 && (
+            {sortedSelected.length > 1 ? (
                 <>
                     <svg className="absolute inset-0 pointer-events-none w-full h-full overflow-visible">
-                        <line 
-                            x1={leftX + 1} 
-                            y1={getYPercent(leftVal)} 
-                            x2={rightX + 1} 
-                            y2={getYPercent(rightVal)} 
-                            stroke="rgba(255, 255, 255, 0.4)" 
+                        <line
+                            x1={leftX + 1}
+                            y1={getYPercent(leftVal)}
+                            x2={rightX + 1}
+                            y2={getYPercent(rightVal)}
+                            stroke="rgba(255, 255, 255, 0.4)"
                             strokeWidth="1.5"
                             strokeDasharray="4 4"
                         />
                     </svg>
-                    <div 
+                    <div
                         className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
                         style={{ left: leftX + 1, top: getYPercent(leftVal) }}
                         onPointerDown={(e) => handleRampDrag('left', e)}
                     />
-                    <div 
+                    <div
                         className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
                         style={{ left: rightX + 1, top: getYPercent(rightVal) }}
                         onPointerDown={(e) => handleRampDrag('right', e)}
                     />
                 </>
-            )}
+            ) : null}
         </div>
     );
 };

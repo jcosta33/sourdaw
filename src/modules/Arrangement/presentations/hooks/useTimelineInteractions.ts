@@ -195,6 +195,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const clipForHit = state?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipHit.clipId);
             if (clipForHit?.isGhost) {
                 acceptGhostClip(clipHit.clipId);
+                return;
             }
             selectTrack(clipHit.trackId);
             if (e.shiftKey || e.metaKey) {

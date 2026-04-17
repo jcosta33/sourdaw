@@ -1,4 +1,4 @@
-import { modulationStore } from '../../stores/modulationStore';
+import { modulationStore, modulationRuntimeStore } from '../../stores/modulationStore';
 
 /**
  * Apply procedural modulation for the current playhead position.
@@ -11,7 +11,8 @@ export function applyModulation(playheadBeat: number): void {
         return;
     }
 
-    const runtimeValues: Record<string, number> = { ...state.runtimeValues };
+    const rtState = modulationRuntimeStore.value;
+    const runtimeValues: Record<string, number> = { ...(rtState?.runtimeValues ?? {}) };
     let changed = false;
 
     for (const mod of state.modulators) {
@@ -23,7 +24,7 @@ export function applyModulation(playheadBeat: number): void {
         if (cfg.kind === 'lfo') {
             const period = cfg.rate || 1;
             const phase = cfg.phase || 0;
-            const x = (playheadBeat / period + phase) % 1;
+            const x = ((playheadBeat / period + phase) % 1 + 1) % 1;
 
             switch (cfg.waveform) {
                 case 'sine':
@@ -46,8 +47,13 @@ export function applyModulation(playheadBeat: number): void {
             value *= cfg.depth;
         } else if (cfg.kind === 'step') {
             const period = cfg.rate || 1;
-            const stepIdx = Math.floor(playheadBeat / period) % cfg.steps.length;
-            value = cfg.steps[stepIdx] ?? 0;
+            const len = cfg.steps.length;
+            if (len === 0) {
+                value = 0;
+            } else {
+                const stepIdx = ((Math.floor(playheadBeat / period) % len) + len) % len;
+                value = cfg.steps[stepIdx] ?? 0;
+            }
         }
 
         if (runtimeValues[mod.id] !== value) {
@@ -57,6 +63,6 @@ export function applyModulation(playheadBeat: number): void {
     }
 
     if (changed) {
-        modulationStore.set({ ...state, runtimeValues });
+        modulationRuntimeStore.set({ runtimeValues });
     }
 }

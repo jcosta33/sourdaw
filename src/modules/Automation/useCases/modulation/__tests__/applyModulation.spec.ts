@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { modulationStore } from '../../../stores/modulationStore';
+import { modulationStore, modulationRuntimeStore } from '../../../stores/modulationStore';
 import { applyModulation } from '../applyModulation';
 
 describe('applyModulation', () => {
@@ -37,6 +37,8 @@ describe('applyModulation', () => {
                     enabled: true,
                 },
             ],
+        });
+        modulationRuntimeStore.set({
             runtimeValues: {},
         });
     });
@@ -44,33 +46,33 @@ describe('applyModulation', () => {
     it('should compute sine LFO values correctly', () => {
         // At beat 0, sin(0) = 0, (0+1)/2 = 0.5
         applyModulation(0);
-        expect(modulationStore.value?.runtimeValues.lfo1).toBeCloseTo(0.5);
+        expect(modulationRuntimeStore.value?.runtimeValues.lfo1).toBeCloseTo(0.5);
 
         // At beat 1 (1/4 of cycle), sin(pi/2) = 1, (1+1)/2 = 1
         applyModulation(1);
-        expect(modulationStore.value?.runtimeValues.lfo1).toBeCloseTo(1);
+        expect(modulationRuntimeStore.value?.runtimeValues.lfo1).toBeCloseTo(1);
 
         // At beat 2 (1/2 of cycle), sin(pi) = 0, (0+1)/2 = 0.5
         applyModulation(2);
-        expect(modulationStore.value?.runtimeValues.lfo1).toBeCloseTo(0.5);
+        expect(modulationRuntimeStore.value?.runtimeValues.lfo1).toBeCloseTo(0.5);
 
         // At beat 3 (3/4 of cycle), sin(3pi/2) = -1, (-1+1)/2 = 0
         applyModulation(3);
-        expect(modulationStore.value?.runtimeValues.lfo1).toBeCloseTo(0);
+        expect(modulationRuntimeStore.value?.runtimeValues.lfo1).toBeCloseTo(0);
     });
 
     it('should compute step modulator values correctly', () => {
         applyModulation(0.5); // step 0
-        expect(modulationStore.value?.runtimeValues.step1).toBe(0);
+        expect(modulationRuntimeStore.value?.runtimeValues.step1).toBe(0);
 
         applyModulation(1.5); // step 1
-        expect(modulationStore.value?.runtimeValues.step1).toBe(1);
+        expect(modulationRuntimeStore.value?.runtimeValues.step1).toBe(1);
 
         applyModulation(2.5); // step 2
-        expect(modulationStore.value?.runtimeValues.step1).toBe(0.5);
+        expect(modulationRuntimeStore.value?.runtimeValues.step1).toBe(0.5);
 
         applyModulation(3.5); // wraps to step 0
-        expect(modulationStore.value?.runtimeValues.step1).toBe(0);
+        expect(modulationRuntimeStore.value?.runtimeValues.step1).toBe(0);
     });
 
     it('should not update if modulator is disabled', () => {
@@ -81,6 +83,6 @@ describe('applyModulation', () => {
         });
 
         applyModulation(1);
-        expect(modulationStore.value?.runtimeValues).toEqual({});
+        expect(modulationRuntimeStore.value?.runtimeValues).toEqual({});
     });
 });

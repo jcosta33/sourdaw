@@ -1,4 +1,4 @@
-import { modulationStore } from '../../stores/modulationStore';
+import { modulationStore, modulationRuntimeStore } from '../../stores/modulationStore';
 
 /**
  * Get the total modulation amount for a specific parameter at the current moment.
@@ -10,11 +10,12 @@ export function getModulationForParam(trackId: string, deviceId: string, paramId
         return 0;
     }
 
+    const rtState = modulationRuntimeStore.value;
     let total = 0;
     for (const mod of state.modulators) {
         if (!mod.enabled) {continue;}
-        
-        const val = state.runtimeValues[mod.id] ?? 0;
+
+        const val = rtState?.runtimeValues[mod.id] ?? 0;
         for (const mapping of mod.mappings) {
             if (
                 mapping.targetTrackId === trackId &&

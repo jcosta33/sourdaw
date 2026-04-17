@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { modulationStore } from '../../../stores/modulationStore';
+import { modulationStore, modulationRuntimeStore } from '../../../stores/modulationStore';
 import { getModulationForParam } from '../getModulationForParam';
 
 describe('getModulationForParam', () => {
@@ -30,6 +30,8 @@ describe('getModulationForParam', () => {
                     enabled: true,
                 },
             ],
+        });
+        modulationRuntimeStore.set({
             runtimeValues: {
                 mod1: 0.8,
                 mod2: 0.5,
@@ -63,10 +65,10 @@ describe('getModulationForParam', () => {
 
     it('should clamp result to -1..1', () => {
         const state = modulationStore.value!;
+        modulationRuntimeStore.set({ runtimeValues: { mod1: 1.0, mod2: 1.0 } });
         modulationStore.set({
             ...state,
-            runtimeValues: { mod1: 1.0, mod2: 1.0 },
-            modulators: state.modulators.map(m => 
+            modulators: state.modulators.map(m =>
                 m.id === 'mod1' ? { ...m, mappings: [{ ...m.mappings[0]!, amount: 1.0 }] } : m
             )
         });

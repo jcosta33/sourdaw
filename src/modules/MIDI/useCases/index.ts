@@ -97,5 +97,8 @@ export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
 export type { StrumDirection } from './strumNotes/strumNotes';
 
+// ── Hardware ─────────────────────────────────────────────────────────────────
+export { exportHardwareMappings, importHardwareMappings } from './hardware/portableMappings';
+
 // ── Chord Track Transposition ─────────────────────────────────────────────────
 export { transposeForChordTrack } from './transposeForChordTrack';

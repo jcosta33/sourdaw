@@ -41,13 +41,14 @@ export const SpatialMapRenderer = ({
 
         ctx.clearRect(0, 0, width, height);
 
+        const accentGold = getComputedStyle(canvas).getPropertyValue('--color-accent-gold').trim() || '#d4a017';
+
         for (const sample of libState.samples) {
             if (!sample.spatialMap) continue;
 
             const x = (sample.spatialMap.x + 1) * 0.5 * width;
             const y = (sample.spatialMap.y + 1) * 0.5 * height;
 
-            const accentGold = getComputedStyle(canvas).getPropertyValue('--color-accent-gold').trim() || '#d4a017';
             ctx.fillStyle = sample.favorite ? accentGold : 'rgba(255, 255, 255, 0.4)';
             ctx.beginPath();
             ctx.arc(x, y, 3, 0, Math.PI * 2);
@@ -64,8 +65,9 @@ export const SpatialMapRenderer = ({
     const handleClick = (e: React.MouseEvent) => {
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
+        const canvas = canvasRef.current!;
+        const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const my = (e.clientY - rect.top) * (canvas.height / rect.height);
 
         // Hit test
         for (const sample of libState.samples) {

@@ -1,6 +1,6 @@
 // stores/automationStore
 export { automationStore } from './stores/automationStore';
-export { modulationStore } from './stores/modulationStore';
+export { modulationStore, modulationRuntimeStore } from './stores/modulationStore';
 export type { AutomationStoreState } from './stores/automationStore';
 
 // useCases/automation/addAutomationLane

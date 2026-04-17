@@ -6,7 +6,7 @@ import { cn } from '#/utils/Styles/cn';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
-import { addAutomationLane, removeAutomationLane, automationStore, modulationStore } from '#/modules/Automation';
+import { addAutomationLane, removeAutomationLane, automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation';
 import { useStore } from '#/infra/store/useStore';
 import { type Device } from '../../../models/TrackViewTypes';
 
@@ -70,14 +70,15 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
 
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
-    const modState = useStore(modulationStore, { modulators: [], runtimeValues: {} });
+    const modState = useStore(modulationStore, { modulators: [] });
+    const modRtState = useStore(modulationRuntimeStore, { runtimeValues: {} });
 
     // Aggregated modulation amount for this parameter
     const modulation = (() => {
         let total = 0;
         for (const mod of modState.modulators) {
             if (!mod.enabled) continue;
-            const val = modState.runtimeValues[mod.id] ?? 0;
+            const val = modRtState.runtimeValues[mod.id] ?? 0;
             for (const mapping of mod.mappings) {
                 if (mapping.targetTrackId === trackId &&
                     mapping.targetDeviceId === device.id &&

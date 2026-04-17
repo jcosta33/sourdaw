@@ -93,14 +93,18 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         createdId: createdIds[i]!,
     }));
 
+    // Mutable tracking: redo creates new clip IDs, so undo must reference the latest set.
+    let currentIds = [...createdIds];
+
     pushUndoEntry(
         `Duplicate ${createdIds.length} clip${createdIds.length > 1 ? 's' : ''} forward`,
         () => {
-            for (const id of createdIds) {
+            for (const id of currentIds) {
                 removeClip(id);
             }
         },
         () => {
+            const newIds: string[] = [];
             for (const ri of redoInfos) {
                 const newClip = addClip({
                     trackId: ri.trackId,
@@ -111,9 +115,11 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
                     audioBufferId: ri.audioBufferId,
                 });
                 if (newClip) {
+                    newIds.push(newClip.id);
                     duplicateClipAutomation(ri.sourceClipId, newClip.id);
                 }
             }
+            currentIds = newIds;
         }
     );
 }

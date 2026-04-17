@@ -7,8 +7,7 @@
 const WGSL_SHADER = /* wgsl */ `
 struct VertexOut {
     @builtin(position) pos : vec4f,
-    @location(0)       uv  : vec2f,
-    @location(1)       col : vec4f,
+    @location(0)       col : vec4f,
 }
 
 @vertex
@@ -23,7 +22,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(@location(0) pos: vec4f, @location(1) col: vec4f) -> @location(0) vec4f {
+fn fs_main(@location(0) col: vec4f) -> @location(0) vec4f {
     return col;
 }
 `;

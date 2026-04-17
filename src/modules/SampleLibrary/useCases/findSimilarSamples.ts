@@ -26,6 +26,7 @@ export function findSimilarSamples(sampleId: string, limit = 10): string[] {
 }
 
 function cosineDistance(a: Float32Array, b: Float32Array): number {
+    if (a.length !== b.length) return 1;
     let dot = 0;
     let normA = 0;
     let normB = 0;
@@ -34,5 +35,6 @@ function cosineDistance(a: Float32Array, b: Float32Array): number {
         normA += a[i]! * a[i]!;
         normB += b[i]! * b[i]!;
     }
+    if (normA === 0 || normB === 0) return 1;
     return 1 - dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }

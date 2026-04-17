@@ -9,7 +9,7 @@
  * - PianoRollToolbar.tsx        (toolbar controls — pure component)
  * - PianoRollContextMenu.tsx    (right-click menu — view component)
  */
-import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
+import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState, useEffect } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 import { midiStore } from '#/modules/MIDI';
@@ -92,6 +92,7 @@ export const PianoRoll = ({
     const beatWidth = Math.max(1, 40 * zoom);
     /** A9: focused clip receives newly drawn notes; defaults to primary clipId */
     const [focusedClipId, setFocusedClipId] = useState<string>(clipId);
+    useEffect(() => { setFocusedClipId(clipId); }, [clipId]);
 
     // ── Store subscriptions ──────────────────────────────────────────
     const midiState = useStore(midiStore, { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -296,7 +297,7 @@ export const PianoRoll = ({
                 </div>
 
                 {/* I4: Expression View bottom panel */}
-                {showExpressionView && (
+                {showExpressionView ? (
                     <div className="h-32 border-t border-border/20 bg-surface-well flex">
                         <div className="w-10 shrink-0 border-r border-border/10 flex flex-col items-center py-1">
                             <span className="text-[8px] text-muted-foreground uppercase vertical-text">
@@ -328,7 +329,7 @@ export const PianoRoll = ({
                             />
                         </div>
                     </div>
-                )}
+                ) : null}
             </div>
 
             {ctxMenu ? (

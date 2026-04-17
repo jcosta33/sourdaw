@@ -30,10 +30,12 @@ export const WebGpuSpectrumAnalyzer = ({
 
         async function init() {
             const renderer = await createWebGpuSpectrumRenderer(canvas!, numBins, sampleRate);
-            if (!disposed) {
-                rendererRef.current = renderer;
-                renderer?.resize(width, height);
+            if (disposed) {
+                renderer?.dispose();
+                return;
             }
+            rendererRef.current = renderer;
+            renderer?.resize(width, height);
         }
 
         init();

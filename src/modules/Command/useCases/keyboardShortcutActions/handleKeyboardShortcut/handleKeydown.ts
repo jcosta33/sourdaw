@@ -8,6 +8,7 @@ import {
     insertTime,
     duplicateTimeRange,
     removeClip,
+    addClip,
 } from '#/modules/Arrangement/useCases';
 
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
@@ -100,9 +101,10 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                         duplicateTimeRange(marq.startBeat, marq.endBeat);
                         // Push undo entry (duplicateTimeRange does NOT push its own in this appAction path)
                         const duration = marq.endBeat - marq.startBeat;
+                        const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
                         pushUndoEntry(
                             'Duplicate Time Range',
-                            () => deleteTimeRange(marq.endBeat, marq.endBeat + duration, (trackStore.value?.tracks ?? []).map((t) => t.id)),
+                            () => deleteTimeRange(marq.endBeat, marq.endBeat + duration, trackIdsAtAction),
                             () => duplicateTimeRange(marq.startBeat, marq.endBeat)
                         );
                         return true;
@@ -223,6 +225,21 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                                     setLoopRegion(lo, hi);
                                 }
                             }
+                        } else {
+                            // Fallback: single selected clip
+                            const singleId = workspaceStore.value?.selectedClipId;
+                            if (singleId) {
+                                const state = trackStore.value;
+                                if (state) {
+                                    for (const track of state.tracks) {
+                                        const clip = track.clips.find((c) => c.id === singleId);
+                                        if (clip) {
+                                            setLoopRegion(clip.startBeat, clip.endBeat);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                         }
                         return true;
                     }
@@ -319,9 +336,44 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                     // Else, standard clip deletion if clips are selected
                     const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
                     if (selectedIds.length > 0) {
+                        const state = trackStore.value;
+                        const deletedClips: { trackId: string; clip: { id: string; trackId: string; name: string; startBeat: number; endBeat: number; type: 'audio' | 'midi'; audioBufferId?: string; assetHash?: string; isGhost?: boolean } }[] = [];
+                        if (state) {
+                            for (const id of selectedIds) {
+                                for (const track of state.tracks) {
+                                    const clip = track.clips.find((c) => c.id === id);
+                                    if (clip) {
+                                        deletedClips.push({ trackId: track.id, clip: { ...clip } });
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         for (const id of selectedIds) {
                             removeClip(id);
                         }
+                        pushUndoEntry(
+                            'Delete Clips',
+                            () => {
+                                for (const { trackId, clip } of deletedClips) {
+                                    addClip({
+                                        trackId,
+                                        startBeat: clip.startBeat,
+                                        endBeat: clip.endBeat,
+                                        name: clip.name,
+                                        type: clip.type,
+                                        audioBufferId: clip.audioBufferId,
+                                        assetHash: clip.assetHash,
+                                        isGhost: clip.isGhost,
+                                    });
+                                }
+                            },
+                            () => {
+                                for (const { clip } of deletedClips) {
+                                    removeClip(clip.id);
+                                }
+                            }
+                        );
                         return true;
                     }
                     return false;

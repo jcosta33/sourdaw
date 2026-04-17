@@ -30,9 +30,10 @@ export function acceptGhostClip(clipId: string): void {
         clips: [...t.clips, { ...clipData, trackId, isGhost: false }],
     }));
 
-    // 2. Remove from ghost list
+    // 2. Remove from ghost list (re-read after updateTrack mutated the store)
+    const updated = trackStore.value!;
     trackStore.set({
-        ...state,
-        ghostClips: (state.ghostClips ?? []).filter((c) => c.id !== clipId),
+        ...updated,
+        ghostClips: (updated.ghostClips ?? []).filter((c) => c.id !== clipId),
     });
 }

@@ -87,7 +87,7 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         id: 'workspace.clearClipSelection',
         label: 'Clear Clip Selection',
         category: 'editing',
-        defaultKeys: ['mod+shift+a', 'Escape'],
+        defaultKeys: ['mod+shift+a'],
         action: { type: 'callback', id: 'clearClipSelection' },
     },
     {
