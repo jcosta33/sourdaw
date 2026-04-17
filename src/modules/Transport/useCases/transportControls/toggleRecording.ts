@@ -13,12 +13,10 @@ import {
 import { ensureTrackStrips } from '../ensureTrackStrips';
 import { startPlayback } from './startPlayback';
 
-let activeRecordingClipIds: string[] = [];
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 
 function beginActualRecording(): void {
     const clips = startRecording();
-    activeRecordingClipIds = clips.map((c) => c.id);
     updateTransportState({ isRecording: true });
 
     const ctx = getAudioContext();
@@ -67,8 +65,7 @@ export function toggleRecording(): void {
 
     if (state.isRecording) {
         stopAudioRecording();
-        stopRecording(activeRecordingClipIds);
-        activeRecordingClipIds = [];
+        stopRecording();
         if (countInTimerId !== null) {
             clearTimeout(countInTimerId);
             countInTimerId = null;

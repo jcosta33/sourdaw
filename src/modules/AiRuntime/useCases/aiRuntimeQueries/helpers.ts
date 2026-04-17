@@ -1,5 +1,8 @@
 import { PRESET_ACTIONS } from '../../models/presetActions/registry';
-import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../models/midiPatternLibrary';
+import {
+    PATTERN_TEMPLATES as modelPatternTemplates,
+    resolveTemplateScale,
+} from '../../models/midiPatternLibrary';
 
 export type MixIssue = {
     severity: 'info' | 'warning' | 'critical';
@@ -71,8 +74,14 @@ export function toPublicPatternTemplate(template: PatternTemplateModel) {
         genres: [...template.genres],
         tags: [...template.tags],
         description: template.description,
+        // §14.6 / G6 — apply the template's `scaleOverride` at the boundary so
+        // downstream consumers (AI handlers, external callers) automatically
+        // generate on the template's required scale without re-implementing
+        // the resolution rule.
         generate: (params: PatternTemplateInput): PatternTemplateOutput =>
-            template.generate(params).map((note) => ({ ...note })),
+            template
+                .generate({ ...params, scale: resolveTemplateScale(template, params) })
+                .map((note) => ({ ...note })),
         lengthBeats: template.lengthBeats,
     };
 }

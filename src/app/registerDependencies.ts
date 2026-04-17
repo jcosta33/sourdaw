@@ -1,7 +1,11 @@
 import { createEventBus } from '#/infra/events/createEventBus';
 import { logger } from '#/infra/logger/appLogger';
 
-import { type TrackAddedPayload, type TrackRemovedPayload } from '#/modules/Arrangement/events';
+import {
+    type TrackAddedPayload,
+    type TrackRemovedPayload,
+    type TrackSelectionChangedPayload,
+} from '#/modules/Arrangement/events';
 import { type AudioDeviceLoadedPayload } from '#/modules/AudioEngine/events';
 import {
     type ShowDevicePanelPayload,
@@ -22,6 +26,7 @@ export type AppEvents = {
     // Domain events
     'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
+    'track.selectionChanged': TrackSelectionChangedPayload;
     'audioDevice.loaded': AudioDeviceLoadedPayload;
 
     // Panel toggles (generic — prefer this over per-device events)

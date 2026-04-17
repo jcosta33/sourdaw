@@ -9,7 +9,7 @@ export const handleGenerateDrumPattern = createGenerationHandler<'generateDrumPa
     labelSuffix: 'drum pattern',
     trackNamePrefix: 'Drums',
     applyToTrack: (trackId, action, style, playheadBeat) => {
-        applyDrumPatternToTrack(
+        return applyDrumPatternToTrack(
             trackId,
             { style: style as DrumPatternStyle, bars: action.payload.bars, density: action.payload.density },
             playheadBeat

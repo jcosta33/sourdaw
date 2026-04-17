@@ -62,8 +62,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['dark', 'moody'],
         description: 'Classic minor progression',
         lengthBeats: 12,
+        scaleOverride: 'minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale === 'major' ? 'minor' : p.scale, 48, 84);
+            const sp = getScalePitches(p.key, p.scale, 48, 84);
             const o = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
             return [
                 [0, 2, 4],
@@ -80,8 +81,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['classic', 'shuffle'],
         description: '12-bar blues form',
         lengthBeats: 48,
+        scaleOverride: 'blues',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'blues', 48, 84);
+            const sp = getScalePitches(p.key, p.scale, 48, 84);
             const o = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
             const pat = [0, 0, 0, 0, 3, 3, 0, 0, 4, 3, 0, 4];
             return pat.flatMap((root, i) => chordFromDegrees([root, root + 2, root + 4], sp, o, i * 4, 4, 78));
@@ -114,8 +116,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['flamenco', 'dramatic'],
         description: 'Spanish cadence i–VII–VI–V',
         lengthBeats: 16,
+        scaleOverride: 'harmonic-minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'harmonic-minor', 48, 84);
+            const sp = getScalePitches(p.key, p.scale, 48, 84);
             const o = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
             return [
                 [0, 2, 4],
@@ -133,8 +136,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['groove', 'modal'],
         description: 'Two-chord dorian groove',
         lengthBeats: 8,
+        scaleOverride: 'dorian',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'dorian', 48, 84);
+            const sp = getScalePitches(p.key, p.scale, 48, 84);
             const o = Math.max(0, sp.indexOf(snapToScale(62, sp)) - 0);
             return [
                 [0, 2, 4, 6],
@@ -150,8 +154,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['big', 'anthem'],
         description: 'Big EDM chord stabs',
         lengthBeats: 16,
+        scaleOverride: 'minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale === 'major' ? 'minor' : p.scale, 36, 84);
+            const sp = getScalePitches(p.key, p.scale, 36, 84);
             const o = Math.max(0, sp.indexOf(snapToScale(45, sp)) - 0);
             return [0, 3, 5, 4].flatMap((root, i) => {
                 const deg = [root, root + 2, root + 4];
@@ -186,8 +191,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['dark', '808'],
         description: 'Dark minor trap chords',
         lengthBeats: 16,
+        scaleOverride: 'minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'minor', 36, 84);
+            const sp = getScalePitches(p.key, p.scale, 36, 84);
             const o = Math.max(0, sp.indexOf(snapToScale(48, sp)) - 0);
             return [0, 6, 5, 4].flatMap((root, i) => chordFromDegrees([root, root + 2, root + 4], sp, o, i * 4, 4, 85));
         },
@@ -200,8 +206,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['pad', 'atmospheric'],
         description: 'Atmospheric synth pads',
         lengthBeats: 16,
+        scaleOverride: 'minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'minor', 48, 84);
+            const sp = getScalePitches(p.key, p.scale, 48, 84);
             const o = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
             return [
                 [0, 2, 4, 7],
@@ -281,8 +288,9 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['stab', 'energy'],
         description: 'Quick synth stabs',
         lengthBeats: 8,
+        scaleOverride: 'minor',
         generate: (p) => {
-            const sp = getScalePitches(p.key, 'minor', 60, 84);
+            const sp = getScalePitches(p.key, p.scale, 60, 84);
             const o = 0;
             return [
                 [0, 2, 4],

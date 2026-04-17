@@ -5,7 +5,7 @@
 
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 // See `AiGeneration/models/GenerationStyles.ts` — shared to avoid a
-// circular dep with `AiRuntime/useCases/dsoEditor` (audit §11.2).
+// circular dep with `AiRuntime/useCases/dsoEditor`.
 import type { ChordProgressionStyle, ChordVoicing } from '../../models/GenerationStyles';
 export type { ChordProgressionStyle, ChordVoicing };
 

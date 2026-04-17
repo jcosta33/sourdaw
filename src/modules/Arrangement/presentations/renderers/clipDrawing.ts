@@ -150,7 +150,7 @@ export const drawClip = (
     if (clip.type === 'midi' && clip.midiNotes.length > 0) {
         drawMidiNotePreview(ctx, clip, x, trackY, w, trackHeight, padding);
     } else if (clip.type === 'audio' && clip.audioBufferId && audioBufferCache.has(clip.audioBufferId)) {
-        drawWaveformPeaks(ctx, clip.audioBufferId, x, trackY, w, trackHeight, padding);
+        drawWaveformPeaks(ctx, clip, model, x, trackY, w, trackHeight, padding);
     } else if (w > 20) {
         drawWaveformHint(ctx, x, trackY, w, trackHeight, padding);
     }
@@ -371,18 +371,36 @@ const drawMidiNotePreview = (
 
 const drawWaveformPeaks = (
     ctx: CanvasRenderingContext2D,
-    audioBufferId: string,
+    clip: ClipRenderModel,
+    model: TimelineRenderModel,
     x: number,
     trackY: number,
     w: number,
     trackHeight: number,
     padding: number
 ): void => {
-    if (w < 4) {
+    if (w < 4 || !clip.audioBufferId) {
         return;
     }
     const numBins = Math.min(Math.floor(w), 400);
-    const peaks = audioBufferCache.getWaveformPeaks(audioBufferId, numBins);
+
+    // Map clip beats onto audio-buffer samples so trimmed / offset / stretched
+    // clips show the actual portion of the sample that will be played, rather
+    // than the whole buffer squashed into the clip width.
+    const offsetBeats = clip.audioOffsetBeats ?? 0;
+    const stretchRatio = clip.stretchRatio ?? 1;
+    const clipBeats = clip.endBeat - clip.startBeat;
+    const buffer = audioBufferCache.get(clip.audioBufferId);
+    const secondsPerBeat = 60 / model.tempo;
+    const sampleRate = buffer?.sampleRate ?? 44100;
+    const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
+    const beatsConsumed = clipBeats / Math.max(stretchRatio, 0.0001);
+    const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
+
+    const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins, {
+        startSample,
+        endSample,
+    });
 
     const midY = trackY + trackHeight / 2 + 4;
     const amplitude = (trackHeight - padding * 2) * 0.35;

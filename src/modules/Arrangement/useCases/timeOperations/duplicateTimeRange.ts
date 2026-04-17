@@ -2,6 +2,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore } from '../../stores/markerStore';
 import { automationStore } from '#/modules/Automation';
+import { shiftMidiNotesAfterBeat } from '#/modules/MIDI/useCases';
 
 export function insertTime(atBeat: number, durationBeats: number): void {
     const state = getTrackState();
@@ -51,6 +52,11 @@ export function insertTime(atBeat: number, durationBeats: number): void {
             })),
         });
     }
+
+    // MIDI notes and CC/pitch-bend events live in absolute beat coordinates,
+    // so they must follow the same global time shift. Without this the clip
+    // rectangles move to the right but the notes inside stay put.
+    shiftMidiNotesAfterBeat({ atBeat, delta: durationBeats });
 }
 
 export function duplicateTimeRange(startBeat: number, endBeat: number): void {

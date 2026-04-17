@@ -1,12 +1,17 @@
 import { type AppAction } from '#/modules/Command/models/AppAction';
 import { createHandler } from '#/utils/createHandler';
 import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { selectClipWithFocus } from '#/modules/Workspace/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { getPlayheadBeat, resolveOrCreateMidiTrack } from './generationHandlerHelpers';
 
 type GenerationActionType = 'generateMelody' | 'generateChordProgression' | 'generateDrumPattern';
 
 /** The payload fields shared by all three generation actions. */
-type CommonGenerationPayload = { style: string; trackId?: string };
+type CommonGenerationPayload = { style: string; trackId?: string; startBeat?: number };
+
+/** What the apply function reports back so the handler can surface feedback. */
+type ApplyResult = { clipId: string; noteCount: number } | null | void;
 
 type GenerationHandlerConfig<K extends GenerationActionType> = {
     /** The set of valid style values for this generation type. */
@@ -17,8 +22,18 @@ type GenerationHandlerConfig<K extends GenerationActionType> = {
     labelSuffix: string;
     /** Track name prefix, e.g. "Melody", "Chords", "Drums". */
     trackNamePrefix: string;
-    /** Build the options object and call the apply function. */
-    applyToTrack: (trackId: string, action: Extract<AppAction, { type: K }>, style: string, playheadBeat: number) => void;
+    /**
+     * Build the options object and call the apply function. Returning a
+     * `{ clipId, noteCount }` lets the handler focus the new clip and notify
+     * the user; returning `null`/`void` suppresses the success notification
+     * (the underlying apply already logged the failure).
+     */
+    applyToTrack: (
+        trackId: string,
+        action: Extract<AppAction, { type: K }>,
+        style: string,
+        playheadBeat: number
+    ) => ApplyResult;
 };
 
 export function createGenerationHandler<K extends GenerationActionType>(config: GenerationHandlerConfig<K>) {
@@ -34,10 +49,44 @@ export function createGenerationHandler<K extends GenerationActionType>(config: 
                 addTrack,
             });
             if (!trackId) {
+                notifyUser(`Could not generate ${style} ${config.labelSuffix} — no MIDI track available`, 'error');
                 return;
             }
 
-            config.applyToTrack(trackId, a as Extract<AppAction, { type: K }>, style, getPlayheadBeat());
+            // §14.3 / G5 — honour a `startBeat` override so right-click →
+            // "Generate here" actually places the clip where the user clicked.
+            // When no override is given (top bar / palette), fall back to the
+            // transport playhead as before.
+            const placementBeat =
+                typeof payload.startBeat === 'number' && Number.isFinite(payload.startBeat)
+                    ? Math.max(0, payload.startBeat)
+                    : getPlayheadBeat();
+
+            const result = config.applyToTrack(
+                trackId,
+                a as Extract<AppAction, { type: K }>,
+                style,
+                placementBeat
+            );
+            // §14.3 / G3 — after a successful generation, focus the new clip
+            // (so the inspector/piano-roll surfaces see it) and surface a
+            // notification. An empty-note result is still "success" in the
+            // sense that the clip was created, but we warn the user so they
+            // don't assume the generator is broken.
+            if (result && typeof result === 'object' && 'clipId' in result) {
+                selectClipWithFocus(result.clipId);
+                if (result.noteCount === 0) {
+                    notifyUser(
+                        `Generated ${style} ${config.labelSuffix}, but the algorithm produced no notes — try a higher density`,
+                        'warning'
+                    );
+                } else {
+                    notifyUser(
+                        `Generated ${style} ${config.labelSuffix} (${result.noteCount} notes)`,
+                        'success'
+                    );
+                }
+            }
         },
         describe: (a) => ({ label: `Generate ${(a as unknown as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}` }),
         undoable: true,

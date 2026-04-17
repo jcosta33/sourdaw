@@ -53,7 +53,6 @@ const schedulerSession = {
     scheduledFrozenTracks: new Set<string>(),
     activeAudioSources: [] as AudioBufferSourceNode[],
     punchRecordingActive: false,
-    punchRecordingClipIds: [] as string[],
 };
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
@@ -159,7 +158,6 @@ export function startPlayheadScheduler(): void {
         ) {
             schedulerSession.punchRecordingActive = true;
             const clips = startRecording();
-            schedulerSession.punchRecordingClipIds = clips.map((c) => c.id);
             transportStore.set({ ...transportStore.value!, isRecording: true });
 
             const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
@@ -190,8 +188,7 @@ export function startPlayheadScheduler(): void {
 
         if (schedulerSession.punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
             stopAudioRecording();
-            stopRecording(schedulerSession.punchRecordingClipIds);
-            schedulerSession.punchRecordingClipIds = [];
+            stopRecording();
             schedulerSession.punchRecordingActive = false;
             transportStore.set({ ...transportStore.value!, isRecording: false });
         }
@@ -245,8 +242,7 @@ export function stopPlayheadScheduler(): void {
     }
     if (schedulerSession.punchRecordingActive) {
         stopAudioRecording();
-        stopRecording(schedulerSession.punchRecordingClipIds);
-        schedulerSession.punchRecordingClipIds = [];
+        stopRecording();
         schedulerSession.punchRecordingActive = false;
     }
     schedulerSession.lastTickTime = 0;

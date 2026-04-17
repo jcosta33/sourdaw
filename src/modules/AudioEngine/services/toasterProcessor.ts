@@ -54,8 +54,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _memory = null; // WebAssembly.Memory
     _ready = false;
     _faulted = false;
-    _queue = new Array(8192).fill(null);
-    _queueLength = 0;
+    _queue = []; // Sorted by sampleFrame (integer sample count)
+    _queueHead = 0; // Read index — consumed entries are past this
 
     constructor() {
         super();
@@ -86,17 +86,17 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg) {
-        if (this._queueLength >= this._queue.length) {
-            console.warn('ToasterProcessor queue full');
-            return;
+        // Insert in ascending sampleFrame order within the live range
+        // [_queueHead, _queue.length). Called from the message port handler, not
+        // the audio render quantum, so splice insertion is acceptable here.
+        let lo = this._queueHead,
+            hi = this._queue.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {lo = mid + 1;}
+            else {hi = mid;}
         }
-        let i = this._queueLength - 1;
-        while (i >= 0 && this._queue[i].sampleFrame > msg.sampleFrame) {
-            this._queue[i + 1] = this._queue[i];
-            i--;
-        }
-        this._queue[i + 1] = msg;
-        this._queueLength++;
+        this._queue.splice(lo, 0, msg);
     }
 
     _handleMessage(msg) {
@@ -129,19 +129,19 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _drainQueue(blockEndFrame) {
-        let drained = 0;
-        while (drained < this._queueLength && this._queue[drained].sampleFrame <= blockEndFrame) {
-            this._dispatch(this._queue[drained]);
-            this._queue[drained] = null;
-            drained++;
+        // Audio-thread hot path: advance the read head, no splice per block.
+        while (
+            this._queueHead < this._queue.length &&
+            this._queue[this._queueHead].sampleFrame <= blockEndFrame
+        ) {
+            this._dispatch(this._queue[this._queueHead]);
+            this._queueHead++;
         }
-        if (drained > 0) {
-            const remaining = this._queueLength - drained;
-            for (let i = 0; i < remaining; i++) {
-                this._queue[i] = this._queue[drained + i];
-                this._queue[drained + i] = null;
-            }
-            this._queueLength = remaining;
+        // Fully drained — clear in place. This is the common case for steady-state
+        // playback and allocates nothing.
+        if (this._queueHead >= this._queue.length) {
+            this._queue.length = 0;
+            this._queueHead = 0;
         }
     }
 

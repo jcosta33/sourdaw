@@ -52,7 +52,7 @@ describe('stopRecording', () => {
         mocks.getTransportState.mockReturnValue({ playheadPosition: 8 });
         mocks.takeLaneStoreValue.value = null;
 
-        stopRecording(['c1']);
+        stopRecording();
 
         expect(mocks.activeRecordingRef.current).toHaveLength(0);
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
@@ -66,7 +66,7 @@ describe('stopRecording', () => {
         });
         mocks.getTransportState.mockReturnValue({ playheadPosition: 4.1 });
 
-        stopRecording(['c1']);
+        stopRecording();
 
         const newState = mocks.setTrackState.mock.calls[0][0];
         expect(newState.tracks[0].clips[0].endBeat).toBe(5); // 4 + 1
@@ -81,7 +81,7 @@ describe('stopRecording', () => {
             ]
         };
 
-        stopRecording(['c1']);
+        stopRecording();
 
         expect(mocks.takeLaneStoreSet).toHaveBeenCalled();
         const newState = mocks.takeLaneStoreSet.mock.calls[0][0];
