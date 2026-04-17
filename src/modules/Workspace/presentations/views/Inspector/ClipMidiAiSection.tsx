@@ -34,7 +34,11 @@ type RenderResult = {
     name: string;
 };
 
-const TTS_SPEED_VARIANTS = [0.95, 1.0, 1.05] as const;
+const TTS_SPEED_VARIANTS = [
+    { multiplier: 0.95, suffix: 'slightly slower' },
+    { multiplier: 1.0, suffix: 'normal' },
+    { multiplier: 1.05, suffix: 'slightly faster' },
+] as const;
 const SVS_SEED_VARIANTS = [42, 1337, 2025] as const;
 const VARIANT_LABELS = ['A', 'B', 'C'] as const;
 
@@ -158,7 +162,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             const results: RenderResult[] = [];
             const textPreview = ttsText.trim().slice(0, 20) + (ttsText.trim().length > 20 ? '…' : '');
             for (let i = 0; i < TTS_SPEED_VARIANTS.length; i++) {
-                const speed = baseSpeed * TTS_SPEED_VARIANTS[i]!;
+                const variant = TTS_SPEED_VARIANTS[i]!;
+                const speed = baseSpeed * variant.multiplier;
                 const result = await renderKokoroTts({
                     phraseId: `${clip.id}-tts-${VARIANT_LABELS[i]}`,
                     text: ttsText.trim(),
@@ -170,7 +175,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     audio: result.audio,
                     sampleRate: result.sampleRate,
                     label: VARIANT_LABELS[i]!,
-                    name: `${ttsVoiceId} · ${textPreview}`,
+                    name: `${textPreview} · ${variant.suffix}`,
                 });
             }
             setTtsResults(results);
@@ -235,7 +240,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     audio: result.audio,
                     sampleRate: result.sampleRate,
                     label: VARIANT_LABELS[i]!,
-                    name: `${voiceName} · ${lyricsPreview}`,
+                    name: `${voiceName} · ${lyricsPreview} · take ${String(i + 1)}`,
                 });
             }
             setSvsResults(results);
@@ -351,8 +356,10 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                             ) : kokoroStatus !== 'ready' ? (
                                 <DawEmptyState
                                     compact
-                                    title="Download a voice to get started"
-                                    description="Type text and generate a spoken vocal scratch track."
+                                    title={kokoroStatus === 'error' ? 'Download failed' : 'Download a voice to get started'}
+                                    description={kokoroStatus === 'error'
+                                        ? 'Check your connection and try again.'
+                                        : 'Type text and generate a spoken vocal scratch track.'}
                                     action={
                                         <Button
                                             variant="secondary"
@@ -361,7 +368,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                             onClick={handleDownloadKokoro}
                                         >
                                             <Download className="size-3 mr-1" aria-hidden="true" />
-                                            Download Voice Model
+                                            {kokoroStatus === 'error' ? 'Retry Download' : 'Download Voice Model'}
                                             <DawMicroBadge tone="muted" className="ml-1.5">~86 MB</DawMicroBadge>
                                         </Button>
                                     }
@@ -419,42 +426,73 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         ) : (
                             /* ── Sung mode (DiffSinger SVS) ── */
                             !voicebanks.some((vb) => vb.status === 'ready') ? (
-                                <DawEmptyState
-                                    compact
-                                    title="Download a singing voice"
-                                    description="Render your MIDI notes as a singing vocal. Requires a voice pack (~330 MB) and a singing engine (~52 MB)."
-                                    action={
-                                        <div className="space-y-1.5">
-                                            {voicebanks.map((vb) => (
-                                                <Button
-                                                    key={vb.id}
-                                                    variant="secondary"
-                                                    size="xs"
-                                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                                    onClick={() => {
-                                                        // Download all models in the voicebank sequentially
-                                                        const models = Object.values(vb.models);
-                                                        void (async () => {
-                                                            for (const m of models) {
-                                                                await downloadModel({ modelId: m.id, family: m.family, url: m.url, sizeBytes: m.sizeBytes });
-                                                            }
-                                                        })();
-                                                    }}
-                                                >
-                                                    <Download className="size-3 mr-1" aria-hidden="true" />
-                                                    {vb.name} ({vb.language.toUpperCase()})
-                                                    <DawMicroBadge tone="muted" className="ml-1.5">~{Math.round(vb.totalSizeBytes / 1024 / 1024)} MB</DawMicroBadge>
-                                                </Button>
-                                            ))}
-                                        </div>
+                                (() => {
+                                    const downloadingVb = voicebanks.find((vb) => vb.status === 'downloading');
+                                    if (downloadingVb) {
+                                        return (
+                                            <div className="space-y-1.5">
+                                                <p className="text-[9px] text-muted-foreground">
+                                                    Downloading {downloadingVb.name}…
+                                                </p>
+                                                <div className="w-full h-1 bg-border/40 rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(downloadingVb.downloadProgress * 100)} aria-valuemin={0} aria-valuemax={100}>
+                                                    <div className="h-full bg-[var(--color-accent-lavender)] transition-all" style={{ width: `${Math.round(downloadingVb.downloadProgress * 100)}%` }} />
+                                                </div>
+                                                <p className="text-[9px] text-muted-foreground/60 tabular-nums">
+                                                    {Math.round(downloadingVb.downloadProgress * 100)}%
+                                                </p>
+                                            </div>
+                                        );
                                     }
-                                />
+                                    return (
+                                        <DawEmptyState
+                                            compact
+                                            title="Download a singing voice"
+                                            description="Render your MIDI notes as a singing vocal."
+                                            action={
+                                                <div className="space-y-1.5">
+                                                    {voicebanks.map((vb) => (
+                                                        <Button
+                                                            key={vb.id}
+                                                            variant="secondary"
+                                                            size="xs"
+                                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                                            onClick={() => {
+                                                                // Download voicebank models + vocoder together
+                                                                const models = Object.values(vb.models);
+                                                                void (async () => {
+                                                                    for (const m of models) {
+                                                                        await downloadModel({ modelId: m.id, family: m.family, url: m.url, sizeBytes: m.sizeBytes });
+                                                                    }
+                                                                    // Also download vocoder if not ready
+                                                                    if (vocoderStatus !== 'ready' && vocoderStatus !== 'downloading') {
+                                                                        await downloadModel({
+                                                                            modelId: NSF_HIFIGAN_VOCODER.id,
+                                                                            family: NSF_HIFIGAN_VOCODER.family,
+                                                                            url: NSF_HIFIGAN_VOCODER.url,
+                                                                            sizeBytes: NSF_HIFIGAN_VOCODER.sizeBytes,
+                                                                        });
+                                                                    }
+                                                                })();
+                                                            }}
+                                                        >
+                                                            <Download className="size-3 mr-1" aria-hidden="true" />
+                                                            {vb.name} ({vb.language.toUpperCase()})
+                                                            <DawMicroBadge tone="muted" className="ml-1.5">
+                                                                ~{Math.round((vb.totalSizeBytes + (vocoderStatus === 'ready' ? 0 : NSF_HIFIGAN_VOCODER.sizeBytes)) / 1024 / 1024)} MB
+                                                            </DawMicroBadge>
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            }
+                                        />
+                                    );
+                                })()
                             ) : (
                                 <div className="space-y-2">
                                     <div className="space-y-1">
                                         <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Voice</label>
                                         <DawCompactSelect value={selectedVoicebankId} onChange={(e) => setSelectedVoicebankId(e.target.value)} aria-label="Voicebank" className="w-full">
-                                            {voicebanks.map((vb) => (
+                                            {voicebanks.filter((vb) => vb.status === 'ready').map((vb) => (
                                                 <option key={vb.id} value={vb.id}>{vb.name}</option>
                                             ))}
                                         </DawCompactSelect>
