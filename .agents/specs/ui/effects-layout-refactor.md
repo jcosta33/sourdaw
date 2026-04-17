@@ -117,4 +117,14 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 
 - **Trade-off — merging tabs:** Unifying Color and Stage into a single Effects tab reduces the top-level surface but means the Effects tab carries more responsibility. Acceptable because users already think of effects as one category and splitting them was an implementation artifact.
 - **Risk — missed plugin categorisation:** Premium plugins or new effects added after this refactor may land in the wrong group if their category metadata drifts. Mitigation: a unit test asserts every registered effect plugin maps to exactly one `EffectGroup`.
-- **Risk — route regression:** Existing users' URL bookmarks or deep links may reference the old `color` / `stage` routes. Mitigation: redirect old routes to the unified `effects` route during mount; add a smoke test for the redirect.
+- [ ] Risk — route regression: Existing users' URL bookmarks or deep links may reference the old `color` / `stage` routes. Mitigation: redirect old routes to the unified `effects` route during mount; add a smoke test for the redirect.
+
+---
+
+## Implementation Status
+
+- **What is implemented:** The "Color" and "Stage" tabs have been successfully merged into a single `EffectsTab.tsx`. The sidebar route is unified under `effects`. Semantic grouping via `EFFECT_GROUPS` is implemented, and premium plugins are correctly integrated into these groups with visual prominence.
+- **What is not implemented:** All core requirements of the refactor appear to be complete.
+- **What is done well:** The sorting logic in `EffectsTab.tsx` that pins premium plugins to the top of their respective semantic categories is a clean solution that preserves their importance while fixing the fragmentation.
+- **What needs refactoring:** None.
+

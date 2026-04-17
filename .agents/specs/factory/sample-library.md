@@ -319,3 +319,12 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 - **OS-keychain availability**: on some Linux environments (headless, minimal desktop) `secret-service` may be absent. Fallback: encrypted-at-rest file in `$APP_DATA` using the user's OS account as the key source. Worse than a real keychain but not catastrophic.
 - **Content hashing at scale**: blake3 at ~3 GB/s on a modern CPU hashes a 100k-sample (avg 2 MB) library in ~65 s of pure CPU. First-time indexing on large libraries is noticeable — must be a background job with a progress indicator, and incremental (only hash files we haven't seen by `(path, size, mtime)`).
 - **Legal exposure**: shipping factory packs means we are redistributing third-party content. Every entry MUST carry license + attribution so users cannot unknowingly use incompatible samples. We MUST verify each pack's redistribution terms before adding it to the factory manifest — this is a human responsibility not a code responsibility.
+
+---
+
+## Implementation Status
+
+- **What is implemented:** A local-first sample library module (`src/modules/SampleLibrary`) exists with basic folder indexing (`LibraryRoot`), sample record management (`SampleRecord`), folder tree building, and metadata analysis (BPM, key, spectral descriptors). It also includes a spatial map for sample similarity.
+- **What is not implemented:** The core requirements of this spec are missing: Freesound OAuth2 integration, offline CC0 library support (packs), the specific Rust `PackIndex` and `SampleEntry` models (the current model is in TypeScript), `nucleo-matcher` fuzzy search, advanced audio preview with dedicated thread and crossfades, waveform peak cache, pack downloader, and attribution/license display.
+- **What is done well:** The existing local folder scanning and metadata analysis are functional and follow the module architecture.
+- **What needs refactoring:** The existing TypeScript models and stores need to be migrated or replaced by the Rust-backed architecture described in this spec to support content-addressing (blake3) and high-performance fuzzy search.

@@ -86,8 +86,14 @@ impl BowNoise {
     }
 
     /// Generate one sample of bow noise to add to the bridge signal.
+    ///
+    /// `voices_active` gates the continuous bow-scrape component: a real
+    /// instrument makes no bow-hair sound when no one is playing it. The
+    /// release burst still fires on note-off (it is triggered from the
+    /// still-active voice's note-off path), so its envelope is advanced
+    /// unconditionally.
     #[inline]
-    pub fn tick(&mut self) -> f32 {
+    pub fn tick(&mut self, voices_active: bool) -> f32 {
         // Advance the burst envelope unconditionally so it stays in sync
         // with wall-clock time even when `amount` is zero (e.g. while a
         // patch is mid-load and the orchestrator hasn't set the family yet).
@@ -104,12 +110,23 @@ impl BowNoise {
             return 0.0;
         }
 
+        // If no voices are sounding AND no burst is in flight, emit silence
+        // and skip the bandpass tick entirely — nothing downstream cares.
+        if !voices_active && burst_env == 0.0 {
+            return 0.0;
+        }
+
         let white = self.rng.next_bipolar();
         let bandpassed = self.bandpass.tick(white);
 
         // Continuous bow scrape — quiet, scaled by CC1^2 so it only blooms
-        // at high dynamics.
-        let continuous = bandpassed * 0.04 * self.cc1 * self.cc1;
+        // at high dynamics. Gated on voice activity so a silent instrument
+        // stays silent.
+        let continuous = if voices_active {
+            bandpassed * 0.04 * self.cc1 * self.cc1
+        } else {
+            0.0
+        };
 
         // Release/onset burst — t·exp(−t/τ), peak normalized to 1.
         let burst = bandpassed * 0.25 * burst_env;

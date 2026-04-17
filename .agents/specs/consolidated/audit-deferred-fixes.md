@@ -573,3 +573,19 @@ No `[CRITICAL]` open questions. Implementation may proceed.
 - **F1 (markdown cache)** can leak memory if the LRU bound is misimplemented. Keep the bound explicit and small.
 
 If any of these risks materialise during implementation, surface them as a Finding in the task file and pause for review rather than papering over.
+
+---
+
+## Implementation Status
+
+**What is implemented:**
+- None of the specific fixes defined in this spec (e.g., `deleteMidiNotesInRange`, `EngineDeviceNode`, `invokeLlm` refactor) are present in the codebase.
+
+**What is not implemented:**
+- All features and fixes described in the spec across MIDI, Audio Engine, AI Runtime, and UI State.
+
+**What is done well:**
+- N/A
+
+**What needs refactoring:**
+- This spec remains the primary backlog for critical architectural fixes.

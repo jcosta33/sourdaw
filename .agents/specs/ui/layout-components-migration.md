@@ -619,3 +619,12 @@ pnpm deps:validate
 | Breaking existing code | Strict typing prevents invalid prop values |
 | Migration fatigue | Focus on high-impact patterns first (Tier 1) |
 | Mixed patterns during transition | Document in code comments: `// TODO: migrate to Stack` |
+
+---
+
+## Implementation Status
+
+- **What is implemented:** Core layout primitives (`Stack`, `Row`, `Grid`, `Spacer`, `Divider`) are fully implemented in `src/components/layout/` with a robust API supporting gap, align, justify, and other flex/grid properties.
+- **What is not implemented:** Systematic migration is in progress but incomplete. High-priority Tier 1 files like `DawControlStrip.tsx` still use inline Tailwind flex classes (`flex items-center gap-2`) instead of `Row`. Many panel files (`GlutenPanel`, `YeastPanel`, `BacteriaPanel`) still rely on inline `grid` and `flex` patterns.
+- **What is done well:** The primitive components are well-typed and provide a clean, consistent way to handle layout that abstracts away repetitive Tailwind classes.
+- **What needs refactoring:** `DawControlStrip.tsx` and other "Tier 1" components identified in the spec should be migrated to set the pattern for the rest of the codebase.

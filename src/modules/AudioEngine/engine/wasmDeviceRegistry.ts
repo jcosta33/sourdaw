@@ -160,6 +160,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
             ready: false,
             noteOn: () => {},
             noteOff: () => {},
+            allNotesOff: () => {},
             handleCc: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
@@ -183,6 +184,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         ready: true,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
                         handleCc: result.handleCc,
                         setParam: result.setParam,
                         setBypass: result.setBypass,

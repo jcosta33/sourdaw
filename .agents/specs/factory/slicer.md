@@ -300,6 +300,15 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 
 ---
 
+## Implementation Status
+
+- **What is implemented:** Nothing. This module is completely missing from both the frontend (`src/modules/`) and the DSP layer (`crates/daw-dsp/`).
+- **What is not implemented:** Everything described in the spec (UI blocks, drop-to-play pipeline, sensitivity slider, dual-color markers, per-pad controls, sequencer, routing, REX2 import, etc.).
+- **What is done well:** N/A.
+- **What needs refactoring:** N/A.
+
+---
+
 ## Open questions
 
 - [ ] **[CRITICAL]** Choke-group interaction with voice stealing. The sampler suite's voice-stealing priority (R2 in `unified-sampler-suite.md`) includes "choke group" as the second tier — but the Slicer adds per-pad polyphony. Scenario: pad 1 has polyphony=4 and is in choke group 2 with pad 2. Pressing pad 2 — does it kill ALL 4 voices of pad 1, or only the oldest? Semantic choice affects both UX and voice-pool sizing. Must be resolved before R8 implementation.

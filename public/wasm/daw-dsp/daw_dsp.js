@@ -729,6 +729,14 @@ export class LevainInstance {
         wasm.levaininstance_add_zone(this.__wbg_ptr, zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release);
     }
     /**
+     * Silent all-notes-off. Releases every active voice without firing
+     * per-note realism release transients. Used by the transport on stop
+     * so we don't spawn a 128-note bow-lift noise burst.
+     */
+    all_notes_off() {
+        wasm.levaininstance_all_notes_off(this.__wbg_ptr);
+    }
+    /**
      * Build the zone lookup table after all zones and samples are loaded.
      * @param {number} num_articulations
      * @param {number} num_mics

@@ -304,6 +304,27 @@ impl LevainEngine {
         self.voice_pool.release_note(note);
     }
 
+    /// Silent all-notes-off used by the transport on stop. Releases every
+    /// active voice without firing per-note realism release transients —
+    /// sending a `note_off` for all 128 MIDI notes to clear state would
+    /// otherwise retrigger the bow-lift noise burst 128 times and sum into
+    /// an audible "ksshh" on every stop (see
+    /// `.agents/bugs/levain-stop-hihat-and-constant-white-noise.md`).
+    /// Keyswitch articulation selection is intentionally preserved.
+    pub fn all_notes_off(&mut self) {
+        self.voice_pool.release_all();
+        self.fallback.release_all();
+        self.legato.all_notes_off();
+        self.auto_divisi.clear();
+        self.release_tracker.clear_all();
+        // Drop any note-offs queued behind a still-held sustain pedal.
+        // Their voices are being released above anyway, so firing the
+        // callbacks later would be no-ops at best; at worst, stale
+        // entries would pile up at MAX_DEFERRED and drop real deferred
+        // note-offs on the next pedal-up.
+        self.pedal_deferred.clear();
+    }
+
     pub fn handle_cc(&mut self, cc: u8, value: u8) {
         let was_pedal_held = self.expression.sustain_pedal;
         self.expression.handle_cc(cc, value);
@@ -483,6 +504,15 @@ impl LevainEngine {
             .crossfader
             .get_layer_gains(&mut self.layer_gains);
 
+        // Gate the realism layer's continuous bow/breath noise on whether
+        // anything is actually sounding this block. A real instrument makes
+        // no noise floor when nobody is playing it. Voices only flip active
+        // state at block boundaries (MIDI events are drained at block start
+        // and envelope-driven voice deactivations are picked up next
+        // block), so block-granularity is sufficient.
+        let voices_active =
+            self.voice_pool.active_count() > 0 || self.fallback.active_count() > 0;
+
         for i in 0..len {
             let mut mono_sum = 0.0_f32;
 
@@ -502,7 +532,7 @@ impl LevainEngine {
 
             // Orchestral realism augmentation (body resonance, sympathetic
             // strings, bow/breath noise, frequency-dependent damping).
-            mono_sum = self.realism.tick(mono_sum);
+            mono_sum = self.realism.tick(mono_sum, voices_active);
 
             // Mix through mic positions (single mic for now).
             let (l, r) = self.mic_mixer.mix_mono(mono_sum);

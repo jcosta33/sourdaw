@@ -16,6 +16,7 @@ export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
+    allNotesOff: () => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
     setInstrument: (instrumentId: string) => void;
@@ -82,6 +83,14 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         node.port.postMessage({ type: 'noteOff', note, sampleFrame });
     };
 
+    // Silent all-notes-off used by the transport on stop. Avoids fanning
+    // out 128 individual note-off messages, which would otherwise trigger
+    // the per-noteOff realism release burst 128 times and produce the
+    // "hi-hat ksshh" on every stop on bowed-string patches.
+    const allNotesOff = (): void => {
+        node.port.postMessage({ type: 'allNotesOff' });
+    };
+
     const setParam = (name: string, value: number): void => {
         if (!Number.isFinite(value)) {
             return;
@@ -123,6 +132,7 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         workletNode: node,
         noteOn,
         noteOff,
+        allNotesOff,
         setParam,
         handleCc,
         setInstrument,

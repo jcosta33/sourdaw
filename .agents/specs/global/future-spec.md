@@ -1515,12 +1515,18 @@ Do not hide system complexity behind fake simplicity.
 
 Instead:
 
-- preserve meaning
-- preserve lineage
-- preserve user control
-- expose capabilities
-- expose fallbacks
-- expose authorship
-- expose intent
+---
 
-That is the path from “DAW with AI” to “DAW of the future.”
+## Implementation Status
+
+**What is implemented:**
+- None. This is a visionary specification for the "future" of Sourdaw.
+
+**What is not implemented:**
+- All layers and features described, including the Creative Intent layer, Performance DNA, Variation-native clips, and Capability-aware execution.
+
+**What is done well:**
+- Provides a clear and ambitious roadmap for the platform.
+
+**What needs refactoring:**
+- N/A

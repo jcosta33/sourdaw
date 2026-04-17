@@ -6536,3 +6536,17 @@ rubato     = "0.15"
 ```
 
 ---
+
+## Implementation Status
+
+**What is implemented:**
+- This is a high-level technical reference document. While many parts of the DAW are implemented, the specific "DONE" claims in Chapter 2 of this document (dated March 2026) are stale and do not reflect the current April 2026 codebase state, which still has significant architectural gaps (as noted in more recent audits).
+
+**What is not implemented:**
+- N/A (as this is a reference document).
+
+**What is done well:**
+- Provides a comprehensive overview of the DAW's intended technical architecture.
+
+**What needs refactoring:**
+- The status claims in this document need to be reconciled with current reality or the document should be marked as a historical reference/target.

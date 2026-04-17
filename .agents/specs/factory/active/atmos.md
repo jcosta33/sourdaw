@@ -522,9 +522,18 @@ Offline (export):
 
 **What was considered and rejected:**
 
-1. **External Dolby Atmos Renderer integration**: Would require plugin SDK licensing, adds external dependency, less control. Decision: Internal engine only.
-2. **GPU-accelerated HRTF convolution**: Adds significant complexity (WebGPU/WGPU), marginal gain for typical object counts. Decision: CPU with hybrid architecture.
-3. **Per-user personalized HRTF**: Requires head measurement hardware or extensive user testing. Decision: Generic KU100 dataset, consider personalization as future premium feature.
-4. **Lookup table for VBAP**: 65,160 entries at 1° resolution unnecessary for ~20 triplets. Decision: Real-time linear search.
-5. **Single bed per project (Logic-style)**: Limits flexibility. Decision: Multiple beds like Pro Tools/Nuendo.
-6. **Higher-order Ambisonics (5th, 7th)**: 36/64 channels vs 16 for 3rd order; diminishing returns. Decision: 3rd-order sweet spot.
+---
+
+## Implementation Status
+
+**What is implemented:**
+- None. The 7.1.4 immersive mixing engine, `VbapPannerWorklet`, and ADM BWF export logic are not present in the codebase.
+
+**What is not implemented:**
+- All features described in the spec, including 3D panner UI, bed/object routing, and Dolby Atmos compatible metadata exports.
+
+**What is done well:**
+- N/A
+
+**What needs refactoring:**
+- N/A

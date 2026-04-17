@@ -158,6 +158,18 @@ Provide a robust, phase-locked loop (PLL) synchronization system that slaves the
 
 ## Tradeoffs and risks
 
-- **Risk:** High-frequency IPC (100Hz) could cause UI micro-stutter on lower-end machines.
-- **Mitigation:** Use a Web Worker to handle Channel messages and write to a `SharedArrayBuffer`.
-- **Tradeoff:** Static FFmpeg linking increases binary size by ~15–40MB but ensures zero-dependency distribution.
+---
+
+## Implementation Status
+
+**What is implemented:**
+- N/A. There is a naming collision: the existing `Scoring` module in the codebase is a high-performance **Tuner** (pitch detection), whereas this spec describes a **Video Scoring/SMPTE** engine. None of the video/SMPTE requirements are present.
+
+**What is not implemented:**
+- All features described in the spec, including FFmpeg/rsmpeg integration, Rust master clock with PLL sync, SMPTE timecode math, and the video preview UI.
+
+**What is done well:**
+- N/A
+
+**What needs refactoring:**
+- The existing `Scoring` (Tuner) module should be renamed to avoid collision with this spec once implementation begins.

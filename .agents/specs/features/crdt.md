@@ -108,3 +108,21 @@ The following items were implemented in a way that is actively worse than what t
 - **Trade-off — thread-local semantic context:** Elegant and low-boilerplate, but requires strict discipline at action entry points; easy to forget in a new code path. Mitigation: lint rule or type-level wrapper for top-level app actions.
 - **Risk — child-doc projection stalling audio:** If the projection layer falls behind, playback could dropout. Mitigation: pre-load active window + look-ahead ahead of the playhead by ≥ 2 s.
 - **Risk — non-linear undo semantics:** Users may expect linear undo muscle memory. Mitigation: keep a linear "undo last action" stack in parallel with the semantic history for everyday use; semantic revert is an explicit action from the history panel.
+
+---
+
+## Implementation Status
+
+**What is implemented:**
+- Underlying `semanticChangeContext.ts` and Automerge integration exist.
+
+**What is not implemented:**
+- Specific enhancements like `CrdtHistory` and `crdtLazyLoad.ts`.
+- Brute-Force Trial Merge in `crdtMerge` and Incomplete Incremental Auto-Save are still present as anti-patterns.
+
+**What is done well:**
+- Solid substrate with Automerge and semantic change context.
+
+**What needs refactoring:**
+- Refactor `crdtMerge` to avoid brute-force trial merges.
+- Implement robust incremental auto-save.

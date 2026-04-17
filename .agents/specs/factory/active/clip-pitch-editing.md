@@ -167,5 +167,25 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 
 ## Tradeoffs and risks
 
-- Building a custom PSOLA engine carries a risk of artifacting on complex vocal material compared to mature commercial algorithms like Melodyne. We mitigate this by supporting CREPE for high-quality analysis.
-- Delaying ARA 2 support means we cannot support polyphonic editing (e.g. guitar chords) at launch. This is an accepted tradeoff for faster time-to-market and better UX integration.
+---
+
+## Implementation Status
+
+**What is implemented:**
+- The `Knead` module implements the "blob" data structures (`KneadBlob`) and state management (`kneadStore`) described in the spec.
+- `Track.ts` contains `ClipKneadState`.
+- `PitchEditor.tsx` component exists in the frontend.
+- Backend primitives for pYIN analysis and PSOLA synthesis exist in `crates/daw-dsp/src/knead/pitch_edit.rs`.
+- Tauri commands for `analyze_pitch` and `commit_pitch_edit` exist.
+
+**What is not implemented:**
+- The 6-hotspot UI interaction model for blob manipulation (tilt, drift, formant, etc.).
+- Triple-buffer lock-free IPC (current implementation appears to use blocking tasks).
+- CREPE neural network fallback for pitch analysis.
+
+**What is done well:**
+- Solid architectural foundation with `Knead` module and domain-driven state.
+- Use of robust pitch analysis (pYIN) and synthesis (PSOLA) primitives.
+
+**What needs refactoring:**
+- Replace blocking IPC with the proposed triple-buffer lock-free mechanism for real-time responsiveness.

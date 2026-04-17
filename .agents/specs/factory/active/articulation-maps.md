@@ -230,6 +230,15 @@ pub struct NoteArticulationState {
 
 ---
 
+## Implementation Status
+
+- **What is implemented:** Nothing. This feature is completely missing from the codebase.
+- **What is not implemented:** Everything described in the spec (Articulation Editor UI, Piano Roll integration, CRDT data model, audio thread pre-processing, chase engine, etc.).
+- **What is done well:** N/A.
+- **What needs refactoring:** N/A.
+
+---
+
 ## Open questions
 
 - [ ] **[CRITICAL]** Channel routing chase semantics — when a Direction articulation changes the output channel for subsequent notes, must the previous channel's active keyswitch be released (KS Off) before the channel switch, or is an `All Notes Off` (CC#123) on the previous channel sufficient? Requirement 16 currently requires **both**; confirm this is the desired contract before implementation, because plugins differ in how they handle a stray KS Off on an unselected channel.

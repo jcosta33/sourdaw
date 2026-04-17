@@ -81,3 +81,19 @@ Enable true multi-instance support for the Levain plugin. Each Levain device in 
 
 - **Risk:** Subtle MIDI or audio routing regressions if the bridge registry fails to clean up `MessagePort`s on device removal — may cause phantom voices or memory leaks. Mitigation: explicit teardown test and an assertion that the registry is empty after closing the project.
 - **Trade-off:** Deferring the deeper project-state migration keeps this change small but leaves `LevainPatch` living in the UI store — revisit once multi-user collaboration requires CRDT-backed patch state.
+
+---
+
+## Implementation Status
+
+**What is implemented:**
+- None. The `levainStore.ts` still uses a singleton `levainStore` rather than a registry.
+
+**What is not implemented:**
+- All features described in the spec, including `LevainRegistry`, keyed store management, and multi-instance UI. `LevainPanel.tsx` still consumes the singleton store and does not accept a `deviceId`.
+
+**What is done well:**
+- N/A
+
+**What needs refactoring:**
+- The entire Levain module needs to transition from singletons to keyed registries as described in the spec.

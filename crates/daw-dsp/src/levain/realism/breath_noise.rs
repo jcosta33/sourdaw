@@ -57,9 +57,12 @@ impl BreathNoise {
         self.bandpass.reset();
     }
 
+    /// Emit one sample of breath / air noise. `voices_active` gates the
+    /// whole output: a flute or clarinet makes no air noise when no one is
+    /// blowing into it.
     #[inline]
-    pub fn tick(&mut self) -> f32 {
-        if self.amount < 1e-4 || matches!(self.preset, BreathPreset::None) {
+    pub fn tick(&mut self, voices_active: bool) -> f32 {
+        if !voices_active || self.amount < 1e-4 || matches!(self.preset, BreathPreset::None) {
             return 0.0;
         }
         let white = self.rng.next_bipolar();

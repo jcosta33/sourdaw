@@ -2322,3 +2322,12 @@ For the Dutch Oven orchestral engine, the recommended implementation order to ma
 ---
 
 _This appendix is a living document. Update as new measurements, papers, or open-source implementations become available._
+
+---
+
+## Implementation Status
+
+- **What is implemented:** A comprehensive Rust foundation for the Levain orchestral engine exists in `crates/daw-dsp/src/levain/`, covering articulation management, expression modeling, legato transitions, mic mixing, humanization, and voice management. The architecture is highly modular and follows professional sampling engine standards.
+- **What is not implemented:** High-level features like physical modeling augmentation (Phase 3) and the full progressive-disclosure UI (Levels 1-6) are in early stages or planned, as the engine is currently marked as "foundation only" in its own codebase annotation.
+- **What is done well:** The Rust implementation is exceptionally thorough, with dedicated modules for complex sampling behaviors (legato, round-robin, expression) and O(1) zone lookup readiness.
+- **What needs refactoring:** None; the implementation is following the professional path defined in the spec.

@@ -303,7 +303,17 @@ All Knead insert state persists through the existing `kneadStore` plumbing (whic
     - Lock a detected note via assignment, confirm the lock holds on re-play.
     - Enable harmonizer with +3 / +5 / +7 voices, confirm a 3-note chord is produced from a single note input.
     - Enable pitch-to-MIDI, sing a melody, confirm MIDI notes land on the target track matching the sung pitches.
-    - Enable Revoice with a guide track, confirm timing/pitch transfer with the sliders.
+    - [ ] Manual: Enable Revoice with a guide track, confirm timing/pitch transfer with the sliders.
+
+    ---
+
+    ## Implementation Status
+
+    - **What is implemented:** The monophonic MVP is implemented in `crates/daw-dsp/src/knead/`. This includes YIN pitch detection (`yin.rs`), PSOLA synthesis (`psola.rs`), voicing detection, and the basic engine orchestration. The `kneadStore` also exists in the frontend.
+    - **What is not implemented:** Polyphonic STFT/partial tracking, pYIN (probabilistic), formant estimation and preservation (LPC/cepstral), phase vocoder pathway, transient preservation, assignment/repair tools, harmonizer mode, pitch-to-MIDI extraction, and Revoice mode.
+    - **What is done well:** The monophonic MVP is correctly isolated in the DSP crate and follows real-time safety principles.
+    - **What needs refactoring:** The engine needs to be extended to support the new polyphonic and formant-aware pathways, and the store needs to be updated with the `KneadTrackState` model.
+
 
 ---
 

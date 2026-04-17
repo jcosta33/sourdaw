@@ -483,3 +483,12 @@ Before merging a new plugin theme:
 - [ ] Icon container uses faceplate utility
 - [ ] Color names match tokens.css variables
 - [ ] File imported in main.css
+
+---
+
+## Implementation Status
+
+- **What is implemented:** Individual CSS utility modules for all 12 plugins exist in `src/styles/utilities/modules/`. Panels for `Yeast`, `Gluten`, `Bacteria`, `Scoring`, `Crust`, `Proof`, `Levain`, `Grinder`, `Toaster`, `Crumbs`, and `Grand Boule` are using their respective `-faceplate` and `-window` utilities.
+- **What is not implemented:** None identified; the system appears broadly and consistently applied across all major instrument and effect panels.
+- **What is done well:** The visual distinction between plugins is strong while maintaining a cohesive industrial-dark aesthetic. The use of namespaced utilities (`yeast-faceplate`, etc.) ensures styles remain scoped and manageable.
+- **What needs refactoring:** None.

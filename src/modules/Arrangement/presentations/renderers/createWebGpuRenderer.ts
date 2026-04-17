@@ -375,12 +375,19 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                             
                             const buffer = audioBufferCache.get(clip.audioBufferId);
                             if (buffer) {
-                                const bpm = model.tempo;
-                                const totalBeats = (buffer.length / buffer.sampleRate) * (bpm / 60);
-                                const audioOffset = clip.audioOffsetBeats ?? 0;
-                                const visibleBeats = clip.endBeat - clip.startBeat;
-                                
-                                const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, Math.round(numBins * (totalBeats / visibleBeats)));
+                                const offsetBeats = clip.audioOffsetBeats ?? 0;
+                                const stretchRatio = clip.stretchRatio ?? 1;
+                                const clipBeats = clip.endBeat - clip.startBeat;
+                                const secondsPerBeat = 60 / model.tempo;
+                                const sampleRate = buffer.sampleRate;
+                                const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
+                                const beatsConsumed = clipBeats / Math.max(stretchRatio, 0.0001);
+                                const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
+
+                                const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins, {
+                                    startSample,
+                                    endSample,
+                                });
 
                                 const midY = clipTop + (clipBottom - clipTop) / 2;
                                 const padding = 2 * dpr;
@@ -389,13 +396,12 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 // White with transparency — matches MIDI note style
                                 const wfColor = '#ffffff';
 
-                                const startIdx = Math.max(0, Math.floor((audioOffset / totalBeats) * peaks.length));
-                                const binsToDraw = Math.floor((visibleBeats / totalBeats) * peaks.length);
+                                const binsToDraw = peaks.length;
                                 if (binsToDraw > 0) {
                                     const drawBinWidth = w / binsToDraw;
 
                                     for (let i = 0; i < binsToDraw; i++) {
-                                        const peakHeight = (peaks[startIdx + i] ?? 0) * amplitude;
+                                        const peakHeight = (peaks[i] ?? 0) * amplitude;
                                         if (peakHeight > 0.5) {
                                             const bx1 = cx1 + i * drawBinWidth;
                                             const bx2 = bx1 + drawBinWidth;

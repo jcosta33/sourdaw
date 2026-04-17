@@ -65,6 +65,13 @@ impl LevainInstance {
         self.engine.note_off(note);
     }
 
+    /// Silent all-notes-off. Releases every active voice without firing
+    /// per-note realism release transients. Used by the transport on stop
+    /// so we don't spawn a 128-note bow-lift noise burst.
+    pub fn all_notes_off(&mut self) {
+        self.engine.all_notes_off();
+    }
+
     /// Process a MIDI CC event.
     pub fn handle_cc(&mut self, cc: u8, value: u8) {
         self.engine.handle_cc(cc, value);
