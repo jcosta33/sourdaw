@@ -12,6 +12,8 @@ export type ClipPreviewPosition = {
     trackId: string;
     startBeat: number;
     endBeat: number;
+    audioOffsetBeats?: number;
+    midiOffsetBeats?: number;
 };
 
 export type ClipDragPreview = {

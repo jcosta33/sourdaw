@@ -32,8 +32,17 @@ vi.mock('#/modules/AiRuntime/useCases/notifyAiChange', () => ({
 }));
 
 describe('ClipMidiAiSection', () => {
+    const mockClip = {
+        id: 'clip-1',
+        name: 'Test Clip',
+        startBeat: 0,
+        endBeat: 4,
+        type: 'midi' as const,
+        muted: false,
+    };
+
     const defaultProps = {
-        clipId: 'clip-1',
+        clip: mockClip,
     };
 
     beforeEach(() => {

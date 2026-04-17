@@ -27,6 +27,13 @@ const TONE_COLORS: Record<Tone, string> = {
     copper: 'rgba(184, 136, 104, 0.62)',
 };
 
+type ModulationHalo = {
+    /** Fraction of full sweep (-1 to +1) representing modulation depth */
+    amount: number;
+    /** CSS color string for this modulation source */
+    color: string;
+};
+
 type RotaryKnobProps = {
     value: number;
     onChange: (val: number) => void;
@@ -47,6 +54,11 @@ type RotaryKnobProps = {
     deviceId?: string;
     /** Color tone for the value arc */
     tone?: Tone;
+    /**
+     * R-C1: Active modulation sources displayed as colored conic-gradient halo arcs.
+     * Each entry represents one modulator connected to this parameter.
+     */
+    modulations?: ModulationHalo[];
 };
 
 const SIZES = { sm: 24, md: 32, lg: 40, xl: 72 } as const;
@@ -76,6 +88,7 @@ export const RotaryKnob = ({
     trackId,
     deviceId,
     tone = 'cyan',
+    modulations,
     scale = 'linear',
 }: RotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
@@ -218,6 +231,33 @@ export const RotaryKnob = ({
                         WebkitMask: 'radial-gradient(circle, transparent 55%, black 57%)',
                     }}
                 />
+
+                {/* R-C1: Modulation halo arcs — one layer per connected modulator */}
+                {modulations?.map((mod, idx) => {
+                    const amountDeg = mod.amount * 270;
+                    let haloBg: string;
+                    if (amountDeg >= 0) {
+                        const lo = arcAngleDeg;
+                        const hi = Math.min(lo + amountDeg, 270);
+                        haloBg = `conic-gradient(from 225deg, transparent 0deg, transparent ${lo}deg, ${mod.color} ${lo}deg, ${mod.color} ${hi}deg, transparent ${hi}deg)`;
+                    } else {
+                        const hi = arcAngleDeg;
+                        const lo = Math.max(0, hi + amountDeg);
+                        haloBg = `conic-gradient(from 225deg, transparent 0deg, transparent ${lo}deg, ${mod.color} ${lo}deg, ${mod.color} ${hi}deg, transparent ${hi}deg)`;
+                    }
+                    return (
+                        <div
+                            key={idx}
+                            className="absolute inset-0 rounded-full pointer-events-none"
+                            style={{
+                                background: haloBg,
+                                mask: 'radial-gradient(circle, transparent 55%, black 57%)',
+                                WebkitMask: 'radial-gradient(circle, transparent 55%, black 57%)',
+                                opacity: 0.8,
+                            }}
+                        />
+                    );
+                })}
 
                 {/* Metallic dome cap — no CSS transition on transform for instant response */}
                 <div

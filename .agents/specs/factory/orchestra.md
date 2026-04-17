@@ -1,10 +1,39 @@
-# The Orchestral Suite: Ultimate Implementation Guide
+# Orchestra (Levain) — Flagship Orchestral Suite Spec
 
-> **Codebase Annotation:** Levain currently exists in the codebase as a sampler plugin (`crates/daw-dsp/src/levain`), but it is a basic multi-sampler lacking the true legato engine, continuous expression modeling, spatial mic mixing, and physical modeling augmentation detailed below. The Orchestral Suite spec is **Partially Implemented (Foundation only)**.
+> **Codebase annotation:** Levain ships today as a basic multi-sampler (`crates/daw-dsp/src/levain`). The true legato engine, continuous expression modeling, spatial mic mixing, and physical-modeling augmentation below are **Partially Implemented (foundation only)**.
+
+---
+
+## Context
+
+Producers expect a single orchestral instrument that combines intelligent legato, deep articulation coverage, multiple mic positions, continuous expression control, and realistic release/round-robin behavior. This is the Factory suite's orchestral centerpiece. The spec is grounded in research across Spitfire BBCSO Pro, Vienna Synchron, Orchestral Tools Berlin Series, and related libraries (see research sections below), consolidated into a single source of truth.
+
+## Goal
+
+After implementation, Orchestra (Levain) delivers a world-class orchestral engine that makes good samples sound like a real performance — via legato transitions, expression mapping, articulation switching, release triggers, round-robin management, and spatial mic mixing — matching or exceeding mid-tier library engines (Spitfire, VSL, OT) in playback intelligence.
+
+## Scope
+
+**In scope:** sample zone model, voice allocation, articulation system, expression and dynamics, legato engine, mic positions and spatial mixing, convolution reverb, physical modeling augmentation, release triggers, performance intelligence, score import and phrase tools, SMS, GPU compute + visualization, presets and AI pipelines, DAW integration. All as described in the sections that follow.
+
+**Out of scope:**
+
+- Sample authoring pipelines (curation, recording, mastering of raw sample assets) — this is asset work, not code.
+- Ensemble/choir synthesis beyond what's in scope here (see `../../global/full-spec.md` Chapter 11).
+- Orchestral-specific plugin racks (see `../features/device-racks.md` for drum racks; an "instrument rack" analog is covered there).
+
+## Acceptance criteria (release gate)
+
+- [ ] Every section below has at least one integration test demonstrating its feature surface (legato crossfade correctness, CC1 dynamic curve, mic-position phase alignment, round-robin cycling with no repeat on N consecutive strikes, etc.).
+- [ ] RT-safety audit passes for the voice engine.
+- [ ] Passes the cross-backend parity check (native vs WASM) for the same patch + MIDI performance.
+- [ ] `cargo test --workspace` and `pnpm typecheck` pass.
+
+---
 
 ## What this document is
 
-This is the consolidated implementation guide for a world-class orchestral instrument engine. It merges deep research on reference libraries, DSP architecture, articulation systems, expression handling, physical modeling augmentation, and spatialization into a single source of truth. The UX follows the same progressive-disclosure philosophy as the master synth: complexity is always available, never forced.
+This document is the consolidated implementation contract for a world-class orchestral instrument engine. It merges deep research on reference libraries, DSP architecture, articulation systems, expression handling, physical modeling augmentation, and spatialization into a single source of truth. The UX follows the same progressive-disclosure philosophy as the master synth: complexity is always available, never forced.
 
 **Critical distinction from the synth:** The orchestral suite is primarily a **sample playback and performance intelligence engine**, not a synthesis engine. The quality ceiling depends on (1) the quality of recorded samples (an asset problem, not a code problem) and (2) the intelligence of the playback engine — legato transitions, expression mapping, articulation switching, release triggers, round-robin management. The code must make great samples sound like a real performance.
 

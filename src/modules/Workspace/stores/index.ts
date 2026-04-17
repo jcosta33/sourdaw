@@ -4,3 +4,4 @@
 export { preferencesStore } from './preferencesStore';
 
 export { workspaceStore, defaultWorkspaceState } from './workspaceStore';
+export { toolSwapStore } from './toolSwapStore';

@@ -1,6 +1,17 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type DocId } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
-import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
+// Cross the CrdtDocument boundary via individual use-case files rather than
+// the package barrel. The barrel also re-exports `projectProjection`, which
+// transitively imports stores that themselves call `createAutomergeStorage()`
+// at module scope. Going through the barrel forms a temporal cycle where this
+// function is still `undefined` when those store modules evaluate.
+//
+// These deep paths match the pre-existing `semanticChangeContext` import style
+// in this file and stay within the `useCases/` area (not the private
+// `repositories/` path the previous revision of this file reached into).
+import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
+import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
+import { mutateCrdtDoc } from '#/modules/CrdtDocument/useCases/mutateCrdtDoc';
 import { getSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
 import { type StorageAdapter } from './types';
 
@@ -51,7 +62,7 @@ export const createAutomergeStorage = <TData>(
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value));
 
     const writeToCrdt = (value: TData | null): void => {
-        if (!automergeRepository.hasDoc(docId)) {
+        if (!hasCrdtDoc(docId)) {
             return;
         }
 
@@ -59,17 +70,17 @@ export const createAutomergeStorage = <TData>(
         const semanticCtx = getSemanticContext();
         const message = semanticCtx?.message;
 
-        automergeRepository.changeDoc(
-            docId,
-            (doc: Record<string, unknown>) => {
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: docId,
+            changeFn: (doc) => {
                 if (crdtValue === null) {
                     delete doc[key];
                 } else {
                     doc[key] = toDocSafe(crdtValue);
                 }
             },
-            message
-        );
+            message,
+        });
     };
 
     return {
@@ -111,7 +122,7 @@ export const createAutomergeStorage = <TData>(
         },
 
         hydrate(): boolean {
-            const doc = automergeRepository.getDoc(docId);
+            const doc = getCrdtDoc<Record<string, unknown>>(docId);
             if (!doc) {
                 return false;
             }

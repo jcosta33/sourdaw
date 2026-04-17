@@ -2,45 +2,72 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ShortcutsSection } from '../ShortcutsSection';
 
-// Mock hooks
+const mocks = vi.hoisted(() => ({
+    setSpy: vi.fn(),
+}));
+
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({
-        bindings: {
-            PLAY_PAUSE: { key: ' ' },
-            STOP_RETURN: { key: '0' },
-            RECORD_TOGGLE: {},
-            LOOP_TOGGLE: {},
-            UNDO: {},
-            REDO: {},
-            COPY: {},
-            PASTE: {},
-            DELETE: {},
-            SPLIT_CLIP: {},
-            DUPLICATE: {},
-            SAVE_PROJECT: {},
-            TOGGLE_MIXER: {},
-            TOGGLE_INSPECTOR: {},
-            TOGGLE_AI_ASSISTANT: {},
+        definitions: [
+            {
+                id: 'transport.togglePlayback',
+                label: 'Toggle Playback',
+                category: 'transport',
+                defaultKeys: ['Space'],
+                action: { type: 'appAction', action: { type: 'togglePlayback' } },
+            },
+            {
+                id: 'editing.undo',
+                label: 'Undo',
+                category: 'editing',
+                defaultKeys: ['mod+z'],
+                action: { type: 'callback', id: 'undo' },
+            },
+        ],
+        customMappings: {
+            'editing.undo': ['mod+z'],
         },
     })),
 }));
 
-// Mock models and useCases
-vi.mock('../../../models/Shortcuts', () => ({
-    shortcutStore: { name: 'shortcutStore' },
-    updateShortcutBinding: vi.fn(),
-    resetShortcutsToDefault: vi.fn(),
-    formatKeyBinding: vi.fn((b) => b.key || 'None'),
-    DEFAULT_SHORTCUTS: {},
+vi.mock('#/modules/Command/stores', () => ({
+    shortcutStore: {
+        name: 'shortcutStore',
+        value: {
+            definitions: [
+                {
+                    id: 'transport.togglePlayback',
+                    label: 'Toggle Playback',
+                    category: 'transport',
+                    defaultKeys: ['Space'],
+                    action: { type: 'appAction', action: { type: 'togglePlayback' } },
+                },
+                {
+                    id: 'editing.undo',
+                    label: 'Undo',
+                    category: 'editing',
+                    defaultKeys: ['mod+z'],
+                    action: { type: 'callback', id: 'undo' },
+                },
+            ],
+            customMappings: { 'editing.undo': ['mod+z'] },
+        },
+        set: (next: unknown) => mocks.setSpy(next),
+    },
 }));
 
-// Mock child components
 vi.mock('../../components/CaptureKeyButton', () => ({
-    CaptureKeyButton: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
+    CaptureKeyButton: ({
+        children,
+        onClick,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+    }) => <button onClick={onClick}>{children}</button>,
 }));
 
 vi.mock('../preferencesShared', () => ({
-    SectionTitle: ({ title }: any) => <h2>{title}</h2>,
+    SectionTitle: ({ title }: { title: string }) => <h2>{title}</h2>,
 }));
 
 describe('ShortcutsSection', () => {
@@ -48,27 +75,30 @@ describe('ShortcutsSection', () => {
         vi.clearAllMocks();
     });
 
-    it('should render shortcut labels and bindings', () => {
+    it('renders category headers for every populated category', () => {
         render(<ShortcutsSection />);
         expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument();
-        expect(screen.getByText('Stop (Return to 0)')).toBeInTheDocument();
-        expect(screen.getByText('0')).toBeInTheDocument();
+        expect(screen.getByText('Transport')).toBeInTheDocument();
+        expect(screen.getByText('Editing')).toBeInTheDocument();
     });
 
-    it('should call resetShortcutsToDefault when reset button is clicked', async () => {
+    it('renders both custom-mapped and default-mapped labels', () => {
         render(<ShortcutsSection />);
-        const resetButton = screen.getByText('Reset to Defaults');
-        fireEvent.click(resetButton);
-        
-        const { resetShortcutsToDefault } = await import('../../../models/Shortcuts');
-        expect(resetShortcutsToDefault).toHaveBeenCalled();
+        expect(screen.getByText('Toggle Playback')).toBeInTheDocument();
+        expect(screen.getByText('Undo')).toBeInTheDocument();
     });
 
-    it('should enter editing mode when binding button is clicked', () => {
+    it('clears customMappings on `Reset to Defaults`', () => {
         render(<ShortcutsSection />);
-        const bindingButton = screen.getByText('0');
-        fireEvent.click(bindingButton);
-        
+        fireEvent.click(screen.getByText('Reset to Defaults'));
+        expect(mocks.setSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ customMappings: {} })
+        );
+    });
+
+    it('enters capture mode when a binding button is clicked', () => {
+        render(<ShortcutsSection />);
+        fireEvent.click(screen.getByText('Space'));
         expect(screen.getByText(/Press the desired key combination/)).toBeInTheDocument();
     });
 });

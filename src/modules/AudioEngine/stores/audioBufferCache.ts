@@ -166,15 +166,13 @@ export const audioBufferCache = {
         return cache.has(id);
     },
 
-    getWaveformPeaks(id: string, numBins: number): Float32Array {
+    getWaveformPeaks(
+        id: string,
+        numBins: number,
+        windowOpts?: { startSample?: number; endSample?: number }
+    ): Float32Array {
         if (numBins <= 0) {
             return new Float32Array(0);
-        }
-
-        const key = `${id}:${numBins}`;
-        const cached = waveformCache.get(key);
-        if (cached) {
-            return cached;
         }
 
         const buffer = cache.get(id);
@@ -182,15 +180,36 @@ export const audioBufferCache = {
             return new Float32Array(numBins);
         }
 
+        const totalSamples = buffer.length;
+        const rawStart = windowOpts?.startSample ?? 0;
+        const rawEnd = windowOpts?.endSample ?? totalSamples;
+        const windowStart = Math.max(0, Math.min(totalSamples, Math.floor(rawStart)));
+        const windowEnd = Math.max(windowStart, Math.min(totalSamples, Math.floor(rawEnd)));
+        const windowLength = windowEnd - windowStart;
+
+        // Cache key includes the window so trimmed / offset clips don't collide
+        // with full-buffer peaks.
+        const key = `${id}:${numBins}:${windowStart}:${windowEnd}`;
+        const cached = waveformCache.get(key);
+        if (cached) {
+            return cached;
+        }
+
+        if (windowLength <= 0) {
+            const empty = new Float32Array(numBins);
+            waveformCacheSet(key, empty);
+            return empty;
+        }
+
         const channelData = buffer.getChannelData(0);
         const peaks = new Float32Array(numBins);
-        const samplesPerBin = channelData.length / numBins;
+        const samplesPerBin = windowLength / numBins;
 
         if (samplesPerBin >= 256) {
-            // Use Mipmap Level 1
+            // Use Mipmap Level 1 — cached at 256-sample resolution over the
+            // entire buffer. We sub-range into it by windowStart/windowEnd.
             let mipmap = mipmapLevel1Cache.get(id);
             if (!mipmap) {
-                // Generate Level 1 Mipmap (256 samples per bin)
                 const mipmapLength = Math.ceil(channelData.length / 256);
                 mipmap = new Float32Array(mipmapLength);
                 for (let i = 0; i < mipmapLength; i++) {
@@ -208,11 +227,16 @@ export const audioBufferCache = {
                 mipmapLevel1Cache.set(id, mipmap);
             }
 
-            const mipmapSamplesPerBin = mipmap.length / numBins;
+            const mipmapWindowStart = windowStart / 256;
+            const mipmapWindowEnd = Math.min(windowEnd / 256, mipmap.length);
+            const mipmapWindowLen = Math.max(0, mipmapWindowEnd - mipmapWindowStart);
+            const mipmapSamplesPerBin = mipmapWindowLen / numBins;
             for (let bin = 0; bin < numBins; bin++) {
                 let peak = 0;
-                const start = Math.floor(bin * mipmapSamplesPerBin);
-                const end = Math.floor(Math.min((bin + 1) * mipmapSamplesPerBin, mipmap.length));
+                const start = Math.floor(mipmapWindowStart + bin * mipmapSamplesPerBin);
+                const end = Math.floor(
+                    Math.min(mipmapWindowStart + (bin + 1) * mipmapSamplesPerBin, mipmap.length)
+                );
                 if (start === end) {
                     peak = mipmap[start] || 0;
                 } else {
@@ -226,11 +250,13 @@ export const audioBufferCache = {
                 peaks[bin] = peak;
             }
         } else {
-            // Use original buffer for high zoom levels
+            // High zoom: read directly from the windowed portion of the buffer.
             for (let bin = 0; bin < numBins; bin++) {
                 let peak = 0;
-                const start = Math.floor(bin * samplesPerBin);
-                const end = Math.floor(Math.min((bin + 1) * samplesPerBin, channelData.length));
+                const start = Math.floor(windowStart + bin * samplesPerBin);
+                const end = Math.floor(
+                    Math.min(windowStart + (bin + 1) * samplesPerBin, windowEnd)
+                );
                 if (start === end) {
                     peak = Math.abs(channelData[start] || 0);
                 } else {

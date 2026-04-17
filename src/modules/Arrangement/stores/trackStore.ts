@@ -14,18 +14,21 @@ export type {
     TrackKind,
 } from '../models/Track';
 
-import type { Track } from '../models/Track';
+import type { Track, Clip } from '../models/Track';
 
 const DOC_PREFIX_ROOT = 'root';
 
 export type TrackStoreState = {
     tracks: Track[];
     selectedTrackId: string | null;
+    /** E1: Ephemeral AI-suggested clips not yet part of the tracks. */
+    ghostClips?: (Clip & { trackId: string })[];
 };
 
 export const defaultTrackState: TrackStoreState = {
     tracks: [],
     selectedTrackId: null,
+    ghostClips: [],
 };
 
 export const trackStore = createStore<TrackStoreState>({

@@ -7,6 +7,7 @@ import { stopPlayheadScheduler } from '../../playheadScheduler';
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
 import { resetMidiState } from '#/modules/AudioEngine/useCases/webMidiInput/resetMidiState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { toggleRecording } from '../toggleRecording';
 
 vi.mock('../../playheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
@@ -23,6 +24,9 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
+vi.mock('../toggleRecording', () => ({
+    toggleRecording: vi.fn(),
+}));
 
 describe('stopPlayback', () => {
     beforeEach(() => {
@@ -31,6 +35,7 @@ describe('stopPlayback', () => {
         vi.mocked(resetMidiState).mockClear();
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
+        vi.mocked(toggleRecording).mockClear();
         playheadPositionRef.current = 0;
     });
 
@@ -50,6 +55,30 @@ describe('stopPlayback', () => {
         expect(stopPlayheadScheduler).toHaveBeenCalled();
         expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 0 });
         expect(playheadPositionRef.current).toBe(0);
+    });
+
+    it('should finalise active recording before halting the transport', () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: true,
+        });
+
+        stopPlayback();
+
+        expect(toggleRecording).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not call toggleRecording when not recording', () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+        });
+
+        stopPlayback();
+
+        expect(toggleRecording).not.toHaveBeenCalled();
     });
 
     it('should jump playhead to loop start when a loop is defined', () => {

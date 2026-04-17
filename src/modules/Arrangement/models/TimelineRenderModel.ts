@@ -26,10 +26,17 @@ export type TrackRenderModel = {
     soloed: boolean;
     height: number;
     clips: ClipRenderModel[];
+    /** H3: Visible alternative lanes */
+    variationLanes?: {
+        id: string;
+        name: string;
+        clips: ClipRenderModel[];
+    }[];
     automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
 };
 
 export type MiniNoteRenderModel = {
+    id: string;
     pitch: number;
     startBeat: number;
     duration: number;
@@ -45,11 +52,20 @@ export type ClipRenderModel = {
     muted: boolean;
     midiNotes: MiniNoteRenderModel[];
     audioBufferId?: string;
+    /** Beats into the audio buffer at which playback starts. Needed by the
+     *  waveform renderer so that trimmed or split clips show the correct
+     *  portion of the underlying sample instead of the whole buffer. */
+    audioOffsetBeats?: number;
+    /** Tempo/stretch factor. `1.0` plays at native rate; `0.5` plays at half
+     *  speed (so twice as many buffer samples are consumed per beat). */
+    stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     generating?: boolean;
     isGhost?: boolean;
     isLinkedInstance?: boolean;
+    isInlineEditing?: boolean;
 };

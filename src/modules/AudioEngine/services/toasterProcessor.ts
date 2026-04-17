@@ -55,6 +55,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _queue = []; // Sorted by sampleFrame (integer sample count)
+    _queueHead = 0; // Read index — consumed entries are past this
 
     constructor() {
         super();
@@ -85,8 +86,10 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg) {
-        // Insert in ascending sampleFrame order.
-        let lo = 0,
+        // Insert in ascending sampleFrame order within the live range
+        // [_queueHead, _queue.length). Called from the message port handler, not
+        // the audio render quantum, so splice insertion is acceptable here.
+        let lo = this._queueHead,
             hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
@@ -126,13 +129,20 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _drainQueue(blockEndFrame) {
-        // Audio-thread: drain with index + single splice instead of per-element shift() (O(n²))
-        let drained = 0;
-        while (drained < this._queue.length && this._queue[drained].sampleFrame <= blockEndFrame) {
-            this._dispatch(this._queue[drained]);
-            drained++;
+        // Audio-thread hot path: advance the read head, no splice per block.
+        while (
+            this._queueHead < this._queue.length &&
+            this._queue[this._queueHead].sampleFrame <= blockEndFrame
+        ) {
+            this._dispatch(this._queue[this._queueHead]);
+            this._queueHead++;
         }
-        if (drained > 0) {this._queue.splice(0, drained);}
+        // Fully drained — clear in place. This is the common case for steady-state
+        // playback and allocates nothing.
+        if (this._queueHead >= this._queue.length) {
+            this._queue.length = 0;
+            this._queueHead = 0;
+        }
     }
 
     process(_inputs, outputs) {

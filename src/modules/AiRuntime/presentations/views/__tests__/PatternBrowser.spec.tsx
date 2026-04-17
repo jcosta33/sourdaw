@@ -43,6 +43,7 @@ vi.mock('../../../models/midiPatternLibrary', () => ({
             return true;
         });
     }),
+    resolveTemplateScale: vi.fn((_template: unknown, params: { scale: string }) => params.scale),
 }));
 
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
@@ -55,6 +56,10 @@ vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
 
 vi.mock('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote', () => ({
     addMidiNote: vi.fn(),
+}));
+
+vi.mock('#/modules/MIDI/useCases/midiNoteCrud/batchAddMidiNotes', () => ({
+    batchAddMidiNotes: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases/transportQueries/getTransportState', () => ({

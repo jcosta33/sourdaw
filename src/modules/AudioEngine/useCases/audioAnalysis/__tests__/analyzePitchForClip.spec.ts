@@ -54,11 +54,11 @@ describe('analyzePitchForClip', () => {
 
     it('should ignore if clip is not found or not audio', async () => {
         const result = await analyzePitchForClip('invalid-clip');
-        expect(result).toBeNull();
+        expect(result).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
         expect(invoke).not.toHaveBeenCalled();
         
         const result2 = await analyzePitchForClip('c2');
-        expect(result2).toBeNull();
+        expect(result2).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
         expect(invoke).not.toHaveBeenCalled();
     });
 
@@ -99,7 +99,7 @@ describe('analyzePitchForClip', () => {
         const result = await promise;
         
         expect(invoke).toHaveBeenCalledWith('analyze_pitch', { audioPath: 'test.wav' });
-        expect(result).toEqual(mockContour);
+        expect(result).toEqual({ status: 'analyzed', contour: mockContour });
         
         // Wait another tick for finally block to finish store update if needed
         await new Promise(resolve => setTimeout(resolve, 0));
@@ -130,7 +130,7 @@ describe('analyzePitchForClip', () => {
         
         expect(invoke).not.toHaveBeenCalled();
         expect(analyze_pitch_wasm).toHaveBeenCalled();
-        expect(result).toEqual(mockContour);
+        expect(result).toEqual({ status: 'analyzed', contour: mockContour });
         expect(kneadStore.value.isAnalyzing).toBe(false);
         expect(kneadStore.value.analysisProgress).toBe(1);
     });
@@ -165,6 +165,6 @@ describe('analyzePitchForClip', () => {
     it('should handle missing track store safely', async () => {
         trackStore.set({} as any);
         const result = await analyzePitchForClip('c1');
-        expect(result).toBeNull();
+        expect(result).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
     });
 });

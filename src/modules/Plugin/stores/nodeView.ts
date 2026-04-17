@@ -61,15 +61,12 @@ export const nodeViewStore = createStore<NodeViewState>({
     },
 });
 
-let nodeId = 1;
-let connectionId = 1;
-
 export function getNextNodeId(): string {
-    return `node-${nodeId++}`;
+    return `node-${crypto.randomUUID()}`;
 }
 
 export function getNextConnectionId(): string {
-    return `conn-${connectionId++}`;
+    return `conn-${crypto.randomUUID()}`;
 }
 
 export const NODE_COLORS: Record<ProcessingNodeType, string> = {

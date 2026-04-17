@@ -26,9 +26,9 @@ import {
 } from '#/modules/Synth/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { getTransportStoreValue } from '#/modules/Transport/useCases';
+import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
-import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { applyVelocityCurve } from '#/modules/GrandBoule/useCases';
 import {

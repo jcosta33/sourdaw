@@ -3,6 +3,7 @@ import { useStore } from '#/infra/store/useStore';
 
 import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
+import { createWebGpuAutomationRenderer, type AutomationRenderer } from '../renderers/createWebGpuAutomationRenderer';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
@@ -33,8 +34,10 @@ import {
 
 export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const autoCanvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<TimelineRenderer | null>(null);
+    const autoRendererRef = useRef<AutomationRenderer | null>(null);
 
     const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
     const marqueeSelection = workspaceState.marqueeSelection;
@@ -277,16 +280,23 @@ export const TimelineSurface = (): ReactElement => {
 
         const initRenderer = async () => {
             const renderer = await initTimelineRenderer(canvas);
+            const autoRenderer = autoCanvasRef.current ? await createWebGpuAutomationRenderer(autoCanvasRef.current) : null;
 
             if (disposed) {
                 renderer.dispose();
+                autoRenderer?.dispose();
                 return;
             }
 
             rendererRef.current = renderer;
+            autoRendererRef.current = autoRenderer;
 
             const rect = container.getBoundingClientRect();
             renderer.resize(rect.width, rect.height);
+            if (autoCanvasRef.current) {
+                autoCanvasRef.current.width = rect.width;
+                autoCanvasRef.current.height = rect.height;
+            }
 
             const renderLoop = () => {
                 if (disposed) {
@@ -318,6 +328,38 @@ export const TimelineSurface = (): ReactElement => {
 
                     const model = buildTimelineRenderModel();
                     renderer.render(model);
+
+                    if (autoRendererRef.current) {
+                        const view = timelineViewStore.value;
+                        const autoState = automationStore.value;
+                        if (view && autoState) {
+                            const lanes = autoState.lanes
+                                .filter((l) => l.visible && !l.collapsed)
+                                .map((l) => {
+                                    let y = -view.scrollY;
+                                    for (const t of model.tracks) {
+                                        if (t.id === l.trackId) break;
+                                        y += t.height;
+                                    }
+                                    return {
+                                        points: l.points,
+                                        ghostPoints: l.ghostPoints,
+                                        y,
+                                        height: 64, // Default height approximation
+                                        color: l.color || '#a78bfa',
+                                        minValue: l.minValue,
+                                        maxValue: l.maxValue,
+                                    };
+                                });
+                            autoRendererRef.current.render({
+                                lanes,
+                                viewportStartBeat: view.scrollX / view.pixelsPerBeat,
+                                pixelsPerBeat: view.pixelsPerBeat,
+                                width: canvas.width,
+                                height: canvas.height,
+                            });
+                        }
+                    }
                 }
             };
 
@@ -411,6 +453,11 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
+            />
+            <canvas
+                ref={autoCanvasRef}
+                className="absolute inset-0 pointer-events-none"
+                aria-hidden="true"
             />
 
             <PresenceOverlay

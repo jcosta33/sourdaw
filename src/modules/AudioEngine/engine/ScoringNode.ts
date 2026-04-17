@@ -8,6 +8,7 @@ import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 import { telemetryAllocator, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
 import { NOTE_NAMES } from '#/utils/noteNames';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
 
@@ -38,6 +39,9 @@ export function isScoringDevice(deviceType: string): boolean {
 }
 
 export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringNodeResult> {
+    // Scoring's tuner telemetry (frequency, cents, confidence) is SAB-backed.
+    requireSharedArrayBuffer('Scoring');
+
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }

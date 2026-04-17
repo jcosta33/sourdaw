@@ -6,6 +6,14 @@ import { eventBus } from '#/app/registerDependencies';
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: {
         emit: vi.fn(),
+        on: vi.fn(() => () => undefined),
+    },
+    logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        setWriters: vi.fn(),
     },
 }));
 
@@ -36,12 +44,39 @@ vi.mock('#/modules/Workspace/useCases', () => ({
     selectAllClips: vi.fn(),
     clearClipSelection: vi.fn(),
     toggleWorkspaceMode: vi.fn(),
+    setMarqueeSelection: vi.fn(),
+    setEditingTool: vi.fn(),
+    showAutomationPanel: vi.fn(),
+    toggleMixer: vi.fn(),
+    toggleTrackList: vi.fn(),
+    toggleVirtualKeyboard: vi.fn(),
+    openExportDialog: vi.fn(),
+    openPreferencesDialog: vi.fn(),
     TOOL_SHORTCUTS: {},
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { selectedTrackId: null } },
+    trackStore: { value: { selectedTrackId: null, tracks: [] } },
     zoomTimeline: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addClip: vi.fn(),
+    removeClip: vi.fn(),
+    deleteTimeRange: vi.fn(),
+}));
+
+vi.mock('../../undoRedo', () => ({
+    undo: vi.fn(),
+    redo: vi.fn(),
+}));
+
+vi.mock('../../pushUndoEntry', () => ({
+    pushUndoEntry: vi.fn(),
+}));
+
+vi.mock('../../../stores/shortcutStore', () => ({
+    shortcutStore: { value: { definitions: [], customMappings: {} } },
 }));
 
 vi.mock('../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn() }));

@@ -25,11 +25,13 @@ export const SCALES: Record<string, number[]> = {
 
 export const SCALE_ROOT_LABELS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
-export type DragMode = 'none' | 'move' | 'resize-left' | 'resize-right' | 'draw' | 'rubber-band' | 'paint' | 'lasso';
+export type DragMode = 'none' | 'move' | 'duplicate' | 'resize-left' | 'resize-right' | 'draw' | 'rubber-band' | 'paint' | 'lasso';
 
 export type DragState = {
     mode: DragMode;
     noteId: string | null;
+    /** A9: which clip owns the dragged note (for multi-clip editing). Defaults to primary clipId. */
+    ownerClipId?: string;
     startX: number;
     startY: number;
     origBeat: number;

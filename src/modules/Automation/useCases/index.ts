@@ -11,6 +11,8 @@ export { shiftClipAutomation } from './automation/shiftClipAutomation';
 export { toggleAutomationVisibility } from './automation/toggleAutomationVisibility';
 export { toggleLaneCollapsed } from './automation/toggleLaneCollapsed';
 export { updateAutomationPoint } from './automation/updateAutomationPoint';
+export { updateAutomationObjectPoint } from './automation/updateAutomationObjectPoint';
+export { resetOverride } from './automation/resetOverride';
 export {
     beginDrawSession,
     paintDrawPoint,
@@ -32,5 +34,7 @@ export { zoomToUsedRange } from './automationZoom/zoomToUsedRange';
 export { resetYZoom } from './automationZoom/resetYZoom';
 export { adjustYZoom } from './automationZoom/adjustYZoom';
 export { toggleVirginTerritory } from './automationZoom/toggleVirginTerritory';
+export { applyModulation } from './modulation/applyModulation';
+export { getModulationForParam } from './modulation/getModulationForParam';
 export { getAutomationLanes } from './getAutomationLanes';
 export { getAutomationStoreState } from './getAutomationStoreState';

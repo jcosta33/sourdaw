@@ -4,17 +4,18 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { kneadStore } from '#/modules/Knead/stores';
 import { isTauri } from '#/utils/tauriBridge';
 import { getBufferForClip } from '#/modules/Arrangement/useCases';
+import { logger } from '#/infra/logger/appLogger';
 // @ts-ignore
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 
-type PitchPoint = {
+export type PitchPoint = {
     time_ms: number;
     frequency_hz: number;
     confidence: number;
     voiced: boolean;
 };
 
-type PitchContour = {
+export type PitchContour = {
     points: PitchPoint[];
     sample_rate: number;
     hop_size: number;
@@ -25,10 +26,14 @@ type AnalysisProgress = {
     progress: number;
 };
 
+type AnalyzePitchForClipOutput =
+    | { status: 'analyzed'; contour: PitchContour }
+    | { status: 'no-buffer'; reason: 'missing-clip-or-buffer' };
+
 /**
  * Runs the offline native pitch analysis on a full audio clip via Tauri IPC or WASM fallback.
  */
-export async function analyzePitchForClip(clipId: string): Promise<PitchContour | null> {
+export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchForClipOutput> {
     const tracksState = trackStore.value;
     let targetClip: any = null;
     if (tracksState && tracksState.tracks) {
@@ -44,7 +49,8 @@ export async function analyzePitchForClip(clipId: string): Promise<PitchContour 
     }
     
     if (!targetClip || !targetClip.fileId) {
-        return null;
+        logger.info(`[analyzePitchForClip] no buffer resolved for clipId=${clipId}`);
+        return { status: 'no-buffer', reason: 'missing-clip-or-buffer' };
     }
 
     // Set analyzing state in store
@@ -107,7 +113,7 @@ export async function analyzePitchForClip(clipId: string): Promise<PitchContour 
             });
         }
 
-        return contour;
+        return { status: 'analyzed', contour };
     } catch (err) {
         console.error('Pitch analysis failed:', err);
         throw err;

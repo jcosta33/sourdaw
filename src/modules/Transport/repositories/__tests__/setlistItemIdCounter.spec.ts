@@ -3,15 +3,12 @@ import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '../setlistItemIdCount
 
 describe('setlistItemIdCounter', () => {
     describe('getNextSetlistItemId', () => {
-        it('should return a setlist item ID and increment it', () => {
+        it('should return a unique setlist item ID', () => {
             const id1 = getNextSetlistItemId();
             const id2 = getNextSetlistItemId();
             expect(id1.startsWith('sli-')).toBe(true);
+            expect(id2.startsWith('sli-')).toBe(true);
             expect(id1).not.toBe(id2);
-            
-            const n1 = parseInt(id1.split('-')[1]!);
-            const n2 = parseInt(id2.split('-')[1]!);
-            expect(n2).toBe(n1 + 1);
         });
     });
 
