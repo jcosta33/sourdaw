@@ -22,6 +22,13 @@ Existing infrastructure this spec builds on:
 
 The research file establishes three architectural tiers — a zero-latency **rule-based core** (walking bass, probability grids, Euclidean rhythms), a **small-model enhancement** layer (GrooVAE humanization), and a **transformer accompaniment** layer (AMT 128M / 360M for chord-conditioned generation). This spec scopes all three tiers as they relate to the **inference pipeline**. It does **not** scope rule-engine pattern content (genre templates, specific grooves) — those are product content, not pipeline architecture.
 
+**Informative research context (non-normative):**
+
+- Research target (positioning): a viable "Session Players"-class feature in a Tauri DAW is a tiered rule + ~20–360M-parameter transformer architecture; a 360M model can generate 4–8 bars of MIDI in under 3 seconds on consumer hardware.
+- Product precedent: Logic Pro's Session Players (Drummer XY pad, Bass/Keyboard parametric controls following a Chord Track, MIDI output rather than rendered audio) is the most-cited reference. Detailed control inventories live in `global/full-spec.md` (§Session Players) and in `research/pipelines/midi-generation.md` — they are **not** re-embedded here.
+- **Parametric conditioning is primary**; optional natural-language → preset mappings are a future UX track, not a v1 conditioning surface. Text-only generation tools (text2midi, MuseCoco) are out of scope.
+- Competitive landscape (Band-in-a-Box, Tonalic, EZdrummer Bandmate, Cubase's generative features, Ableton Drum Rack humanization) is surveyed in research for positioning only; this spec does not aim for feature parity with any single product.
+
 ---
 
 ## User-visible behavior
@@ -120,8 +127,9 @@ GrooVAE (Google Magenta, CC BY 4.0) is integrated as the humanization layer that
 
 - Humanization variant: input is a quantized 2-bar drum pattern (16th-grid), output is the same notes with per-note velocity and micro-timing offsets.
 - Tap2Drum variant (optional, lower priority): input is a single-voice tapped rhythm, output is a full drum kit pattern. Gated behind a feature flag for v1.
+- Training reference (informative): the Groove MIDI Dataset — 13.6 hours / 22,000+ measures / 10 professional drummers, CC BY 4.0.
 - Runs via `ort` on CPU in < 100 ms per 2-bar pattern (research-derived).
-- Swing parameter (0–1) is applied as a **post-processing pass** on top of GrooVAE output (upbeat shift = `swing × triplet_offset`), since no current model handles swing feel well (per research).
+- Swing parameter `0.0–1.0` (normalized; research expresses the same control as a `0–100%` percentage) is applied as a **post-processing pass** on top of GrooVAE output (upbeat shift = `swing × triplet_offset`), since no current model handles swing feel well (per research).
 
 **Acceptance criteria:**
 
@@ -148,6 +156,8 @@ All symbolic-MIDI models load and run through `ort` (already a dependency). Pyth
   - Humanize (GrooVAE-small, 2-bar): **< 100 ms on CPU**
 - **AC-R4.3** — Only one heavy neural model (AMT) is resident at a time; small models (GrooVAE) can remain resident. Verified by a runtime-memory check that reports total ONNX-session bytes.
 - **AC-R4.4** — No model weights with licenses incompatible with commercial shipping (GPL, CC-BY-NC-SA, CC-BY-NC) are loaded, and the model registry explicitly tags license strings that the registry loader whitelists.
+
+**Implementation notes (ort ecosystem).** The `ort` crate is widely used in production (research cites HuggingFace TEI and Google Magika as adopters) and its `Session` type is `Send + Sync`, so read-only inference sessions can be shared across threads without a `Mutex`. Small symbolic-MIDI models (20–360M parameters) fit well under 1 GB at FP16 — memory is rarely the gating factor for this tier, integration/exportability is.
 
 ### R5 — `tokio::spawn_blocking` for inference
 
@@ -378,6 +388,9 @@ All stochastic operations (sampling, GrooVAE latent draw, humanization jitter) g
 ## Implementation notes
 
 - **Reuse the audio-generation pipeline infrastructure.** `audio-generation.md` already establishes the `ort` + `tokio::spawn_blocking` + typed Tauri Channel pattern. This spec's Rust services should depend on the same shared `ai-runtime` crate (or equivalent) rather than fork new inference plumbing.
+- **Prototype Tier 1 and Tier 3 in parallel.** Research recommends prototyping the rule engine (Tier 1) and the AMT ONNX path (Tier 3) in parallel because they are architecturally independent and together validate the full pipeline from chord track to generated MIDI. Tier 2 (GrooVAE humanization) can slot in once both validate.
+- **Canonical MIDI I/O.** Prefer `midly` for in-Rust MIDI file I/O in tests and fixtures (used by the research's recommended tokenizer stack; also used by Symusic, the Rust backend under MidiTok).
+- **Tokenizer parity (reference).** MidiTok implements REMI, REMI+, Compound Word, and 8+ other schemes with Symusic as its Rust-based MIDI I/O backend. Our Rust port follows the MidiTok decoder semantics; Symusic is a useful parity reference even though it is not a direct dependency.
 - **Tokenizer lives in Rust.** Port the decoder paths from MidiTok; keep encoder paths only as needed for prompt construction. Treat tokenizer versions as part of the cache key.
 - **Cache identity:** hash of `{model_id, tokenizer_version, temperature, seed, prompt_tokens}` → generation output. Store cached outputs in a size-capped on-disk LRU (e.g., `cacache` or equivalent).
 - **Model shipping:** quantized (Q4/Q8) weights ship out of band (downloader, not bundled). Provide a "Download AI pack" UX in settings; models load lazily on first use.
@@ -406,6 +419,8 @@ Two emergency / future paths exist if the AMT export or licensing hits a wall:
 
 - **SkyTNT MIDI model (~250M params, Apache-2.0)** — per research, ONNX already exported with KV-cache support in HuggingFace. **Lowest-friction path to a working ONNX prototype.** Does not natively accept symbolic chord labels (similar to AMT), so it reuses the chord-to-voicing adapter. Not in v1; listed here so a future branch can swap it in without re-architecting R2/R4.
 - **MIDI-RWKV (RWKV-7 linear-complexity transformer)** — per research, O(n) vs O(n²) scaling makes it attractive for long-context generation on resource-constrained hardware. Uses MIDI-GPT's Bar-Fill representation. Future upgrade path for lower-end devices once a quantised ONNX export is available. Tracked under O8.
+- **MIDI-GPT / GigaMIDI backbone (research reference)** — MIDI-GPT, trained on the GigaMIDI dataset (2.1M+ unique files), is cited as an alternative accompaniment backbone with commercial integrations (Calliope). Not a v1 dependency; included here so a future swap has precedent.
+- **AMT-large (780M)** — the largest published Anticipatory Music Transformer checkpoint exists (`music-large-800k`). Not in v1 because of RAM/latency; kept as an upgrade path behind the same R2 contract.
 
 ## Test plan
 

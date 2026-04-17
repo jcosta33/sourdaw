@@ -281,6 +281,58 @@ Sourdaw already uses Tauri v2, `rtrb` SPSC ring buffers, `cpal` for native audio
     - Disabling Link returns the transport to internal clock within **≤ 1 block** without glitching audio.
     - Building without the `link` feature does not pull `rusty_link` into the dependency tree (verified by `cargo tree --no-default-features`); the UI hides the Link option when the feature is absent.
 
+### 7.8a Rust-Native Stem Export & Offline Bounce
+
+- **Current State:** Offline bounce and stem export lean on browser `OfflineAudioContext` (WebKit: 44.1 kHz min, 10 ch max) plus IPC back to the frontend (`ExportDialog.tsx`, `handleAiDenoiseClip.ts`). Nothing parallelises stem bouncing in Rust, and format coverage on WebKit is limited.
+- **Agent Tasks:**
+    - Route offline bounce and stem export through a Rust-side pipeline in `daw-io` using `symphonia` for decode, `hound` for WAV, and `rayon` for parallel per-stem rendering (research `architecture-performance.md` §2).
+    - Keep browser-only builds functional by falling back to the existing Web Audio path, but mark Tauri desktop as the authoritative pipeline.
+    - Emit per-stem progress over a single Tauri `Channel<ExportProgress>`; do not per-frame IPC.
+- **Acceptance Criteria:**
+    - Exporting N stems from a 32-track project completes in **≤ (single-stem time × max(1, N/cores))** on the reference machine — linear wall-clock speed-up up to the core count.
+    - Offline bounces are deterministic bit-for-bit across repeat runs of the same project state (verified by BLAKE3 hash of the rendered WAV).
+    - WebKit-only runtimes still produce correct output (via the Web Audio fallback) but do not advertise the >2-channel / >96 kHz configurations that only the Rust path supports.
+    - Exported WAV files carry a BWF `bext` chunk with project name, render timestamp, and source project BLAKE3; verified by `ffprobe`.
+
+### 7.8b Native Multi-Track Recording + Step / Count-in Workflow
+
+- **Current State:** Audio capture is routed through a JS `RecordingWorkletProcessor`; `getUserMedia` on WebKit caps at stereo. There is no step-recording workflow and no count-in primitive.
+- **Agent Tasks:**
+    - Add a Rust-side recording path that captures from `cpal` input streams directly into `hound`-backed on-disk WAV via `rtrb` SPSC ring buffers (research `architecture-performance.md` §3). Used automatically when running under Tauri; the Web Audio worklet remains the browser fallback.
+    - Implement **step recording**: notes entered one at a time from a MIDI input without real-time performance, with a visible "step cursor" in the piano roll.
+    - Implement **count-in**: 1–8 bars of metronome before transport start on arm, configurable per project and per record pass.
+- **Acceptance Criteria:**
+    - A 32-channel multitrack record pass on a Tauri desktop build writes 32 individual WAV files to disk with **zero xruns** at 48 kHz / 128-sample buffer on the reference machine (verified by CPAL's underrun counter).
+    - Step recording inserts notes at the step cursor's position without advancing the transport; arrow keys move the cursor; `pnpm typecheck` passes with the UI wired end-to-end.
+    - Count-in preroll is sample-accurate: the first recorded sample lines up with the first beat of the count-in-free region within **≤ 1 sample** at the project sample rate.
+    - Browser-only builds continue to record via the existing `RecordingWorkletProcessor` and are capped at the browser's channel limit; the UI surfaces the limit as a non-blocking note, not an error.
+
+### 7.8c MIDI Effects Pipeline, Probability, MPE Allocator, MIDI Clock
+
+- **Current State:** `midir` handles basic I/O but there is no pre-instrument MIDI FX pipeline, no probabilistic note triggering, no MPE channel allocator, and no `0xF8`-tick clock generator on the audio thread.
+- **Agent Tasks:**
+    - Define a **MIDI FX chain** slot list on every MIDI track, evaluated before the instrument. v1 modules: Arpeggiator, Velocity Scaler, Groove Quantizer (Zeitgeist-style — research `architecture-performance.md` §4).
+    - Add per-note `probability: f32 (0.0..=1.0)` to the sequencer event model. The RT scheduler skips notes whose roll exceeds probability; determinism is preserved when the RNG seed is saved in the arrangement.
+    - Add a ~200-line `MpeAllocator` that assigns per-note channels 2–16 with an LRU policy, supports the MPE "lower zone" convention, and is RT-safe (no allocation, no locks).
+    - Add a sample-accurate **MIDI clock output** generator driven by the audio callback: `0xF8` at 24 PPQN, `0xFA` / `0xFC` / `0xFB` on transport start/stop/continue, routed to the enabled MIDI output ports via `midir`.
+- **Acceptance Criteria:**
+    - A MIDI track with an Arpeggiator + Velocity Scaler + Groove Quantizer in series produces deterministic output for a fixed input MIDI sequence (bit-for-bit across runs with the same seed and parameters).
+    - Notes with `probability = 0.5` fire approximately 50 % of the time over 1 000 runs with different seeds; binomial variance is within **±3σ**. The identical sequence with the seed pinned is bit-for-bit reproducible.
+    - The MPE allocator correctly rotates channels for a fast-played chromatic run at 200 BPM, 1/16 notes, with channel reuse stalls **≤ 1** across 10 000 events.
+    - A downstream MIDI-clock slave (`MidiMonitor`-style capture) measures the emitted `0xF8` tick jitter at **≤ 0.5 ms** stddev over 60 seconds at 120 BPM.
+
+### 7.8d Controller Learning, Routing Visualization
+
+- **Current State:** Neither a DAW-level MIDI-learn registry nor a routing visualisation graph exists.
+- **Agent Tasks:**
+    - **Controller learning**: a global MIDI-learn registry that maps hardware MIDI CC (and MPE per-note) to any automatable parameter surfaced by the parameter registry. UI: right-click "MIDI Learn" on any control, then move a hardware controller; mapping is persisted per-project and per-user template.
+    - **Routing visualization**: a force-directed node graph (d3-force or equivalent) visualising track → bus → device routing, plus sends and sidechain wiring. Read-only in v1; editing is a follow-up.
+- **Acceptance Criteria:**
+    - Learning CC 74 to a filter cutoff causes the cutoff to track the hardware knob within **≤ 1 audio block** latency at 48 kHz / 128-sample buffer.
+    - Clearing a learned mapping removes it from both the project save and the user template; verified by JSON diff.
+    - The routing graph renders a 64-track project with 8 busses and 16 sends at **≥ 30 fps** interactive (pan / zoom) on the reference machine, verified via a Playwright perf capture.
+    - Routing panel is keyboard-navigable (tab through nodes, enter to focus) with screen-reader labels matching each node's track / bus / device name.
+
 ### 7.8 SoundFonts (.sf2) Playback
 
 - **Current State:** No SoundFont playback; `.sf2` files cannot be auditioned or used as an instrument source.
@@ -339,6 +391,46 @@ This section extends §4 with items surfaced in `.agents/research/consolidated/p
     - Each generated DSP node produces output within **≤ 0.5 dB RMS error** of a reference render made by the FAUST reference interpreter on the same input.
     - Generated modules perform **zero allocations** per block (`assert_no_alloc` passes).
     - The pipeline does not require FAUST to be installed to **use** Sourdaw — only to regenerate sources. Verified by a CI job that builds Sourdaw in a container without FAUST.
+
+### 8.3a DSP Library Completions (research `plugins-hosting.md` §2)
+
+- **Current State:** `fundsp` and `rustfft` are present, but several recommended DSP primitives are not.
+- **Agent Tasks:**
+    - Add **`mi-plaits-dsp-rs`** (pure-Rust port of Mutable Instruments Plaits, 24 engines) as the recommended backbone for flagship hybrid-synth voices.
+    - Add a **time-stretch engine** with permissive licensing — options: `signalsmith-stretch` (if license-compatible), `tdpsola`, or a clean-room WSOLA/Phase-Vocoder — surfaced through a single `TimeStretch` trait and consumed by the clip launcher (`.agents/specs/factory/active/non-linear-clip-launcher.md`), warp operations, and offline bounce.
+    - Add a **pitch-detection** primitive via `pitch-detection` or `pyin-rs` so Knead, legato heuristics, and tuning tools share one implementation.
+    - Add **linear-phase EQ** (FFT-based), **non-uniform partitioned-convolution reverb**, and **look-ahead limiter** primitives to `daw-dsp`.
+- **Acceptance Criteria:**
+    - A synth preset built on `mi-plaits-dsp-rs` renders deterministic output for a fixed MIDI fixture — byte-for-byte identical across runs at the same sample rate and buffer size.
+    - The `TimeStretch` trait is the sole entry point for warp / stretch across the codebase; `rg "use rubberband"` or direct GPL stretch imports return **zero** hits (Rubber Band is only referenced as a benchmark).
+    - Pitch detection on a known reference vocal (`docs/architecture/traces/pitch-fixture.wav`) produces a median absolute error **≤ 3 cents** against the hand-labelled ground truth over voiced frames.
+    - Linear-phase EQ, partitioned convolution, and look-ahead limiter each pass `assert_no_alloc` on the audio thread and include a criterion benchmark in `daw-dsp`.
+
+### 8.3b Browser DSP Offloading & Shared-Memory Config (research `plugins-hosting.md` §3)
+
+- **Current State:** Standard effects run entirely in WASM; Tauri COOP/COEP headers are not set; no shared-memory audio↔UI path.
+- **Agent Tasks:**
+    - Route standard effects through native Web Audio nodes (`ConvolverNode`, `BiquadFilterNode`, `DynamicsCompressorNode`) when the dependency graph allows, keeping WASM for effects that require custom DSP.
+    - Set `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers in `tauri.conf.json` and the dev server so `SharedArrayBuffer` is available; confirm via `crossOriginIsolated` on startup.
+    - Stand up a SAB-backed ring buffer (`rtrb`-equivalent in JS) for UI-metering / control-surface updates that do not need to round-trip through Tauri IPC.
+- **Acceptance Criteria:**
+    - On the reference project, routing standard effects to native Web Audio nodes reduces main-thread CPU usage by **≥ 10 %** measured via `performance.now()` frame timing during playback — verified in a Playwright perf run.
+    - `self.crossOriginIsolated === true` on app startup in both dev and production builds (asserted by a startup self-test).
+    - SAB meter updates from the audio worklet reach the React UI at **≥ 30 Hz** without blocking the main thread for more than **≤ 2 ms** per frame.
+
+### 8.3c Offline Export Encoders and Signal Integrity (research `plugins-hosting.md` §4)
+
+- **Current State:** WAV export + SRC via `hound` / `rubato` works. No FLAC, MP3, Opus, Vorbis; no TPDF dithering; no Plugin Delay Compensation during offline render.
+- **Agent Tasks:**
+    - Add **FLAC** encode via `flacenc` (native + WASM); **MP3** via `mp3lame-encoder`; **Vorbis** via `vorbis_rs`; **Opus** via the `opus` crate; browser lossy via `wasm-media-encoders` or `libflacjs` only where the native path is not applicable.
+    - Stream output chunks during export — never buffer the whole project in memory.
+    - Preserve **stem export** via a solo/mute export pass (identical math to the live path; no special-case mix logic).
+    - Apply **TPDF dithering** whenever bit depth is reduced (float → 16- or 24-bit PCM); sample-accurate **Plugin Delay Compensation** during offline render so delay-bearing plugins do not shift against the master timeline.
+- **Acceptance Criteria:**
+    - Round-tripping a reference 24-bit / 48 kHz master through export → decode yields samples whose spectrum matches the source within **≤ 0.5 dB RMS error** for every supported lossy format at nominal bitrate (MP3 320 kbps, Opus 256 kbps, Vorbis q8, FLAC lossless — lossless must be bit-exact).
+    - Exporting a 64-track project uses peak working memory **≤ 2 ×** the largest single-track render buffer, not the whole-project buffer.
+    - A stem export of a project containing a look-ahead limiter and a 4-band linear-phase EQ lines up with the master bounce within **≤ 1 sample** on every stem (PDC verified).
+    - Bit-depth reduction always applies TPDF dither unless explicitly disabled by the user; the default is on.
 
 ### 8.4 SFZ Loader
 
@@ -439,6 +531,20 @@ This section extends §3 with items surfaced in `.agents/research/consolidated/c
     - Selecting _Substitute placeholder silence_ produces silent playback for the missing assets and marks each affected clip with a non-blocking indicator — project editing continues without blocking on transfer.
     - Library-root mappings are per-peer and never written to the shared Automerge document (verified by a schema test that rejects the mapping shape at the session-doc boundary).
 
+### 9.6a Advanced Discovery Modes (DHT / Rendezvous / VPN Direct)
+
+- **Current State:** `src/modules/Collaboration` supports manual/QR invites and mDNS local discovery. Nothing else.
+- **Agent Tasks (desktop Tauri only):**
+    - **DHT / Rendezvous**: optional discovery via libp2p Kademlia and/or libp2p Rendezvous, keyed by the session secret. Bootstrap nodes are user-configurable in Settings → Collaboration (research `consolidated/collaboration.md` §1).
+    - **VPN Direct**: treat Tailscale / ZeroTier / WireGuard peers as first-class and skip WebRTC signalling entirely when peers can already reach each other on the VPN network; fall back to STUN/TURN otherwise.
+    - **Advanced networking profiles**: user-configurable STUN servers, self-hosted coturn TURN relays, custom rendezvous bootstrap list.
+    - All three modes MUST remain optional — mDNS + manual invite stay the defaults.
+- **Acceptance Criteria:**
+    - Enabling DHT discovery with a valid bootstrap list causes two peers on disjoint LANs to discover and pair without manual invite exchange within **≤ 10 seconds** on a typical home network.
+    - With both peers reachable over a Tailscale `100.64.0.0/10` address, audio-assets and CRDT channels negotiate directly without traversing STUN/TURN (verified by packet capture showing no traffic to the STUN server).
+    - Custom STUN / TURN / rendezvous values are validated at save time; malformed entries surface a structured error and do not brick the Collaboration module.
+    - A session that was configured with DHT discovery loads back correctly on a machine that has DHT disabled — the feature degrades gracefully to the other enabled modes.
+
 ### 9.7 Bitmap-Chunked Asset Transfer with Resume
 
 - **Current State:** `assetTransfer.ts` supports chunked transfer but does not persist a per-asset bitmap of received chunks across disconnects.
@@ -518,6 +624,20 @@ This section extends §6.2 with the full-lifecycle requirements surfaced in `.ag
     - Drag-drawing a note in a 31-EDO view places the MIDI event on the correct row such that the played frequency matches the row's `frequencies[index]` within **1e-9 Hz**.
     - Switching controller-layout mode from **All Keys** to **Closest in Pitch** remaps the physical keyboard shortcuts without relaunching or rebuilding the roll; verified by an integration test.
     - The renderer does not regress the §7.1 UI-main-thread long-task budget when switching between 12-row and 53-row layouts.
+
+### 10.4a Non-Destructive Scale Folding for Key Changes
+
+- **Current State:** Changing a project key does not remap existing MIDI clips; users must manually retune.
+- **Agent Tasks (research `consolidated/global-harmonic-awareness.md` §Scale folding):**
+    - Implement the three-phase **decompose → map → reconstruct** fold: decompose each note into `(scaleDegree, octave, chromaticOffset)` in the source scale; map the degree to the destination scale (1:1 when degree counts match, nearest-chromatic-PC otherwise); reconstruct the MIDI note against the destination root.
+    - Proportional remapping for out-of-scale chromatic notes: `newChromaticOffset = round(chromaticOffset × dstGap / srcGap)`.
+    - Generalise `mod 12` to `mod stepsPerOctave` so the same fold works for non-12-TET scales.
+    - Store every clip's `sourceScale` at creation; the fold is a **pure function** evaluated at display and playback. A "Bake" operation commits the fold permanently.
+- **Acceptance Criteria:**
+    - C Major → D Dorian fold on the reference fixture (`docs/architecture/traces/scale-fold-fixture.mid`) produces output MIDI identical to the documented expected mapping (C→D, E-F gap → A-B gap, G# passing tone → B♭).
+    - Changing the project scale and then changing it back produces **byte-identical** original MIDI (pure-function property verified by fixture test).
+    - Baking the fold replaces the stored MIDI in-place and clears `sourceScale`; subsequent scale changes no longer re-fold the baked clip.
+    - A 31-EDO source scale folds to a 19-EDO destination scale without crashing; out-of-scale degrees round to the nearest destination degree with a logged warning (not an error).
 
 ### 10.5 Scala Format Support Matrix (.scl / .kbm / .ascl)
 

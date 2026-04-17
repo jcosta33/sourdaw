@@ -89,9 +89,9 @@ From a producer's perspective:
 
 **Rationale.**
 
-- **VexFlow v5** offers measure-level granularity (re-render a single measure on edit, ~5 ms), MIT licensing (no legal encumbrance), native TypeScript types, ~400 KB bundle size, and SVG output (hit-testable without workarounds).
-- **OSMD** is rejected: it renders the entire score on every update (400 ms for a medium score, 2–8 s for large scores), making it unusable for interactive editing. Its MusicXML parsing adds no value for the MIDI-first pipeline, and it roughly doubles VexFlow's bundle size.
-- **Verovio** is rejected for phase 1: the ~10 MB WASM binary and LGPL v3 licensing are significant drawbacks, and its MEI-centric architecture adds a format translation layer. It is a candidate for a future "export to high-quality PDF" backend (see R14), reached via Tauri for native PDF generation — out of scope for phase 1 browser-side rendering.
+- **VexFlow v5** (released March 2025; ~75% TypeScript; native type definitions; active maintenance; v5 introduced pointer events and improved bounding boxes that matter for interactive editing) offers measure-level granularity (re-render a single measure on edit, ~5 ms), MIT licensing (no legal encumbrance), ~300–500 KB bundle size (research range), and SVG output (hit-testable without workarounds).
+- **OSMD** is rejected: it renders the entire score on every update (400 ms for a medium score, 2–8 s for large scores), making it unusable for interactive editing. Its MusicXML parsing adds no value for the MIDI-first pipeline, and it roughly doubles VexFlow's bundle size. License: BSD-3-Clause (recorded for completeness).
+- **Verovio** is rejected for phase 1: the ~10 MB WASM binary and LGPL v3 licensing are significant drawbacks; its MEI-centric architecture adds a format translation layer; its SVG-string output does not integrate cleanly with React (would require `dangerouslySetInnerHTML` wrappers). Sub-100 ms page renders are attractive and make it a candidate for a future "export to high-quality PDF" backend (see R14), reached via Tauri for native PDF generation — out of scope for phase 1 browser-side rendering.
 
 **Acceptance criteria.**
 
@@ -113,6 +113,7 @@ From a producer's perspective:
 - SVG output only (not Canvas) so notes become DOM elements addressable for hit-testing, selection, and accessibility.
 - Virtualization: only measures within the viewport (and a configurable overscan window) are rendered. Off-screen measures are removed from the DOM.
 - Measure-level invalidation: when a prop change affects only measures M through N, only those measures re-render; unaffected measures remain mounted.
+- Drag interactions (note dragging, beat grid adjustment) **debounce re-renders** so interaction stays near 60 fps even while continuous position updates stream in.
 
 **Acceptance criteria.**
 
@@ -125,6 +126,14 @@ From a producer's perspective:
 ### R3 — Display quantization algorithm (grid-based phase 1; DP refinement phase 2)
 
 **Requirement.** Raw MIDI tick data is transformed into readable notation via a **display quantization** pipeline that does not modify the underlying MIDI. The phase 1 algorithm is **grid-based snapping** with adaptive grid selection per measure; phase 2 introduces a DP-based refinement. Tuplet detection (triplets, quintuplets, septuplets), swing detection, voice splitting, rest insertion, tie insertion, and beam grouping are all part of the quantization pipeline, not the renderer.
+
+**Motivating example.** A note at tick 479 with duration 481 ticks (at 480 PPQ) would, drawn literally, produce a tied 128th-note construction that no musician can read. Display quantization exists to collapse this to a clean quarter note without altering the MIDI playback data.
+
+**Typical grid resolutions at 480 PPQ** (informative): quarter = 480, eighth = 240, sixteenth = 120, eighth triplet = 160, sixteenth triplet = 80.
+
+**Adaptive grid selection (phase 1).** Per measure, compute the shortest inter-onset interval (MuseScore-style heuristic) and pick the smallest grid that captures it. Expose a user-overridable "maximum quantization value" in project/clip settings so the user can cap the smallest permitted subdivision.
+
+**Grid limitation (acknowledged).** Pure grid snapping treats notes independently and can flatten swing feel or produce awkward dotted subdivisions when note relationships matter; swing detection (step 3) and phase-2 DP refinement reduce but do not eliminate this class of artefact.
 
 **Pipeline** (summary; full pseudocode in research file):
 
@@ -151,17 +160,22 @@ From a producer's perspective:
 
 Phase 2 acceptance (DP refinement) is deferred to a follow-up spec but must fit behind the same interface as phase 1.
 
+**Phase 2 cost model (reference for future spec).** Research defines DP as minimizing **TotalCost = α × Σ(t_i − g(c_i))² + (1 − α) × Σ w(c_i)** with duration complexity weights (whole=1, half=2, quarter=4, eighth=8, sixteenth=16 — simpler is cheaper) and transition penalties for implausible sequences (e.g. 64th → whole). Full recurrence remains in the research file.
+
+**Phase 3 HMM track (optional, later).** A metrical HMM / Viterbi approach (Cemgil–Desain–Kappen 2000; Nakamura et al. 2017) can outperform importer baselines on live performance at the cost of a trained model and heavier compute. Budget on the order of ~48 beat positions × tempo states per decoding window if pursued.
+
 ### R4 — MusicXML export pipeline (MusicXML 4.0, round-trippable)
 
 **Requirement.** The notation module exports MusicXML 4.0 (`<score-partwise>` top element) with full support for multi-voice encoding via `<backup>`, tied notes at bar lines, tuplets, key/time signatures, and score metadata (title, composer, copyright).
 
 **Design constraints.**
 
-- **Divisions.** Use `divisions=24` (divisible by both 3 for triplets and 4 for sixteenths) unless the source PPQ makes a direct mapping cleaner. Duration values are expressed in divisions, not ticks.
+- **Divisions.** Use `divisions=24` (divisible by both 3 for triplets and 4 for sixteenths) unless the source PPQ makes a direct mapping cleaner. Duration values are expressed in divisions, not ticks. If the project PPQ is already 480, setting `divisions=480` lets tick durations map directly with no conversion math — prefer that path when available.
 - **Voices.** Voice numbers are unique across staves in a multi-staff part (voices 1–2 on staff 1, voices 3–4 on staff 2) to avoid the Dorico cross-staff collision gotcha.
 - **Ties.** Every tied note emits **both** `<tie type="start"/>` (the sound element, inside `<note>`) **and** `<tied type="start"/>` (the notation element, inside `<notations>`). Missing either causes rendering failures in some importers.
 - **Note type.** Every `<note>` element includes `<type>` alongside `<duration>`.
-- **XML generation.** String template literals are acceptable for phase 1 (MusicXML is structurally repetitive). No third-party MusicXML library is introduced (the available NPM options are unmaintained, AGPL, or flagged "use at your own risk"). If a library becomes necessary later, it must be license-audited.
+- **XML generation.** String template literals are acceptable for phase 1 (MusicXML is structurally repetitive). No third-party MusicXML library is introduced (the available NPM options are unmaintained, AGPL, or flagged "use at your own risk"). No mature **MIDI→MusicXML** generator library exists; generation is first-party. If a library becomes necessary later, it must be license-audited.
+- **Interchange breadth.** MusicXML 4.0 is supported by 270+ applications (Dorico, MuseScore, Sibelius, Finale, Notion, etc.). Interoperability testing against MuseScore and Dorico is mandatory; use **MuseScore first** for importer QA — it generally produces the most informative error messages. Serialization is typically under 100 ms for a typical score, so TS-side generation remains acceptable.
 
 **Acceptance criteria.**
 
@@ -529,6 +543,8 @@ For each fixture: export to MusicXML → assert schema validity → (manual) ope
 ## Implementation notes
 
 - **Phasing:** Build order follows the research's phased roadmap — renderer + grid quantization first (R1, R2, R3 baseline, R6), then MusicXML export (R4), then DP/HMM quantization refinement (R3 phase 2), then import (R5) and engraved elements (R11), then chord symbols and print (R14, R16). R17 (tab) is phase-2 candidate, not phase-1 blocker.
+- **Research roadmap reference (historical estimates, not contractual):** Phase 1 (renderer + display quantization) ≈ 4–6 weeks; Phase 2 (MusicXML export) ≈ 3–4 weeks; Phase 3 (DP/tuplets/swing/multi-voice/grand staff) ≈ 3–4 weeks; Phase 4 (MusicXML import, including compressed `.mxl`) ≈ 2–3 weeks; Phase 5 (chord symbols, lyrics, dynamics, articulations, print, ongoing engraving polish) ≈ ongoing. The spec's build order differs from research's ordering in that MusicXML export ships before DP refinement — an intentional product decision, logged as divergence from research.
+- **Packaging:** When Phase 4 work ships MusicXML import, support compressed `.mxl` containers (ZIP-wrapped MusicXML) alongside plain `.xml`.
 - **Rust quantization command:** `quantize_for_display(midi_notes, meter, tempo, options) -> Vec<DisplayNote>` returns a pure data structure; no Tauri events, no streaming. Browser fallback signature is identical.
 - **VexFlow integration:** Render one SVG per measure (for measure-level invalidation). Mount with React 19 refs-as-props pattern. The React Compiler handles memoization — no manual wrapping.
 - **MusicXML generation:** Template-literal strings with escaped XML; validate output against `partwise.xsd` before writing. Do not pull in a full XML library — see DD6.
@@ -541,3 +557,4 @@ For each fixture: export to MusicXML → assert schema validity → (manual) ope
 - **Risk — cross-backend drift:** The Rust and TS implementations of `quantize_for_display` must produce byte-identical output (R15, test plan §Cross-backend parity). Any divergence surfaces as user-visible differences between Tauri and browser deployments. Mitigation: shared fixture suite and CI parity check.
 - **Risk — MusicXML round-trip loss:** MuseScore and Dorico interpret edge cases differently (voice numbering, tied chords, cross-staff beams). Mitigation: a frozen fixture set (R4, R5, R11 canonical fixtures) must pass on every release; new edge cases must be added as fixtures before their requirement is considered complete.
 - **Risk — Verovio LGPL:** If phase-2 print needs Verovio-quality layout, the LGPL obligation (dynamic linking or re-license) must be resolved before inclusion. Mitigation: phase-1 ships VexFlow-only; Verovio is gated behind [CRITICAL] open question.
+- **Risk — metric edge cases (not renderer choice):** Integration risk is concentrated in beams across time-signature changes, ties on every metric boundary, and multi-voice collisions — not in the choice of rendering engine. Budget engineering time for the "long tail" of these fixtures accordingly.

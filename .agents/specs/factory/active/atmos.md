@@ -130,13 +130,14 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R3.4**: Cartesian conversion: `x = cos(θ)cos(φ)`, `y = sin(θ)cos(φ)`, `z = sin(φ)`
 - **R3.5**: Speaker layout triangulated at setup using convex hull (Quickhull) of speaker direction vectors on unit sphere
 - **R3.6**: Valid triplets validated by checking normal points outward (dot product > 0), discard triangles with aperture > ~100°
-- **R3.7**: Precompute and store 3×3 inverse matrix L⁻¹ for each valid triplet (~16–22 triplets for 7.1.4)
+- **R3.7**: Precompute and store 3×3 inverse matrix L⁻¹ for each valid triplet (~16–22 triplets for 7.1.4). Use **Cramer's rule** for the 3×3 inversion directly — do not pull in a general linear-algebra crate for this fixed-size case (research `factory/active/atmos.md` §Rust crate ecosystem).
 - **R3.8**: Active triplet found by iterating all triplets, testing if gains ≥ -0.001 (source inside triangle)
 - **R3.9**: Imaginary nadir speaker for below-horizontal sources (gains discarded or distributed to nearest horizontal speakers with 1/√N factor)
 - **R3.10**: Imaginary zenith speaker to avoid asymmetric triangulation of height speakers
 - **R3.11**: Gains computed per-block with per-sample linear interpolation to prevent zipper noise
 - **R3.12**: Alternative: exponential smoothing with 5–10 ms time constant
 - **R3.13**: LFE send is separate gain parameter, excluded from VBAP normalization (spatial panning meaningless below ~80 Hz)
+- **R3.13a**: Bass management (crossover-based LF redirection from directional speakers to LFE/sub) is **not** part of VBAP. When implemented, it lives in the **monitoring chain downstream of VBAP**, never inside the panner (research `factory/active/atmos.md` §MDAP/LFE).
 - **R3.14**: MDAP spread generates 8 auxiliary virtual sources at angular distance α:
     - **auxₖ = cos(α)·p + sin(α)·(cos(2πk/N)·u + sin(2πk/N)·v)** where u, v are orthonormal basis ⊥ to p
 - **R3.15**: MDAP results summed and power-normalized
@@ -150,14 +151,14 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R4.2**: SOFA format (AES69) support: NetCDF4/HDF5 container with shape [M × R × N] (measurements × receivers × samples)
 - **R4.3**: Barycentric interpolation on triangulated HRIR grid (Delaunay on sphere) for per-object rendering
 - **R4.4**: ITD extraction/removal/re-application after interpolation to prevent comb-filtering artifacts
-- **R4.5**: Hybrid rendering: ≤16 priority sources use direct HRTF convolution; remainder via 3rd-order Ambisonics
-- **R4.6**: Priority determined by: soloed tracks first, then by track order (top = highest priority)
+- **R4.5**: Hybrid rendering: ≤16 priority sources use direct HRTF convolution; remainder via 3rd-order Ambisonics. Priority selection is explicit per-track metadata, **not** a "bed vs object" split — a bed track flagged high-priority still routes through direct HRTF; an object left unflagged falls into the Ambisonics sum.
+- **R4.6**: Priority determined by: **explicit user "feature" flag** (intended for lead vocal / featured instrument per research), then soloed tracks, then by track order (top = highest priority). Research recommends artist-declared priority over pure track order; track order is the tiebreaker only.
 - **R4.7**: Uniformly partitioned overlap-save convolution (UPOLS):
     - 256-tap HRIR with 128-sample buffer → P = 2 partitions
     - FFT size 2B = 256, real-valued FFT via `realfft` crate (129 complex coefficients)
     - Latency: 128 samples = **2.67 ms at 48 kHz**
 - **R4.8**: 3rd-order Ambisonics: 16 channels, 32 convolutions (2 ears), break-even at 16 objects
-- **R4.9**: MagLS decoding (Magnitude Least Squares) for Ambisonics path:
+- **R4.9**: MagLS decoding (Magnitude Least Squares — Schörkhuber et al. 2018) for Ambisonics path:
     - Optimizes only HRTF magnitude above spatial aliasing frequency (~2 kHz at order 3)
     - Perceptually near-equivalent to direct HRTF convolution per Engel et al. (Acta Acustica 2022)
 - **R4.10**: `sofar` crate for SOFA reading + built-in partitioned convolution renderer
@@ -188,7 +189,8 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
 - **R5.6**: Object tracks: typeDefinition **0003 (Objects)** with custom pack/format/stream/track definitions
 - **R5.7**: RIFF chunk structure:
     - `fmt`: WAVE_FORMAT_EXTENSIBLE (tag 0xFFFE), 24-bit PCM at 48 kHz, channelMask = 0
-    - `chna`: 40 bytes per entry — 2 bytes track index + 12 bytes UID ("ATU_xxxxxxxx") + 14 bytes track format ref + 11 bytes pack format ref + 1 byte padding
+    - `chna`: 40 bytes per entry — 2 bytes **1-based** track index + 12 bytes UID ("ATU_xxxxxxxx") + 14 bytes track format ref + 11 bytes pack format ref + 1 byte padding
+    - `bext` (optional but recommended for BWF interchange): EBU Broadcast Wave extension chunk; written before `chna` in canonical order (`fmt` → `bext` → `chna` → `axml` → `data`)
     - `axml`: Complete ADM XML as raw UTF-8 bytes
     - `dbmd` (optional): Dolby metadata (renderer version, downmix settings, per-object binaural distance mode)
 - **R5.8**: Standard channel layout: bed in tracks 1–10, objects in tracks 11–N
@@ -200,7 +202,7 @@ Implement a 7.1.4 Atmos-ready mixing engine with per-track bed/object mode selec
     - Max 10 `audioChannelFormatIDRef` per DirectSpeakers pack
     - Exactly 1 `audioChannelFormatIDRef` per Objects pack
     - Default naming: "Atmos_Bed_M" for beds, "Atmos_Obj_N" for objects
-- **R5.12**: BW64 container (ITU-R BS.2088) with `ds64` chunk for files >4 GB
+- **R5.12**: BW64 container (ITU-R BS.2088) with `ds64` chunk for files >4 GB. Sizing reference: a **128-channel, 5-minute session at 48 kHz / 24-bit produces ~5.3 GB** — BW64 is not optional for typical Atmos masters.
 - **R5.13**: `quick-xml` streaming writer for XML generation (not DOM)
 - **R5.14**: Manual RIFF construction: `std::io::Write` + `Seek` + `BufWriter`
 - **R5.15**: RIFF word-alignment padding: odd-length chunks get trailing zero byte
@@ -496,10 +498,11 @@ Offline (export):
 
 ## Open questions
 
-- [ ] **[MINOR]** Which HRTF dataset to bundle: Bernschütz KU100 2702-point (better SH decomposition) or SADIE II (streaming compatible, used by YouTube 360)?
+- [ ] **[MINOR]** Which HRTF dataset to bundle: Bernschütz KU100 2702-point (better SH decomposition) or SADIE II (streaming compatible, used by YouTube 360)? Research also lists MIT KEMAR (710 positions), CIPIC (1,250), and ARI (220+ subjects) as optional alternates for future work — out of scope for v1 bundle.
 - [ ] **[MINOR]** Should we support 9.1.6 layout as advanced option, or strictly 7.1.4?
 - [ ] **[MINOR]** Theater View implementation: WebGL (better visuals) or Canvas 2D (simpler)?
 - [ ] **[MINOR]** Rear View (XZ panning): Include in v1 or defer to later release?
+- [ ] **[MINOR]** If offline HRTF tooling decomposes datasets into spherical harmonics, which order? Research: full-bandwidth reconstruction needs SH order ~30–35; practical systems use 15–20 with magnitude-only optimization above the spatial aliasing frequency.
 
 ---
 
@@ -514,6 +517,8 @@ Offline (export):
 | Binaural vs speaker monitoring discrepancy      | Mix decisions don't translate        | A/B comparison feature, translation check utility             |
 | ITD handling in HRTF interpolation              | Comb-filtering artifacts if wrong    | Implement extract/remove/re-apply workflow per research       |
 | Bed limited to 7.1.2 not 7.1.4                  | User confusion about height channels | Document that 7.1.4 is monitoring target, 7.1.2 is bed format |
+| `hrtf` crate (Fyrox) — known click artifacts with fast-moving sources | Audible transient glitches in prototypes | If evaluated, prefer `sofar`-based UPOLS path; `hrtf` crate is not a v1 dependency |
+| `sofar` emitter count ("a couple hundred" per upstream) | QA ceiling unclear on low-end hardware | Use as informal sanity bound in perf tests; adaptive degradation already specified |
 
 **What was considered and rejected:**
 

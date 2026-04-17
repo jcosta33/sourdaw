@@ -71,6 +71,7 @@ A fixed-size, lock-free, allocation-free MIDI event ring buffer with eviction:
 - Each entry is per-port and per-channel tagged, timestamped with **absolute audio-frame count** (monotonically increasing `i64`) and **absolute wall-clock time** (for sessions where transport never ran).
 - Eviction policy: when full, batch-evict the oldest **1,024 events** to amortise the cost — bounded and predictable, never a full-buffer sweep.
 - Alongside the ring: a **128 × 16 active-note tracking table** (note × channel) for orphaned-note recovery at capture time. Every Note-On updates the table; every Note-Off clears it. Sustain-pedal state (CC #64) tracked analogously.
+- **Capture-time synthesis of orphaned events:** when the captured window begins with a note whose original Note-On fell outside the ring (evicted), inject a **synthetic Note-On at the window start** so the clip starts cleanly. Symmetrically, inject a **synthetic Note-Off at the window end** for any note still held at capture time. Both behaviors use the active-note table above.
 - **Acceptance:**
   - Fills and evicts correctly under a 30-minute idle-then-burst synthetic load (30 min no events, then a fixture-driven burst exceeding 16,384 events in < 1 s).
   - The MIDI input callback path allocates zero bytes — verified by `assert_no_alloc`-style guard in debug builds.
@@ -114,6 +115,7 @@ When transport is stopped and no enclosing clip imposes a tempo, infer tempo fro
 - Valid tempo range: **80–160 BPM** (octave-ambiguity resolution matches Ableton — see Design decisions). Out-of-range estimates are folded by doubling or halving until in range.
 - Minimum sample size: **≥ 16 Note-On events** in the capture window. Below this, tempo is not inferred — the project tempo is used and the UI surfaces *"not enough notes to infer tempo"*.
 - Optional refinement: log-Gaussian-weighted autocorrelation peak search centred at 120 BPM, applied only when histogram analysis is ambiguous (multiple peaks within 5% of each other).
+- **Velocity weighting improves downbeat detection** (separate from tempo estimation). Louder notes are more likely to fall on strong beats; using velocity to weight IOI histogram contributions helps phrase-start inference even when tempo is already known.
 - **Acceptance:**
   - Given a MIDI fixture played at a known tempo (e.g. 110 BPM) with ±5 BPM of human jitter, the inferred tempo is within **±2 BPM** of the reference over ≥ 16 notes. Fixture set must cover 90, 110, 130, 150 BPM at minimum.
   - A fixture played at 70 BPM is reported as 140 BPM (octave fold), confirmed by unit test.
@@ -129,6 +131,7 @@ Captured clips snap to a clean bar length:
   - Otherwise, snap to the next larger candidate.
   - Ties (equidistant between two candidates) resolve **upward** — a 6-bar phrase snaps to 8, not 4, to avoid truncating the tail.
 - Any material preceding the inferred phrase start sits before the clip's start marker (accessible but not part of the loop region).
+- **Phrase anchoring (informative).** When ambiguous, prefer the longest phrase that fits a power-of-two bar count **anchored at the most likely downbeat**. User guidance to end phrases on the downbeat (Ableton convention: "end on the first beat of the next bar") improves anchoring; the algorithm may use the final Note-On as a downbeat anchor and search backward.
 - **Acceptance:**
   - A 7.8-bar phrase snaps to 8 bars.
   - A 3.1-bar phrase snaps to 4 bars (3.1 / 4 = 0.775 < 0.875 ratio → snap upward).
@@ -166,6 +169,8 @@ All file I/O, clip creation, and project-tree mutations occur off the RT audio /
 
 - Must follow the domain-driven module architecture (`AGENTS.md`). New functionality lives in a module whose boundary is enforced by `pnpm deps:validate`. See Design decisions for module placement.
 - **RT-safety (backend):** no allocation, no mutex acquisition, no I/O, no blocking syscalls on the CPAL audio callback or MIDI callback. Enforced by `assert_no_alloc` in debug and by RT-safety tests in CI (see `.agents/skills/web-audio-engine/SKILL.md` for the Web Audio analogue of this rule; the Rust/CPAL side follows the same contract per `.agents/skills/tauri-platform/SKILL.md`).
+- **RT deadline context (informative).** At 48 kHz, a 256-sample buffer implies ~5.3 ms callback budget; at 64 samples, ~1.3 ms. Mutex acquisition is banned because of priority inversion; on Apple platforms, Objective-C message dispatch is unsafe on RT paths because the runtime uses internal locks.
+- **Large binary payloads.** Prefer `tauri-specta` for event contracts; if PCM previews or bulk assets must cross the IPC boundary, use the project's established binary/Response path rather than JSON-shaping multi-megabyte blobs.
 - **State discipline (frontend):** capture clip creation goes through a use case, not directly from UI. Follow `.agents/skills/state-and-write-paths/SKILL.md`.
 - **Clip creation reuse:** the capture flow MUST terminate in the existing Arrangement clip-creation use cases. Do not introduce a parallel clip factory. If the existing use case does not support the needed input shape, extend it or add an adjacent use case in the same module — not a bypass.
 - **Tauri event plumbing:** use `tauri-specta` for the `capture-complete` event contract. No stringly-typed payloads.
@@ -242,6 +247,8 @@ All file I/O, clip creation, and project-tree mutations occur off the RT audio /
 ## Implementation notes
 
 - **Reuse first.** The project's existing lock-free primitives (check `daw-engine` for current `rtrb` or `ringbuf` usage) MUST be reused before introducing new crates. Survey the `daw-engine` workspace before adding dependencies.
+- **Crate stack alignment (research, non-binding).** Prefer `rtrb` for the CPAL↔worker SPSC; consider `basedrop` / `rtrb_basedrop` if deferred deallocation of RT-visible pointers is required; `ringbuf` / `StaticRb` remains an alternative where const-generic static storage fits. Meadowlark **Creek** is prior art for RT-safe disk streaming with an IO-server thread and may be consulted when sizing the worker-thread drain loop. Production references for `ort`-class RT usage (TEI, Magika) are informational only.
+- **Ardour / JACK prior art.** Ardour uses a dedicated "Butler" thread that drains per-track ring buffers to disk files via a cross-thread signal; JACK's `capture_client.c` demonstrates the canonical pattern of an RT callback writing to a ring plus a non-blocking `pthread_mutex_trylock` to wake the disk thread. Our worker-thread poll loop is a simpler variant of the same pattern.
 - **MIDI FIFO sharing with punch recording.** If retroactive punch recording already reads from a MIDI input FIFO, this feature extends that FIFO rather than creating a parallel one. Audit the existing MIDI input path first; surface a finding if a parallel path is unavoidable.
 - **Clip creation reuse.** The `Arrangement` module exposes existing use cases for creating MIDI and audio clips. The capture flow uses those via the module's public surface — no bypass, no direct store mutation, no shadow clip-factory.
 - **Hotkey registration.** Find the existing keyboard shortcut registry (likely under `src/modules/App/` or similar) and register the Capture hotkey there. Do not ship a second shortcut system.

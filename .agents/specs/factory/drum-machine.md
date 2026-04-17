@@ -8,7 +8,7 @@
 
 Sourdaw's current built-in drum devices (`builtin-drum-kit`, `Toaster`) are rudimentary compared to the reference machines in this space: Logic DMD, Ableton Drum Rack, NI Battery 4, FL Studio FPC, Bitwig Drum Machine, NI Maschine, and hardware classics (MPC, TR-808/909, SP-1200, Digitakt). This spec defines the single flagship drum machine that Sourdaw will ship and use for the Factory suite.
 
-The spec is grounded in consolidated DSP research (`master-drum-machine.md`, `master-drum-machine-secrets*.md`) and the detailed reference-machine breakdowns below. Where multiple research notes contradict, the deeper circuit-level analysis takes precedence (called out inline in each part).
+The spec is grounded in consolidated DSP research (`.agents/research/factory/advanced-instruments.md` — Analog DSP & Drum Synthesis Secrets, Slicing/Resampling/Time-Stretch; `.agents/research/factory/active/drum-machine-realism.md` — circuit-level reference-machine analysis) and the detailed reference-machine breakdowns below. Where multiple research notes contradict, the deeper circuit-level analysis takes precedence (called out inline in each part).
 
 ## Goal
 
@@ -43,7 +43,7 @@ After implementation, Sourdaw ships a pad-based drum instrument that (a) matches
 > **Audience**: An AI coding agent building this instrument from scratch in Rust + TypeScript.
 > **Contract**: Every algorithm has the math, the data structures, and implementation details. No hand-waving.
 >
-> **Consolidated from**: master-drum-machine.md (spec/architecture), master-drum-machine-secrets.md (deep DSP research on filters, oscillators, compression, reverb), master-drum-machine-secrets-2.md (drum synthesis engines, sequencing, transient detection, time-stretch, modal/physical models, GPU).
+> **Consolidated from**: `.agents/research/factory/advanced-instruments.md` (deep DSP research on filters, oscillators, circuit-level drum synthesis, ZDF, MinBLEP, thermal drift, sampling/time-stretch) and `.agents/research/factory/active/drum-machine-realism.md` (TR-808/909/LinnDrum/SP-1200/CR-78 circuit-level analysis, Werner's dissertation, Stanford CCRMA references). Earlier drafts of this spec referenced legacy working-document names (`master-drum-machine*.md`) that have since been consolidated under those two files.
 >
 > **Resolution of overlaps**: The secrets docs provide deeper DSP detail that supersedes the spec's generic descriptions. Where both describe the same algorithm (e.g., 808 kick, filters, reverb), the secrets docs' specific circuit analysis, coefficients, and implementation notes take precedence.
 

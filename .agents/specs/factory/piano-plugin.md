@@ -2,9 +2,13 @@
 
 ## Reference research
 
-- `.agents/research/factory/piano-plugin.md` — competitive landscape, synthesis algorithm options, deployment targets, risk matrix, perceptual/realism appendix with measured parameter tables (Stulov hammer, Weinreich coupled strings, Bensa string damping, Chabassier Steinway D parameters, Woodhouse unison detuning thresholds, Askenfelt attack transient timing, Bernays & Traube perceptual study).
+- `.agents/research/factory/piano-plugin.md` — two-part document:
+  - **Part 1 (§§1–6, lines 1–257):** strategic report — competitive landscape (must-haves, differentiators, pain points), synthesis algorithm options, deployment targets (Tauri / cpal / WASM AudioWorklet / MIDI 2.0 / VST3-CLAP-AU), three-layer architecture, lock-free param/command paths, WASM performance risk, CoOP/COEP / SharedArrayBuffer, pre-allocated voice pool scoring (§4), Rust ecosystem (`basedrop`, `nih-plug` Smoother, `assert_no_alloc`).
+  - **Part 2 (§§1–20, lines 258–1301):** implementation spec — stiff string PDE (§2), hammer nonlinearity (§3), coupled strings / two-stage decay (§4), biquad modal resonator core & numerical-stability notes (§5, §5.4), soundboard options A/B/C (§6–6.4), dampers and per-register behavior (§7), pedals including repedaling catch timing (§8), sympathetic resonance (§9), phantom partials / longitudinal modes (§10), duplex scale resonance (§11), tuning and temperaments (§12), mechanical noise (§13), parameter tables (§14), Rust layout (§15), Pianoteq comparison (§16), perceptual priority ranking (§17), reference pseudocode (§18), open-source references (§19), paths to surpass Pianoteq (§20).
 
 All equations, measured parameter tables (string/hammer/damping coefficients per note), filter coefficient derivations, ML training approaches, historical temperament offsets, and dataset links live in the research file. This spec references them by section but does not re-embed them. If an implementer needs a number, they go to the research file; if they need a requirement, they stay here.
+
+**Citation / pointer hygiene:** Earlier drafts of this spec cited research "appendix" IDs (`A1`–`A11`) that do not exist in the current research file — the research uses numeric section IDs (`§4`, `§5.1`, `§12`, etc.) throughout. Spec references below have been updated to that scheme. Benchmark / perceptual references (MAESTRO, MAPS, Salamander, University of Iowa, PEMO, Bernays & Traube) are product/QA decisions for this spec and do not need to appear in the research file; where a spec requirement depends on data the research file does not contain, that is called out explicitly (see Open questions OQ2–OQ5).
 
 ---
 
@@ -63,7 +67,10 @@ Ship a physically-modeled 88-key concert-grand piano that runs from a single Rus
 - **Microphone positions beyond three (close / player / room).**
 - **Mobile/tablet deployment.** Desktop native + desktop browser only for v1.
 - **Offline rendering optimizations beyond the online-RT path.**
-- **Recording, capturing, or distributing audio of any commercial reference piano.** Perceptual benchmarks use only open datasets (MAESTRO, MAPS, University of Iowa, Salamander).
+- **Recording, capturing, or distributing audio of any commercial reference piano.** Perceptual benchmarks use only open datasets (MAESTRO, MAPS, University of Iowa, Salamander). These datasets are a spec-level QA decision and are not documented in the research file; the license of each dataset must be confirmed at adoption time (see OQ4).
+- **Phantom partials / longitudinal string modes.** Research Part 2 §10 describes the physics and ranks them #8 in the perceptual priority list (research §17); v1 relies on transverse-mode inharmonicity and the primary partial bank only. Revisit if perceptual gate (OQ3) fails.
+- **Duplex-scale resonance.** Research Part 2 §11 documents the physics; deferred past v1 unless WASM/native budget allows and the perceptual gate demands it.
+- **Progressive per-voice cost reduction (nonlinear → linear decay for old voices).** Research Part 1 §5.1 suggests dropping already-decaying voices to a cheaper linear-decay model to reclaim CPU; v1 uses a single quality tier per voice and relies on voice-stealing instead. Revisit if polyphony budget (OQ1) forces it.
 
 ---
 
@@ -93,27 +100,27 @@ A fixed-capacity voice pool (N=256 native, N=64 WASM) holds pre-allocated voice 
 
 ### R3. Inharmonicity and stretched tuning are correctly implemented
 
-Partial frequencies follow `f_n = n · f₁ · √(1 + B · n²)` with `B` per the research A8 tables. The piano follows a Railsback-style curve at default tuning.
+Partial frequencies follow `f_n = n · f₁ · √(1 + B · n²)` with `B` drawn from the research Part 2 §12 tuning tables and §14 string parameter tables. The piano follows a Railsback-style curve at default tuning (research Part 2 §12.1).
 
 **Acceptance criteria:**
 
-- For a held mf A1, mf C4, mf A4, mf C7 note sampled at steady state (t = 500 ms), the measured partial frequencies of the first 16 partials match the research A8 / research §5.1 prediction to within **±2 cents for partials up to the 8th and ±5 cents for partials 9–16**. (Measured via FFT peak-picking over a 2-second analysis window.)
-- A1 fundamental sits at **−19 ± 3 cents** and C8 fundamental sits at **+35 ± 5 cents** relative to equal-tempered reference (Jaatinen & Pätynen 2022 Steinway D envelope, research A8).
+- For a held mf A1, mf C4, mf A4, mf C7 note sampled at steady state (t = 500 ms), the measured partial frequencies of the first 16 partials match the research Part 2 §5.1 / §12 prediction to within **±2 cents for partials up to the 8th and ±5 cents for partials 9–16**. (Measured via FFT peak-picking over a 2-second analysis window.)
+- A1 fundamental sits at **−19 ± 3 cents** and C8 fundamental sits at **+35 ± 5 cents** relative to equal-tempered reference (Railsback-style stretch, research Part 2 §12.1). The exact reference envelope file ID is recorded in the test fixture; if no peer-reviewed table matches, the spec falls back to the Railsback derivation in research Part 2 §12.1 and the tolerance is recomputed from implementation variance (see OQ2).
 - Historical temperament selection applies the published cent offsets (Werckmeister III, Kirnberger III, Vallotti, Young II, ¼-comma Meantone) exactly; A4 remains at 0 cents in all temperaments.
 
 ### R4. Coupled strings produce two-stage decay
 
-For notes F2 and above, each note is driven by 2–3 unison modal banks detuned by a user-exposed parameter defaulting to **0.3 cents**. Modal coefficients produce a distinguishable prompt (fast, ≲ 2 s) and aftersound (slow, > 5 s) decay envelope per partial, per Weinreich's theory (research A4).
+String count by register follows research Part 2 §4.4 (roughly: A0–E1 single string, F1–E2 two strings, F2 and above three strings — exact boundaries deferred to the implementation's constants table). Each note is driven by its register-appropriate unison bank detuned by a user-exposed parameter defaulting to **0.3 cents**; the research Part 2 §12.3 table lists 0.5–2.0 cents as the typical synthesis range, and the spec default of 0.3 c is deliberately tighter — values up to 5 c remain available via the UI. Modal coefficients produce a distinguishable prompt (fast, ≲ 2 s) and aftersound (slow, > 5 s) decay envelope per partial, per Weinreich coupled-string theory (research Part 2 §4).
 
 **Acceptance criteria:**
 
-- For mf C4, the RMS envelope measured in a 1/3-octave band centered on the fundamental exhibits two distinguishable exponential decay regions: a prompt slope whose fitted T60 is in **[0.3 s, 2 s]** and an aftersound slope whose fitted T60 is in **[5 s, 30 s]** (research A7 measured ranges).
+- For mf C4, the RMS envelope measured in a 1/3-octave band centered on the fundamental exhibits two distinguishable exponential decay regions: a prompt slope whose fitted T60 is in **[0.3 s, 2 s]** and an aftersound slope whose fitted T60 is in **[5 s, 30 s]** (research Part 2 §4.2 two-stage decay ranges).
 - Setting unison detune to 0.0 cents eliminates the aftersound region in the same measurement (validates the coupling implementation vs a single-string path).
 - Unison detune parameter is bounded by the UI to [0 cents, 5 cents]; values above 2 cents should produce an audible beating in the spectral waterfall test (qualitative visual check).
 
 ### R5. Attack spectrum varies continuously with velocity
 
-Velocity-dependent spectral tilt is implemented per research A2 (Stulov three-parameter hammer OR approximate velocity-dependent lowpass at excitation) such that no velocity-layer boundary is audible across the MIDI velocity range.
+Velocity-dependent spectral tilt is implemented per research Part 2 §3 (Stulov three-parameter hammer OR approximate velocity-dependent lowpass at excitation) such that no velocity-layer boundary is audible across the MIDI velocity range.
 
 **Acceptance criteria:**
 
@@ -127,9 +134,11 @@ Sustain (CC64) implements half-pedaling: the damping applied to each partial is 
 
 **Acceptance criteria:**
 
-- Sweep CC64 from 0 to 127 at 1 unit/frame while holding a mf C4. The measured fundamental RMS envelope is a monotonically increasing function of CC64 between CC64 = 30 and CC64 = 110 (sigmoid-like response per research A7 half-pedal physics). No step in the response has a derivative sign change.
-- Una corda (CC67 = 127) reduces the first-partial attack amplitude of a mf C4 by **2–6 dB** relative to CC67 = 0 and increases the energy in partials 3–5 (research A5 una corda description: 2-of-3-string strike).
+- Sweep CC64 from 0 to 127 at 1 unit/frame while holding a mf C4. The measured fundamental RMS envelope is a monotonically increasing function of CC64 between CC64 = 30 and CC64 = 110 (sigmoid-like response per research Part 2 §7 / §8 half-pedal physics). No step in the response has a derivative sign change.
+- Una corda (CC67 = 127) reduces the first-partial attack amplitude of a mf C4 by **2–6 dB** relative to CC67 = 0 and increases the energy in partials 3–5 (research Part 2 §8 una corda description: 2-of-3-string strike).
 - Sostenuto test: depress C4 → CC66=127 → release C4 → play E4 → release E4 → CC66=0. C4 must ring until CC66=0; E4 must decay normally on its own release. Asserted via voice-state event log.
+- **Repedaling catch:** if sustain is re-engaged within **~50–100 ms** of release (research Part 2 §8.1), string energy is not fully damped compared to a longer release-then-sustain gap. Acceptance: a scripted MIDI fixture (note-on → note-off → CC64-down 75 ms later) shows the measured fundamental RMS at the re-engagement instant remains within 3 dB of a continuous-sustain reference; a 250 ms gap reference drops by ≥ 6 dB.
+- **Damper absence above ~C7:** the physical piano has no dampers above roughly C7 (research Part 2 §7). In that range, notes ring freely regardless of CC64; the voice model must not attempt to damp them and the test suite asserts that C7♯+ held notes have effectively identical decay at CC64 = 0 and CC64 = 127.
 
 ### R7. Sympathetic resonance is gated and bounded
 
@@ -143,7 +152,7 @@ A global sympathetic resonator bank of 12–24 biquads (count configurable per q
 
 ### R8. Mechanical noise layer is present
 
-Short filtered noise bursts are triggered on key-down, hammer let-off, damper lift, and pedal-down events. Each burst is shaped by an envelope and bandpass filter per research A6 parameter table.
+Short filtered noise bursts are triggered on key-down, hammer let-off, damper lift, and pedal-down events. Each burst is shaped by an envelope and bandpass filter per research Part 2 §13 mechanical-noise parameter table.
 
 **Acceptance criteria:**
 
@@ -197,6 +206,25 @@ The 3D piano, string-vibration, and spectral-waterfall views read from GPU-visib
 
 - A stress test that forces 60 fps visualization + 60% CPU audio load maintains audio buffer-underrun count at zero for a 60-second run.
 - Visualization views correctly detect WebGPU unavailability and fall back to a "visualization unavailable" placeholder without crashing the plugin.
+
+### R14. Numerical stability at low fundamentals
+
+Modes with fundamental below ~200 Hz (A3 and downward — especially A0–E1) must remain stable at 48 kHz over long held notes without denormal floor, NaN blow-up, or slow-drift into instability. Research Part 2 §5.4 recommends **f64 coefficients** or a **coupled-form oscillator** for the low-register biquads; the spec treats this as an RT-correctness requirement, not a quality tier.
+
+**Acceptance criteria:**
+
+- A held A0 at mf, rendered for 30 s at 48 kHz on both native and WASM targets, produces zero denormal/NaN samples (detected by a post-render NaN/denormal sweep on the output buffer).
+- The same fixture passes `assert_no_alloc` (R1 regression).
+- A dedicated unit test pins each low-register biquad (A0, C1, C2, C3) against a golden output for 1 s and fails on any divergence beyond numerical-precision tolerance.
+
+### R15. Delay-free-loop discipline in coupled hammer↔string models
+
+The hammer↔string feedback path is an implicit delay-free loop in the continuous model and must be resolved by a documented technique (e.g. Bank 2000 / Borin K-method — research Part 2 §3.4). Implementations must not paper over the loop with an uncontrolled one-sample delay that biases inharmonicity or damping.
+
+**Acceptance criteria:**
+
+- The implementation choice (K-method, Bank 2000, or another documented technique) is recorded in the module's top-level comment and linked to research Part 2 §3.4.
+- A unit test at C4 mf compares hammer contact duration and peak force against the research target range; a naive one-sample-delay fallback that violates the target range fails this test.
 
 ---
 
@@ -281,11 +309,15 @@ The plugin is considered shippable when ALL of the following are true:
 ## Implementation notes
 
 - Start by getting a single C4 note playing through the native pipeline with the full signal chain (hammer → modal bank → soundboard → output) before adding polyphony, coupled strings, or UI. The simplest integration test surface is `daw-dsp::render_note(key, velocity, duration) -> Vec<f32>`.
-- The research A8 implementation snippet (`partial_freq`, `inharmonicity_coeff`, `stretch_cents`) is already in Rust and is copy-safe.
-- For the hammer ODE, prefer Stulov's three-parameter Voigt-like form (research A2) over the four-parameter hereditary form — no convolution integral, one multiply per sample.
-- The voice pool scoring heuristic is specified numerically in research §4.2; reuse those constants.
-- Build the parametric soundboard biquad bank before attempting the commuted-IR path; the commuted path is a quality-tier add-on.
+- Implementation primitives for inharmonicity (`partial_freq`, `inharmonicity_coeff`, `stretch_cents`) are in research Part 2 §5.1 / §12 and are copy-safe.
+- For the hammer ODE, prefer Stulov's three-parameter Voigt-like form (research Part 2 §3) over the four-parameter hereditary form — no convolution integral, one multiply per sample.
+- The voice pool scoring heuristic is specified numerically in **research Part 1 §4** (subsection "Pre-allocated lock-free voice pool", lines 148–157) — use those constants; protect the highest and lowest held notes from stealing per that section.
+- **Soundboard path selection (research Part 2 §6.3–6.4).** Option A (parametric biquad bank, ~50–100 modes) is the default and must ship for v1. Option B (commuted-IR convolution) is a quality-tier add-on gated behind a preset flag; choose partitioned-FFT convolution when implemented. Option C (full modal plate via Ducceschi / ~2,400 modes) is research-only — not in v1.
+- **Low-register stability (R14).** Implement the low-register biquads in f64 or coupled form per research Part 2 §5.4; tolerate a small CPU bump over a long-term correctness bug.
+- **Delay-free loop (R15).** Document the chosen hammer↔string loop technique (Bank 2000 / K-method) in the module's top-level comment.
 - Offline parameter extraction (ML-based) from a reference recording is not required for v1; if it ships, it must produce a static parameter table — no runtime inference (per Non-goal).
+- **Rust ecosystem (research Part 1 §5.5 / §15).** Prefer `assert_no_alloc` as the RT-safety guard; `basedrop` is the recommended pattern for deferred deallocation of voice data structures; NIH-plug's `Smoother` is a reference for parameter smoothing even though the plugin does not ship under nih-plug. These are reference patterns only, not hard dependencies.
+- **Open-source references (research Part 2 §19).** Qiano, FAUST pianoteq-style patches, NESS, MAESSTRO, and related projects are documented in the research file for implementers; none are v1 dependencies.
 - For WebGPU, use the existing `#/infra/gpu/` helpers if any; otherwise define new ones under `src/modules/PianoPlugin/presentations/views/` and only promote them to infra if another module later needs them.
 
 ---

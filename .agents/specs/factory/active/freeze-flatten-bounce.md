@@ -232,6 +232,8 @@ The system MUST:
 - Run GC sweep: on project save (conservative), on close (aggressive), periodic (size limit)
 - GC mark phase: collect referenced freeze IDs from CRDT + undo history
 - GC sweep phase: delete unreferenced files older than threshold
+- GC age thresholds: default **7 days** for referenced-but-orphaned candidates in active projects; **immediate** deletion of unreferenced files on project close
+- Periodic GC: enforce total `freeze/` byte budget on a **10-minute** interval, in addition to save/close triggers
 - CRDT sync to audio engine: debounce into 16ms batches (one animation frame); if fewer than 10 tracks changed, send incremental per-track updates; if more, send full project snapshot
 
 ### R12: Progress and Cancellation
@@ -262,6 +264,36 @@ The track header MUST display:
 - Progress spinner/bar when freezing
 - Red error indicator with tooltip when error
 - Cross-hatched pattern overlay on frozen clips (Arrangement view)
+
+### R15: Project Artifact Layout
+
+The freeze folder MUST support mark-and-sweep GC plus undo retention. Recommended layout:
+
+- `Project/freeze/<freezeId>.wav` — rendered freeze audio (written via `.tmp` + atomic rename)
+- `Project/freeze/.freeze-manifest.json` — GC metadata (last-seen references, byte budget, age counters)
+- Undo-retained freeze IDs tracked alongside the CRDT undo history (mechanism mirrors research's `.undo-refs.json`; exact storage is an implementation detail)
+
+### R16: Collaborative Lock UI
+
+While any peer holds `freezeState.status === 'freezing'` for a track, all peers MUST:
+
+- Show a **lock/busy indicator** on that track's freeze control (mirrors research's recommendation)
+- Suppress competing freeze commands client-side, reporting "freeze in progress on <peer>"
+- Accept LWW resolution if two peers did start concurrently: the later writer's `frozenBufferId` wins, and the losing render file becomes GC-eligible at the next sweep
+
+### R17: Research Traceability (Non-Normative)
+
+The following DAW behaviors inform this spec and are captured here so implementers can reference them without re-reading the research:
+
+- **Ableton** — freeze to 32-bit float WAV under `Samples/Processed/Freeze/`; refuses to freeze tracks with active sidechain input; Arrangement-view reverb/delay tails render as separate tail clips, Session-view folds ~2 loop cycles; Live 12.2 renamed Flatten to "Bounce Track in Place".
+- **Logic Pro** — Source Only (blue indicator, effects remain live) vs Pre-Fader (green, full chain baked); **cannot freeze multi-output software instruments**; documented PDC bug on high-latency plugins; automation can fire at incorrect times during freeze.
+- **Pro Tools** — Freeze Up To This Insert (partial freeze); **cannot freeze external hardware inserts** (offline rendering produces silence).
+- **Cubase** — RIP with configurable depth; Complete Signal Path is the only mode that bakes sends.
+- **Studio One / Reaper / FL Studio / Bitwig** — varying levels of transform/bounce; see research file for full table.
+
+### R18: State Vocabulary Alignment
+
+- The research five-state sketch uses `unfrozen → freezing → frozen → stale → unfreezing`; this spec replaces `unfreezing` with `error` (R1) and treats unfreeze as an **instantaneous** transition (R7). If future teardown paths require a transient state, add it explicitly rather than overloading `freezing`.
 
 ---
 
@@ -419,6 +451,9 @@ The track header MUST display:
 - [ ] **[MINOR]** Should freeze support undo history beyond project close? Currently flatten becomes irreversible after close (matches Ableton/Logic behavior).
 - [ ] **[MINOR]** Should frozen tracks allow clip duplication/copy-paste? Research shows mixed behavior across DAWs.
 - [ ] **[CRITICAL]** Disk space check threshold: 2x estimated size sufficient, or use 3x safety margin?
+- [ ] **[MINOR]** Archive packing modes (from research): `Full` (include all freeze files), `Minimal` (exclude all — re-render on open), `Smart` default (include freeze files only when `deviceChainHash` implies missing plugins on recipient). Ship in v1 or defer?
+- [ ] **[MINOR]** Optional Premiere-style GC tuning for very large sessions: **90-day** age cap, **10%** of volume cap, weekly housekeeping on launch. Currently out of scope (R11 uses 7-day + 10-min sweep + project-close rules).
+- [ ] **[MINOR]** Should VST3 plugins be called with `processMode = kOffline` during freeze (research recommendation), with an opt-in **real-time render fallback** for plugins that behave differently offline? Currently Non-Goal for MVP (real-time fallback / plugin-specific offline mode both deferred).
 
 ---
 
@@ -432,7 +467,9 @@ The track header MUST display:
 
 ### Risks
 
-- **Disk space exhaustion**: Large projects with many freeze iterations could fill disk. Mitigation: Pre-render check, user warning.
+- **Disk space exhaustion**: Large projects with many freeze iterations could fill disk. Mitigation: Pre-render check, user warning. Research: a **50-track session with 10 freeze iterations** can accumulate gigabytes of dead files without GC.
 - **Plugin non-determinism**: Some plugins produce slightly different output each render. Mitigation: Accept as limitation, document.
-- **Collaborative conflicts**: Two users freezing same track simultaneously wastes render effort. Mitigation: LWW semantics, UI lock indicator.
+- **Collaborative conflicts**: Two users freezing same track simultaneously wastes render effort. Mitigation: LWW semantics, UI lock indicator (see R16).
 - **Undo history growth**: Long undo chains retain many freeze files. Mitigation: Undo depth limits, explicit GC.
+- **Logic-style PDC automation bug**: Plugins with high latency have a documented history of firing automation at incorrect times during freeze on other DAWs. Mitigation: PDC is mandatory (R4.7); regression-test automation timing on high-latency plugin chains.
+- **Large-template CPU spikes during offline render**: Orchestral templates can saturate CPU during freeze. Mitigation: progress/cancellation (R12) stays responsive; consider documenting expected worst-case render duration as a known limitation.

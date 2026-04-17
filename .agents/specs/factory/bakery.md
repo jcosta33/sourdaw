@@ -16,6 +16,8 @@ This differentiates The Bakery from:
 
 **Research reference:** [`.agents/research/factory/bakery.md`](../../research/factory/bakery.md) — §1 "The Bakery". Research notes on Bitwig Grid / Reaktor / Max / VCV Rack competitive baseline are consolidated there. This spec does not restate research; it derives requirements from it.
 
+**Research alignment (informative):** The consolidated research file lists browser/WASM patch execution, a full Crumb-grade sampler product, and a factory samples / sfizz pipeline as long-term mission goals. v1 ships the native desktop runtime with sampler *nodes* only; WASM runtime, a standalone Crumb instrument, and the free-resources delivery story remain tracked follow-ups (see Non-goals and the "Relationship to Crumb and factory samples" section) — not dropped requirements.
+
 ---
 
 ## Goal
@@ -68,6 +70,9 @@ The patcher canvas supports pan, zoom, multi-select, copy/paste, undo/redo, and 
 8. **Browser/WASM runtime for patches** — the native desktop runtime is the v1 target. A WASM path may follow but is not required.
 9. **Cross-patch modulation routing** — modulation is scoped within a single Bakery instance.
 10. **Multi-out to parallel audio busses within a single Bakery instance** — v1 exposes a single stereo output (instrument/FX) or single MIDI output (Note). Parallel routing is done at the DAW track level.
+11. **Crumb-grade sampler product** — v1 ships Bakery `SamplePlayback` / `GrainEngine` nodes wrapping `daw-dsp` sampler primitives only. A dedicated Crumb instrument (SFZ import, 2D velocity/round-robin mapping grid, full Instrument/Layer/Group/Zone hierarchy, tiered resampling, disk streaming, pYIN/BPM analysis) is out of scope and tracked by a future standalone Crumb spec — see research `factory/bakery.md` §2.
+12. **URL / link-based patch sharing** — v1 sharing is self-contained JSON files (R11). Shareable URLs / cloud patch hosting are deferred.
+13. **CPU heat map / per-node performance overlay** — research suggested a GPU-layer performance overlay; deferred to a later performance-tools milestone.
 
 ---
 
@@ -93,7 +98,7 @@ The patcher canvas supports pan, zoom, multi-select, copy/paste, undo/redo, and 
 
 ### R3: Signal / port type system
 
-- **R3.1** — Port types: `Audio` (block-rate stereo or mono buffer), `Gate` (block-rate sample values `0` or `1`), `Trigger` (event with sample offset, instantaneous), `Value` (block-rate control signal, typical range ±1), `Phase` (block-rate normalized `[0, 1)` ramp), `Note` (event stream with sample offset).
+- **R3.1** — Port types: `Audio` (block-rate stereo or mono buffer), `Gate` (block-rate sample values `0` or `1`), `Trigger` (event with sample offset, instantaneous), `Value` (block-rate control signal, typical range ±1), `Phase` (block-rate normalized `[0, 1)` ramp), `Note` (event stream with sample offset). Optional **UI / Meta** ports (inspector-only, non-audio, research §6.1) may exist for probes and metadata; they do **not** participate in RT `ProcessTask` graphs unless explicitly bridged.
 - **R3.2** — Audio, Gate, Value, and Phase share an internal continuous-signal family; Trigger and Note share an internal event family. Compiler coercion rules convert between types in the same family automatically (e.g. Value → Audio multiplies by 1.0; Gate → Trigger emits on rising edge). Cross-family coercion requires an explicit user-placed converter node.
 - **R3.3** — Multiple connections into a single input port default to: **sum** (continuous family) or **merge queue** (event family, sorted by sample offset). The inspector allows switching a summing node to multiplication for a specific port.
 - **R3.4** — Every port has a user-facing color in the UI: audio=orange, gate=green, trigger=green outline, value=blue, phase=purple, note=teal.
@@ -108,7 +113,7 @@ Each module below must exist at v1 release. Each module exposes ports and parame
 - **R4.3 Envelopes / LFO:** `ADSR`, `AHDSR`, `LFO` (same waveforms as Oscillator + S&H), `EnvelopeFollower`.
 - **R4.4 Samplers (wrapping `daw-dsp/levain` and `daw-dsp/crumbs`):** `SamplePlayback` (one-shot, loop, warp), `GrainEngine` (Hann/Gauss windowed, density+spray params).
 - **R4.5 Math / Utility:** `Add`, `Multiply`, `Clamp`, `Lerp`, `Abs`, `Rectify`, `Constant`, `Scale` (input range → output range), `Quantize` (to pitch grid).
-- **R4.6 Routing:** `Mixer` (4-in, 1-out, per-channel gain), `Selector` (N-input, integer index → one output), `VoiceMix`, `VoiceSplit`, `VoiceGate`.
+- **R4.6 Routing:** `Mixer` (4-in, 1-out, per-channel gain), `Selector` (N-input, integer index → one output), `VoiceMix`, `VoiceSplit`, `VoiceGate`, `VoiceIndex`, `VoiceCount`, `Unison` (research §7.3 voice-infrastructure set).
 - **R4.7 Note FX:** `NoteIn`, `NoteOut`, `Transpose`, `Arpeggiator`, `NoteQuantizer` (to scale), `VelocityCurve`.
 - **R4.8 DAW I/O:** `AudioIn`, `AudioOut`, `TempoIn`, `TransportPositionIn`, `AutomationIn` (named param exposed to DAW automation).
 - **R4.9 Effects (wrapping existing `daw-dsp` devices):** `Reverb` (Proof), `Delay` (Knead), `Distortion` (Toaster), `Chorus` (from Bacteria primitives), `Compressor` (Gluten).
@@ -176,6 +181,8 @@ Each module below must exist at v1 release. Each module exposes ports and parame
 - **R10.7** — Rendering meets 60 fps while dragging a node on a 200-node patch on the CI baseline machine.
 - **R10.8** — UI follows the architecture rules in AGENTS.md: lives under `src/modules/Bakery/presentations/`; cross-module imports go through `#/modules/Bakery` only; no barrels inside the module; vanilla `Store<T>` for shared state, `useStore` for consumption.
 - **R10.9 — AC:** A visual-regression test (Playwright screenshot) captures a reference patch at 100 % zoom and passes against a committed baseline.
+- **R10.10** — Non-urgent canvas work (minimap redraws, browser filtering, large-patch layout recomputation) uses React 19 `useTransition` / `startTransition` so interactive gestures (node drag, cable routing) stay on the urgent path (research §4.2).
+- **R10.11** — Module parameter metadata (stable `ParamId`, display name, units, min/max, default, bipolar flag, response curve) is defined once per module in the registry and consumed verbatim by the inspector; the inspector does not invent labels or ranges. Missing metadata fails the build-time registry check in R4.11.
 
 ### R11: Patch sharing format
 
@@ -225,6 +232,10 @@ Each module below must exist at v1 release. Each module exposes ports and parame
 - **R12.4** — CPU/latency reporting: the instance reports its compiled schedule's estimated block cost and any added latency to the DAW's latency compensation system, identical to built-ins.
 - **R12.5 — AC:** Placing a Bakery instance on a track and muting/soloing/automating it behaves indistinguishably from placing a Fermenter on that track, as verified by an integration test that runs both devices under the same track harness and asserts equivalent lifecycle events.
 
+### Relationship to Crumb and factory samples (non-normative pointer)
+
+Factory sample delivery (sfizz WASM status, ~1.5–2.5 GB memory ceiling, Salamander / Sofia / Virtuosity / Naked Drums / Karoryfer / VCSL licensing tiers, bundled vs first-run vs on-demand download, symphonia → WASM virtual filesystem, FLAC IPC streaming) and the full Crumb instrument (SFZ import, 2D mapping grid, warp/Signalsmith, tiered resampling, pYIN analysis, disk streaming) are specified outside this document — see research `factory/bakery.md` §2 (Crumb) and §4 (Free resources). The Bakery patch format's sample refs (R11.3) remain authoritative for Bakery patches regardless of how factory libraries are delivered.
+
 ### R13: Architecture alignment (AGENTS.md)
 
 - **R13.1** — Frontend lives at `src/modules/Bakery/` with the standard subdirectory layout: `models/`, `useCases/`, `stores/`, `repositories/`, `handlers/`, `services/`, `events/`, `presentations/views|components|hooks`, and a root `index.ts` that re-exports only from `useCases/`, `events/`, `stores/`, and `presentations/views/`.
@@ -240,7 +251,7 @@ Each module below must exist at v1 release. Each module exposes ports and parame
 
 1. **React 19 rules** — no `useMemo`, `useCallback`, `React.memo`, `forwardRef`; `ref` is a prop; conditional rendering uses ternaries or early returns, never `&&` (AGENTS.md).
 2. **Audio thread discipline** — no alloc, no locks, no blocking; all buffers pre-allocated at compile (R6).
-3. **Tauri v2 boundary** — filesystem and sample import go through Tauri commands in `src-tauri`, per the `tauri-platform` skill.
+3. **Tauri v2 boundary** — filesystem and sample import go through Tauri commands in `src-tauri`, per the `tauri-platform` skill. v1 covers patch read/write and sample resolution; directory-watch and factory-library installer flows are deferred follow-ups (research §4.2).
 4. **Module registry is compile-time** — modules are registered in a static Rust table; adding a module requires a code change, not a runtime import.
 5. **TypeScript soundness** — no `any` except at I/O boundaries with immediate narrowing; patch JSON parsing uses Zod at the boundary (AGENTS.md §TypeScript — soundness).
 6. **RT-safe Rust** — `daw-bakery` follows the audio-thread rules in AGENTS.md § 🦀 Backend Rust Tauri Architecture (lock-free rings, atomics, no allocation on `process`).

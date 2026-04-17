@@ -8,7 +8,7 @@
 
 Fermenter is Sourdaw's flagship hybrid synthesizer — the Factory suite's centerpiece instrument. Producers expect a single synth that combines wavetable (Vital-class), virtual analog, FM/PM, additive, granular, sample playback, noise, and physical modeling under one patch format and one UI, with the same DSP compiled to both native and WebAssembly. This spec consolidates the DSP contracts, engine list, parameter system, and RT-safety rules.
 
-Grounded in: `master-plugin.md` (structural backbone), `master-plugin-research.md` (DSP formulas and Rust skeletons), `master-plugin-research-2.md` (Vital spectral engine analysis), plus the `../../research/factory/advanced-instruments.md` thermal-drift requirements (§2.2).
+Grounded in: `.agents/research/factory/fermenter.md` (structural backbone, DSP formulas / Rust skeletons, Vital spectral engine analysis — consolidated from the earlier `master-plugin*.md` working drafts) and `.agents/research/factory/advanced-instruments.md` thermal-drift requirements (§2.2).
 
 ## Goal
 
@@ -38,7 +38,7 @@ After implementation, Fermenter ships every engine defined below under a single 
 > **Contract**: Every algorithm has the math, the data structures, and compilable Rust code.
 > No "see external reference." No hand-waving. Everything is inline.
 >
-> **Consolidated from**: master-plugin.md (structural backbone), master-plugin-research.md (deep Rust code, DSP formulas, academic references), master-plugin-research-2.md (Vital spectral engine complete analysis).
+> **Consolidated from**: `.agents/research/factory/fermenter.md` — synthesised from three earlier working drafts (`master-plugin.md`, `master-plugin-research.md`, `master-plugin-research-2.md`) that were merged during research reorganisation. The single research file is now the source of truth for DSP formulas, Rust skeletons, and Vital-style spectral engine analysis.
 >
 > **Contradiction resolutions**:
 >

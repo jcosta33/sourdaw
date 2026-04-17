@@ -60,6 +60,9 @@ Introduce a frozen, startup-detected Capability Registry and a per-domain Capabi
 - **"Optimistic try/catch" adapter resolution (Pattern E in research).** Explicitly rejected.
 - **Mobile (iOS/Android) runtime targets.** Covered by separate future work; the registry interface is designed to accommodate them but no mobile adapters ship in scope here.
 - **Removing already-existing platform checks in unrelated modules.** Migrating callers to the adapter layer is a follow-up workstream tracked separately.
+- **Chromium-only UI scheduling APIs (`scheduler.postTask`, `scheduler.yield`).** Research §§2.10, 4 classify these as Layer 1 with marginal benefit for a DAW; not owned by this adapter layer. If adopted later, they ship as a non-adapter UI-scheduling utility with clear browser gating.
+- **Media decode/encode routing (WebCodecs, container demux).** Owned by the audio engine and media-import specs. Research §§2.13, 13 note WebKitGTK caveats for WebCodecs; the `symphonia`/Rust path is the default on native. This adapter layer does not define a media domain (would have been a potential D9).
+- **Clipboard / drag-drop / Web Share routing.** Research §2.15 notes `navigator.share` is broken on WebView2 and clipboard behavior differs per runtime — these are tracked as risks in Tradeoffs but do not get a D* domain in v1.
 
 ---
 
@@ -243,6 +246,8 @@ Identical headers configured in `vite.config.ts` dev-server options.
 - The audio-engine inter-thread bridge degrades to `postMessage` with documented performance impact.
 - A one-time diagnostic warning is surfaced in the Capabilities panel.
 
+**WebKitGTK belt-and-suspenders (Linux):** On some WebKitGTK configurations, COOP/COEP alone is insufficient and `JSC_useSharedArrayBuffer=1` must also be exported in the launcher environment (research §§2.9, 16). If the SAB probe fails on a WebKitGTK runtime where headers are correct, check this env var before degrading. `Atomics.waitAsync` is available on Safari 16.4+ as an optional enhancement path for SAB-backed ring-buffer waiting.
+
 **Acceptance criteria:**
 
 - [ ] `tauri.conf.json` and `vite.config.ts` both declare COOP/COEP headers.
@@ -306,6 +311,13 @@ Developers can force the registry to resolve to a specific adapter combination d
 - All adapter files are lazy-loaded; static `import` of a platform-specific adapter from outside `src/modules/Platform/` is forbidden.
 - `pnpm deps:validate` passes with zero violations after every batch of cross-module changes.
 - Adapter code may not import from `handlers/`, `models/`, or other private module internals (those are private per `AGENTS.md`). Data passed across the adapter boundary is plain domain-typed objects declared local to the Platform module.
+
+### Tauri IPC and security boundaries
+
+- **No real-time audio over IPC.** Real-time audio buffers MUST NOT cross the Tauri JS↔Rust IPC boundary; the native engine talks to hardware via `cpal`. The UI receives only metering, transport state, decimated waveform data, and control events at UI cadence (research §9).
+- **Large binary transfer caveats.** `ArrayBuffer` transfer costs vary by platform (~5 ms on Windows vs ~200 ms on some configurations for a 10 MB payload per research §9). Features requiring high-frequency large-buffer IPC are forbidden; the R7 SAB ring buffer is the only sanctioned channel for sample-rate data.
+- **No cross-platform `SharedMemory`/mmap** is currently safe to rely on across WebView2 / WKWebView / WebKitGTK — design features accordingly (research §9).
+- **Forbidden Tauri command surfaces.** Commands MUST NOT accept arbitrary filesystem paths, offer unrestricted shell execution, expose generic raw USB/HID byte streams to the frontend, or run ad-hoc SQL against app databases. Scope-and-validate at the Rust boundary; the frontend deals in IDs (e.g. `loadProjectFile(projectId)`), not raw paths (research §9, §12).
 
 ---
 
@@ -388,6 +400,10 @@ Release gate for this spec. All items must be checked before the adapter layer i
 - **Where Rust capability metadata comes from.** The Tauri-side `capability::probe` command should return only already-available data (plugin registration status, platform identity, granted entitlements) — no side effects, no prompts, no I/O that could block the 50 ms budget.
 - **Audio engine special case.** D6 does not route through the generic factory. The audio module owns its Native Shadow construction; the registry just exposes `audioEngine: { mode: 'native' | 'wasm' }` as a readable tag for the Capabilities panel.
 - **Migration.** Existing call sites that hit web APIs directly are *not* migrated as part of this spec. Each consuming module migrates in its own task. This spec lands the layer and one reference migration (recommend: MIDI, since it's the most consequential gap).
+- **Frontend command design principle (research §12).** Tauri commands and adapter methods accept **opaque IDs** (`loadProjectFile(projectId)`) rather than raw paths or raw byte streams. This keeps sandboxing, validation, and permissioning on the Rust side; the frontend does not know, and does not need to know, filesystem layout.
+- **Permission prompt timing (research §12.2).** Defer permission prompts to the first user action that actually needs them (MIDI, audio input, file pick). The startup probe must not trigger prompts.
+- **Tauri placement rules (research §9).** Cross-cutting platform glue lives in a Tauri plugin. App-local commands live under `#[tauri::command]` in `src-tauri/src/commands/`. Out-of-process binaries (VST hosting, heavyweight subprocesses) live as a sidecar with heartbeat/restart supervision — those are out of scope here, but the adapter layer must not reach into sidecars directly.
+- **Phase roadmap reference (research §15, informative).** Research suggests phased delivery (1 = detection + Tauri-first filesystem/MIDI; 2 = OPFS autosave + audio engine; 3 = Chrome FSA accelerator + device APIs; 4 = polish). This spec does not lock the phasing; it is recorded here as a starting point for the implementation task.
 
 ---
 
@@ -409,7 +425,7 @@ Release gate for this spec. All items must be checked before the adapter layer i
 
 ## Open questions
 
-- [ ] **[CRITICAL]** Which File System Access persistence strategy does the Chrome/Windows D1 adapter use? The research (§2.2) documents that `FileSystemDirectoryHandle` can be cached in IndexedDB but **permissions do not persist across sessions** — the user must re-grant every launch. Options: (a) silently re-request with user prompt on each launch; (b) drop the FSA adapter entirely on Tauri/Windows and always use Tauri scoped fs; (c) use FSA only for in-session subsequent reads after the initial Tauri-dialog grant. This choice decides whether FSA ships as an optional Windows enhancement at all. Must be decided before D1 implementation starts.
+- [ ] **[CRITICAL]** Which File System Access persistence strategy does the Chrome/Windows D1 adapter use? The research (§§2.2, 3) documents that `FileSystemDirectoryHandle` can be cached in IndexedDB but **permissions do not persist across sessions** — the user must re-grant every launch — and that WebView2's `PermissionRequested` event does not consistently surface FSA prompts, so the usual host UI interception cannot be relied on. Options: (a) silently re-request with user prompt on each launch; (b) drop the FSA adapter entirely on Tauri/Windows and always use Tauri scoped fs; (c) use FSA only for in-session subsequent reads after the initial Tauri-dialog grant. This choice decides whether FSA ships as an optional Windows enhancement at all. Must be decided before D1 implementation starts.
 - [ ] **[MAJOR]** For non-Chrome WebKit / Firefox **browser-only** users, does Sourdaw degrade (with the Capabilities panel showing missing features) or actively **block** launch with a "use the desktop app or Chrome" message? Affects R2 adapter set and the UX of the missing-capability surfaces. Proposed default: degrade, not block — but the product call is not made yet.
 - [ ] **[MAJOR]** Does the Capabilities panel ship in v1 of this layer, or as a follow-up once the adapters exist? The acceptance criteria currently require it. If cut, R1/R3 acceptance criteria that depend on it must be reworded to require the data structure without requiring the UI surface.
 - [ ] **[MINOR]** Is `credentialless` COEP acceptable as a default instead of `require-corp`? The research (§16) notes it is needed if third-party assets cannot be self-hosted. Current default in this spec is `require-corp` with `credentialless` as a documented fallback. Confirm whether Sourdaw loads any cross-origin resource that forces `credentialless`.
@@ -426,3 +442,9 @@ Release gate for this spec. All items must be checked before the adapter layer i
 - **WebKitGTK version fragmentation** (research §16 risk) means the Linux adapter profile is effectively "WebKitGTK ≥ 2.44". Older distros will degrade further; the probe must record the WebKitGTK version when detectable and surface it in the Capabilities panel for support triage.
 - **Dev override flag could leak into QA surfaces.** Ensure CI uses production builds for release validation so QA never runs with an override accidentally in effect.
 - **Pattern B centralises all platform logic in one module.** A bad change in `src/modules/Platform/` affects every domain. Mitigate with the shared contract test suite (R6) and platform-matrix CI (test plan).
+- **WKWebView backgrounding stops audio.** macOS WKWebView can stop audio when the app is backgrounded (research §§11, 16). Wire AudioContext `suspend`/`resume` to window focus/blur at the audio-engine layer; this is product-critical even though it is not an adapter concern.
+- **macOS code signing and microphone entitlements.** Native audio input paths (`cpal`) require correct entitlements and `NSMicrophoneUsageDescription` — track as a release checklist item; tauri#9928 and related issues document the failure mode (research §16).
+- **Web Share is broken on WebView2.** Do not rely on `navigator.share` for desktop flows on Windows (research §2.15, support matrix). If sharing UX is needed, route through a Rust command.
+- **IndexedDB ~100 MB record cliff.** Large binary records in IDB degrade sharply beyond ~100 MB on some engines (research §13.4). Use OPFS on supported runtimes or Tauri-native storage for large project/model caches; do not rely on IDB alone for multi-hundred-MB assets.
+- **Storage quota split across runtimes.** Chromium WebView2 typically allows ~60 % of free disk; WKWebView non-browser ~15 % (research §§2.16, 11). Plan model / sample / project caches against the smaller figure when targeting all three runtimes.
+- **MIDI-class HID surfaces are not pure MIDI.** Some control surfaces (Mackie/HUI variants) transport control data over HID rather than MIDI (research §13.2). D4 and D5 can cross-reference a shared transport layer where helpful; treat this as a known consideration rather than two fully independent silos.

@@ -4,7 +4,11 @@
 
 No single DAW sampler combines all best-in-class workflows. Ableton leads in speed, Logic in intelligence (auto-analysis), FL Studio in per-slice control, and Bitwig in modulation depth. The goal of this architecture is to provide a single instrument that unifies these workflows while maintaining strict real-time safety on the audio thread.
 
-Reference relevant research: `.agents/research/factory/unified-sampler-suite.md`
+Reference relevant research: `.agents/research/factory/unified-sampler-suite.md` — Part 1 covers the competitor UX matrix, action-count benchmarks across Ableton/Logic/FL/Bitwig, and the "eight gaps" that motivate this suite; Part 2a–2g cover the RT-engine architecture, streaming, analysis, DSP, warp, IPC, and critical constants; the Addendum covers per-slice articulation and modulation depth.
+
+### Research-derived benchmarks (non-normative)
+
+Where feasible, the implementation SHOULD match or beat the competitor action-count benchmarks recorded in research Part 1 for the three canonical workflows: (1) one-shot drag-to-pad load, (2) loop-to-pads slice-and-play, and (3) warp-to-project-tempo. Exact target numbers and test methodology live in the research file; they are treated as direction, not as hard acceptance criteria, because the measurement harness does not exist yet.
 
 ---
 
@@ -36,6 +40,8 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - **Rust Audio Engine (`sampler_engine`):** A 3-thread model (RT Audio, Disk I/O, Engine Management).
 - **Four Playback Modes:** Quick (chromatic), Drum (pads/choke groups), Slice (markers), and Granular/Warp.
 - **Dual-mode Time-Stretching:** WSOLA for transients/percussive content, Phase Vocoder with identity phase locking for tonal content.
+- **Optional higher-quality stretch tier (deferred):** Research Part 1 documents third-party / hybrid algorithms — Rubber Band R3, Signalsmith `ssstretch`, STN (sines/transients/noise) offline decomposition, and RTPGHI phase reconstruction — as "quality tier" add-ons. These are **NOT** v1 requirements; they are documented here so that the warp pipeline's architecture (pre-allocated buffers, SPSC commands, single RT callback entry) can accommodate them later without a rewrite.
+- **Optional CNN onset tier (deferred):** An ONNX / `ort`-based "AI" onset mode is described in research Part 2c alongside SuperFlux/HFC/Complex Domain. v1 ships the three classical detectors; the CNN path is deferred until `ort` integration is scheduled (see Open questions).
 - **Disk Streaming:** Wait-free ring buffer (`rtrb`) architecture supporting up to 128 voices with RAM-cached attack (12KB preload) + disk-streamed sustain.
 - **Analysis:** Background SuperFlux/HFC onset detection, YIN pitch detection, and beat/BPM estimation.
 - **DSP Modulators & Processors:** Cubic Hermite interpolation, 1-multiply iterative AHDSR, Cytomic/Zavalishin TPT SVF filter, and one-pole exponential parameter smoothing.
@@ -60,34 +66,40 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
     - Any parameter change from the UI must be delivered via an `rtrb` SPSC command queue or `AtomicU32` (using bit patterns for floats).
 
 2. **Lock-Free Voice Allocation & Stealing**
-    - Voice pool MUST be pre-allocated to 128 voices.
-    - Allocation MUST use two `AtomicU64` values as a bitfield. Finding a free voice MUST use `trailing_zeros()` and `compare_exchange_weak` with `AcqRel` ordering.
+    - Voice pool MUST be pre-allocated to 128 voices, **cache-line aligned (64 bytes)** per voice struct to avoid false sharing across cores (research Part 2b).
+    - Allocation MUST use two `AtomicU64` values as a bitfield. Finding a free voice MUST use `trailing_zeros()` and `compare_exchange_weak` with `AcqRel` ordering. This is `O(N/64)` — a fixed bounded cost for 128 voices (two words) — treated as O(1) for practical purposes.
     - Voice stealing MUST follow this priority: Same-note retrigger -> Choke group -> Releasing voices -> Oldest active -> Quietest.
-    - Stolen voices MUST receive a 1-5ms linear fade-out before reassignment.
+    - **Fade-out on reassignment:** stolen voices receive a **1–5 ms linear fade-out**; choke-group kills use a fixed **3 ms** raised-cosine fade (research Part 2b choke). The two constants are intentionally distinct: steal fade minimizes click; choke fade is tuned for mute-group musical feel.
 
 3. **Wait-Free Disk Streaming (DFD)**
     - Each voice MUST own a dedicated pair of `rtrb::RingBuffer<f32>` (ping-pong) filled by the background I/O thread.
-    - **Budgets:** 12KB preload (~68ms) per sample in RAM, 64KB (~186ms) ring buffer per voice.
-    - **I/O Thread:** MUST use a priority queue sorted by `buffered_samples_remaining`.
-    - **Underrun:** MUST apply an inverse ramp (64 samples) to fade to silence.
+    - **Budgets:** 12KB preload (~68ms) per sample in RAM, 64KB (~186ms) ring buffer per voice. Total streaming RAM budget at 128 voices is **~76 MB** (research Part 2b).
+    - **I/O Thread:** MUST use a priority queue sorted by `buffered_samples_remaining`. Disk reads use fixed chunk sizes (e.g. **4096 samples**) aligned to typical disk blocks.
+    - **Command queue depth:** The SPSC command queue between engine-management and I/O threads is sized at a fixed depth (e.g. **256 entries**); overflow is reported back to the management thread as a non-fatal event.
+    - **Pitch-ratio full-RAM promotion:** Samples whose playback pitch ratio exceeds a configured `MAX_SAMPLER_PITCH`-style threshold MAY be promoted to fully resident in RAM at load time (HISE/Kontakt precedent, research Part 2b). The exact threshold is an open question (see Open questions).
+    - **Underrun:** MUST apply an inverse ramp (64 samples) to fade to silence when the ring starves, AND MUST apply a short fade-**in** when data is available again, so a transient underrun does not leave a hard click on resumption (research Part 2b).
 
 4. **Background Auto-Analysis**
-    - **Onset Detection:** MUST implement SuperFlux (universal), HFC (percussive), and Complex Domain (melodic). Peak picking MUST use adaptive thresholding (pre_avg=12, post_avg=6 frames) and snap to nearest zero-crossing (5-50 sample window).
-    - **Pitch Detection:** YIN algorithm (via `pitch-detection` crate) using a 0.15 threshold over multiple 2048-sample windows. MUST use parabolic interpolation for sub-bin refinement.
+    - **Onset Detection:** MUST implement SuperFlux (universal), HFC (percussive), and Complex Domain (melodic). Peak picking MUST use adaptive thresholding (pre_avg=12, post_avg=6 frames) and snap to nearest zero-crossing (5-50 sample window). Spectral flux is acknowledged in research Part 2c as a baseline ODF for reference ranking but is not required.
+    - **Onset gating:** MUST enforce a minimum inter-onset interval to suppress double-triggers. Defaults per research Part 2c: **20–50 ms for percussive material, 100 ms for melodic**. Slice cuts MAY apply a 1–5 ms raised-cosine fade at each slice boundary to prevent clicks when a slice is triggered.
+    - **Sensitivity mapping:** The UI sensitivity control (`[0, 1]`) MUST map to the peak-picking threshold as `threshold = 1.0 - sensitivity * 0.9` (research Part 2c).
+    - **Tempo / beat grid:** After BPM estimation, the analysis pipeline MUST expose beat positions so the UI / slicer can snap slice markers to musical subdivisions (1/16, 1/8, 1/4). Beat-position refinement uses the dynamic-programming beat tracker described in research Part 2c.
+    - **Pitch Detection:** YIN algorithm (via `pitch-detection` crate) using a 0.15 threshold over multiple 2048-sample windows. MUST use parabolic interpolation for sub-bin refinement. Robustness: skip the attack region (first ~40 ms) and average the result of 3–5 analysis windows before reporting, per research Part 2c.
     - **BPM Estimation:** Percival-Tzanetakis autocorrelation method (GAC autocorrelation of onset strength signal).
     - **Waveform Peaks:** Hierarchical mipmap reduction (Min/Max pairs). Level 0 base block size: 32 or 64 samples. Subsequent levels MUST be powers of 2.
 
 5. **Precision DSP Implementation**
     - **Interpolation:** Pitched playback MUST use 4-point Cubic Hermite interpolation. Offline sample rate conversion (at load time) MUST use `rubato` windowed sinc.
-    - **AHDSR Envelope:** 6-state machine (Idle, Attack, Hold, Decay, Sustain, Release). MUST use 1-multiply iterative exponential curve (`level = (level - offset) * multiplier + offset`). `target_ratio` MUST be adjustable (0.0001 for exponential, 1.0+ for linear).
-    - **Filter:** MUST implement Cytomic/Zavalishin TPT SVF. MUST provide simultaneous LP, HP, BP, and Notch outputs. MUST use 2x oversampling for resonance $Q > 10$.
-    - **Parameter Smoothing:** One-pole exponential smoother (5-20ms time constant). MUST include denormal prevention (tiny DC offset $1e^{-18}$ or flush-to-zero).
+    - **AHDSR Envelope:** 6-state machine (Idle, Attack, Hold, Decay, Sustain, Release). MUST use 1-multiply iterative exponential curve (`level = (level - offset) * multiplier + offset`). `target_ratio` MUST be adjustable (0.0001 for exponential, 1.0+ for linear). MUST support **retrigger modes** (research Part 2e): `Legato` (same note re-uses active envelope state), `RetriggerFromCurrent` (new envelope starts from current level), and `HardRetrigger` (reset to zero); the choice is per-pad/slice configuration.
+    - **Filter:** MUST implement Cytomic/Zavalishin TPT SVF. MUST provide simultaneous LP, HP, BP, Notch, **Peak**, and **AllPass** outputs (research Part 2e). MUST use 2x oversampling for resonance $Q > 10$.
+    - **Parameter Smoothing:** One-pole exponential smoother (5-20ms time constant). MUST include denormal prevention (tiny DC offset $1e^{-18}$ or flush-to-zero). Implementation SHOULD use **per-block** smoothing update with linear interpolation across samples within a block, rather than per-sample coefficient updates, to reduce CPU cost for modulation-heavy patches (research Part 2e performance note).
+    - **Pan law:** Pan / crossfade mixing MUST use an equal-power (sin/cos) law (research Part 2g); linear pan MUST NOT be used for sample mixing.
     - **Looping:** Equal-power crossfade (sin/cos gains) at loop boundaries (Forward, PingPong, Reverse). Default length: 50-500 samples.
 
 6. **Warp Engine Mechanics**
     - **Phase Vocoder:** Identity Phase Locking (IPL) MUST identify spectral peaks and lock surrounding bin phases. FFT size: 2048. Overlap: 75% (hop = N/4). Pre-allocate all buffers via `realfft`.
-    - **WSOLA:** Frame length: 1024. Overlap: 512. Tolerance window ($\Delta_{max}$): 256. Cross-correlation MUST be optimized via FFT or 4x downsampling.
-    - **Granular:** MUST support Hann, Triangle, Tukey, and Gaussian grain window shapes. Inter-onset time (IOT) MUST allow randomization (jitter) up to 30%.
+    - **WSOLA:** Frame length: 1024. Overlap: 512. Tolerance window ($\Delta_{max}$): 256. Cross-correlation MUST be optimized via FFT or 4x downsampling. WSOLA is understood to degrade on complex polyphonic sources and above ~2× stretch (research Part 2f limitations); the UI MAY recommend PV for extreme stretch ratios.
+    - **Granular:** MUST support Hann, Triangle, Tukey, and Gaussian grain window shapes. Inter-onset time (IOT) MUST allow randomization (jitter) up to 30%. Additional granular parameters (research Part 2f): `MAX_GRAINS` (hard cap on concurrent grains per voice), `spray` (grain read-head randomization window), `pitch_random` (per-grain detune), `pan_spread` (stereo distribution), and `density` (grains per second) — `density` combined with grain size MUST respect COLA (constant overlap-add) at default settings so unmodulated output sounds continuous.
 
 7. **Tauri v2 IPC & UI Performance**
     - **Binary IPC:** Waveform mipmaps MUST be transferred via raw `ArrayBuffer` using `tauri::ipc::Response`.
@@ -126,6 +138,27 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
     - **Flex Speed as modulation target:** The warp ratio exposed by requirement 6 MUST be addressable by the modulation matrix at control rate. Modulating it MUST NOT trigger allocation or FFT-buffer resize — the warp engine's pre-allocated buffers (requirement 6) are sized for the maximum configured ratio at patch load.
     - **RT discipline:** All articulator computations, matrix routing, deck crossfade, stack mixing, and MPE resolution MUST respect requirement 1 (no alloc, no locks, no blocking on RT thread). The entire matrix evaluation for one audio block MUST complete in bounded `O(active_routings × active_voices)` time.
 
+12. **Engine callback contract (single RT entry point)**
+
+    The RT `process()` callback MUST execute the following orchestration for every audio block, in this order (research Part 2 Addendum §11):
+
+    1. Drain the SPSC command queue from the engine-management thread into non-allocating voice/sample state mutations. Commands that require allocation or blocking MUST have been resolved on the management thread before enqueue; the callback MUST never take the allocation path.
+    2. Drain the MIDI input queue for the block, resolving velocity layer → round-robin → stack → voice allocation per requirements 2, 9, 10, 11.
+    3. For each active voice: read preload / ring → warp (PV / WSOLA / repitch / granular, per mode) → filter (SVF) → envelope (AHDSR) → pan / mix into the block accumulator.
+    4. Write metering atomics (`peak_level`, `active_voice_count`, per-pad activity) with `Relaxed` ordering.
+    5. Signal the disk I/O thread (via an `AtomicBool` or park-token unpark) when any voice's `buffered_samples_remaining` crosses the refill threshold.
+
+    The callback MUST complete in bounded O(active_voices × active_routings) time; `assert_no_alloc` MUST pass on the full orchestration in debug builds.
+
+13. **IPC contract (Tauri command / event surface)**
+
+    The frontend MUST reach the engine only through the following surface. Changes to this surface require a spec update (research Part 2 Addendum §7):
+
+    - **Commands (`invoke`):** `load_sample`, `analyze_onsets`, `set_sampler_mode`, `set_pad_config`, `set_slice_config`, `set_warp_params`, `set_articulator`, `set_mod_route`, `reset_round_robin`, `start_recording`, `stop_recording`, `get_waveform_peaks` (returns `tauri::ipc::Response` with a binary mipmap payload).
+    - **Events (server → client):** `playback_position` (~30 Hz), `voice_activity` (per-pad meter, ~30 Hz), `analysis_complete` (onsets / BPM / root key / peaks), `sample_load_progress`, `underrun_event` (telemetry only; the engine does not block on this).
+    - All command and event shapes MUST be typed end-to-end via `tauri-specta`; no `any` on the boundary. Large binary payloads (waveform mipmaps, recorder captures) MUST use `tauri::ipc::Response` rather than being JSON-encoded.
+    - The audio stream itself MUST NOT cross IPC; UI receives metering and decimated waveform views only (see Non-goals).
+
 ---
 
 ## Critical DSP Constants
@@ -157,12 +190,17 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 ### Decision: Lock-free streaming vs Direct memory mapping on RT thread
 
 **Chosen:** `rtrb`-based wait-free SPSC ring buffers serviced by a priority-queued background disk I/O thread, combined with a RAM preload for the first 12KB (attack).
-**Considered and rejected:** Direct memory mapping on the audio thread. Page faults would block the RT thread, causing audio dropouts.
+**Considered and rejected:** Direct memory mapping on the audio thread. Page faults would block the RT thread, causing audio dropouts. Memory-mapped I/O MAY still be used on the dedicated I/O thread (HISE/Kontakt precedent — research Part 2b) — this is an implementation detail of the I/O thread, not a change to the RT contract.
 
 ### Decision: Onset Detection Algorithm
 
-**Chosen:** SuperFlux for universal use (robust against vibrato) and HFC (High-Frequency Content) for fast percussive analysis.
-**Considered and rejected:** CNN-based (madmom) onset detection. Rejected for initial implementation due to the overhead of integrating ONNX/`ort`.
+**Chosen:** SuperFlux for universal use (robust against vibrato), HFC (High-Frequency Content) for fast percussive analysis, and Complex Domain for melodic material.
+**Deferred:** CNN-based (madmom-style) onset detection via ONNX/`ort`. Research Part 2c documents this as a fourth ("AI" / "Universal+") mode. Deferred for v1 pending `ort` integration schedule; the analysis pipeline's contract (ODF → peak-pick → ZC-snap) accommodates it with no architectural change.
+
+### Decision: Stretch algorithm scope
+
+**Chosen:** First-party WSOLA + Phase Vocoder (IPL) covering the "transient vs tonal" split.
+**Deferred:** Higher-quality tiers — Rubber Band R3, Signalsmith / `ssstretch`, STN offline decomposition, RTPGHI — remain documented in research but out of scope for v1. The Non-goal on "proprietary stretch (Elastique Pro)" is licensing-driven; it does not exclude MIT/BSD/GPL-compatible third-party libraries that might ship in a later quality tier.
 
 ---
 
@@ -207,7 +245,10 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - **Velocity layer crossfade curve selection.** Research Part 2d fixes equal-power (sin/cos) for loop crossfades but does not specify a curve for inter-layer velocity crossfades. Options include equal-power, linear, or user-selectable. This is non-critical because equal-power is a defensible default and can be revisited.
 - [CRITICAL] **MPE protocol surface.** Requirement 11 accepts MPE as a first-class mod source but does not pin down whether v1 must accept the full MIDI Polyphonic Expression 1.0 spec (master channel + member channels + per-channel pitch bend range negotiation) or just the internal `PerNoteControllers` projection fed by any source. Decide: (a) full MPE 1.0 wire protocol including RPN 0,6 pitch-bend-range messages, (b) simplified "per-note-aware" surface (channel-per-note routing without RPN negotiation), or (c) defer MPE to v1.1 with only per-channel pressure and pitch-bend as mod sources in v1. Affects the input-stage spec and downstream MIDI 2.0 compatibility path.
 - [CRITICAL] **Voice stacking interaction with disk streaming budget.** Requirement 11's stack_count up to 8 multiplies active voice count by up to 8× per trigger, which can push the pre-allocated 128-voice pool + 16MB ring buffer budget (research Part 2b) into starvation on large sampled instruments. Decide: (a) hard cap `total_active_voices ≤ MAX_VOICES` (128) where stacks count as N voices (and the stealing cascade applies), (b) reserve a separate `stack_voice_pool` budget, or (c) degrade stacked voices to lower-quality interpolation under memory pressure. Resolve before implementing requirement 11.
+- [CRITICAL] **CNN onset path in v1.** Research Part 2c specifies an optional "AI" mode alongside SuperFlux/HFC/Complex Domain. Decide: (a) include as an optional analysis backend in v1 (adds `ort` runtime dependency and model bundling), or (b) defer and remove from any user-facing product messaging until `ort` integration is scheduled. Current spec default: defer.
+- [MAJOR] **Beat-grid snapping UX.** The analysis layer now exposes beat positions (requirement 4). Product must decide whether slice markers auto-snap to the beat grid by default, snap only when the user chooses a subdivision (1/16, 1/8, 1/4, off), or never auto-snap. Default proposal: user-selectable subdivision with a snap-to-beat toggle per slice.
 - **Articulator slot count.** v1 fixes this at 8 per FL Studio precedent. Confirm with product whether the dual-deck case should also carry 8 per deck (16 total per pad) or 8 shared across decks.
+- **Crate stack for deferred free paths.** Research mentions `rtrb-basedrop` and `crossbeam-channel` as options for deferred-deallocation of voice data crossing RT → non-RT. v1 uses plain `rtrb` + SPSC; confirm whether the deferred-free path ships in v1 or v1.1.
 
 ---
 

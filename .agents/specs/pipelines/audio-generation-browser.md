@@ -6,6 +6,8 @@ This spec translates the findings from `.agents/research/pipelines/audio-generat
 
 The research establishes that browser-based AI audio inference is production-ready for models up to ~500M parameters via WebGPU + ONNX Runtime Web, with WASM SIMD as universal fallback. The recommended build order is: (1) DDSP instrument synthesis (proven, tiny models, immediate DAW value), (2) Kokoro TTS for vocal scratch tracks (82M params, npm-ready), (3) DiffSinger singing voice synthesis (the industry-first browser SVS, highest impact, highest risk).
 
+The research file's executive assessment (competitive quality vs cloud SVS, the ~60–70% TTS-relative quality ceiling, and the "matching AceStudio quality purely in-browser is not achievable today" conclusion) is background only. This spec does **not** require matching commercial AceStudio-class singing in the browser. Browser output is explicitly a **preview tier** relative to the Tauri-native pipeline (see Non-goals and the "Render quality" decision). The 15-model capability matrix in research §2 remains the canonical inventory for future roadmap and licensing review; only DDSP, Kokoro, DiffSinger, and the shared NSF-HiFiGAN vocoder are in scope here.
+
 Sourdaw already has working browser AI infrastructure that this spec builds on:
 
 - **ONNX Runtime Web with WebGPU/WASM** — `src/modules/AudioAnalysis/repositories/browserStemSeparation.ts` runs Demucs v4 (~235 MB ONNX) in the browser using `onnxruntime-web`. It handles dynamic import, WebGPU-with-WASM-fallback execution provider selection, model caching via Cache API, tensor construction, segmented processing, and resampling via OfflineAudioContext. This is the reference pattern for all browser ONNX inference.
@@ -21,6 +23,8 @@ This spec targets **Chrome/Chromium latest versions only**. WebGPU in Chrome del
 **Other browsers are explicitly out of scope.** If the feature is accessed on Firefox, Safari, or older Chrome, the UI disables browser AI features and shows an explanatory popup: "Browser AI features require Chrome [version]+. Use the desktop app for AI features on other browsers." This eliminates the entire class of cross-browser WebGPU compatibility issues (Firefox OPFS gaps, Safari WebGPU limitations on older macOS, Linux WebKitGTK having no WebGPU).
 
 In Tauri v2, **Windows** (WebView2/Chromium) gets full WebGPU. **macOS** (WKWebView/Safari) and **Linux** (WebKitGTK) do not — on these platforms, disable browser AI features and route to the Tauri-native pipeline (`.agents/specs/pipelines/audio-generation.md`) instead.
+
+**Chrome on Linux (pure browser)** does support WebGPU per current Chromium builds; capability detection treats it identically to Chrome on Windows/macOS and the feature is enabled if `navigator.gpu` exists. This is separate from the **Tauri Linux** case above, which uses WebKitGTK (no WebGPU). The two Linux cases must not be collapsed in code or in user-facing copy.
 
 ---
 
@@ -89,6 +93,8 @@ The research establishes that the winning UI strategy is **producer-first UI wit
 
 ### Productive waiting during renders
 
+Long-running synthesis in the browser typically falls in the 1–30 s band. Per Nielsen's rough thresholds — ~0.1 s feels instant, ~1 s preserves flow, ~10 s risks attention loss — the UI MUST prioritize **productive waiting** and honest stage labels over generic spinners; a user who is blocked longer than ~1 s MUST always see a concrete next stage (not "loading…").
+
 While a phrase renders (5-30 seconds in browser), the user must be able to: edit another track, type lyrics, scrub existing audio, queue another render, inspect retakes, continue arranging. The UI thread must never block during inference (Web Worker isolation ensures this).
 
 **Latency patterns**:
@@ -141,6 +147,8 @@ The UI/UX work phases separately from the technical pipeline phases:
 - Non-color-only status signaling (stale badge must not rely on color alone)
 - Large enough note handles and lane targets for touch/imprecise input
 - Reduced-motion option for loading indicators
+- High-contrast theme and robust zoom (per research §12 — both are hard requirements, not opt-in accessibility extras)
+- Text / caption summaries for AI warnings and render errors, so audio-only feedback does not exclude low-vision or deaf/HOH users
 
 ### High-value keyboard shortcuts
 
@@ -182,6 +190,9 @@ The UI/UX work phases separately from the technical pipeline phases:
 | Repeat tasks become tedious                        | High     | Copy/paste attributes, presets, linked phrases, shortcuts      |
 | Accidental edits break trust                       | Medium   | Strong undo, object locking, non-destructive operations        |
 | Users cannot learn why a phrase sounds wrong       | Medium   | Pronunciation guidance, visible phoneme timing, smart warnings |
+| Advanced controls become form-heavy and slow       | Medium   | Keep editing on-canvas; inspector for precision only           |
+| Large workspace feels cramped in browser           | Medium   | Collapsible panels, focus modes, bottom drawers                |
+| Product excludes keyboard-only / low-vision users  | Medium   | Shortcut parity, high contrast, accessible labels              |
 
 ### MVP UX validation gate
 
@@ -217,6 +228,8 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 - RAVE timbre transfer integration beyond the existing placeholder (separate spec)
 - Consistency distillation of DiffSinger (research-grade optimization; would dramatically improve speed but requires ML engineering beyond this spec)
 - Server-side rendering or cloud inference
+- Client-side Whisper ASR and large multimodal audio models (e.g. LFM-scale). Research §5 notes both run in browsers today (Whisper-large-v3-turbo via Transformers.js; LFM2.5-Audio 1.5B via quantized ONNX + WebGPU), but they are out of scope for this pipeline spec — any future ASR feature gets its own spec and its own UX surface.
+- **Tier 3 neural-codec instrument synthesis (MIDI → EnCodec/DAC token transformer → codec decoder).** Research §2/§11 calls this out as a future direction (EnCodec ~15 M params / ~60 MB, DAC ~70 M / ~280 MB, ~5–15 s for a 10 s clip on WebGPU). The model registry schema is forward-compatible (`distillation_origin`, `quality_tier`) so this can slot in later, but no requirement or acceptance criterion in this spec covers it.
 
 ---
 
@@ -237,7 +250,7 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 4. **Model storage** — Models are stored using **OPFS** (Origin Private File System) as the sole browser storage backend. Chrome has full OPFS support with synchronous access handles in workers (fastest reads, 2-4x faster than IndexedDB). Use `navigator.storage.persist()` to prevent eviction. Chrome allows up to ~60% of available disk space per origin.
    - **Tauri app data directory** — when running in Tauri on Windows, bypass browser storage entirely. Use the Rust backend's `model_download.rs` for downloads and serve models to the webview via `register_uri_scheme_protocol` or direct file reads. This eliminates browser quota limits. On macOS/Linux Tauri, browser AI features are disabled (route to native pipeline).
 
-5. **Model download manager** — A frontend service that handles model downloads with: progress reporting (bytes downloaded / total bytes) via `BroadcastChannel` for cross-context updates (Service Worker → main thread), resumable downloads (Range headers where CDN supports it), SHA256 integrity verification after download, automatic retry (3 attempts with exponential backoff), and cancellation. Downloads are initiated from the main thread, executed via `fetch()` in a Service Worker or the inference worker, and stored via the tiered strategy above. The manager maintains a registry of all known models and their local status (not-downloaded / downloading / ready / error / stale). For large downloads (>100 MB, e.g., Kokoro ~160 MB, DiffSinger voicebanks ~115-160 MB), use the **Background Fetch API** where available — it survives tab navigation, provides OS-level download progress, and handles network interruptions. Background Fetch requires Service Worker registration and is supported in Chrome/Edge (not Firefox/Safari); fall back to standard `fetch()` where unavailable.
+5. **Model download manager** — A frontend service that handles model downloads with: progress reporting (bytes downloaded / total bytes) via `BroadcastChannel` for cross-context updates (Service Worker → main thread), resumable downloads (Range headers where CDN supports it), SHA256 integrity verification after download, automatic retry (3 attempts with exponential backoff), and cancellation. Downloads are initiated from the main thread, executed via `fetch()` in a Service Worker or the inference worker, and stored via the tiered strategy above. The manager maintains a registry of all known models and their local status (not-downloaded / downloading / ready / error / stale). For large downloads (>100 MB, e.g., Kokoro ~160 MB, DiffSinger voicebanks ~115-160 MB), use the **Background Fetch API** where available — it survives tab navigation, provides OS-level download progress, and handles network interruptions. Background Fetch requires Service Worker registration and is supported in Chrome/Edge (not Firefox/Safari); fall back to standard `fetch()` where unavailable. Where a Service Worker is used, the manager MUST follow a **cache-first** fetch strategy for model shards (OPFS → CDN on miss, then persist to OPFS), matching the research packaging pattern (research §5) so a re-load never re-downloads an intact model.
 
 6. **Capability detection** — On feature first use, verify Chrome + WebGPU availability. If `navigator.gpu` is absent or the browser is not Chrome-based, disable AI features and show an explanatory popup. If WebGPU is available, run a micro-benchmark: create a small ONNX session (~1 MB test model), run a dummy inference, measure time. Classify: `webgpu-fast` (< 50ms), `webgpu-slow` (50-500ms). Store the result in localStorage. Expose to the UI as a capability badge. Use the classification to set default render quality (fewer diffusion steps on slower hardware). No WASM-only tier — if WebGPU is unavailable, the feature is disabled.
 
@@ -418,6 +431,7 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 - **IndexedDB primary** — rejected because OPFS provides 2-4x faster reads via synchronous access handles in Web Workers. For 100-400 MB model files, this difference is significant (seconds vs. sub-second load times).
 - **Cache API primary** — rejected as long-term storage because Cache API is designed for HTTP responses and may be evicted under storage pressure.
 - **Tiered storage (OPFS → Cache API → IndexedDB)** — rejected because Chrome-only targeting eliminates the need for fallbacks. Simpler code, fewer bugs.
+- **Firefox-compatible IndexedDB fallback** — rejected. Research §5 documents a dual OPFS / IndexedDB path for multi-browser support; because Firefox is already scoped out at the UI gate, keeping an IndexedDB code path only adds unreached branches. Re-adding it if Firefox becomes in-scope is a focused change, not a rewrite.
 - **Always use Tauri backend** — rejected because the browser pipeline must work without Tauri for pure web deployments (Chrome browser tab).
 
 ### Decision: Single vocoder for browser tier (not dual vocoder)
@@ -448,7 +462,7 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 - [ ] A 4-bar monophonic MIDI melody renders to recognizable instrument audio matching the input pitches
 - [ ] DDSP render completes in under 2 seconds for a 4-bar phrase at 120 BPM on Chrome with WebGPU on a 2023 laptop
 - [ ] Instrument models (~5-15 MB each) download on first use with progress indication
-- [ ] Downloaded models persist across page reloads (verified by checking OPFS/IndexedDB)
+- [ ] Downloaded models persist across page reloads (verified by checking OPFS — IndexedDB is NOT used per the OPFS-only storage decision)
 - [ ] All DDSP inference runs in a Web Worker — the main thread remains responsive during rendering (no frame drops in UI)
 - [ ] Output audio is 44.1 kHz regardless of model native sample rate
 
@@ -747,6 +761,8 @@ Two [CRITICAL] items below must be resolved by a human (with legal / product sig
 2. **Non-Chrome platforms see disabled feature (LOW after scoping decision)** — macOS Tauri (WKWebView/Safari) and Linux Tauri (WebKitGTK) do not get browser AI features — they are disabled with a message directing to the native pipeline. This is by design. The only risk is user confusion if the feature availability difference is not clearly communicated.
 
 3. **TensorFlow.js vs ONNX Runtime Web fragmentation (MEDIUM)** — If DDSP models require TF.js while DiffSinger uses ONNX Runtime Web, the app ships two inference frameworks. TF.js adds ~1.5 MB to the bundle and has its own WebGPU backend (`tfjs-backend-webgpu`). The inference worker must abstract over both. This is manageable but adds complexity. Prefer ONNX-only if DDSP ONNX conversion is feasible.
+
+3b. **WebGPU dispatch overhead vs native CUDA (MEDIUM)** — Research §3 measures WebGPU ML inference at ~10–20 % of native CUDA performance; the gap is dominated by per-dispatch validation and compile-once costs rather than raw compute. Practical implication for this spec: favor **batched / graph-captured inference** (ONNX Runtime Web `graph capture` for static-shape models) and avoid per-frame single-tensor dispatches in UI code. Interactive previews that issue many tiny dispatches will regress more than a single end-to-end render.
 
 4. **Memory pressure with multiple models (MEDIUM)** — Loading DDSP instrument (~15 MB) + Kokoro (~160 MB) + DiffSinger acoustic (~50-80 MB) + DiffSinger variance/pitch/linguistic (~15-30 MB) + vocoder (~50 MB) = ~290-335 MB of model weights in GPU/WASM memory. Chrome tabs have a ~4 GB memory limit. The session manager's LRU eviction prevents out-of-memory, but switching between instruments/voices incurs model reload latency (1-5 seconds from OPFS).
 

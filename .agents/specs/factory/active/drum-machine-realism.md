@@ -92,7 +92,17 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 
     **Feedback buffer** (decay control): First-order high-shelf filter whose gain increases with the decay knob position k ∈ [0,1], sustaining oscillation longer. Decay range: 50–800 ms (300 ms at center).
 
+    **Feedback path transfer function** (forward path, research-accurate form for reference or direct implementation):
+    ```
+    H_fb(s) = (Rk × R167 × C41 × s) /
+              (Rk × R167 × C41 × C42 × s² + Rk × R170 × (C41 + C42) × s + Rk + R170)
+    where Rk = R161 ∥ (R165 + R166)   (parallel combination)
+    ```
+    The first-order high-shelf above is an acceptable lumped substitute if tuned to match this H_fb's magnitude and decay envelope; otherwise implement the full rational form directly.
+
     **Feedback loop resolution:** Insert a single unit delay (z⁻¹) after the feedback buffer to break the delay-free loop. At 48 kHz this is ~21 µs — negligible relative to kick drum periods (~20 ms).
+
+    **Tolerance note:** Roland's service manual lists nominal fc ≈ 56 Hz, but measured units typically fall in the **48–60 Hz** band due to ±20% electrolytic capacitor tolerance (see Constraints — tolerance modeling).
 
 2. **808 kick — accent is timbral.** Trigger voltage ranges from 5 V (unaccented) to 15 V (full accent). The velocity parameter maps linearly to this range. Higher voltage increases pulse amplitude into the bridged-T, producing:
     - Longer ring time (more energy in the resonator)
@@ -109,14 +119,14 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 
 4. **808 hi-hat — six PolyBLEP square oscillators at measured frequencies.** The hi-hat uses a Hitachi HD14584 hex Schmitt trigger inverter IC generating six square waves via RC astable multivibrators. Werner (ICMC 2014) measured these from SPICE simulation:
 
-    | Oscillator | Frequency  | Tunable                   |
-    | ---------- | ---------- | ------------------------- |
-    | 1          | 800 Hz     | Yes (TM1), 359–1150 Hz   |
-    | 2          | 540 Hz     | Yes (TM2), 254–627 Hz    |
-    | 3          | 522.7 Hz   | Fixed                     |
-    | 4          | 369.6 Hz   | Fixed                     |
-    | 5          | 304.4 Hz   | Fixed                     |
-    | 6          | 205.3 Hz   | Fixed                     |
+    | Oscillator | Frequency  | Tunable                   | Nominal pitch (reference)     |
+    | ---------- | ---------- | ------------------------- | ----------------------------- |
+    | 1          | 800 Hz     | Yes (TM1), 359–1150 Hz   | G5 +35¢                       |
+    | 2          | 540 Hz     | Yes (TM2), 254–627 Hz    | C♯5 −45¢                     |
+    | 3          | 522.7 Hz   | Fixed                     | C5 +7¢                        |
+    | 4          | 369.6 Hz   | Fixed                     | F♯4 +19¢                     |
+    | 5          | 304.4 Hz   | Fixed                     | D4 +42¢                       |
+    | 6          | 205.3 Hz   | Fixed                     | G♯3 +40¢                     |
 
     Schmitt trigger oscillator frequency: `f = 1 / (2 × R_osc × C_osc × ln((VDD − VT⁻)/(VDD − VT⁺)))`
 
@@ -137,6 +147,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     - **Clave:** Single bridged-T at 2500 Hz, natural ring decay ~20 ms.
     - **Rimshot:** Two bridged-T oscillators at 1667 Hz and 455 Hz, ~10 ms decay, with HPF for snap character.
     - **Maracas:** White noise through VCA with 25–35 ms decay envelope. Broadband, no resonant filter.
+    - **Congas** (optional, if exposed as distinct voices): Use the tom bridged-T topology with one bridged-T half bypassed and **no noise component** (per research — research `factory/active/drum-machine-realism.md` §TR-808). Open question: include as voices or leave to sample-based alternatives.
 
 ### TR-909 voices
 
@@ -157,6 +168,8 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     }
     ```
     Sequence length: 2³¹ − 1 = 2,147,483,647. Run at sample rate. The existing xorshift32 PRNG produces white noise but with different statistical properties — the LFSR must be used for 909-specific voices to match the hardware's noise character.
+
+    **Hardware clock note (informative):** In the original 909 the LFSR is clocked at **~300 kHz**; in DSP we run it at the audio sample rate. The decimation factor does not materially alter the spectral character at typical audio rates.
 
 10. **909 snare.** Similar dual-oscillator + noise structure to 808 but with sharper noise character from LFSR noise (requirement 9) instead of white noise. Use the same dual bridged-T architecture as 808 snare but with 909-appropriate component values for higher, sharper frequencies.
 
@@ -344,9 +357,11 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 
 ### Decision: ADAA over oversampling for nonlinearities
 
-**Chosen:** First-order ADAA for all memoryless nonlinearities (tanh, diode clip). ADAA provides ~20 dB alias rejection at 0.5 sample delay cost, sufficient for the gentle saturation curves used in these circuits.
+**Chosen:** First-order ADAA for all memoryless nonlinearities (tanh, diode clip). First-order ADAA provides meaningful alias suppression at 0.5 sample delay with a single antiderivative evaluation — sufficient for the gentle saturation curves used in these circuits.
 
-**Considered and rejected:** 2× or 4× oversampling via halfband IIR filters. Oversampling adds ~1 sample latency per stage and doubles/quadruples the processing cost of the entire signal chain. The research notes that 2× oversampling only provides 6 dB alias rejection (vs ADAA's ~20 dB), and is primarily needed for aggressive waveshaping (foldback, hard clip) which is not present in these circuits.
+**Note on numbers:** Research's "~20 dB better SNR" figure refers to **second-order** ADAA (which uses the second antiderivative at 1.0 sample delay). First-order ADAA's improvement is smaller but still comfortably exceeds the 6 dB of 2× oversampling on gentle nonlinearities.
+
+**Considered and rejected:** 2× or 4× oversampling via halfband IIR filters. Oversampling adds ~1 sample latency per stage and doubles/quadruples the processing cost of the entire signal chain, and 2× oversampling alone provides only ~6 dB alias rejection on continuous nonlinearities — primarily useful for aggressive waveshaping (foldback, hard clip) which is not present in these circuits. Second-order ADAA is kept on the table as a future upgrade if any voice is retargeted to harder clipping.
 
 ---
 
@@ -388,6 +403,14 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 - **ChowKick** (`github.com/Chowdhury-DSP/ChowKick`, BSD 3-clause, C++) — kick drum plugin directly based on Werner's 808 analysis, using chowdsp_wdf. Reference for the bridged-T coefficient computation and pulse shaper behavior, even though we use biquads instead of WDFs.
 
 - **DaisySP** (`github.com/electro-smith/DaisySP`, MIT, C++) — clean embedded API port of Plaits drum engines. Useful for understanding the simplified behavioral models: `AnalogBassDrum.cpp`, `AnalogSnareDrum.cpp`, `HiHat.cpp`.
+
+- **FunDSP** (`github.com/SamiPerttu/fundsp`, MIT/Apache-2.0, Rust) — building-block DSP primitives if a reusable cascade or sample-accurate combinator is needed in host code.
+
+- **chowdsp_wdf** (`github.com/Chowdhury-DSP/chowdsp_wdf`, BSD 3-clause, C++) — Reference WDF implementation if the bridged-T or SSM2044 modeling is ever upgraded beyond the behavioral biquad approach adopted here.
+
+- **Tier 2 references (informational only, GPL/LGPL — not for direct inclusion):** WDR-8 (GPLv3), Faust `synths.lib` drum examples (LGPL), Geonkick (GPLv3). Use for algorithmic inspiration, not copy.
+
+- **ACME.jl** (Julia, MIT) — Academic playground for circuit simulation via K-method / DK-method; useful when validating behavioral models against a physical-circuit baseline during bring-up.
 
 ### Bridged-T coefficient computation
 
@@ -523,6 +546,11 @@ Include these as comments in the relevant source files (e.g., at the top of `kic
 - **ADAA antialiasing:** Bilbao, S., Esqueda, F., Parker, J., Välimäki, V. (2017). "Antiderivative Antialiasing for Memoryless Nonlinearities." IEEE Signal Processing Letters.
 - **PolyBLEP:** Välimäki, V. (2010). "Oscillator and Filter Algorithms for Virtual Analog Synthesis." IEEE TASLP. And: Esqueda, F. (2019). "Aliasing Reduction in Nonlinear Audio Signal Processing." Aalto dissertation.
 - **DK-method (reference, not used):** Yeh, D.T. (2009). "Digital Implementation of Musical Distortion Circuits by Analysis and Simulation." Stanford PhD dissertation.
+- **Stateful ADAA:** Holters, M. (2019). "Antiderivative Antialiasing for Stateful Systems." DAFx-19.
+- **ADAA + WDF combined:** Albertini, D. et al. (2020). DAFx-20 paper on combined antialiasing + wave-digital modeling.
+- **Implicit nonlinear solver methods:** Holters, M., Zölzer, U. (2015). EUSIPCO paper on efficient implicit nonlinear solvers for audio-rate discrete-time models.
+- **Oscillator survey:** Stilson, T., Smith, J.O. et al. (2007). "Virtual Analog Oscillator Algorithms." IEEE Signal Processing Magazine survey.
+- **909 hi-hat EPROM provenance (informational):** Source samples reported as Paiste/Zildjian hi-hat cymbals recorded by Roland engineer Atsushi Hoshiai; our model is a pre-baked buffer substitute, not a sampled re-capture.
 
 ---
 

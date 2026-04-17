@@ -50,7 +50,7 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 - Model router that directs inference to the correct runtime (native ONNX vs Python sidecar)
 - DiffSinger voicebank download and management via HuggingFace Hub
 - BigVGAN v2 (MIT) as the primary vocoder, Vocos (MIT) as the preview vocoder
-- Grapheme-to-phoneme (g2p) for English and Chinese (the two languages with mature DiffSinger voicebanks)
+- Grapheme-to-phoneme (g2p) for **English and Chinese** in v1 (the two languages with mature DiffSinger voicebanks). **Japanese** voicebanks exist in the community but are **out of scope** for v1 until phonemizer and voicebank licensing are specified (see Open questions).
 - Render queue with priority, cancellation, and progress reporting
 - Preview vs Final render quality modes
 - Stale phrase detection after MIDI/lyric edits
@@ -122,6 +122,8 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 
 13. **RVC model management** — RVC models are registered in the same model registry as DiffSinger voicebanks, with `runtime: python-sidecar` and `category: voice-conversion`. Download and verification use the same infrastructure.
 
+13a. **Sidecar lifecycle and resilience (RVC path)** — If the Python sidecar is not installed, any RVC request MUST fail fast with a user-visible error ("Install Python companion to use voice conversion") and MUST NOT degrade the DiffSinger-only path. If the sidecar process exits unexpectedly during an RVC job, the job MUST fail with a user-visible error and the app MUST NOT crash. A new RVC request after crash MUST re-spawn the sidecar following the existing `audio_gen` spawn pattern (single immediate retry; no exponential backoff in v1). A `rvc_health` command (ping → pong) MAY be used pre-flight to surface "sidecar unreachable" as a distinct error from "model not loaded". Exponential-backoff restart and continuous-health monitoring (research §4 Option C) are deferred.
+
 ### Render queue
 
 14. **Queue manager** — A Rust-side render queue accepts render requests and executes them in priority order. Priority levels: `immediate` (current user action), `audible` (within the active loop range), `background` (everything else). The queue supports: enqueue, cancel by phrase ID, cancel all, reprioritize. Queue state is exposed to the frontend via Tauri events.
@@ -162,14 +164,14 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 - Audio rendering runs on Tokio async tasks, never on the CPAL audio thread. The audio thread only plays back already-rendered WAV files via the existing ring-buffer bridge mechanism.
 - No allocation, mutex locks, or blocking on the audio thread — all existing audio-thread safety rules apply.
 - All ONNX inference uses `ort` v2.0.0-rc.12 (already a dependency). No additional ML frameworks in Rust.
-- Python sidecar follows the existing JSON-over-stdin IPC protocol established by `audio_gen.py`/`audio_gen.rs`. No new IPC mechanisms.
+- Python sidecar follows the existing JSON-over-stdin IPC protocol established by `audio_gen.py`/`audio_gen.rs`. No new IPC mechanisms. **Deviation from research:** research §4 "Option C" prescribes HTTP (FastAPI) + shared-memory ring buffers for zero-copy audio as the hybrid transport; this MVP deliberately standardizes on the **existing stdin-JSON sidecar** for cost and consistency. RVC is therefore specified as **file-in / file-out** (paths passed in JSON) rather than streaming audio over shared memory. Any future migration to the research-recommended transport is a separate spec.
 - Model downloads go through `model_download.rs` infrastructure. No new download mechanisms.
 - License safety: only MIT or Apache 2.0 model weights for shippable features. The community DiffSinger NSF-HiFiGAN vocoder is CC-BY-NC-SA 4.0 — it must NOT be shipped. BigVGAN v2 (MIT) and Vocos (MIT) are the approved vocoders.
 - Generated audio files are cached in `~/.local/share/com.sourdaw.app/generated/singing/` with deterministic naming based on input hash (MIDI data + lyrics + voice + quality + seed), enabling cache hits on re-render.
 - **First-run setup required.** Per research §5, the initial installer (~100–200 MB) ships with the Tauri app and `ort` statically linked — no Python, no CUDA, no models. On first launch, the app must detect GPU hardware, install the correct Python/PyTorch variant via `uv` (or equivalent) only if RVC is requested, and pull the first voicebank + vocoder on demand via HuggingFace Hub. Existing Stable Audio Open sidecar setup already uses a compatible pattern — reuse it; do not introduce a second sidecar runtime.
 - **GPU execution provider selection is mandatory on startup.** Windows without CUDA must fall back to DirectML (covers AMD/Intel/NVIDIA via DirectX 12) rather than CPU — CPU is the last-resort fallback, not the default. macOS uses CoreML; Linux uses CUDA when drivers are present.
 - **Accessibility baseline.** Render progress, stale badges, queue state, and provenance chips must be keyboard-navigable, screen-reader-labeled, and communicate state through shape/text rather than color alone, per research §12. Specific shortcut bindings and full keyboard workflows are deferred to the companion UX spec.
-- **Latency UX targets.** Per research §11 (Nielsen response-time thresholds), the preview pipeline targets ≤1 s perceived start (queue acknowledgment + first progress frame) and ≤5 s to first audible output on Apple M1 / equivalent GPU. Progress stages must be labeled honestly per research §4 ("queued", "preparing", "synthesizing expression", "rendering audio", "ready", "stale"); generic spinners and "almost done" language are disallowed.
+- **Latency UX targets.** Per research §11 (Nielsen response-time thresholds), the preview pipeline targets ≤1 s perceived start (queue acknowledgment + first progress frame) and ≤5 s to first audible output on Apple M1 / equivalent GPU. Progress stages must be labeled honestly per the research UX appendix section **"The second principle: visibility of system status"** ("queued", "preparing", "synthesizing expression", "rendering audio", "ready", "stale"); generic spinners and "almost done" language are disallowed. (Note: this references the UX appendix in the research file, not the technical "§4 Tauri architecture options" section.)
 - `pnpm deps:validate` must pass with zero violations after implementation.
 - The frontend must not import from `src-tauri/` or any Rust crate directly — all communication is via Tauri IPC commands and events.
 
@@ -263,7 +265,9 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 - [ ] Cache eviction removes oldest entries when cache exceeds 5 GB
 - [ ] On first run, a DiffSinger voicebank + BigVGAN v2 vocoder can be downloaded and rendered end-to-end without the Python sidecar being installed (RVC is optional)
 - [ ] On Windows without CUDA, rendering uses the DirectML execution provider (not CPU) when a DX12 GPU is present; the capability report reflects this
-- [ ] Progress UI uses the exact stage labels from research §4 ("queued", "preparing", "synthesizing expression", "rendering audio", "ready", "stale"); no generic spinners or "almost done" language
+- [ ] Progress UI uses the exact stage labels from the research UX appendix — section "visibility of system status" — ("queued", "preparing", "synthesizing expression", "rendering audio", "ready", "stale"); no generic spinners or "almost done" language
+- [ ] Playback of rendered WAV works on Windows (WASAPI), macOS (CoreAudio), and Linux (ALSA/PulseAudio) without per-platform adjustments from the singing-voice code path — this is a regression check for the existing audio engine rather than new functionality, but the release gate is explicit
+- [ ] When the Python sidecar is missing, RVC is visibly disabled in the UI and requesting voice conversion produces a single user-visible error without degrading DiffSinger-only rendering
 - [ ] Render progress, stale badges, queue state, and provenance chips are keyboard-navigable, screen-reader-labeled, and communicate state through shape/text rather than color alone
 
 ---
@@ -365,6 +369,12 @@ Frame rate: 44100 / 512 = ~86.13 frames/second.
 - [ ] **[MINOR]** Where does the companion UX spec for Phase 2–5 of the research UX blueprint live? Proposal: a new `.agents/specs/features/singing-voice-editor.md` covering pronunciation editor, direct pitch drawing, parameter lanes, keyboard shortcuts, retake tray, locks, provenance chips, A/B compare, and the three-region layout (arrangement strip / piano-roll / inspector). Confirm naming and scope boundary before writing.
 
 - [ ] **[MINOR]** How should GPU VRAM pressure be surfaced to the user when a requested render exceeds the available budget? Research §8 flags VRAM exhaustion as a "Medium severity, High likelihood" risk. Simplest: expose detected VRAM in the capability report, block renders that would exceed (available - safety_margin), and prompt the user to either unload another model or fall back to CPU.
+
+- [ ] **[MINOR]** Should the model cache share the standard HuggingFace Hub path (`~/.cache/huggingface/hub/`)? Research §5 notes this as the conventional location; this spec uses a Sourdaw-scoped path (`~/.local/share/com.sourdaw.app/models/`) for isolation and cache-invalidation control. Confirm whether interoperability with other HF tooling on the user's machine is a design goal before release; if yes, symlinking or mirroring is a minimal accommodation.
+
+- [ ] **[MINOR]** Confirm explicitly that prototype-tier models (ACE-Step full-song, SoulX-Singer zero-shot, TokenSynth instruments) do **not** ship in the v1 Python sidecar image. Research §4 lists them in the sidecar Option C diagram; this spec implicitly excludes them by scoping the sidecar to RVC, but they should be named as out-of-scope here so the sidecar image size and Python dependency surface stay bounded.
+
+- [ ] **[MINOR]** Should HuggingFace model revisions be pinned in the registry (so a server-side re-upload does not silently change local behavior)? Research §5 calls out update-strategy gaps. Minimal v1 answer: record the `sha256` per file (already required); a future spec can add `revision` pinning and user-visible rollback if model churn becomes a real problem.
 
 ---
 

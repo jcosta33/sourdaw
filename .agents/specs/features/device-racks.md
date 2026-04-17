@@ -192,10 +192,10 @@ After implementation, a user can create a rack of one of four kinds (Instrument,
 
 **Spec**:
 
-- Engine-side data structure matches the research blueprint: fixed-capacity array of `ModulationSlot { source_id: u16, dest_id: u16, depth: f32, curve: ModCurve, flags: ModFlags, min_clamp: f32, max_clamp: f32 }` with capacity **256 slots per rack** (configurable compile-time constant).
+- Engine-side data structure matches the research blueprint: fixed-capacity array of `ModulationSlot { source_id: u16, dest_id: u16, depth: f32, curve: ModCurve, flags: ModFlags, min_clamp: f32, max_clamp: f32 }` with capacity **256 slots per rack** (configurable compile-time constant). `depth` is **bipolar in `[-1.0, 1.0]`**; polarity at the connection edits sign rather than swapping source/target. Research range is 64–256 slots; v1 picks the upper bound for simplicity.
 - The matrix also holds pre-allocated arrays: `source_values[MAX_SOURCES]`, `base_values[MAX_DESTINATIONS]`, `dest_accumulators[MAX_DESTINATIONS]`, `final_values[MAX_DESTINATIONS]`, `current_values[MAX_DESTINATIONS]` (post-interpolation), `per_sample_delta[MAX_DESTINATIONS]`.
 - A connection enforces **type compatibility**: source output domain must match target parameter domain. Attempting to wire an incompatible connection is a UI-level error; the engine never sees the invalid connection.
-- Per-tick cycle (control rate, every 32 samples):
+- Per-tick cycle (control rate, every 32 samples — research allows 16–64; v1 fixes 32):
   1. Update source values (LFOs step, envelope followers process the last 32 samples of their source audio, macros read their target UI value, CC sources read the most recent CC value).
   2. Zero destination accumulators.
   3. For each active, enabled slot: `accum[dest] += apply_curve(source[src] * depth, curve)`.
@@ -256,8 +256,9 @@ After implementation, a user can create a rack of one of four kinds (Instrument,
 - Nested racks recursively expand within their parent chain.
 - Topological sort uses Kahn's algorithm. Ties within a topological layer are broken by a stable ordering (chain index, then device slot index) to make compiler output deterministic.
 - Buffer allocation uses graph coloring to minimize pool size. Buffer indices are stored in each `ScheduleEntry` (see research § "Concrete Rust data structures").
-- Feedback cycles are forbidden in v1. The compiler rejects a rack that would produce a cycle and returns an error to the UI.
+- Feedback cycles are forbidden in v1. The compiler rejects a rack that would produce a cycle and returns an error to the UI. **Future extension** (out of v1): break cycles explicitly with a `FeedbackDelay` node (research pattern) — a user-declared 1-block delay at the break point. Within-node feedback (e.g. a filter's recursive path) stays sample-rate internal to the processor and does not require a cycle in the host graph.
 - Compiler is **pure**: given the same input tree, it always produces the same `Vec<ProcessTask>` (byte-equal up to the opaque node-index space).
+- **Parallel execution (optional, out of v1):** Kahn's layers naturally expose "parallel groups" — all in-degree-zero nodes at each wave can run concurrently on a real-time worker pool. v1 executes the flat list single-threaded. If revisited, gate multi-threaded dispatch behind a minimum block-size threshold (~128–256 samples) and use macOS **Audio Workgroups** on Apple platforms.
 
 **AC**:
 
@@ -274,6 +275,8 @@ After implementation, a user can create a rack of one of four kinds (Instrument,
 
 - Background thread clones the current tree, applies the pending edit, recompiles to `CompiledSchedule`, wraps in `Arc`, and calls `ArcSwap::store`.
 - Audio thread loads `Arc<CompiledSchedule>` once at the top of each process callback via `ArcSwap::load_full`.
+- **UI→RT command path (complement to `ArcSwap`):** small, granular commands (`SetParameter`, `SetMacro`, `AddModRoute`, `RemoveModRoute`) flow through an **SPSC ring buffer** (e.g. `rtrb`) and are drained at the top of the process callback. Full schedule replacements remain `ArcSwap`-based; commands avoid recompile latency for one-off parameter moves.
+- **Single hot parameters:** where only one scalar needs to cross threads, use **`AtomicF32`**-style atomics (e.g. `atomic_float`) rather than snapshotting the whole matrix. Zero-overhead single-value sharing (research: NIH-plug reference pattern).
 - Old schedule's `Arc` refcount drop happens on the audio thread (cheap), but deallocation is deferred via `basedrop` to a non-RT collector thread.
 - Plugin instances persist across swaps; only their position in the schedule changes. New plugins are activated and `start_processing()`'d before the swap; removed plugins are deactivated after the swap completes.
 - No crossfade in v1 (see Non-goals). Hard swap only.
@@ -433,7 +436,8 @@ After implementation, a user can create a rack of one of four kinds (Instrument,
 - **Module placement**: `src/modules/Devices/` for the frontend model, stores, use cases, and presentation. `daw-engine` for the Rust rack runtime. `daw-dsp` for any new pure-DSP helpers required by built-in modulator sources (LFO, envelope follower).
 - **Reuse `Store<T>`** for the rack UI state (`src/modules/Devices/stores/racksStore.ts`). Use cases under `useCases/` mutate it one function per file.
 - **Reuse the existing serialization pattern** from `state-and-write-paths` skill. The `schema_version` migration pattern already has precedent in the project; see existing migrations before writing new ones.
-- **Kahn's algorithm reference**: the `audio_graph` crate is cited in the research as a production-ready Rust implementation. Vendor the algorithm rather than adding the crate as a dependency unless the user explicitly approves — adding dependencies is subject to `AGENTS.md` safety rules.
+- **Kahn's algorithm reference**: the `audio_graph` crate is cited in the research as a production-ready Rust implementation. Vendor the algorithm rather than adding the crate as a dependency unless the user explicitly approves — adding dependencies is subject to `AGENTS.md` safety rules. Additional research references for alternative graph-compilation styles (informational only, not v1 dependencies): `hexodsp` (pre-compiled NodeProg), `fundsp` (combinator-based), `auxide` (explicit `Plan::compile()`).
+- **Parameter smoothing reference:** NIH-plug's `Smoother` + parameter patterns are cited in the research as the reference implementation for R9-style smoothing and may be consulted when designing the internal smoother API.
 - **Tests**: spec files live in `__tests__/` adjacent to their subject (see `testing-file-layout` skill). Compiler tests, matrix tests, and audio-callback no-alloc tests are Rust `#[cfg(test)]` inside `daw-engine`.
 - **Modulation sources catalogue** for v1: `Macro`, `LFO`, `EnvelopeFollower`, `SidechainAudioFollower`, `ExternalMidiCC`. Each is a small struct with a `process(&mut self, block_len: usize) -> f32` method returning the current source value.
 - **Colored arc ring** is a presentation-only component. Reuse existing knob widget styling; add a ring overlay computed from `(min, max, current_value, macro_color)`.
