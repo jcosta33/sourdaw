@@ -414,4 +414,32 @@ export const audioBufferCache = {
             }
         }
     },
+
+    async garbageCollectFreezeFiles(activeIds: Set<string>): Promise<void> {
+        // Remove from memory cache
+        for (const key of cache.keys()) {
+            if (key.startsWith('freeze-') && !activeIds.has(key)) {
+                cache.delete(key);
+                clearWaveformCachesForId(key);
+            }
+        }
+
+        // Remove from IndexedDB
+        try {
+            const db = await openDb();
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.getAllKeys();
+            req.onsuccess = () => {
+                const keys = req.result as string[];
+                for (const key of keys) {
+                    if (key.startsWith('freeze-') && !activeIds.has(key)) {
+                        store.delete(key);
+                    }
+                }
+            };
+        } catch {
+            // Ignore IDB errors
+        }
+    },
 };

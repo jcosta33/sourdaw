@@ -62,6 +62,24 @@ export type ProjectTrackAlternative = {
     clips: ProjectClip[];
 };
 
+export type ProjectFreezeState = {
+    status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
+    freezeId?: string;
+    frozenBufferId?: string;
+    frozenAudioHash?: string;
+    sourceContentHash?: string;
+    deviceChainHash?: string;
+    renderSettings?: {
+        sampleRate: number;
+        bitDepth: number;
+        channelCount: number;
+        tailLengthSeconds: number;
+    };
+    renderProgress?: number;
+    errorMessage?: string;
+    renderedAt?: number;
+};
+
 export type ProjectTrack = {
     id: string;
     name: string;
@@ -77,6 +95,7 @@ export type ProjectTrack = {
     sends: ProjectSend[];
     frozen: boolean;
     frozenBufferId?: string;
+    freezeState: ProjectFreezeState;
     parentId: string | null;
     collapsed: boolean;
     inputMonitoring: ProjectInputMonitoring;

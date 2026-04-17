@@ -65,6 +65,7 @@ const validators = {
         isObj(p) && isString(p.trackId) && isString(p.alternativeId),
     freezeTrack: hasTrackId as PayloadValidator<'freezeTrack'>,
     unfreezeTrack: hasTrackId as PayloadValidator<'unfreezeTrack'>,
+    flattenTrack: hasTrackId as PayloadValidator<'flattenTrack'>,
     bounceInPlace: hasTrackId as PayloadValidator<'bounceInPlace'>,
     bounceToNewTrack: hasTrackId as PayloadValidator<'bounceToNewTrack'>,
 

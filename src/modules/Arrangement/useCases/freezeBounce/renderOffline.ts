@@ -9,10 +9,16 @@ for (let n = 0; n < 128; n++) {
     MIDI_FREQUENCIES[n] = 440 * 2 ** ((n - 69) / 12);
 }
 
+export type RenderOfflineOptions = {
+    onProgress?: (progress: number) => void;
+    abortSignal?: AbortSignal;
+};
+
 export async function renderTrackOffline(
     track: Track,
     startBeat: number,
-    endBeat: number
+    endBeat: number,
+    options?: RenderOfflineOptions
 ): Promise<AudioBuffer | null> {
     const durationBeats = endBeat - startBeat;
     const transport = transportStore.value;
@@ -31,20 +37,14 @@ export async function renderTrackOffline(
         trackPan.connect(offlineCtx.destination);
 
         for (const clip of track.clips) {
-            if (clip.type !== 'midi') {
-                continue;
-            }
+            if (clip.type !== 'midi') continue;
             const notes = midi.notesByClipId[clip.id];
-            if (!notes) {
-                continue;
-            }
+            if (!notes) continue;
 
             for (const note of notes) {
                 const noteStart = ((clip.startBeat - startBeat + note.startBeat) / tempo) * 60;
                 const noteDur = (note.duration / tempo) * 60;
-                if (noteStart >= durationSeconds || noteStart < 0) {
-                    continue;
-                }
+                if (noteStart >= durationSeconds || noteStart < 0) continue;
 
                 const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
                 const osc = offlineCtx.createOscillator();
@@ -62,7 +62,7 @@ export async function renderTrackOffline(
             }
         }
 
-        return offlineCtx.startRendering();
+        return renderWithProgress(offlineCtx, options);
     }
 
     if (track.kind === 'audio') {
@@ -76,9 +76,8 @@ export async function renderTrackOffline(
 
         for (const clip of track.clips) {
             const buffer = audioBufferCache.get(clip.audioBufferId ?? '');
-            if (!buffer) {
-                continue;
-            }
+            if (!buffer) continue;
+            
             const clipStart = ((clip.startBeat - startBeat) / tempo) * 60;
             const clipDuration = ((clip.endBeat - clip.startBeat) / tempo) * 60;
             const source = offlineCtx.createBufferSource();
@@ -87,8 +86,45 @@ export async function renderTrackOffline(
             source.start(Math.max(0, clipStart), 0, Math.min(clipDuration, buffer.duration));
         }
 
-        return offlineCtx.startRendering();
+        return renderWithProgress(offlineCtx, options);
     }
 
     return null;
+}
+
+async function renderWithProgress(
+    offlineCtx: OfflineAudioContext,
+    options?: RenderOfflineOptions
+): Promise<AudioBuffer> {
+    return new Promise((resolve, reject) => {
+        const CHUNK_SIZE = 44100 * 2; // 2 seconds per chunk
+        const totalFrames = offlineCtx.length;
+
+        if (options?.abortSignal?.aborted) {
+            return reject(new Error('Render aborted'));
+        }
+
+        const abortHandler = () => reject(new Error('Render aborted'));
+        options?.abortSignal?.addEventListener('abort', abortHandler);
+
+        for (let i = CHUNK_SIZE; i < totalFrames; i += CHUNK_SIZE) {
+            const time = i / offlineCtx.sampleRate;
+            offlineCtx.suspend(time).then(() => {
+                if (options?.abortSignal?.aborted) return;
+                options?.onProgress?.(i / totalFrames);
+                offlineCtx.resume();
+            }).catch(reject);
+        }
+
+        offlineCtx.startRendering().then((buffer) => {
+            options?.abortSignal?.removeEventListener('abort', abortHandler);
+            if (!options?.abortSignal?.aborted) {
+                options?.onProgress?.(1.0);
+                resolve(buffer);
+            }
+        }).catch((err) => {
+            options?.abortSignal?.removeEventListener('abort', abortHandler);
+            reject(err);
+        });
+    });
 }

@@ -12,6 +12,7 @@ This tracker does **not** replace feature specs. It is an umbrella index:
 
 - When a chapter here has a dedicated spec (e.g., §1.1 Drum Machine → `../factory/drum-machine.md`, §4 Plugin Hosting → forthcoming plugin-hosting spec, §6.5 Notation → `../features/notation.md`), the dedicated spec is the authority and this chapter is a summary + link.
 - When no dedicated spec exists yet, this chapter is the working contract — implementing from it is permitted, but graduating to a dedicated spec is strongly preferred when scope grows.
+- **Consolidated research (evidence layer):** §7 leans on `../../research/consolidated/architecture-performance.md`; §8 extensions on `../../research/consolidated/plugins-hosting.md`; §9 extensions on `../../research/consolidated/collaboration.md`; §10 on `../../research/consolidated/global-harmonic-awareness.md`. Those files keep tables, citations, and codebase annotations — this tracker keeps acceptance-criterion-shaped tasks only.
 
 ## Goal
 

@@ -182,7 +182,7 @@ describe('TrackHeaderSection', () => {
     });
 
     it('should show Unfreeze for frozen tracks', () => {
-        const frozenTrack = { ...mockTrack, frozen: true };
+        const frozenTrack = { ...mockTrack, frozen: true, freezeState: { status: 'frozen' as const } };
         render(<TrackHeaderSection track={frozenTrack} />);
         expect(screen.getByText(/Unfreeze/i)).toBeInTheDocument();
     });
@@ -211,3 +211,4 @@ describe('TrackHeaderSection', () => {
         expect(mockSetTrackColor).toHaveBeenCalledWith('track-1', '#00ff00');
     });
 });
+

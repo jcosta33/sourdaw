@@ -65,6 +65,24 @@ export type TrackAlternative = {
     clips: Clip[];
 };
 
+export type FreezeState = {
+    status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
+    freezeId?: string;
+    frozenBufferId?: string;
+    frozenAudioHash?: string;
+    sourceContentHash?: string;
+    deviceChainHash?: string;
+    renderSettings?: {
+        sampleRate: number;
+        bitDepth: number;
+        channelCount: number;
+        tailLengthSeconds: number;
+    };
+    renderProgress?: number;
+    errorMessage?: string;
+    renderedAt?: number;
+};
+
 export type Track = {
     id: string;
     name: string;
@@ -80,6 +98,7 @@ export type Track = {
     sends: Send[];
     frozen: boolean;
     frozenBufferId?: string;
+    freezeState: FreezeState;
     parentId: string | null;
     collapsed: boolean;
     inputMonitoring: InputMonitoring;

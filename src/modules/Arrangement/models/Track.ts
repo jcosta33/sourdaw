@@ -12,6 +12,24 @@ export type TrackAlternative = {
     clips: Clip[];
 };
 
+export type FreezeState = {
+    status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
+    freezeId?: string; // Unique render identifier
+    frozenBufferId?: string; // Reference to audioBufferCache
+    frozenAudioHash?: string; // SHA-256 of rendered audio
+    sourceContentHash?: string; // Hash of clips + positions + device states
+    deviceChainHash?: string; // Hash of ordered device IDs + states
+    renderSettings?: {
+        sampleRate: number;
+        bitDepth: number; // Always 32 for freeze
+        channelCount: number;
+        tailLengthSeconds: number;
+    };
+    renderProgress?: number; // 0.0-1.0 during freezing
+    errorMessage?: string; // Set when status is 'error'
+    renderedAt?: number; // Unix epoch ms
+};
+
 export type Track = {
     id: string;
     name: string;
@@ -27,6 +45,7 @@ export type Track = {
     sends: Send[];
     frozen: boolean;
     frozenBufferId?: string;
+    freezeState: FreezeState;
     parentId: string | null;
     collapsed: boolean;
     inputMonitoring: InputMonitoring;
@@ -155,6 +174,7 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
         devices: defaultDevices,
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: input.parentId ?? null,
         collapsed: false,
         inputMonitoring: 'auto',

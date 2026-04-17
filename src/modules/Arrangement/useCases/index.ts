@@ -15,6 +15,12 @@ export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
+export { freezeTrack } from './freezeBounce/freezeTrack';
+export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
+export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
+export { flattenTrack } from './freezeBounce/flattenTrack';
+export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
+export { bounceInPlace, bounceToNewTrack, bounceSelection } from './freezeBounce/bounceOperations';
 export { setTrackInput } from './setTrackInput';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
@@ -113,9 +119,7 @@ export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParamet
 export { persistDeviceParam } from './device/setDeviceParameter/persistDeviceParam';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
-export { freezeTrack } from './freezeBounce/freezeTrack/freezeTrack';
-export { unfreezeTrack } from './freezeBounce/freezeTrack/unfreezeTrack';
-export { bounceSelection } from './freezeBounce/bounceOperations';
+
 
 export { deleteTime } from './timeOperations/deleteTime';
 export { insertTime, duplicateTimeRange } from './timeOperations/duplicateTimeRange';
@@ -240,3 +244,4 @@ export { isDeviceSupportedOnCurrentPlatform } from './isDeviceSupportedOnCurrent
 // ── Command handler access ────────────────────────────────────────────────────
 
 export { getArrangementHandlers } from './getArrangementHandlers';
+export { initStalenessDetection } from './freezeBounce/initStalenessDetection';

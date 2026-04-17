@@ -3,4 +3,5 @@
 
 export type { TrackAddedPayload } from './TrackAddedEvent';
 export type { TrackRemovedPayload } from './TrackRemovedEvent';
+export type { FreezeStateChangedPayload } from './FreezeStateChangedEvent';
 export type { TrackSelectionChangedPayload } from './TrackSelectionChangedEvent';

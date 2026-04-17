@@ -9,8 +9,9 @@ import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
 import { addClip } from '../../useCases/clip/addClip';
 import { renameTrack } from '../../useCases/renameTrack';
-import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack/freezeTrack';
-import { unfreezeTrack } from '../../useCases/freezeBounce/freezeTrack/unfreezeTrack';
+import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
+import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
+import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
 import { bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce/bounceOperations';
 import { armTrack } from '../../useCases/recording/armTrack';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
@@ -127,7 +128,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
               ]
             : []),
         {
-            label: track.frozen ? 'Unfreeze' : 'Freeze',
+            label: track.freezeState?.status === 'stale' ? 'Update Freeze' : track.frozen ? 'Unfreeze' : 'Freeze',
             action: () => {
                 if (track.frozen) {
                     unfreezeTrack(track.id);
@@ -137,6 +138,17 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 close();
             },
         },
+        ...(track.frozen
+            ? [
+                  {
+                      label: 'Flatten Track',
+                      action: () => {
+                          flattenTrack(track.id);
+                          close();
+                      },
+                  },
+              ]
+            : []),
         {
             label: 'Bounce in Place',
             action: () => {

@@ -101,6 +101,18 @@ export const trackCommands: CommandEntry[] = [
         },
     },
     {
+        id: 'flatten-track',
+        label: 'Flatten Track',
+        description: 'Commit a frozen track to audio',
+        category: 'Track',
+        action: () => {
+            const id = getSelectedTrackId();
+            if (id) {
+                executeAppAction({ type: 'flattenTrack', payload: { trackId: id } });
+            }
+        },
+    },
+    {
         id: 'bounce-to-new-track',
         label: 'Bounce to New Track',
         description: 'Render the selected track to a new audio track',

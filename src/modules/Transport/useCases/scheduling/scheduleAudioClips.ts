@@ -77,7 +77,7 @@ export function scheduleAudioClips(
             continue;
         }
 
-        if (track.frozen && track.frozenBufferId) {
+        if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
             if (!scheduledFrozenTracks.has(track.id)) {
                 const scheduled = scheduleFrozenTrack(
                     track,

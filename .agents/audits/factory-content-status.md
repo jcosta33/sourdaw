@@ -25,7 +25,7 @@ The codebase still relies on a "split brain" architecture, retaining basic built
 
 - **Deprecate Legacy Redundancy:** These Web Audio effects overlap significantly with the high-quality `faust-` WASM devices.
     - _Recommendation:_ The `builtin-` Web Audio effects should eventually be deprecated or hidden from the user-facing browser, establishing the Faust equivalents as the standard non-premium tier. The `builtin-synth` should either be ported to Faust or explicitly labeled as a "Basic Synth".
-- **Master Drum Machine vs `builtin-drum-kit`:** The current DAW only features a rudimentary `builtin-drum-kit` with no individual voice editing or multi-out routing. The comprehensive "Master Drum Machine" (`levain`) architecture remains largely unimplemented and must be built according to the `master-drum-machine-ultimate-guide.md`.
+- **Flagship Drum Machine vs `builtin-drum-kit`:** The current DAW only features a rudimentary `builtin-drum-kit` with no individual voice editing or multi-out routing. The comprehensive Drum Machine defined in `.agents/specs/factory/drum-machine.md` remains largely unimplemented and must be built according to that spec and its consolidated research (`.agents/research/factory/advanced-instruments.md`, `.agents/research/factory/active/drum-machine-realism.md`). _(Earlier audits referenced a removed working filename `master-drum-machine-ultimate-guide.md`.)_
 
 ## 4. Software Patterns
 

@@ -107,16 +107,16 @@ type ToasterControls = {
 };
 
 export function scheduleFrozenTrack(
-    track: { id: string; frozenBufferId?: string },
+    track: { id: string; freezeState?: { status: string; frozenBufferId?: string } },
     accumulatedPosition: number,
     activeAudioSources: AudioBufferSourceNode[],
     currentTempo: number
 ): boolean {
-    if (!track.frozenBufferId) {
+    if (track.freezeState?.status !== 'frozen' || !track.freezeState?.frozenBufferId) {
         return false;
     }
 
-    const buffer = audioBufferCache.get(track.frozenBufferId);
+    const buffer = audioBufferCache.get(track.freezeState.frozenBufferId);
     if (!buffer) {
         return false;
     }
@@ -127,7 +127,7 @@ export function scheduleFrozenTrack(
 
     const fadeGain = getAudioContext().createGain();
     (source as SourceWithFade).fadeGainNode = fadeGain;
-    fadeGain.connect(strip.gainNode);
+    fadeGain.connect(strip.preFaderTap);
     source.connect(fadeGain);
 
     const beatOffset = 0 - accumulatedPosition;
