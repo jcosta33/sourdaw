@@ -22,7 +22,7 @@ const DDSP_BASE = 'https://storage.googleapis.com/magentadata/js/checkpoints/dds
  * Inner filename: nsf_hifigan_44.1k_hop512_128bin_2024.02.onnx
  */
 export const NSF_HIFIGAN_URL =
-    'https://github.com/openvpi/vocoders/releases/download/nsf-hifigan-44.1k-hop512-128bin-2024.02/nsf_hifigan_44.1k_hop512_128bin_2024.02_logE.oudep';
+    'https://huggingface.co/jcosta33/vocoder-models/resolve/main/nsf-hifigan-44k/nsf_hifigan_44.1k_hop512_128bin_2024.02.onnx';
 
 export const NSF_HIFIGAN_SIZE_BYTES = 52_000_000;
 

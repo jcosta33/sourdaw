@@ -1,1 +1,2 @@
-export { grinderStore, updateGrinderMeters, type GrinderMeterValues } from './grinderStore';
+export { grinderStore, updateGrinderMeters } from './grinderStore';
+export * from './grinderTelemetryStore';

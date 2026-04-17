@@ -20,10 +20,15 @@ function presetToPatch(presetId: string): FermenterPatch {
         return { ...DEFAULT_PATCH };
     }
 
-    const patch = { ...DEFAULT_PATCH, name: preset.name };
+    const patch: FermenterPatch = { ...DEFAULT_PATCH, name: preset.name, macros: [...DEFAULT_PATCH.macros] };
     for (const [key, value] of Object.entries(values)) {
         if (key in patch && typeof value === 'number') {
             (patch as Record<string, unknown>)[key] = value;
+        } else if (key.startsWith('macro') && typeof value === 'number') {
+            const idx = parseInt(key.slice(5), 10);
+            if (idx >= 0 && idx < 8) {
+                patch.macros[idx] = value;
+            }
         }
     }
 

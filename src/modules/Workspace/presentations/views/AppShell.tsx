@@ -6,7 +6,6 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
-import { useAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
 import { clamp } from '#/utils/Math/clamp';
@@ -31,11 +30,11 @@ import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
-import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
+import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
 import { GlutenPanel } from '#/modules/Gluten/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views';
-import { SamplerPanel } from '#/modules/Sampler/presentations/views';
+import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
 import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
 
 import { ProofPanel } from '#/modules/Proof/presentations/views';
@@ -53,13 +52,13 @@ import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { ExportDialog } from '#/modules/Project/presentations/views';
 import { PreferencesDialog } from './PreferencesDialog';
-import { startShortcutEngine } from '../../useCases/shortcutEngine';
 import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 import { StatusBar } from './StatusBar';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 
 import { Button } from '#/components/ui/button';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
+import { CapabilityBanner } from '../components/CapabilityBanner';
 import { X } from 'lucide-react';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
@@ -127,11 +126,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
         'mixer'
     );
-    // One unified "active device panel" slot instead of 13 independent useState
-    // slots + 13 near-identical useEffect subscriptions (audit §3.1 / §4.2 /
-    // §47.1). The "only one panel open at a time" invariant is enforced by
-    // the discriminated union type; adding a new plugin requires one line
-    // in useActiveDevicePanel.ts instead of three touch-points in AppShell.
+    // One unified "active device panel" slot. The "only one panel open at a
+    // time" invariant is enforced by the discriminated union in
+    // useActiveDevicePanel; adding a new plugin is one line there instead of
+    // three touch-points here.
     const { activePanel, closeActivePanel } = useActiveDevicePanel();
     const fermenterDeviceId = activePanel?.kind === 'fermenter' ? activePanel.deviceId : null;
     const toasterDeviceId = activePanel?.kind === 'toaster' ? activePanel.deviceId : null;
@@ -148,20 +146,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const grandBouleDeviceId = activePanel?.kind === 'grandBoule' ? activePanel.deviceId : null;
 
     // ─── Extracted hooks ───
+    // §10.2 item 1 — Keyboard shortcuts are now unified under
+    // `useGlobalKeyboardShortcuts` / `Command/stores/shortcutStore`. The
+    // dialog-open shortcuts dispatch `openExportDialog()` /
+    // `openPreferencesDialog()` which emit `dialog.*` events consumed by
+    // `useAppEventHandlers` below — that's the single source of truth for
+    // flipping these dialogs open.
     useAppInitialization();
     useGlobalKeyboardShortcuts();
 
-    const dialogCallbacks = {
+    useAppEventHandlers({
         onOpenExport: () => setExportOpen(true),
         onOpenPreferences: () => setPrefsOpen(true),
-    };
-    useAppKeyboardShortcuts(dialogCallbacks);
-    useAppEventHandlers(dialogCallbacks);
-
-    useEffect(() => {
-        const cleanup = startShortcutEngine();
-        return cleanup;
-    }, []);
+    });
 
     // Show alpha notice when project initializes — localStorage is the
     // source of truth, so HMR can't cause the notice to re-appear.
@@ -312,6 +309,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 >
                     Skip to content
                 </a>
+                <CapabilityBanner />
                 <TransportBar />
 
                 {/* ─── Main horizontal layout ─── */}
@@ -481,7 +479,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setSamplerHeight}
                                 onClose={closeActivePanel}
                             >
-                                <SamplerPanel deviceId={samplerDeviceId} />
+                                <CrumbsPanel deviceId={samplerDeviceId} />
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -675,3 +673,4 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         </MobileGate>
     );
 };
+

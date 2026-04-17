@@ -10,6 +10,10 @@ use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::AudioPlugin;
 use daw_plugin_host::ClapWrapper;
 use daw_plugin_host::Vst3Wrapper;
+use daw_dsp::crumbs::engine::CrumbsEngine;
+use daw_dsp::crumbs::types::CrumbsCommand;
+use rtrb::Consumer;
+
 
 /// Maximum block size the native engine produces (matches ClapWrapper activation).
 const MAX_BUFFER: usize = 4096;
@@ -115,5 +119,70 @@ impl NativePlugin for Vst3PluginSlot {
 
     fn name(&self) -> &str {
         self.wrapper.get_name()
+    }
+}
+
+/// Crumbs plugin slot — adapts CrumbsEngine for the native audio thread.
+pub struct CrumbsPluginSlot {
+    pub engine: CrumbsEngine,
+    pub command_rx: Consumer<CrumbsCommand>,
+}
+
+impl NativePlugin for CrumbsPluginSlot {
+    fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+        // Drain commands from the UI thread
+        while let Ok(cmd) = self.command_rx.pop() {
+            self.engine.handle_command(cmd);
+        }
+
+        // CrumbsEngine adds to buffers, so we should zero them if we are the only generator
+        // in this slot. NativePlugin's contract is in-place, but for an instrument
+        // it usually means starting fresh in the given buffer.
+        left[..num_samples].fill(0.0);
+        right[..num_samples].fill(0.0);
+
+        self.engine.process_block(left, right);
+    }
+
+    fn process_with_events(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        num_samples: usize,
+        midi_events: &[MidiNoteEvent],
+        _transport: &TransportState,
+    ) {
+        // Drain commands
+        while let Ok(cmd) = self.command_rx.pop() {
+            self.engine.handle_command(cmd);
+        }
+
+        // Forward MIDI events to the engine
+        for event in midi_events {
+            if event.is_note_on {
+                self.engine.handle_command(CrumbsCommand::NoteOn {
+                    note: event.note,
+                    velocity: event.velocity,
+                });
+            } else {
+                self.engine.handle_command(CrumbsCommand::NoteOff { note: event.note });
+            }
+        }
+
+        left[..num_samples].fill(0.0);
+        right[..num_samples].fill(0.0);
+        self.engine.process_block(left, right);
+    }
+
+    fn set_param(&mut self, _param_id: u32, _value: f64) {
+        // Crumbs uses named parameters via the command queue (command_rx).
+    }
+
+    fn name(&self) -> &str {
+        "Crumbs"
+    }
+
+    fn accepts_midi(&self) -> bool {
+        true
     }
 }

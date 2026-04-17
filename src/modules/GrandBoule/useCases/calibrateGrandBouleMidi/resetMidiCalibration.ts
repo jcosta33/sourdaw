@@ -1,14 +1,15 @@
+import { type GrandBouleState } from '../../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibration';
-import { grandBouleStore } from '../../stores/grandBouleStore';
 
 // --- Bulk operations --------------------------------------------------------
 
-export const resetMidiCalibration = (): void => {
-    const state = grandBouleStore.value;
+export const resetMidiCalibration = (input: { store: Store<GrandBouleState> }): void => {
+    const state = input.store.value;
     if (state === null) {
         return;
     }
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         midiCalibration: createDefaultMidiCalibration(),
     });

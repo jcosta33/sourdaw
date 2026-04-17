@@ -13,8 +13,8 @@ export type NoteBlob = {
     muted: boolean;
 };
 
-export type KneadTrackState = {
-    trackId: string;
+export type KneadClipState = {
+    clipId: string;
     blobs: NoteBlob[];
     retuneSpeedMs: number;
     toleranceCents: number;

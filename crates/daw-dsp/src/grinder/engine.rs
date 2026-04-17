@@ -31,6 +31,12 @@ pub struct GrinderEngine {
     pre_dist: DistortionPedal,
     pre_fuzz: FuzzPedal,
     pre_comp: CompressorPedal,
+
+    post_od: OverdrivePedal,
+    post_dist: DistortionPedal,
+    post_fuzz: FuzzPedal,
+    post_comp: CompressorPedal,
+
     // Output
     output_gain: SmoothedParam,
     output_mix: SmoothedParam,
@@ -68,6 +74,10 @@ impl GrinderEngine {
             pre_dist: DistortionPedal::new(sample_rate),
             pre_fuzz: FuzzPedal::new(sample_rate),
             pre_comp: CompressorPedal::new(sample_rate),
+            post_od: OverdrivePedal::new(sample_rate),
+            post_dist: DistortionPedal::new(sample_rate),
+            post_fuzz: FuzzPedal::new(sample_rate),
+            post_comp: CompressorPedal::new(sample_rate),
             output_gain: SmoothedParam::new(1.0, 5.0, sample_rate),
             output_mix: SmoothedParam::new(1.0, 5.0, sample_rate),
             clean_blend: SmoothedParam::new(0.0, 5.0, sample_rate),
@@ -120,6 +130,9 @@ impl GrinderEngine {
 
             // Cabinet
             "cabEnabled" => self.cabinet.set_enabled(value > 0.5),
+            "mic1Enabled" | "mic1Gain" | "mic1PositionX" | "mic1PositionY" | "mic1Distance"
+            | "mic2Enabled" | "mic2Gain" | "mic2PositionX" | "mic2PositionY" | "mic2Distance"
+            | "micBlend" | "roomAmount" => self.cabinet.set_param(name, value),
             "cabResonanceFreq" | "cabResonanceQ" | "cabDamping" | "cabOpenBack" | "coneBreakup"
             | "backEmf" => self.speaker.set_param(name, value),
 
@@ -151,6 +164,22 @@ impl GrinderEngine {
                 } else if let Some(pedal_param) = name.strip_prefix("preFuzz") {
                     if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
                         self.pre_fuzz.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("postCompressor") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.post_comp.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("postOverdrive") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.post_od.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("postDistortion") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.post_dist.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("postFuzz") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.post_fuzz.set_param(mapped, value);
                     }
                 }
             }
@@ -240,6 +269,12 @@ impl GrinderEngine {
 
                 signal = self.cabinet.process_sample(signal);
                 signal = self.speaker.process_sample(signal);
+
+                // Post-amp pedals
+                signal = self.post_comp.process_sample(signal);
+                signal = self.post_od.process_sample(signal);
+                signal = self.post_dist.process_sample(signal);
+                signal = self.post_fuzz.process_sample(signal);
             } else {
                 self.power_amp_peak *= self.meter_decay_coeff;
             }

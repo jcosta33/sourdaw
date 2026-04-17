@@ -1,5 +1,4 @@
 import { inject } from '#/infra/di/inject';
-import { pushUndoEntry } from '../../pushUndoEntry';
 import { stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
 import {
     acceptGhostClip,
@@ -12,17 +11,26 @@ import {
 } from '#/modules/Arrangement/useCases';
 
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
+import { undo, redo } from '../../undoRedo';
+import { pushUndoEntry } from '../../pushUndoEntry';
 
 import { workspaceStore } from '#/modules/Workspace/stores';
 
 import {
-    cycleAutomationVisibility,
-    toggleCommandPalette,
-    selectAllClips,
     clearClipSelection,
+    cycleAutomationVisibility,
+    openExportDialog,
+    openPreferencesDialog,
+    selectAllClips,
     selectClipWithFocus,
-    toggleWorkspaceMode,
     setEditingTool,
+    setMarqueeSelection,
+    showAutomationPanel,
+    toggleCommandPalette,
+    toggleMixer,
+    toggleTrackList,
+    toggleVirtualKeyboard,
+    toggleWorkspaceMode,
     type EditingTool,
     TOOL_SHORTCUTS,
 } from '#/modules/Workspace/useCases';
@@ -59,15 +67,32 @@ export type KeyDescriptor = {
 
 function matches(desc: KeyDescriptor, keys: string[]): boolean {
     return keys.some((combo) => {
-        const parts = combo.split('+');
-        const keyPart = parts.pop();
-        if (!keyPart) {
-            return false;
+        // Special-case: combos whose final key is `+`. A bare `'+'` or a combo
+        // like `'mod++'` / `'mod+shift++'` previously broke `matches` because
+        // `split('+')` turns the trailing `+` into an empty string and `pop()`
+        // returns `''` instead of the `+` key. Peel off the trailing `+` and
+        // recover the modifier list before splitting.
+        let keyPart: string;
+        let modifiers: string[];
+        if (combo === '+') {
+            keyPart = '+';
+            modifiers = [];
+        } else if (combo.endsWith('++')) {
+            keyPart = '+';
+            modifiers = combo.slice(0, -2).split('+');
+        } else {
+            const parts = combo.split('+');
+            const popped = parts.pop();
+            if (!popped) {
+                return false;
+            }
+            keyPart = popped;
+            modifiers = parts;
         }
 
-        const hasMod = parts.includes('mod');
-        const hasShift = parts.includes('shift');
-        const hasAlt = parts.includes('alt');
+        const hasMod = modifiers.includes('mod');
+        const hasShift = modifiers.includes('shift');
+        const hasAlt = modifiers.includes('alt');
 
         const normalizedKey = keyPart === 'Space' ? ' ' : keyPart;
         const eventKey = desc.key;
@@ -198,6 +223,41 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                         toggleWorkspaceMode();
                         return true;
                     }
+
+                    // ── Undo / redo ──────────────────────────────────────
+                    case 'undo':
+                        void undo();
+                        return true;
+                    case 'redo':
+                        void redo();
+                        return true;
+
+                    // ── Delete (marquee-aware) ───────────────────────────
+                    case 'deleteSelection':
+                        return deleteSelectionShortcut();
+
+                    // ── Panel toggles (not expressible as AppAction) ─────
+                    case 'toggleMixer':
+                        toggleMixer();
+                        return true;
+                    case 'toggleTrackList':
+                        toggleTrackList();
+                        return true;
+                    case 'toggleVirtualKeyboard':
+                        toggleVirtualKeyboard();
+                        return true;
+                    case 'showAutomationPanel':
+                        showAutomationPanel();
+                        return true;
+
+                    // ── Dialog openers (emit event the dialog listens to)─
+                    case 'openExportDialog':
+                        openExportDialog();
+                        return true;
+                    case 'openPreferencesDialog':
+                        openPreferencesDialog();
+                        return true;
+
                     case 'loopFromSelection': {
                         // R-B4: time (marquee) selection takes priority over clip selection
                         const marq = workspaceStore.value?.marqueeSelection;
@@ -299,6 +359,67 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
             return false;
         };
 
+        /**
+         * Delete callback used by `editing.deleteSelection` (Delete / Backspace).
+         * Splits into two distinct paths:
+         *   • If a marquee selection is active, delete the time range on those
+         *     tracks (not undoable today — tracked separately in the audit).
+         *   • Otherwise, delete the currently selected clip(s), pushing an
+         *     undo entry so the action is reversible.
+         * Returns `true` when the caller should `preventDefault()`. Returns
+         * `false` when there is nothing to delete, so the browser default
+         * (caret backspace in inputs etc.) is preserved — handleKeydown
+         * already excludes input targets before reaching this branch.
+         */
+        function deleteSelectionShortcut(): boolean {
+            const ws = workspaceStore.value;
+            if (!ws) {
+                return false;
+            }
+
+            if (ws.marqueeSelection) {
+                const { startBeat, endBeat, trackIds } = ws.marqueeSelection;
+                deleteTimeRange(startBeat, endBeat, trackIds);
+                setMarqueeSelection(null);
+                return true;
+            }
+
+            const ids = ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
+            if (ids.length === 0) {
+                return false;
+            }
+
+            const allClips = trackStore.value?.tracks.flatMap((t) => t.clips) ?? [];
+            const deletedClips = ids
+                .map((id) => allClips.find((clip) => clip.id === id))
+                .filter((clip): clip is NonNullable<typeof clip> => clip != null);
+
+            if (deletedClips.length === 0) {
+                return false;
+            }
+
+            pushUndoEntry(
+                `Delete ${deletedClips.length} clip${deletedClips.length === 1 ? '' : 's'}`,
+                () => {
+                    for (const clip of deletedClips) {
+                        addClip(clip);
+                    }
+                },
+                () => {
+                    for (const clip of deletedClips) {
+                        removeClip(clip.id);
+                    }
+                    clearClipSelection();
+                }
+            );
+
+            for (const clip of deletedClips) {
+                removeClip(clip.id);
+            }
+            clearClipSelection();
+            return true;
+        }
+
         const handleSimpleKeys = (key: string, desc: KeyDescriptor): boolean => {
             // Check shortcut store first
             const { definitions, customMappings } = shortcutStore.value ?? {
@@ -316,59 +437,6 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                 case 'L':
                     eventBus.emit('zoom.scrollToPlayhead', undefined);
                     return false;
-                case 'Delete':
-                case 'Backspace': {
-                    // R-B4: Delete key deletes time range if marquee exists
-                    const marq = workspaceStore.value?.marqueeSelection;
-                    if (marq && marq.endBeat > marq.startBeat) {
-                        deleteTimeRange(marq.startBeat, marq.endBeat, marq.trackIds);
-                        return true;
-                    }
-                    // Else, standard clip deletion if clips are selected
-                    const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
-                    if (selectedIds.length > 0) {
-                        const state = trackStore.value;
-                        const deletedClips: { trackId: string; clip: { id: string; trackId: string; name: string; startBeat: number; endBeat: number; type: 'audio' | 'midi'; audioBufferId?: string; assetHash?: string; isGhost?: boolean } }[] = [];
-                        if (state) {
-                            for (const id of selectedIds) {
-                                for (const track of state.tracks) {
-                                    const clip = track.clips.find((c) => c.id === id);
-                                    if (clip) {
-                                        deletedClips.push({ trackId: track.id, clip: { ...clip } });
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        for (const id of selectedIds) {
-                            removeClip(id);
-                        }
-                        pushUndoEntry(
-                            'Delete Clips',
-                            () => {
-                                for (const { trackId, clip } of deletedClips) {
-                                    addClip({
-                                        trackId,
-                                        startBeat: clip.startBeat,
-                                        endBeat: clip.endBeat,
-                                        name: clip.name,
-                                        type: clip.type,
-                                        audioBufferId: clip.audioBufferId,
-                                        assetHash: clip.assetHash,
-                                        isGhost: clip.isGhost,
-                                    });
-                                }
-                            },
-                            () => {
-                                for (const { clip } of deletedClips) {
-                                    removeClip(clip.id);
-                                }
-                            }
-                        );
-                        return true;
-                    }
-                    return false;
-                }
                 case 'Home':
                     seekPlayhead(0);
                     return true;
@@ -425,14 +493,10 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                 }
             }
 
-            // All remaining shortcuts are blocked in input fields
+            // All remaining shortcuts are blocked in input fields — the
+            // one exception (`mod+k` → command palette) already matched
+            // above via its `allowedInInput` flag.
             if (isInput) {
-                // EXCEPT Cmd+K which is special and handled above if migrated, 
-                // but let's keep the legacy fallback for now if not migrated.
-                if (key === 'k' && mod) {
-                    toggleCommandPalette();
-                    return true;
-                }
                 return false;
             }
 

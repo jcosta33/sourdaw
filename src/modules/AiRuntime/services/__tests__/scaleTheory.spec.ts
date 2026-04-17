@@ -48,10 +48,15 @@ describe('scaleTheory', () => {
             expect(notes[2]).toEqual({ pitch: 67, velocity: 90, startBeat: 1, durationBeats: 2 });
         });
 
-        it('clamps degrees out of range to scale bounds', () => {
+        it('wraps degrees beyond the scale into higher octaves', () => {
+            // Scale: [60, 62, 64] — three tones spanning less than an octave.
+            // detectNotesPerOctave falls back to scale.length (3) because no
+            // entry is ≥12 semitones above the first. Degree 5 = one full
+            // "octave" (3 tones) + degree 2, so we expect the 3rd tone (64)
+            // shifted up by 12 semitones → 76.
             const scale = [60, 62, 64];
             const notes = chordFromDegrees([5], scale, 0, 0, 1, 80);
-            expect(notes[0]!.pitch).toBe(64); // Clamped to the highest available pitch
+            expect(notes[0]!.pitch).toBe(76);
         });
     });
 

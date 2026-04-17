@@ -1,3 +1,5 @@
+import { type GrandBouleState } from '../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 /**
  * Set the velocity curve exponent for the Grand Boule piano.
  *
@@ -8,22 +10,22 @@
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
-import { grandBouleStore } from '../stores/grandBouleStore';
 
 type SetGrandBouleVelocityCurveInput = {
     engine: GrandBouleEngineHandle;
     exponent: number;
+    store: Store<GrandBouleState>;
 };
 
 export const setGrandBouleVelocityCurve = (input: SetGrandBouleVelocityCurveInput): void => {
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return;
     }
 
     const clamped = Math.max(0.5, Math.min(2.0, input.exponent));
 
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         parameters: {
             ...state.parameters,

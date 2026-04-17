@@ -19,6 +19,10 @@
         "kimi": {
             "command": "kimi",
             "args": []
+        },
+        "opencode": {
+            "command": "opencode",
+            "args": []
         }
     },
     "reuseExistingByDefault": true,

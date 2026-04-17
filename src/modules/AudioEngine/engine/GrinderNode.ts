@@ -6,6 +6,7 @@ import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
 import { logger } from '#/infra/logger/appLogger';
 import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -52,6 +53,10 @@ export function isGrinderDevice(deviceType: string): boolean {
 }
 
 export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GrinderNodeResult> {
+    // Grinder's neural-amp telemetry uses a SAB slot. Fail fast if the
+    // environment cannot provide one — see `buildDeviceChain` for the UX path.
+    requireSharedArrayBuffer('Grinder');
+
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
@@ -90,7 +95,12 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
         workletNode: node,
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
+                const param = node.parameters.get(name);
+                if (param) {
+                    param.setTargetAtTime(value, ctx.currentTime, 0.01);
+                } else {
+                    node.port.postMessage({ type: 'param', name, value });
+                }
             }
         },
         setBypass(state: boolean) {

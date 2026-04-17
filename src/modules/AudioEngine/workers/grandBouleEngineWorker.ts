@@ -46,6 +46,15 @@ const PARAM_MAP: Record<string, string> = {
     masterGain: 'master_gain',
     soundboardSend: 'soundboard_send',
     sympatheticSend: 'sympathetic_send',
+    stretchAmount: 'stretch_amount',
+    attackBite: 'attack_bite',
+    velocityCurve: 'velocity_curve',
+    hammerHardnessScale: 'hammer_hardness_scale',
+    hammerMassScale: 'hammer_mass_scale',
+    soundboardBrightness: 'soundboard_brightness',
+    sympatheticLevel: 'sympathetic_level',
+    bodyResonance: 'body_resonance',
+    toneColor: 'tone_color',
 };
 
 let instance: InstanceType<typeof GrandBouleInstance> | null = null;
@@ -89,11 +98,12 @@ function renderLoop(): void {
     // Render as many blocks as needed to stay TARGET_AHEAD of the consumer,
     // using a bounded loop instead of recursion to avoid stack overflow.
     const maxBlocksPerTick = Math.ceil(TARGET_AHEAD / BLOCK_SIZE) + 1;
+    let buffered = 0;
 
     for (let i = 0; i < maxBlocksPerTick; i++) {
         const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
         const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
-        const buffered = writeHead - readHead;
+        buffered = (writeHead - readHead) | 0;
 
         if (buffered >= TARGET_AHEAD || ringFrames - buffered < BLOCK_SIZE) {
             break; // Enough headroom or ring is full.
@@ -107,7 +117,7 @@ function renderLoop(): void {
         const rightSrc = new Float32Array(mem, rightPtr, BLOCK_SIZE);
 
         // Write into ring buffer (wrapping).
-        const offset = writeHead % ringFrames;
+        const offset = (writeHead >>> 0) % ringFrames;
         const firstChunk = Math.min(BLOCK_SIZE, ringFrames - offset);
         const secondChunk = BLOCK_SIZE - firstChunk;
 
@@ -118,23 +128,27 @@ function renderLoop(): void {
             rightRing.set(rightSrc.subarray(firstChunk), 0);
         }
 
-        Atomics.store(controlInts, WRITE_HEAD_IDX, writeHead + BLOCK_SIZE);
+        Atomics.store(controlInts, WRITE_HEAD_IDX, (writeHead + BLOCK_SIZE) | 0);
         Atomics.pause?.();
     }
 
-    // Yield to the event loop so pending MIDI messages can be dispatched,
-    // then resume rendering via the MessageChannel macrotask.
-    scheduleRender();
+    // Yield to the event loop so pending MIDI messages can be dispatched.
+    // If the buffer is full, sleep for 2ms instead of spinning immediately.
+    if (buffered >= TARGET_AHEAD) {
+        setTimeout(scheduleRender, 2);
+    } else {
+        scheduleRender();
+    }
 }
 
 function dispatch(msg: Record<string, unknown>): void {
     if (!instance) {return;}
     switch (msg.type) {
         case 'noteOn':
-            instance.note_on(msg.midiNote as number, msg.velocity as number);
+            instance.note_on(msg.midiNote as number, msg.velocity as number, msg.sampleFrame as number);
             break;
         case 'noteOff':
-            instance.note_off(msg.midiNote as number);
+            instance.note_off(msg.midiNote as number, msg.sampleFrame as number);
             break;
         case 'param':
             instance.set_param(PARAM_MAP[msg.name as string] ?? (msg.name as string), msg.value as number);

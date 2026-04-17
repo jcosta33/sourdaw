@@ -71,6 +71,8 @@ export { setNoteVelocity } from './midiNoteCrud/setNoteVelocity';
 export { setNoteVelocities } from './midiNoteCrud/setNoteVelocities';
 export { setNotesForClip } from './midiNoteCrud/setNotesForClip';
 export { shiftClipMidiNotes } from './midiNoteCrud/shiftClipMidiNotes';
+export { shiftMidiNotesAfterBeat } from './midiNoteCrud/shiftMidiNotesAfterBeat';
+export { splitMidiNotesAtBeat } from './midiNoteCrud/splitMidiNotesAtBeat';
 
 // ── MIDI Note Transforms ──────────────────────────────────────────────────────
 export { humanizeNotes } from './midiNoteTransforms/humanizeNotes';

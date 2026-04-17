@@ -14,8 +14,10 @@ export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number, sampleFrame?: number) => void;
+    setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
+    onTelemetry: (callback: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
@@ -50,8 +52,16 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
     let bypassed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
+    const telemetryListeners = new Set<(data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void>();
     node.port.onmessage = (e: MessageEvent) => {
-        handshake.onMessage(e);
+        if (e.data?.type === 'telemetry') {
+            const data = { peakL: e.data.peakL, peakR: e.data.peakR, scopeBuffer: e.data.scopeBuffer };
+            for (const listener of telemetryListeners) {
+                listener(data);
+            }
+        } else {
+            handshake.onMessage(e);
+        }
     };
     const readyPromise = handshake.promise;
 
@@ -61,7 +71,7 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
 
     return {
         workletNode: node,
-        noteOn(note: number, velocity: number, sampleFrame?: number) {
+        noteOn(note: number, velocity: number, _midiNote?: number, sampleFrame?: number) {
             if (!bypassed && note >= 0 && note < 128) {
                 node.port.postMessage({
                     type: 'noteOn',
@@ -74,13 +84,19 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         noteOff(note: number, sampleFrame?: number) {
             node.port.postMessage({ type: 'noteOff', note, sampleFrame });
         },
-        setParam(name: string, value: number) {
+        setParam(name: string, value: number, sampleFrame?: number) {
             if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
+                node.port.postMessage({ type: 'param', name, value, sampleFrame });
             }
+        },
+        setPatch(patch: Record<string, unknown>) {
+            node.port.postMessage({ type: 'patch', patch });
         },
         setBypass(state: boolean) {
             bypassed = state;
+        },
+        onTelemetry(cb: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) {
+            telemetryListeners.add(cb);
         },
         connect(dest: AudioNode) {
             node.connect(dest);

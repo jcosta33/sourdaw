@@ -6,6 +6,11 @@ export function unloadWAMPlugin(instanceId: string): void {
         if ('disconnect' in instance.audioNode) {
             instance.audioNode.disconnect();
         }
+        if ('destroy' in instance.audioNode && typeof (instance.audioNode as any).destroy === 'function') {
+            try {
+                (instance.audioNode as any).destroy();
+            } catch (e) {}
+        }
         instances.delete(instanceId);
     }
 }

@@ -1,3 +1,5 @@
+import { type GrandBouleState } from '../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule soundboard send level.
  *
@@ -6,20 +8,20 @@
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
-import { grandBouleStore } from '../stores/grandBouleStore';
 
 type SetGrandBouleSoundboardSendInput = {
     engine: GrandBouleEngineHandle;
     amount: number;
+    store: Store<GrandBouleState>;
 };
 
 export const setGrandBouleSoundboardSend = (input: SetGrandBouleSoundboardSendInput): void => {
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return;
     }
     const clamped = Math.max(0, Math.min(1, input.amount));
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         config: { ...state.config, soundboardSend: clamped },
     });

@@ -1,1 +1,1 @@
-export { kneadStore, defaultKneadState, updateTrackKneadState } from './kneadStore';
+export { kneadStore, defaultKneadState, updateClipKneadState } from './kneadStore';

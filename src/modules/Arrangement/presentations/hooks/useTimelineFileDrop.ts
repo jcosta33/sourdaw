@@ -42,6 +42,39 @@ export const useTimelineFileDrop = ({
         const trackHit = hitTestTrack(y);
         const beat = Math.max(0, Math.floor(getBeatFromX(x)));
 
+        // AI-rendered audio clips already have their AudioBuffer cached — just create
+        // a clip pointing at the bufferId. No file decoding needed.
+        const aiRenderData = e.dataTransfer.getData('application/x-sourdaw-ai-render');
+        if (aiRenderData) {
+            try {
+                const render = JSON.parse(aiRenderData) as {
+                    name: string;
+                    bufferId: string;
+                    durationSeconds: number;
+                };
+                let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
+                const targetTrack = targetTrackId
+                    ? trackStore.value?.tracks.find((t) => t.id === targetTrackId)
+                    : null;
+                if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
+                    const newTrack = addTrack({ name: render.name, kind: 'audio' });
+                    if (!newTrack) return;
+                    targetTrackId = newTrack.id;
+                }
+                const model = buildTimelineRenderModel();
+                const durationBeats = Math.max(1, Math.ceil((render.durationSeconds / 60) * model.tempo));
+                addClip({
+                    trackId: targetTrackId,
+                    startBeat: beat,
+                    endBeat: beat + durationBeats,
+                    name: render.name,
+                    type: 'audio',
+                    audioBufferId: render.bufferId,
+                });
+            } catch { /* ignored */ }
+            return;
+        }
+
         const sampleData = e.dataTransfer.getData('application/x-sourdaw-sample');
         if (sampleData) {
             setIsImporting(true);

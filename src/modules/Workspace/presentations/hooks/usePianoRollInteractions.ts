@@ -183,6 +183,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** R-A13: ID of the note currently under the debounce timer. */
     const hoverNoteIdRef = useRef<string | null>(null);
+    // Default drag in empty area starts a rubber-band selection (DAW
+    // convention). A click without drag still stamps a note at the clicked
+    // grid cell; we stash the intended pitch/beat here so the mouse-up handler
+    // can commit a stamp when no meaningful drag occurred.
+    const pendingStampRef = useRef<{ pitch: number; beat: number } | null>(null);
 
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
     const [hoverCursor, setHoverCursor] = useState<string>('crosshair');
@@ -391,6 +396,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     _prevDeltaBeat: 0,
                     _prevDeltaPitch: 0,
                 };
+                // Alt-drag is the explicit select-only gesture; never stamp on release.
+                pendingStampRef.current = null;
                 return;
             } else if (lassoMode) {
                 lassoPathRef.current = [{ x, y: noteY }];
@@ -453,11 +460,17 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         };
                         setSelectedNoteIds(new Set());
                     } else {
+                        // Default empty-area drag is a rubber-band selection. If the user
+                        // clicks without dragging (mouse-up without passing the movement
+                        // threshold), the stashed `pendingStampRef` tells `handleMouseUp`
+                        // to stamp a note at this grid cell — single-click-creates-a-note
+                        // affordance preserved.
                         auditionRef.current = playAuditionNote(trackId, pitch, 100);
                         const beat = snap(x / beatWidth);
-                        drawPreviewRef.current = { beat, pitch, duration: gridSnap };
+                        pendingStampRef.current = { pitch, beat };
+                        rubberBandRef.current = { x, y: noteY, w: 0, h: 0 };
                         dragRef.current = {
-                            mode: 'draw',
+                            mode: 'rubber-band',
                             noteId: null,
                             startX: x,
                             startY: noteY,
@@ -467,8 +480,6 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             _prevDeltaBeat: 0,
                             _prevDeltaPitch: 0,
                         };
-                        setSelectedNoteIds(new Set());
-                        draw();
                     }
                 }
             }
@@ -651,7 +662,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
         if (drag.mode === 'rubber-band') {
             const rb = rubberBandRef.current;
-            if (rb && (rb.w > 2 || rb.h > 2)) {
+            const meaningfulDrag = rb !== null && (rb.w > 2 || rb.h > 2);
+            const pendingStamp = pendingStampRef.current;
+
+            if (meaningfulDrag) {
                 const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
                 const hitIds = new Set<string>();
                 const testRubberBand = (noteList: MidiNote[]): void => {
@@ -676,8 +690,23 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     }
                 }
                 setSelectedNoteIds(e.shiftKey ? (prev) => new Set([...prev, ...hitIds]) : hitIds);
+            } else if (pendingStamp) {
+                // Click without drag — stamp a note at the click location.
+                const note = addMidiNote(clipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100);
+                pushUndoEntry(
+                    'Draw MIDI note',
+                    () => removeMidiNote(clipId, note.id),
+                    () => addMidiNote(clipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100)
+                );
+                setSelectedNoteIds(new Set());
+            } else if (!e.shiftKey) {
+                // Alt-drag (explicit select) with no movement clears selection, matching
+                // the previous alt-branch behaviour.
+                setSelectedNoteIds(new Set());
             }
+
             rubberBandRef.current = null;
+            pendingStampRef.current = null;
             dragRef.current = { ...INITIAL_DRAG_STATE };
             draw();
             return;
@@ -823,8 +852,42 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         drawPreviewRef.current = null;
 
         if (drag.mode === 'lasso' && lassoPathRef.current.length > 2) {
+            // Lasso hit test against the note's bounding box (not just its
+            // center — long notes with their center outside a tight lasso but
+            // edges enclosed would otherwise be missed):
+            //   1. Fast-reject via polygon AABB overlap.
+            //   2. Select if any of the note's corners or center is inside the
+            //      polygon (covers the common "polygon encloses note" case).
+            //   3. Otherwise select if any polygon vertex falls inside the note
+            //      rect (covers "small lasso drawn on top of a big note").
+            // A full edge-intersection test is not needed for lasso UX and is
+            // expensive for long polygons.
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
             const path = lassoPathRef.current;
+
+            let pathMinX = Infinity;
+            let pathMinY = Infinity;
+            let pathMaxX = -Infinity;
+            let pathMaxY = -Infinity;
+            for (const point of path) {
+                if (point.x < pathMinX) pathMinX = point.x;
+                if (point.y < pathMinY) pathMinY = point.y;
+                if (point.x > pathMaxX) pathMaxX = point.x;
+                if (point.y > pathMaxY) pathMaxY = point.y;
+            }
+
+            const pointInPolygon = (px: number, py: number): boolean => {
+                let inside = false;
+                for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+                    const pi = path[i]!;
+                    const pj = path[j]!;
+                    if (pi.y > py !== pj.y > py && px < ((pj.x - pi.x) * (py - pi.y)) / (pj.y - pi.y) + pi.x) {
+                        inside = !inside;
+                    }
+                }
+                return inside;
+            };
+
             const enclosed = new Set<string>();
             const testLasso = (noteList: MidiNote[]): void => {
                 for (const note of noteList) {
@@ -832,17 +895,34 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     if (row === -1) {
                         continue;
                     }
-                    const cx = (note.startBeat + note.duration / 2) * beatWidth;
-                    const cy = row * ROW_HEIGHT + ROW_HEIGHT / 2;
-                    let inside = false;
-                    for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
-                        const pi = path[i]!;
-                        const pj = path[j]!;
-                        if (pi.y > cy !== pj.y > cy && cx < ((pj.x - pi.x) * (cy - pi.y)) / (pj.y - pi.y) + pi.x) {
-                            inside = !inside;
+                    const nx = note.startBeat * beatWidth;
+                    const ny = row * ROW_HEIGHT;
+                    const nw = note.duration * beatWidth;
+                    const nxMax = nx + nw;
+                    const nyMax = ny + ROW_HEIGHT;
+
+                    if (nxMax < pathMinX || nx > pathMaxX || nyMax < pathMinY || ny > pathMaxY) {
+                        continue;
+                    }
+
+                    const samples: Array<[number, number]> = [
+                        [nx, ny],
+                        [nxMax, ny],
+                        [nx, nyMax],
+                        [nxMax, nyMax],
+                        [nx + nw / 2, ny + ROW_HEIGHT / 2],
+                    ];
+                    let hit = samples.some(([px, py]) => pointInPolygon(px, py));
+                    if (!hit) {
+                        for (const point of path) {
+                            if (point.x >= nx && point.x <= nxMax && point.y >= ny && point.y <= nyMax) {
+                                hit = true;
+                                break;
+                            }
                         }
                     }
-                    if (inside) {
+
+                    if (hit) {
                         enclosed.add(note.id);
                     }
                 }
@@ -1127,9 +1207,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 if (selectedNoteIds.has(n.id)) selectedWithClip.push({ note: n, ownerClipId: clipId });
             }
             if (openedClipNotes) {
-                for (const [oid, openedNotes] of Object.entries(openedClipNotes)) {
+                for (const [oid, ns] of Object.entries(openedClipNotes)) {
                     if (oid === clipId) continue;
-                    for (const n of openedNotes) {
+                    for (const n of ns) {
                         if (selectedNoteIds.has(n.id)) selectedWithClip.push({ note: n, ownerClipId: oid });
                     }
                 }

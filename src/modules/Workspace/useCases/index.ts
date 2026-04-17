@@ -12,6 +12,7 @@ export { toggleRippleEditing } from './rippleEditing';
 export { getScratchPadHandlers } from './getScratchPadHandlers';
 
 export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelForType';
+export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
 
 // ── Editing Tool ──────────────────────────────────────────────────────────────
 

@@ -1,3 +1,5 @@
+import { type GrandBouleState } from '../stores/grandBouleStore';
+import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule stretched-tuning amount.
  *
@@ -11,20 +13,20 @@
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
-import { grandBouleStore } from '../stores/grandBouleStore';
 
 type SetGrandBouleStretchAmountInput = {
     engine: GrandBouleEngineHandle;
     amount: number;
+    store: Store<GrandBouleState>;
 };
 
 export const setGrandBouleStretchAmount = (input: SetGrandBouleStretchAmountInput): void => {
-    const state = grandBouleStore.value;
+    const state = input.store.value;
     if (state === null) {
         return;
     }
     const clamped = Math.max(0, Math.min(2, input.amount));
-    grandBouleStore.set({
+    input.store.set({
         ...state,
         config: { ...state.config, stretchAmount: clamped },
     });

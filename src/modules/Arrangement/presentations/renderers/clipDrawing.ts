@@ -299,7 +299,7 @@ const drawFadeCurves = (
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(fadeStartX, y);
+        ctx.moveTo(fadeStartX, y + h);
         ctx.lineTo(clipX + clipW, y + h);
         ctx.stroke();
     }
@@ -431,28 +431,27 @@ const drawWaveformPeaks = (
     if (w < 4 || !clip.audioBufferId) {
         return;
     }
-    const audioBufferId = clip.audioBufferId;
     const numBins = Math.min(Math.floor(w), 600);
 
-    // R-A10: Implement waveform slip by shifting the index into peaks array.
-    // getWaveformPeaks returns peaks for the whole buffer.
-    const buffer = audioBufferCache.get(audioBufferId);
-    if (!buffer) return;
+    // Map clip beats onto audio-buffer samples so trimmed / offset / stretched
+    // clips show the actual portion of the sample that will be played, rather
+    // than the whole buffer squashed into the clip width.
+    const offsetBeats = clip.audioOffsetBeats ?? 0;
+    const stretchRatio = clip.stretchRatio ?? 1;
+    const clipBeats = clip.endBeat - clip.startBeat;
+    const buffer = audioBufferCache.get(clip.audioBufferId);
+    const secondsPerBeat = 60 / model.tempo;
+    const sampleRate = buffer?.sampleRate ?? 44100;
+    const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
+    const beatsConsumed = clipBeats / Math.max(stretchRatio, 0.0001);
+    const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
 
-    const bpm = model.tempo;
-    const totalBeats = (buffer.length / buffer.sampleRate) * (bpm / 60);
-    const audioOffset = clip.audioOffsetBeats ?? 0;
-    
-    // How many beats are visible in this clip
-    const visibleBeats = clip.endBeat - clip.startBeat;
-    
-    // We want to sample 'numBins' from the buffer starting at 'audioOffset' and spanning 'visibleBeats'.
-    // audioBufferCache.getWaveformPeaks is too simple for this.
-    // For now, let's just draw the full buffer peaks and translate/clip them.
-    const peaks = audioBufferCache.getWaveformPeaks(audioBufferId, Math.round(numBins * (totalBeats / visibleBeats)));
+    const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins, {
+        startSample,
+        endSample,
+    });
 
     const midY = trackY + trackHeight / 2 + 4;
-
     const amplitude = (trackHeight - padding * 2) * 0.35;
 
     ctx.save();
@@ -469,18 +468,16 @@ const drawWaveformPeaks = (
     waveGrad.addColorStop(1, 'rgba(255, 255, 255, 0.28)');
     ctx.fillStyle = waveGrad;
 
-    const startIdx = Math.max(0, Math.floor((audioOffset / totalBeats) * peaks.length));
-    const binsToDraw = Math.floor((visibleBeats / totalBeats) * peaks.length);
-    const drawBinWidth = w / binsToDraw;
+    const drawBinWidth = w / peaks.length;
 
     ctx.beginPath();
     ctx.moveTo(x + padding, midY);
-    for (let i = 0; i < binsToDraw; i++) {
-        const peak = peaks[startIdx + i] ?? 0;
+    for (let i = 0; i < peaks.length; i++) {
+        const peak = peaks[i] ?? 0;
         ctx.lineTo(x + padding + i * drawBinWidth, midY - peak * amplitude);
     }
-    for (let i = binsToDraw - 1; i >= 0; i--) {
-        const peak = peaks[startIdx + i] ?? 0;
+    for (let i = peaks.length - 1; i >= 0; i--) {
+        const peak = peaks[i] ?? 0;
         ctx.lineTo(x + padding + i * drawBinWidth, midY + peak * amplitude);
     }
     ctx.closePath();

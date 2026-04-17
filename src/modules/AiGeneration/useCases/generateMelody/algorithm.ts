@@ -6,9 +6,9 @@
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 // Canonical type unions live in `AiGeneration/models/GenerationStyles` so
 // that `AiRuntime/useCases/dsoEditor/compileDso.ts` can consume them via
-// `import type` without triggering a module-init circular dependency
-// (audit §11.2). Re-export here to preserve the public import paths of
-// callers that already import these types from `./algorithm`.
+// `import type` without triggering a module-init circular dependency.
+// Re-export here to preserve the public import paths of callers that already
+// import these types from `./algorithm`.
 import type { MelodyStyle, ScaleType } from '../../models/GenerationStyles';
 export type { MelodyStyle, ScaleType };
 
@@ -258,6 +258,21 @@ export function generateMelody(options: GenerateMelodyOptions & { seed?: number 
             });
         }
         position += slot.duration;
+    }
+
+    // §14.3 / G7 — low-density runs can turn every rhythm slot into a rest,
+    // producing an empty clip that looks identical to a generator failure.
+    // Guarantee a seed note on the downbeat so the user always sees audible
+    // output; they can still retune density to replace it with something
+    // richer.
+    if (notes.length === 0 && totalBeats > 0) {
+        const seedDuration = Math.min(1, totalBeats);
+        notes.push({
+            pitch: scaleNotes[currentScaleIndex]!,
+            startBeat: 0,
+            duration: seedDuration,
+            velocity: velocityForStyle(style, 0, rng),
+        });
     }
 
     return { notes, seed: usedSeed };

@@ -1,9 +1,55 @@
 import { persistDeviceParam } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
+import type { DeviceRef } from '#/utils/createFindDeviceRef';
+
 export type { DeviceRef, GetAllTracksFn } from '#/utils/createFindDeviceRef';
 export { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
+
+export type GrinderBatchEntry = { ref: DeviceRef; key: string; value: number };
+export const paramBatcher = createRafBatcher<GrinderBatchEntry>();
+
+export function createFlushParam(
+    updateDeviceParamFn: UpdateDeviceParamFn,
+    persistDeviceParamFn: PersistDeviceParamFn
+) {
+    return function flushParam(_compositeKey: string, entry: GrinderBatchEntry): void {
+        updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
+        persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);
+    };
+}
+
+export function getAudioParamKeyForPedal(
+    isPost: boolean,
+    pedalType: string,
+    paramKey: string
+): string | null {
+    const prefix = isPost ? 'post' : 'pre';
+    let pedalName = '';
+
+    switch (pedalType) {
+        case 'compressor':
+            pedalName = 'Compressor';
+            break;
+        case 'overdrive':
+        case 'boost':
+            pedalName = 'Overdrive';
+            break;
+        case 'distortion':
+            pedalName = 'Distortion';
+            break;
+        case 'fuzz':
+            pedalName = 'Fuzz';
+            break;
+        default:
+            return null;
+    }
+
+    const capitalizedParam = paramKey.charAt(0).toUpperCase() + paramKey.slice(1);
+    return `${prefix}${pedalName}${capitalizedParam}`;
+}
 
 export const AMP_MODELS = ['clean-twin', 'crunch-jcm', 'lead-jcm', 'ac30-tb', 'rectifier', 'custom'] as const;
 export const ENGINE_MODES = ['circuit', 'capture', 'hybrid'] as const;

@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useState, useMemo } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { Cpu, Power } from 'lucide-react';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
@@ -11,7 +11,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { defaultGrandBouleState, grandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
+import { defaultGrandBouleState, createGrandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
 import { panicGrandBoule } from '../../useCases/panicGrandBoule';
@@ -125,7 +125,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const trackState = useStore(trackStore, defaultTrackState);
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId, tracks: trackState.tracks });
     // §209.1 — Typed default instead of non-null assertion on live value.
-    const state = useStore(grandBouleStore, defaultGrandBouleState);
+    const store = useMemo(() => createGrandBouleStore(deviceId), [deviceId]);
+    const state = useStore(store, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
     const [lidPosition, setLidPosition] = useState(1.0);
     const [lastVelocity, setLastVelocity] = useState(0);
@@ -134,7 +135,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     // notes played on a physical controller (e.g. Akai).
     useEffect(() => {
         const unsubs = [
-            onMidiNoteOn(({ midiNote, velocity }) => {
+            onMidiNoteOn(({ deviceId: eventDeviceId, midiNote, velocity }) => {
+                if (eventDeviceId && eventDeviceId !== deviceId) return;
                 setLastVelocity(Math.round(velocity * 127));
                 setActiveNotes((prev) => {
                     const next = new Map(prev);
@@ -142,7 +144,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     return next;
                 });
             }),
-            onMidiNoteOff(({ midiNote }) => {
+            onMidiNoteOff(({ deviceId: eventDeviceId, midiNote }) => {
+                if (eventDeviceId && eventDeviceId !== deviceId) return;
                 setActiveNotes((prev) => {
                     if (!prev.has(midiNote)) {
                         return prev;
@@ -152,15 +155,16 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     return next;
                 });
             }),
-            onMidiPedalCc(({ cc, value }) => {
-                const s = grandBouleStore.value;
+            onMidiPedalCc(({ deviceId: eventDeviceId, cc, value }) => {
+                if (eventDeviceId && eventDeviceId !== deviceId) return;
+                const s = store.value;
                 if (s === null) {return;}
                 if (cc === 64) {
-                    grandBouleStore.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
+                    store.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
                 } else if (cc === 66) {
-                    grandBouleStore.set({ ...s, pedals: { ...s.pedals, sostenuto: value as boolean } });
+                    store.set({ ...s, pedals: { ...s.pedals, sostenuto: value as boolean } });
                 } else if (cc === 67) {
-                    grandBouleStore.set({ ...s, pedals: { ...s.pedals, unaCorda: value as boolean } });
+                    store.set({ ...s, pedals: { ...s.pedals, unaCorda: value as boolean } });
                 }
             }),
         ];
@@ -174,38 +178,22 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         if (!engineReady) {
             return;
         }
-        setGrandBouleMorphPosition({ engine, morphPosition: 0 });
+        setGrandBouleMorphPosition({ engine, store, morphPosition: 0 });
     }, [engineReady]);
 
     // Read FFT data from the track's AnalyserNode for the spectral waterfall.
-    const [fftFrame, setFftFrame] = useState<Float32Array | null>(null);
+    const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
     useEffect(() => {
         if (!engineReady) {
             return;
         }
-        const analyser = engine.getAnalyserNode();
-        if (analyser === null) {
-            return;
+        const node = engine.getAnalyserNode();
+        if (node !== null) {
+            setAnalyser(node);
         }
-        analyser.fftSize = 512;
-        const binCount = analyser.frequencyBinCount; // 256
-        const dbBuffer = new Float32Array(binCount);
-        const normBuffer = new Float32Array(binCount);
-        let raf = 0;
-        const read = (): void => {
-            analyser.getFloatFrequencyData(dbBuffer);
-            // Convert dB (-100..0) to normalised 0..1 magnitudes.
-            for (let i = 0; i < binCount; i += 1) {
-                normBuffer[i] = Math.max(0, Math.min(1, (dbBuffer[i]! + 100) / 100));
-            }
-            setFftFrame(new Float32Array(normBuffer));
-            raf = requestAnimationFrame(read);
-        };
-        raf = requestAnimationFrame(read);
-        return () => cancelAnimationFrame(raf);
-    }, [engineReady]);
+    }, [engineReady, engine]);
 
-    const liveState = state ?? grandBouleStore.value;
+    const liveState = state ?? store.value;
     if (liveState === null) {
         return <div className="h-full" />;
     }
@@ -214,7 +202,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const presets = listGrandBoulePresets();
 
     const handleNoteOn = (midiNote: number, velocity: number): void => {
-        triggerGrandBouleNote({ engine, midiNote, velocity });
+        triggerGrandBouleNote({ engine, store, midiNote, velocity });
         setLastVelocity(Math.round(velocity * 127));
         setActiveNotes((prev) => {
             const next = new Map(prev);
@@ -247,7 +235,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     <button
                                         key={preset.id}
                                         type="button"
-                                        onClick={() => loadGrandBoulePreset({ engine, presetId: preset.id })}
+                                        onClick={() => loadGrandBoulePreset({ engine, store, presetId: preset.id })}
                                         className={`grand-boule-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
                                             active
                                                 ? 'border-neutral-400/40 bg-neutral-300/10'
@@ -268,32 +256,32 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <MorphPanel
                             morph={morph}
                             onMorphPositionChange={(position) =>
-                                setGrandBouleMorphPosition({ engine, morphPosition: position })
+                                setGrandBouleMorphPosition({ engine, store, morphPosition: position })
                             }
                             onLayerBalanceChange={(balance) => {
-                                const s = grandBouleStore.value;
+                                const s = store.value;
                                 if (s !== null) {
-                                    grandBouleStore.set({ ...s, morph: { ...s.morph, layerBalance: balance } });
+                                    store.set({ ...s, morph: { ...s.morph, layerBalance: balance } });
                                 }
                             }}
                             onModelAChange={(modelId) => {
-                                const s = grandBouleStore.value;
+                                const s = store.value;
                                 if (s !== null) {
-                                    grandBouleStore.set({ ...s, morph: { ...s.morph, modelA: modelId } });
-                                    setGrandBouleMorphPosition({ engine, morphPosition: s.morph.morphPosition });
+                                    store.set({ ...s, morph: { ...s.morph, modelA: modelId } });
+                                    setGrandBouleMorphPosition({ engine, store, morphPosition: s.morph.morphPosition });
                                 }
                             }}
                             onModelBChange={(modelId) => {
-                                const s = grandBouleStore.value;
+                                const s = store.value;
                                 if (s !== null) {
-                                    grandBouleStore.set({ ...s, morph: { ...s.morph, modelB: modelId } });
-                                    setGrandBouleMorphPosition({ engine, morphPosition: s.morph.morphPosition });
+                                    store.set({ ...s, morph: { ...s.morph, modelB: modelId } });
+                                    setGrandBouleMorphPosition({ engine, store, morphPosition: s.morph.morphPosition });
                                 }
                             }}
                             onEnabledChange={(enabled) => {
-                                const s = grandBouleStore.value;
+                                const s = store.value;
                                 if (s !== null) {
-                                    grandBouleStore.set({ ...s, morph: { ...s.morph, enabled } });
+                                    store.set({ ...s, morph: { ...s.morph, enabled } });
                                 }
                             }}
                         />
@@ -303,7 +291,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
                                 value={config.masterGain}
-                                onChange={(value) => setGrandBouleMasterGain({ engine, gain: value })}
+                                onChange={(value) => setGrandBouleMasterGain({ engine, store, gain: value })}
                                 label="Master"
                                 min={0}
                                 max={2}
@@ -313,7 +301,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                             <Knob
                                 value={config.soundboardSend}
-                                onChange={(value) => setGrandBouleSoundboardSend({ engine, amount: value })}
+                                onChange={(value) => setGrandBouleSoundboardSend({ engine, store, amount: value })}
                                 label="Board"
                                 min={0}
                                 max={1}
@@ -323,7 +311,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                             <Knob
                                 value={config.sympatheticSend}
-                                onChange={(value) => setGrandBouleSympatheticSend({ engine, amount: value })}
+                                onChange={(value) => setGrandBouleSympatheticSend({ engine, store, amount: value })}
                                 label="Symp"
                                 min={0}
                                 max={1}
@@ -341,7 +329,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             <Knob
                                 value={config.stretchAmount}
                                 onChange={(value) =>
-                                    setGrandBouleStretchAmount({ engine, amount: value })
+                                    setGrandBouleStretchAmount({ engine, store, amount: value })
                                 }
                                 label="Stretch"
                                 min={0}
@@ -353,7 +341,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             <Knob
                                 value={config.attackBite}
                                 onChange={(value) =>
-                                    setGrandBouleAttackBite({ engine, amount: value })
+                                    setGrandBouleAttackBite({ engine, store, amount: value })
                                 }
                                 label="Bite"
                                 min={0}
@@ -370,14 +358,15 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             onParamChange={(key, param, value) =>
                                 setGrandBoulePerNoteParam({
                                     engine,
+                                    store,
                                     key,
                                     param,
                                     value,
                                     perNoteMap: liveState.perNoteOverrides,
                                     setPerNoteMap: (next) => {
-                                        const s = grandBouleStore.value;
+                                        const s = store.value;
                                         if (s !== null) {
-                                            grandBouleStore.set({ ...s, perNoteOverrides: next });
+                                            store.set({ ...s, perNoteOverrides: next });
                                         }
                                     },
                                 })
@@ -385,12 +374,13 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             onReset={(key) =>
                                 resetGrandBoulePerNoteParams({
                                     engine,
+                                    store,
                                     key,
                                     perNoteMap: liveState.perNoteOverrides,
                                     setPerNoteMap: (next) => {
-                                        const s = grandBouleStore.value;
+                                        const s = store.value;
                                         if (s !== null) {
-                                            grandBouleStore.set({ ...s, perNoteOverrides: next });
+                                            store.set({ ...s, perNoteOverrides: next });
                                         }
                                     },
                                 })
@@ -402,13 +392,13 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <MidiCalibrationPanel
                             calibration={liveState.midiCalibration}
                             lastVelocity={lastVelocity}
-                            onVelocityCurveExponentChange={setVelocityCurveExponent}
-                            onVelocityFloorChange={setVelocityFloor}
-                            onVelocityCeilingChange={setVelocityCeiling}
-                            onCcSmoothingMsChange={setCcSmoothingMs}
-                            onSustainThresholdChange={setSustainThreshold}
-                            onAfterTouchSensitivityChange={setAfterTouchSensitivity}
-                            onReset={resetMidiCalibration}
+                            onVelocityCurveExponentChange={(value) => setVelocityCurveExponent({ store, value })}
+                            onVelocityFloorChange={(value) => setVelocityFloor({ store, value })}
+                            onVelocityCeilingChange={(value) => setVelocityCeiling({ store, value })}
+                            onCcSmoothingMsChange={(value) => setCcSmoothingMs({ store, value })}
+                            onSustainThresholdChange={(value) => setSustainThreshold({ store, value })}
+                            onAfterTouchSensitivityChange={(value) => setAfterTouchSensitivity({ store, value })}
+                            onReset={() => resetMidiCalibration({ store })}
                         />
                     </SectionCard>
                 </aside>
@@ -455,7 +445,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     </div>
 
                     <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 160 }}>
-                        <SpectralWaterfall fftFrame={fftFrame} className="h-full w-full" />
+                        <SpectralWaterfall analyser={analyser} className="h-full w-full" />
                     </div>
                 </section>
 
@@ -464,7 +454,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <div className="flex flex-col gap-3">
                             <Knob
                                 value={pedals.sustain}
-                                onChange={(value) => setGrandBouleSustain({ engine, position: value })}
+                                onChange={(value) => setGrandBouleSustain({ engine, store, position: value })}
                                 label="Sustain"
                                 min={0}
                                 max={1}
@@ -482,6 +472,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     onClick={() =>
                                         setGrandBouleUnaCorda({
                                             engine,
+                                            store,
                                             engaged: !pedals.unaCorda,
                                         })
                                     }
@@ -497,6 +488,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     onClick={() =>
                                         setGrandBouleSostenuto({
                                             engine,
+                                            store,
                                             engaged: !pedals.sostenuto,
                                         })
                                     }
@@ -516,6 +508,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         onClick={() =>
                                             setGrandBouleTemperament({
                                                 deviceId,
+                                                store,
                                                 temperament: option.value,
                                             })
                                         }
@@ -535,7 +528,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     <SectionCard title="Touch" detail="Velocity curve shaping.">
                         <Knob
                             value={parameters.velocityCurve}
-                            onChange={(value) => setGrandBouleVelocityCurve({ engine, exponent: value })}
+                            onChange={(value) => setGrandBouleVelocityCurve({ engine, store, exponent: value })}
                             label="Curve"
                             min={0.5}
                             max={2}

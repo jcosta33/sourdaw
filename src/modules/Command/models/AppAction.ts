@@ -206,14 +206,25 @@ export type AppAction =
     | { type: 'quantizeAutomation'; payload: { laneId: string; gridSize: number } }
     | { type: 'loadPreset'; payload: { presetId: string; trackId?: string } }
     | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }
-    | { type: 'generateDrumPattern'; payload: { style: string; trackId?: string; bars?: number; density?: number } }
+    | {
+          type: 'generateDrumPattern';
+          payload: { style: string; trackId?: string; bars?: number; density?: number; startBeat?: number };
+      }
     | {
           type: 'generateMelody';
-          payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number };
+          payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number; startBeat?: number };
       }
     | {
           type: 'generateChordProgression';
-          payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number; voicing?: string };
+          payload: {
+              style: string;
+              key?: number;
+              scale?: string;
+              trackId?: string;
+              bars?: number;
+              voicing?: string;
+              startBeat?: number;
+          };
       }
     | { type: 'setClipLoop'; payload: { clipId: string; enabled: boolean } }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }

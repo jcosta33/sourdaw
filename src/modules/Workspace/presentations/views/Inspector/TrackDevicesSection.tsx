@@ -42,6 +42,14 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
 
     const pluginScanState = useStore<PluginScanViewState>(pluginScanStore, defaultPluginScanState);
 
+    // Snapshot the platform catalog once per render instead of walking it three times
+    // (effects / utility / analyzer) and re-querying capabilities twice.
+    const platformPlugins = getPlatformPlugins();
+    const effectPlugins = platformPlugins.filter((p) => p.category === 'effect');
+    const utilityPlugins = platformPlugins.filter((p) => p.category === 'utility');
+    const analyzerPlugins = platformPlugins.filter((p) => p.category === 'analyzer');
+    const platformCapabilities = getPlatformCapabilities();
+
     useEffect(() => {
         if (!showDeviceMenu) {
             return;
@@ -81,66 +89,59 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 role="menu"
                             >
                                 <DawMenuSectionLabel>Effects</DawMenuSectionLabel>
-                                {getPlatformPlugins()
-                                    .filter((p) => p.category === 'effect')
-                                    .map((plugin) => (
-                                        <button
-                                            type="button"
-                                            key={plugin.id}
-                                            className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                                            role="menuitem"
-                                            onClick={() => {
-                                                addDevice(track.id, plugin.name);
-                                                setShowDeviceMenu(false);
-                                            }}
-                                        >
-                                            {plugin.name}
-                                        </button>
-                                    ))}
+                                {effectPlugins.map((plugin) => (
+                                    <button
+                                        type="button"
+                                        key={plugin.id}
+                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                        role="menuitem"
+                                        onClick={() => {
+                                            addDevice(track.id, plugin.name);
+                                            setShowDeviceMenu(false);
+                                        }}
+                                    >
+                                        {plugin.name}
+                                    </button>
+                                ))}
                                 <DawMenuSeparator />
                                 <DawMenuSectionLabel>Utility</DawMenuSectionLabel>
-                                {getPlatformPlugins()
-                                    .filter((p) => p.category === 'utility')
-                                    .map((plugin) => (
-                                        <button
-                                            type="button"
-                                            key={plugin.id}
-                                            className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                            role="menuitem"
-                                            onClick={() => {
-                                                addDevice(track.id, plugin.name);
-                                                setShowDeviceMenu(false);
-                                            }}
-                                        >
-                                            {plugin.name}
-                                        </button>
-                                    ))}
-                                {getPlatformPlugins().filter((p) => p.category === 'analyzer').length > 0 ? (
+                                {utilityPlugins.map((plugin) => (
+                                    <button
+                                        type="button"
+                                        key={plugin.id}
+                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                        role="menuitem"
+                                        onClick={() => {
+                                            addDevice(track.id, plugin.name);
+                                            setShowDeviceMenu(false);
+                                        }}
+                                    >
+                                        {plugin.name}
+                                    </button>
+                                ))}
+                                {analyzerPlugins.length > 0 ? (
                                     <>
                                         <DawMenuSeparator />
                                         <DawMenuSectionLabel>Analyzer</DawMenuSectionLabel>
-                                        {getPlatformPlugins()
-                                            .filter((p) => p.category === 'analyzer')
-                                            .map((plugin) => (
-                                                <button
-                                                    type="button"
-                                                    key={plugin.id}
-                                                    className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                                                    role="menuitem"
-                                                    onClick={() => {
-                                                        addDevice(track.id, plugin.name);
-                                                        setShowDeviceMenu(false);
-                                                    }}
-                                                >
-                                                    {plugin.name}
-                                                </button>
-                                            ))}
+                                        {analyzerPlugins.map((plugin) => (
+                                            <button
+                                                type="button"
+                                                key={plugin.id}
+                                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                                role="menuitem"
+                                                onClick={() => {
+                                                    addDevice(track.id, plugin.name);
+                                                    setShowDeviceMenu(false);
+                                                }}
+                                            >
+                                                {plugin.name}
+                                            </button>
+                                        ))}
                                     </>
                                 ) : null}
                                 <DawMenuSeparator />
                                 <DawMenuSectionLabel>External</DawMenuSectionLabel>
-                                {getPlatformCapabilities().hasNativePlugins &&
-                                pluginScanState.scannedPlugins.length > 0 ? (
+                                {platformCapabilities.hasNativePlugins && pluginScanState.scannedPlugins.length > 0 ? (
                                     <div className="max-h-32 overflow-y-auto">
                                         {pluginScanState.scannedPlugins.map((plugin) => (
                                             <button
@@ -171,13 +172,13 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                     />
                                                 }
                                             >
-                                                {getPlatformCapabilities().hasNativePlugins
+                                                {platformCapabilities.hasNativePlugins
                                                     ? 'No plugins found — scan first'
                                                     : 'Desktop app required'}
                                             </DawMenuDisabledRow>
                                         </TooltipTrigger>
                                         <TooltipContent side="left" className="max-w-56 text-center">
-                                            {getPlatformCapabilities().hasNativePlugins
+                                            {platformCapabilities.hasNativePlugins
                                                 ? 'Scan for plugins in Preferences → Plugin Paths'
                                                 : DISABLED_REASONS.nativePlugins}
                                         </TooltipContent>

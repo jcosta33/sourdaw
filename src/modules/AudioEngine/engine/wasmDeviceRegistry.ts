@@ -22,6 +22,7 @@ import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNod
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
 
+import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { updateGlutenMeters } from '#/modules/Gluten/stores';
 import { updateGrinderMeters } from '#/modules/Grinder/stores';
@@ -30,6 +31,8 @@ import { setEngineReady } from '#/modules/Levain/stores';
 import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
+import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
+import { isFaustModule } from '#/modules/Plugin/useCases';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,6 +82,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                result.onTelemetry((data) => {
+                    setFermenterTelemetry(deviceId, data.peakL, data.peakR, data.scopeBuffer);
+                });
                 onLoaded({
                     deviceId,
                     type: deviceType,
@@ -486,9 +492,46 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
     },
 };
 
+const faustDescriptor: WasmDeviceDescriptor = {
+    matches: isFaustModule,
+    create({ context, deviceId, deviceType, onLoaded }) {
+        const pendingParams: Array<{ name: string; value: number; time?: number }> = [];
+        const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        placeholder.wamControls = {
+            setParam: (name, value) => pendingParams.push({ name, value }),
+            scheduleParam: (name, value, time) => pendingParams.push({ name, value, time }),
+            destroy: () => {},
+        };
+        const loadPromise = createFaustDeviceNode(context, deviceType)
+            .then((result) => {
+                if (!result) return;
+                const controls = result.wamControls;
+                for (const { name, value, time } of pendingParams) {
+                    if (time !== undefined) {
+                        controls?.scheduleParam(name, value, time);
+                    } else {
+                        controls?.setParam(name, value);
+                    }
+                }
+                onLoaded({
+                    deviceId,
+                    type: deviceType,
+                    nodes: result.nodes,
+                    inputNode: result.inputNode,
+                    outputNode: result.outputNode,
+                    wamControls: controls,
+                });
+                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+            })
+            .catch((err) => logger.warn(`[WebAudioEngine] Faust failed: ${err}`));
+        return { placeholder, loadPromise };
+    },
+};
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
+    faustDescriptor,
     fermenterDescriptor,
     toasterDescriptor,
     levainDescriptor,

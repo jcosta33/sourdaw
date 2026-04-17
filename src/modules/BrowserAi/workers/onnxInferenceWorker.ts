@@ -30,7 +30,7 @@ type OrtModule = {
         create: (data: ArrayBuffer, options?: { executionProviders?: string[] }) => Promise<OrtInferenceSession>;
     };
     Tensor: new (type: string, data: ArrayBuffer | Float32Array | BigInt64Array | Int32Array | Uint8Array, dims: number[]) => OrtTensor;
-    env: { wasm: { numThreads: number } };
+    env: { wasm: { numThreads: number }; logLevel: string };
 };
 
 type SessionEntry = {
@@ -54,8 +54,15 @@ async function getOrt(): Promise<OrtModule> {
     }
     // Dynamic import keeps onnxruntime-web out of the main bundle
     const ort = await import('onnxruntime-web') as unknown as OrtModule;
-    // Enable multi-threaded WASM (requires COEP/COOP headers)
-    ort.env.wasm.numThreads = navigator.hardwareConcurrency ?? 4;
+    // Multi-threaded WASM requires SharedArrayBuffer which is only available
+    // when crossOriginIsolated is true. IIFE workers (forced by Rolldown)
+    // are not cross-origin isolated, so fall back to single-threaded.
+    ort.env.wasm.numThreads = (typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated)
+        ? (navigator.hardwareConcurrency ?? 4)
+        : 1;
+    // Suppress "Some nodes were not assigned to the preferred execution providers"
+    // warnings — these are informational (ORT moves shape ops to CPU intentionally).
+    ort.env.logLevel = 'error';
     ortModule = ort;
     return ort;
 }

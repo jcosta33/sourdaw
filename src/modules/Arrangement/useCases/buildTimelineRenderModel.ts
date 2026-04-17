@@ -12,9 +12,90 @@ import {
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { timeSignatureMapStore, getTimeSignatureAtBeat } from '#/modules/Transport';
+import { logger } from '#/app/registerDependencies';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
+}
+
+// §143.1 — During recording, buildTimelineRenderModel is called on every
+// rAF but only the recording clips' `endBeat` actually changes. Previously
+// the whole track array was rebuilt per frame. Cache a pre-cloned overlay
+// keyed on (cachedModel identity, recClips identity) so each rAF only
+// mutates the endBeat field of the affected clip refs (which this module
+// owns exclusively — they are never handed back to the shared cached
+// model).
+type OverlayClipHandle = {
+    clip: { endBeat: number; startBeat: number };
+    minEnd: number;
+};
+const recordingOverlayCache: {
+    sourceModel: TimelineRenderModel | null;
+    recClips: readonly string[] | null;
+    tracks: TimelineRenderModel['tracks'] | null;
+    handles: OverlayClipHandle[];
+} = {
+    sourceModel: null,
+    recClips: null,
+    tracks: null,
+    handles: [],
+};
+
+// One-shot latch so drift between `transportStore.isRecording` and
+// `activeRecordingRef` is reported once per episode instead of every
+// animation frame. Reset below when the ref drains.
+let recordingInvariantReported = false;
+
+function applyRecordingOverlay(
+    cachedModel: TimelineRenderModel,
+    recClips: readonly string[]
+): TimelineRenderModel {
+    const liveEnd = playheadPositionRef.current;
+
+    if (
+        recordingOverlayCache.sourceModel !== cachedModel ||
+        recordingOverlayCache.recClips !== recClips ||
+        recordingOverlayCache.tracks === null
+    ) {
+        const recIds = new Set(recClips);
+        const handles: OverlayClipHandle[] = [];
+        const tracks = cachedModel.tracks.map((track) => {
+            let hasRecClip = false;
+            for (const clip of track.clips) {
+                if (recIds.has(clip.id)) {
+                    hasRecClip = true;
+                    break;
+                }
+            }
+            if (!hasRecClip) {
+                return track;
+            }
+            const clonedClips = track.clips.map((clip) => {
+                if (!recIds.has(clip.id)) {
+                    return clip;
+                }
+                const cloned = { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) };
+                handles.push({ clip: cloned, minEnd: clip.startBeat });
+                return cloned;
+            });
+            return { ...track, clips: clonedClips };
+        });
+
+        recordingOverlayCache.sourceModel = cachedModel;
+        recordingOverlayCache.recClips = recClips;
+        recordingOverlayCache.tracks = tracks;
+        recordingOverlayCache.handles = handles;
+    } else {
+        // Fast path: reuse the pre-cloned overlay and just nudge the
+        // endBeat of the recording clips we already cloned. Safe because
+        // those clip objects are owned by this cache — they were never
+        // returned to the shared cachedModel.
+        for (const handle of recordingOverlayCache.handles) {
+            handle.clip.endBeat = Math.max(handle.minEnd, liveEnd);
+        }
+    }
+
+    return { ...cachedModel, tracks: recordingOverlayCache.tracks!, dataDirty: true };
 }
 
 // §74.1 — Coalesce stores into memoization holder.
@@ -36,21 +117,6 @@ const renderCache: {
     prefs: null,
     transport: null,
     timeSig: null,
-};
-
-// §74.2 — Recording overlay cache: avoid rebuilding all tracks at 60Hz.
-// Stores a shallow-cloned tracks array where only the recording clip's endBeat
-// is mutated in-place on subsequent frames.
-const recordingOverlayCache: {
-    tracks: TrackRenderModel[] | null;
-    recClipIds: readonly string[] | null;
-    recTrackIdx: number;
-    recClipIdx: number;
-} = {
-    tracks: null,
-    recClipIds: null,
-    recTrackIdx: -1,
-    recClipIdx: -1,
 };
 
 export function buildTimelineRenderModel(): TimelineRenderModel {
@@ -118,6 +184,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopLength: clip.loopLength,
                     audioOffsetBeats: clip.audioOffsetBeats,
                     midiOffsetBeats: clip.midiOffsetBeats,
+                    stretchRatio: clip.stretchRatio,
                     fadeInBeats: clip.fadeInBeats,
                     fadeOutBeats: clip.fadeOutBeats,
                     generating: clip.generating,
@@ -187,6 +254,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                                   loopLength: clip.loopLength,
                                   audioOffsetBeats: clip.audioOffsetBeats,
                                   midiOffsetBeats: clip.midiOffsetBeats,
+                                  stretchRatio: clip.stretchRatio,
                                   fadeInBeats: clip.fadeInBeats,
                                   fadeOutBeats: clip.fadeOutBeats,
                                   generating: clip.generating,
@@ -231,56 +299,20 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     // Recording overlay — mutate only the recording clip's endBeat, not the whole tree.
     const recClips = activeRecordingRef.current;
     if (recClips.length > 0) {
-        const liveEnd = playheadPositionRef.current;
-        const cacheStale =
-            dataChanged ||
-            recordingOverlayCache.recClipIds !== recClips ||
-            recordingOverlayCache.tracks === null;
-
-        if (cacheStale) {
-            // Build the overlay once: shallow-clone only the affected track + clip.
-            const tracks = cachedModel.tracks.slice();
-            let foundTrackIdx = -1;
-            let foundClipIdx = -1;
-            for (let ti = 0; ti < tracks.length; ti++) {
-                const track = tracks[ti]!;
-                for (let ci = 0; ci < track.clips.length; ci++) {
-                    const clip = track.clips[ci]!;
-                    if (recClips.includes(clip.id)) {
-                        const clonedClips = track.clips.slice();
-                        clonedClips[ci] = { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) };
-                        tracks[ti] = { ...track, clips: clonedClips };
-                        foundTrackIdx = ti;
-                        foundClipIdx = ci;
-                        break;
-                    }
-                }
-                if (foundTrackIdx !== -1) break;
-            }
-            recordingOverlayCache.tracks = tracks;
-            recordingOverlayCache.recClipIds = recClips;
-            recordingOverlayCache.recTrackIdx = foundTrackIdx;
-            recordingOverlayCache.recClipIdx = foundClipIdx;
-        } else {
-            // Fast path: just mutate the endBeat of the already-cloned clip object.
-            const ti = recordingOverlayCache.recTrackIdx;
-            const ci = recordingOverlayCache.recClipIdx;
-            const recTrack = ti >= 0 ? recordingOverlayCache.tracks![ti] : undefined;
-            const recClip = recTrack && ci >= 0 ? recTrack.clips[ci] : undefined;
-            if (recClip) {
-                recClip.endBeat = Math.max(recClip.startBeat, liveEnd);
-            }
+        // Drift invariant: Transport says we are not recording but the
+        // recording ref still holds clip IDs, meaning a stop path left clips
+        // un-finalised. Surface once so a broken finalisation is visible
+        // without spamming every rAF.
+        if (transportState && transportState.isRecording === false && !recordingInvariantReported) {
+            recordingInvariantReported = true;
+            logger.warn(
+                `[recording] drift detected — transportStore.isRecording=false but activeRecordingRef has ${recClips.length} clip(s): ${recClips.join(', ')}`
+            );
         }
-        return { ...cachedModel, tracks: recordingOverlayCache.tracks!, dataDirty: true };
+        return applyRecordingOverlay(cachedModel, recClips);
     }
 
-    // Invalidate recording cache when not recording.
-    if (recordingOverlayCache.tracks !== null) {
-        recordingOverlayCache.tracks = null;
-        recordingOverlayCache.recClipIds = null;
-        recordingOverlayCache.recTrackIdx = -1;
-        recordingOverlayCache.recClipIdx = -1;
-    }
+    recordingInvariantReported = false;
 
     const preview = clipDragPreviewRef.current;
     if (!preview || preview.positions.size === 0) {

@@ -86,6 +86,24 @@ export type Clip = {
     isLinkedInstance?: boolean;
     /** Which properties are locally overridden on this instance. */
     overrides?: Record<string, boolean>;
+    /** Real-time pitch correction state for this clip. */
+    kneadState?: ClipKneadState;
+};
+
+export type ClipKneadState = {
+    blobs: ClipKneadBlob[];
+    retuneSpeedMs: number;
+    humanizePercent: number;
+    formantPreserve: boolean;
+};
+
+export type ClipKneadBlob = {
+    id: string;
+    startTime: number;
+    endTime: number;
+    pitchCenterCents: number;
+    pitchCurveCents: number[];
+    voicedConfidence: number;
 };
 
 export type Device = {

@@ -4,9 +4,10 @@
  * Part of the Level 5 (Lab) experience.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { useFermenterBuffer } from '../hooks/useFermenterTelemetry';
 
 type SpectrumAnalyzerProps = {
-    buffer: Float32Array | null;
+    deviceId: string;
     width?: number;
     height?: number;
 };
@@ -29,8 +30,10 @@ function computeMagnitudeSpectrum(samples: Float32Array, numBins: number): Float
     return mags;
 }
 
-export const SpectrumAnalyzer = ({ buffer, width = 240, height = 80 }: SpectrumAnalyzerProps): ReactElement => {
+export const SpectrumAnalyzer = ({ deviceId, width = 240, height = 80 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    const buffer = useFermenterBuffer(deviceId);
 
     useEffect(() => {
         const canvas = canvasRef.current;

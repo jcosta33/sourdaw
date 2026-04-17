@@ -1,6 +1,6 @@
 //! Pitch-Synchronous Overlap-Add (PSOLA) Shifter
 
-use crate::knead::utils::hann_window;
+use crate::knead::utils::hann_window_inplace;
 
 pub struct PsolaConfig {
     pub sample_rate: f32,
@@ -17,17 +17,24 @@ impl Default for PsolaConfig {
 }
 
 /// Offline PSOLA processing over a pre-computed array of pitch marks and target f0 curve.
-pub fn psola_process_offline(
+/// Writes the result into the provided `out` slice.
+pub fn psola_process_offline_inplace(
     input: &[f32],
     pitch_marks: &[usize],   // array of epoch indices
     target_f0_curve: &[f32], // parallel to input length
     cfg: &PsolaConfig,
-) -> Vec<f32> {
-    let mut out = vec![0.0_f32; input.len()];
+    window_scratchpad: &mut [f32], // Passed in to avoid stack/heap allocation
+    out: &mut [f32],
+) {
+    // Zero out the output buffer first
+    for sample in out.iter_mut() {
+        *sample = 0.0;
+    }
 
     if pitch_marks.len() < 3 {
-        out.copy_from_slice(input);
-        return out;
+        let len = input.len().min(out.len());
+        out[..len].copy_from_slice(&input[..len]);
+        return;
     }
 
     // output time pointer for the next grain
@@ -49,7 +56,12 @@ pub fn psola_process_offline(
         }
 
         let grain_len = end - start;
-        let window = hann_window(grain_len);
+        if grain_len > window_scratchpad.len() {
+            continue; // Safety bail
+        }
+        
+        let window = &mut window_scratchpad[..grain_len];
+        hann_window_inplace(window);
 
         // Fetch target pitch for this pitch mark
         let f0_t = target_f0_curve[pm];
@@ -63,7 +75,6 @@ pub fn psola_process_offline(
         let dst_center = current_out_t.round() as isize;
 
         let out_start = dst_center - half_grain;
-        let _out_end = dst_center + half_grain;
 
         for (i, &win) in window.iter().enumerate() {
             let src_idx = start + i;
@@ -77,6 +88,4 @@ pub fn psola_process_offline(
         // Advance output pointers by the new period
         current_out_t += target_period_samples;
     }
-
-    out
 }

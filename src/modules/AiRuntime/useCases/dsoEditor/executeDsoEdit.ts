@@ -343,7 +343,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
             { role: 'user' as const, content: user },
         ];
 
-        // First attempt: with schema constraint
+        // First attempt: with schema constraint.
         try {
             let result = '';
             const stream = (await engine.chat.completions.create({
@@ -367,12 +367,41 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
 
             return result;
         } catch (constraintError) {
-            const activeModel = getActiveModelId();
-            throw createAiRuntimeError(
-                `This edit is too complex for the current model. ` +
-                    `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +
-                    `(Grammar constraint failed on ${activeModel})`
-            );
+            // Smaller WebLLM models may reject the grammar-constrained token stream.
+            // The system prompt already instructs the model to emit JSON, so retry
+            // once without the schema constraint before giving up. If the unconstrained
+            // call also fails, surface a clear error including the original failure.
+            try {
+                let result = '';
+                const stream = (await engine.chat.completions.create({
+                    messages,
+                    temperature: 0.1,
+                    max_tokens: 1024,
+                    stream: true,
+                })) as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
+
+                for await (const chunk of stream) {
+                    const delta = chunk.choices[0]?.delta?.content;
+                    if (delta) {
+                        result += delta;
+                        onProgress();
+                    }
+                }
+
+                return result;
+            } catch (fallbackError) {
+                const activeModel = getActiveModelId();
+                const constraintMsg =
+                    constraintError instanceof Error ? constraintError.message : String(constraintError);
+                const fallbackMsg =
+                    fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+                throw createAiRuntimeError(
+                    `This edit is too complex for the current model. ` +
+                        `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +
+                        `(Grammar-constrained attempt failed on ${activeModel}: ${constraintMsg}. ` +
+                        `Unconstrained retry also failed: ${fallbackMsg}.)`
+                );
+            }
         }
     }
 

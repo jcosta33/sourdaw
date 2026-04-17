@@ -14,6 +14,7 @@
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
 import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -65,6 +66,11 @@ export function isGrandBouleDevice(deviceType: string): boolean {
 }
 
 export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GrandBouleNodeResult> {
+    // Fail fast before doing any AudioContext / worklet / WASM work when
+    // SharedArrayBuffer is unavailable. The typed error is caught in
+    // `buildDeviceChain` and mapped to a user-visible notification.
+    requireSharedArrayBuffer('Grand Boule');
+
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
@@ -80,14 +86,7 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
     });
 
     // Create SAB ring buffer shared between Worker and AudioWorklet.
-    // Requires cross-origin isolation (COOP + COEP headers).
-    if (typeof SharedArrayBuffer === 'undefined') {
-        throw new Error(
-            'SharedArrayBuffer is not available. The server must send ' +
-                'Cross-Origin-Opener-Policy: same-origin and ' +
-                'Cross-Origin-Embedder-Policy: require-corp headers.'
-        );
-    }
+    // Requires cross-origin isolation (COOP + COEP headers) — guarded above.
     const sab = new SharedArrayBuffer(SAB_BYTES);
 
     // Create the engine Worker.
@@ -119,13 +118,13 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
 
     return {
         workletNode: node,
-        noteOn(midiNote: number, velocity: number, _sampleFrame?: number) {
+        noteOn(midiNote: number, velocity: number, sampleFrame?: number) {
             if (!bypassed) {
-                post({ type: 'noteOn', midiNote, velocity });
+                post({ type: 'noteOn', midiNote, velocity, sampleFrame });
             }
         },
-        noteOff(midiNote: number, _sampleFrame?: number) {
-            post({ type: 'noteOff', midiNote });
+        noteOff(midiNote: number, sampleFrame?: number) {
+            post({ type: 'noteOff', midiNote, sampleFrame });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {
@@ -165,12 +164,16 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
         disconnect() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch (err) {
+                console.error('[GrandBouleNode] Disconnect failed:', err);
+            }
         },
         destroy() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch (err) {
+                console.error('[GrandBouleNode] Disconnect failed during destroy:', err);
+            }
             node.port.close();
             engineWorker.postMessage({ type: 'stop' });
             engineWorker.terminate();

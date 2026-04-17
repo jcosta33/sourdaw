@@ -26,8 +26,11 @@ import {
 } from '#/modules/Synth/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { getTransportStoreValue } from '#/modules/Transport/useCases';
+import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
+import { createGrandBouleStore } from '#/modules/GrandBoule/stores';
+import { applyVelocityCurve } from '#/modules/GrandBoule/useCases';
 import {
     MIDI_NOTE_ON,
     MIDI_NOTE_OFF,
@@ -209,8 +212,9 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
         const isRecording = transport?.isRecording ?? false;
 
         if (isRecording && isArmed) {
-            const clipId = findActiveRecordingClip(getTargetTrackId()!);
-            if (!clipId) {
+            const trackId = getTargetTrackId();
+            const clipId = trackId ? findActiveRecordingClip(trackId) : null;
+            if (!clipId || !trackId) {
                 return;
             }
 
@@ -218,7 +222,13 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             const durationSeconds = audioEngine.context.currentTime - noteData.startTime;
             const durationBeats = secondsToBeats(durationSeconds, tempo);
 
-            const midiNote = deps.createMidiNote(note, noteData.startBeat, Math.max(durationBeats, 0.0625), 100);
+            const trackLatencySec = getCompensationDelay(trackId);
+            const ctx = audioEngine.context;
+            const totalLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + trackLatencySec;
+            const offsetBeats = secondsToBeats(totalLatencySec, tempo);
+            const compensatedStartBeat = Math.max(0, noteData.startBeat - offsetBeats);
+
+            const midiNote = deps.createMidiNote(note, compensatedStartBeat, Math.max(durationBeats, 0.0625), 100);
 
             if (getMpeEnabled()) {
                 if (noteData.pressure !== undefined) {
@@ -353,7 +363,7 @@ export const handleNoteOn = inject({
                     if (gbDev2) {
                         const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
                         dn?.grandBouleControls?.noteOff(evtNote);
-                        deps.eventBus.emit('midi.noteOff', { midiNote: evtNote });
+                        deps.eventBus.emit('midi.noteOff', { deviceId: gbDev2.id, midiNote: evtNote });
                         continue;
                     }
                     const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
@@ -403,9 +413,12 @@ export const handleNoteOn = inject({
         if (grandBouleDev) {
             const dn = strip.deviceNodes.find((d) => d.deviceId === grandBouleDev.id || d.type === 'grand-boule');
             if (dn?.grandBouleControls?.ready) {
-                dn.grandBouleControls.noteOn(note, velocity / 127);
+                const gbStore = createGrandBouleStore(grandBouleDev.id);
+                const calibration = gbStore.value?.midiCalibration;
+                const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
+                dn.grandBouleControls.noteOn(note, finalVelocity);
                 noteData.grandBouleDeviceId = grandBouleDev.id;
-                deps.eventBus.emit('midi.noteOn', { midiNote: note, velocity: velocity / 127 });
+                deps.eventBus.emit('midi.noteOn', { deviceId: grandBouleDev.id, midiNote: note, velocity: finalVelocity });
             }
             return;
         }
@@ -507,13 +520,13 @@ export const handleCC = inject(midiMessageHandlerDependencies)((deps) =>
             if (dn?.grandBouleControls?.ready) {
                 if (cc === 64) {
                     dn.grandBouleControls.setSustain(value / 127);
-                    deps.eventBus.emit('midi.pedalCc', { cc: 64, value: value / 127 });
+                    deps.eventBus.emit('midi.pedalCc', { deviceId: grandBouleDevice.id, cc: 64, value: value / 127 });
                 } else if (cc === 66) {
                     dn.grandBouleControls.setSostenuto(value >= 64);
-                    deps.eventBus.emit('midi.pedalCc', { cc: 66, value: value >= 64 });
+                    deps.eventBus.emit('midi.pedalCc', { deviceId: grandBouleDevice.id, cc: 66, value: value >= 64 });
                 } else if (cc === 67) {
                     dn.grandBouleControls.setUnaCorda(value >= 64);
-                    deps.eventBus.emit('midi.pedalCc', { cc: 67, value: value >= 64 });
+                    deps.eventBus.emit('midi.pedalCc', { deviceId: grandBouleDevice.id, cc: 67, value: value >= 64 });
                 }
             }
         }

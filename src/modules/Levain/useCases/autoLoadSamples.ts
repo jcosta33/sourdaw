@@ -9,8 +9,14 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 /**
  * Load levain samples for a specific instrument into the worklet node.
  * Automatically clears previous zones before loading.
+ *
+ * `instrumentId` is required — callers must pass the instrument from the
+ * active patch (see `levainStore`). The previous silent default (`'violin-1'`)
+ * caused the engine to eagerly load violin samples on every Levain node
+ * construction regardless of which instrument the user had actually selected;
+ * those samples would then race the patch-driven reload in `registerLevainDevice`.
  */
-export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId: string = 'violin-1'): Promise<void> {
+export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId: string): Promise<void> {
     let manifestBase = `/samples/levain/${instrumentId}`;
 
     // In Tauri desktop, we bypass the embedded frontend cache

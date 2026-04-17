@@ -1,5 +1,5 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -30,7 +30,7 @@ import { FmSection } from '../components/FmSection';
 import { KarplusSection } from '../components/KarplusSection';
 import { GranularSection } from '../components/GranularSection';
 import { AdditiveSection } from '../components/AdditiveSection';
-import { SamplerSection } from '../components/SamplerSection';
+import { CrumbsSection } from '../components/CrumbsSection';
 import { LfoSection } from '../components/LfoSection';
 import { WarpSection } from '../components/WarpSection';
 import { ModulationSection } from '../components/ModulationSection';
@@ -171,10 +171,15 @@ function loadPresetPatch(
         return null;
     }
 
-    const patch: FermenterPatch = { ...DEFAULT_PATCH, name: preset.name };
+    const patch: FermenterPatch = { ...DEFAULT_PATCH, name: preset.name, macros: [...DEFAULT_PATCH.macros] };
     for (const [key, value] of Object.entries(values)) {
         if (key in patch && typeof value === 'number') {
             (patch as Record<string, unknown>)[key] = value;
+        } else if (key.startsWith('macro') && typeof value === 'number') {
+            const idx = parseInt(key.slice(5), 10);
+            if (idx >= 0 && idx < 8) {
+                patch.macros[idx] = value;
+            }
         }
     }
 
@@ -258,7 +263,7 @@ function renderEngineControls(patch: FermenterPatch, onParam: (key: string, valu
 
     if (patch.oscEngine === 6) {
         return (
-            <SamplerSection
+            <CrumbsSection
                 mode={patch.samplerMode}
                 start={patch.samplerStart}
                 end={patch.samplerEnd}
@@ -448,14 +453,19 @@ function renderSectionContent(
 }
 
 export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const state =
-        useStore(fermenterStore, {} as Record<string, FermenterState>)[deviceId] ?? getFermenterState(deviceId);
-    const patch = state.patch;
-    const activeVoices = state.activeVoices;
-    const scopeBuffer = state.scopeBuffer;
-    const peakL = state.peakL;
-    const peakR = state.peakR;
-    const uiLevel = state.uiLevel;
+    const { patch, activeVoices, uiLevel } = useStoreSelector(
+        fermenterStore,
+        (state: Record<string, FermenterState> | null) => {
+            const s = state ? state[deviceId] : null;
+            if (!s) return getFermenterState(deviceId);
+            return {
+                patch: s.patch,
+                activeVoices: s.activeVoices,
+                uiLevel: s.uiLevel,
+            };
+        },
+        (a, b) => a.patch === b.patch && a.activeVoices === b.activeVoices && a.uiLevel === b.uiLevel
+    );
 
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
@@ -607,7 +617,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             <Cpu className="size-3" />
                             <span>{activeVoices} voices</span>
                         </div>
-                        <OutputMeter peakL={peakL} peakR={peakR} height={20} />
+                        <OutputMeter deviceId={deviceId} height={20} />
                     </div>
                 </header>
 
@@ -647,7 +657,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             <SectionNav active={section} onChange={setSection} />
                             <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-3">
                                 <div className="fermenter-window flex h-[136px] items-center justify-center p-2">
-                                    <Oscilloscope buffer={scopeBuffer} width={360} height={96} />
+                                    <Oscilloscope deviceId={deviceId} width={360} height={96} />
                                 </div>
                                 <div className="fermenter-window flex flex-col justify-between p-3">
                                     <div>
@@ -728,7 +738,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                     <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                                         Spectrum
                                     </div>
-                                    <SpectrumAnalyzer buffer={scopeBuffer} width={210} height={62} />
+                                    <SpectrumAnalyzer deviceId={deviceId} width={210} height={62} />
                                 </div>
                             </>
                         ) : null}

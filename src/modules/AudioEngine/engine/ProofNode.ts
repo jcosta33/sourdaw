@@ -10,6 +10,7 @@
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 import { telemetryAllocator, PROOF_IDX } from './telemetryAllocator';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -45,6 +46,12 @@ export function isProofDevice(deviceType: string): boolean {
 }
 
 export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<ProofNodeResult> {
+    // Proof's mastering telemetry (LUFS, true-peak, limiter GR) is SAB-backed.
+    // Without SAB the UI would show flat curves and no GR indicator; the DSP
+    // itself would run but the user experience is "knobs do nothing" (§8.20).
+    // Fail fast with a typed error.
+    requireSharedArrayBuffer('Proof');
+
     await ensureWorkletRegistered(ctx, proofProcessorUrl);
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {

@@ -5,3 +5,4 @@ export { ModelManagerPanel } from './ModelManagerPanel';
 export { CapabilityReportPanel } from './CapabilityReportPanel';
 export { RenderProgressIndicator } from './RenderProgressIndicator';
 export { KokoroVoiceSelector } from './KokoroVoiceSelector';
+export { AiRenderClipPreview } from './AiRenderClipPreview';
