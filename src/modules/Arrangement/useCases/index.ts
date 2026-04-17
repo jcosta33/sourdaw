@@ -16,6 +16,7 @@ export { getTrackStoreState } from './getTrackStoreState';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
 export { freezeTrack } from './freezeBounce/freezeTrack';
+export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { flattenTrack } from './freezeBounce/flattenTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';

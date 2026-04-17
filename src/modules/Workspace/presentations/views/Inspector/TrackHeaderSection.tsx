@@ -7,6 +7,7 @@ import {
     setTrackColor,
     freezeTrack,
     unfreezeTrack,
+    cancelFreezeTrack,
 } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -72,27 +73,45 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
                     {track.kind !== 'folder' ? (
                         <div className="flex items-center gap-2">
-                            {track.freezeState?.status === 'stale' && (
-                                <span className="text-[10px] text-destructive flex items-center font-medium" title="Track content has changed since freezing">
-                                    <AlertCircle className="size-3 mr-1" /> Stale
-                                </span>
+                            {track.freezeState?.status === 'freezing' ? (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-muted-foreground w-8 tabular-nums text-right">
+                                        {Math.round((track.freezeState.renderProgress ?? 0) * 100)}%
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        size="xs"
+                                        className="h-6"
+                                        onClick={() => cancelFreezeTrack(track.id)}
+                                    >
+                                        Cancel
+                                    </Button>
+                                </div>
+                            ) : (
+                                <>
+                                    {track.freezeState?.status === 'stale' && (
+                                        <span className="text-[10px] text-destructive flex items-center font-medium" title="Track content has changed since freezing">
+                                            <AlertCircle className="size-3 mr-1" /> Stale
+                                        </span>
+                                    )}
+                                    <Button
+                                        variant={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        className="h-6"
+                                        onClick={() => {
+                                            if (track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale') {
+                                                unfreezeTrack(track.id);
+                                            } else {
+                                                freezeTrack(track.id);
+                                            }
+                                        }}
+                                        aria-pressed={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale'}
+                                    >
+                                        {track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? <Zap className="size-3 mr-1" /> : <Snowflake className="size-3 mr-1" />}
+                                        {track.freezeState?.status === 'stale' ? 'Update Freeze' : track.freezeState?.status === 'frozen' ? 'Unfreeze' : 'Freeze'}
+                                    </Button>
+                                </>
                             )}
-                            <Button
-                                variant={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className="h-6"
-                                onClick={() => {
-                                    if (track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale') {
-                                        unfreezeTrack(track.id);
-                                    } else {
-                                        freezeTrack(track.id);
-                                    }
-                                }}
-                                aria-pressed={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale'}
-                            >
-                                {track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? <Zap className="size-3 mr-1" /> : <Snowflake className="size-3 mr-1" />}
-                                {track.freezeState?.status === 'stale' ? 'Update Freeze' : track.freezeState?.status === 'frozen' ? 'Unfreeze' : 'Freeze'}
-                            </Button>
                         </div>
                     ) : null}
                 </div>

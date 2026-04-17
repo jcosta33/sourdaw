@@ -92,7 +92,7 @@ describe('freezeTrack', () => {
         expect(frozenTrack.freezeState.renderedAt).toBe(1234567890);
         
         expect(audioBufferCache.set).toHaveBeenCalledWith(frozenTrack.frozenBufferId, expect.any(Object));
-        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4); // 6 end + 4 tail
+        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
     });
 
     it('handles render failure gracefully', async () => {
@@ -141,6 +141,6 @@ describe('freezeTrack', () => {
 
         await freezeTrack('t1');
         
-        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 1 + 4);
+        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 1 + 4, expect.any(Object));
     });
 });
