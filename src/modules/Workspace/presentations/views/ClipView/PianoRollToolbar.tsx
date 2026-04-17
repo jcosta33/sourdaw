@@ -11,6 +11,16 @@ import { cn } from '#/utils/Styles/cn';
 import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
 import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
 
+const ToolbarDivider = (): ReactElement => (
+    <div
+        className="w-px h-4 mx-1"
+        style={{
+            background:
+                'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
+        }}
+    />
+);
+
 type PianoRollChordType =
     | 'major'
     | 'minor'
@@ -119,13 +129,7 @@ export const PianoRollToolbar = ({
             </Button>
         ))}
 
-        <div
-            className="w-px h-4 mx-1"
-            style={{
-                background:
-                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
-            }}
-        />
+        <ToolbarDivider />
 
         <span className="text-[10px] text-muted-foreground">Scale:</span>
         <DawCompactSelect
@@ -181,13 +185,7 @@ export const PianoRollToolbar = ({
             Constrain
         </Button>
 
-        <div
-            className="w-px h-4 mx-1"
-            style={{
-                background:
-                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
-            }}
-        />
+        <ToolbarDivider />
 
         <Button
             variant={stepInput ? 'secondary' : 'ghost'}
@@ -203,13 +201,7 @@ export const PianoRollToolbar = ({
             Step
         </Button>
 
-        <div
-            className="w-px h-4 mx-1"
-            style={{
-                background:
-                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
-            }}
-        />
+        <ToolbarDivider />
 
         <Button
             variant={showGhostNotes ? 'secondary' : 'ghost'}
@@ -296,13 +288,7 @@ export const PianoRollToolbar = ({
             Lasso
         </Button>
 
-        <div
-            className="w-px h-4 mx-1"
-            style={{
-                background:
-                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
-            }}
-        />
+        <ToolbarDivider />
 
         <Button
             variant={showExpressionView ? 'secondary' : 'ghost'}
@@ -334,13 +320,7 @@ export const PianoRollToolbar = ({
 
         {openedClips && openedClips.length > 1 && focusedClipId !== undefined && onFocusedClipIdChange !== undefined ? (
             <>
-                <div
-                    className="w-px h-4 mx-1"
-                    style={{
-                        background:
-                            'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
-                    }}
-                />
+                <ToolbarDivider />
                 <span className="text-[10px] text-muted-foreground">Edit:</span>
                 <DawCompactSelect
                     value={focusedClipId}

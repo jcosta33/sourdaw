@@ -87,6 +87,27 @@ function matches(desc: KeyDescriptor, keys: string[]): boolean {
  * Handles a keydown event by mapping it to the appropriate action.
  * Returns `true` if the caller should call `preventDefault()`.
  */
+function getSelectedGhostClipId(): string | null {
+    const selectedId = workspaceStore.value?.selectedClipId;
+    if (!selectedId) return null;
+    const state = trackStore.value;
+    const isGhost =
+        ((state?.ghostClips) ?? []).some((g) => g.id === selectedId) ||
+        state?.tracks.flatMap((t) => t.clips).some((c) => c.id === selectedId && c.isGhost);
+    return isGhost ? selectedId : null;
+}
+
+function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
+    const duration = endBeat - startBeat;
+    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
+    duplicateTimeRange(startBeat, endBeat);
+    pushUndoEntry(
+        'Duplicate Time Range',
+        () => deleteTimeRange(endBeat, endBeat + duration, trackIdsAtAction),
+        () => duplicateTimeRange(startBeat, endBeat)
+    );
+}
+
 export const handleKeydown = inject({ eventBus, executeAppAction })(
     ({ eventBus, executeAppAction }) => {
         const executeShortcutAction = (action: ShortcutAction): boolean => {
@@ -98,15 +119,7 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                     // R-B4: if marquee selection exists, duplicate the time range forward (Cmd+D)
                     const marq = workspaceStore.value?.marqueeSelection;
                     if (marq && marq.endBeat > marq.startBeat) {
-                        duplicateTimeRange(marq.startBeat, marq.endBeat);
-                        // Push undo entry (duplicateTimeRange does NOT push its own in this appAction path)
-                        const duration = marq.endBeat - marq.startBeat;
-                        const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
-                        pushUndoEntry(
-                            'Duplicate Time Range',
-                            () => deleteTimeRange(marq.endBeat, marq.endBeat + duration, trackIdsAtAction),
-                            () => duplicateTimeRange(marq.startBeat, marq.endBeat)
-                        );
+                        executeDuplicateTimeRange(marq.startBeat, marq.endBeat);
                         return true;
                     }
 
@@ -137,17 +150,10 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                 switch (action.id) {
                     case 'stopPlayback': {
                         // R-E1.2: Escape dismisses selected ghost clip first
-                        const selectedId = workspaceStore.value?.selectedClipId;
-                        if (selectedId) {
-                            const state = trackStore.value;
-                            const isGhost =
-                                ((state?.ghostClips) ?? []).some((g) => g.id === selectedId) ||
-                                state?.tracks.flatMap((t) => t.clips).some((c) => c.id === selectedId && c.isGhost);
-
-                            if (isGhost) {
-                                dismissGhostClip(selectedId);
-                                return true;
-                            }
+                        const ghostId = getSelectedGhostClipId();
+                        if (ghostId) {
+                            dismissGhostClip(ghostId);
+                            return true;
                         }
                         const ws = workspaceStore.value;
                         if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
@@ -184,17 +190,10 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                         return false;
                     case 'toggleWorkspaceMode': {
                         // R-E1.2: Tab accepts selected ghost clip first
-                        const selectedId = workspaceStore.value?.selectedClipId;
-                        if (selectedId) {
-                            const state = trackStore.value;
-                            const isGhost =
-                                ((state?.ghostClips) ?? []).some((g) => g.id === selectedId) ||
-                                state?.tracks.flatMap((t) => t.clips).some((c) => c.id === selectedId && c.isGhost);
-
-                            if (isGhost) {
-                                acceptGhostClip(selectedId);
-                                return true;
-                            }
+                        const ghostId = getSelectedGhostClipId();
+                        if (ghostId) {
+                            acceptGhostClip(ghostId);
+                            return true;
                         }
                         toggleWorkspaceMode();
                         return true;
@@ -270,15 +269,7 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                         // R-B4: duplicate the time selection range forward
                         const sel = workspaceStore.value?.marqueeSelection;
                         if (!sel) return false;
-                        const { startBeat, endBeat } = sel;
-                        const duration = endBeat - startBeat;
-                        const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
-                        duplicateTimeRange(startBeat, endBeat);
-                        pushUndoEntry(
-                            'Duplicate Time Range',
-                            () => deleteTimeRange(endBeat, endBeat + duration, trackIdsAtAction),
-                            () => duplicateTimeRange(startBeat, endBeat)
-                        );
+                        executeDuplicateTimeRange(sel.startBeat, sel.endBeat);
                         return true;
                     }
                     case 'cycleGhostClipNext':

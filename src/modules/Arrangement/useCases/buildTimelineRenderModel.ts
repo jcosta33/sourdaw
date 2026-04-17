@@ -38,6 +38,21 @@ const renderCache: {
     timeSig: null,
 };
 
+// §74.2 — Recording overlay cache: avoid rebuilding all tracks at 60Hz.
+// Stores a shallow-cloned tracks array where only the recording clip's endBeat
+// is mutated in-place on subsequent frames.
+const recordingOverlayCache: {
+    tracks: TrackRenderModel[] | null;
+    recClipIds: readonly string[] | null;
+    recTrackIdx: number;
+    recClipIdx: number;
+} = {
+    tracks: null,
+    recClipIds: null,
+    recTrackIdx: -1,
+    recClipIdx: -1,
+};
+
 export function buildTimelineRenderModel(): TimelineRenderModel {
     const trackState = trackStore.value;
     const viewState = timelineViewStore.value;
@@ -213,16 +228,58 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
 
     const cachedModel = renderCache.model!;
 
-    // Recording and Preview overlays still force dataDirty: true
+    // Recording overlay — mutate only the recording clip's endBeat, not the whole tree.
     const recClips = activeRecordingRef.current;
     if (recClips.length > 0) {
-        // Simple overlay for recording without full rebuild
         const liveEnd = playheadPositionRef.current;
-        const tracks = cachedModel.tracks.map(t => ({
-            ...t,
-            clips: t.clips.map(c => recClips.includes(c.id) ? { ...c, endBeat: Math.max(c.startBeat, liveEnd) } : c)
-        }));
-        return { ...cachedModel, tracks, dataDirty: true };
+        const cacheStale =
+            dataChanged ||
+            recordingOverlayCache.recClipIds !== recClips ||
+            recordingOverlayCache.tracks === null;
+
+        if (cacheStale) {
+            // Build the overlay once: shallow-clone only the affected track + clip.
+            const tracks = cachedModel.tracks.slice();
+            let foundTrackIdx = -1;
+            let foundClipIdx = -1;
+            for (let ti = 0; ti < tracks.length; ti++) {
+                const track = tracks[ti]!;
+                for (let ci = 0; ci < track.clips.length; ci++) {
+                    const clip = track.clips[ci]!;
+                    if (recClips.includes(clip.id)) {
+                        const clonedClips = track.clips.slice();
+                        clonedClips[ci] = { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) };
+                        tracks[ti] = { ...track, clips: clonedClips };
+                        foundTrackIdx = ti;
+                        foundClipIdx = ci;
+                        break;
+                    }
+                }
+                if (foundTrackIdx !== -1) break;
+            }
+            recordingOverlayCache.tracks = tracks;
+            recordingOverlayCache.recClipIds = recClips;
+            recordingOverlayCache.recTrackIdx = foundTrackIdx;
+            recordingOverlayCache.recClipIdx = foundClipIdx;
+        } else {
+            // Fast path: just mutate the endBeat of the already-cloned clip object.
+            const ti = recordingOverlayCache.recTrackIdx;
+            const ci = recordingOverlayCache.recClipIdx;
+            const recTrack = ti >= 0 ? recordingOverlayCache.tracks![ti] : undefined;
+            const recClip = recTrack && ci >= 0 ? recTrack.clips[ci] : undefined;
+            if (recClip) {
+                recClip.endBeat = Math.max(recClip.startBeat, liveEnd);
+            }
+        }
+        return { ...cachedModel, tracks: recordingOverlayCache.tracks!, dataDirty: true };
+    }
+
+    // Invalidate recording cache when not recording.
+    if (recordingOverlayCache.tracks !== null) {
+        recordingOverlayCache.tracks = null;
+        recordingOverlayCache.recClipIds = null;
+        recordingOverlayCache.recTrackIdx = -1;
+        recordingOverlayCache.recClipIdx = -1;
     }
 
     const preview = clipDragPreviewRef.current;
@@ -230,11 +287,19 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         return cachedModel;
     }
 
+    // Build a clipById Map for O(1) lookup during drag preview.
+    const clipById = new Map<string, ClipRenderModel>();
+    for (const track of cachedModel.tracks) {
+        for (const clip of track.clips) {
+            clipById.set(clip.id, clip);
+        }
+    }
+
     const previewTracks = cachedModel.tracks.map((track) => {
         const clips: ClipRenderModel[] = [];
         for (const [clipId, pos] of preview.positions.entries()) {
             if (pos.trackId === track.id) {
-                const base = track.clips.find((c) => c.id === clipId);
+                const base = clipById.get(clipId);
                 if (base) {
                     clips.push({
                         ...base,

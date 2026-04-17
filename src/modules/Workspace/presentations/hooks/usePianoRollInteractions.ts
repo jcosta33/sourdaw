@@ -49,6 +49,26 @@ import {
 
 import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 
+/**
+ * Build ownership maps from primary + secondary clip notes.
+ * Returns noteToClip (noteId → clipId) and allNotesMap (noteId → MidiNote).
+ */
+function buildNoteOwnershipMaps(
+    notes: MidiNote[],
+    clipId: string,
+    openedClipNotes: Record<string, MidiNote[]> | undefined
+): { noteToClip: Map<string, string>; allNotesMap: Map<string, MidiNote> } {
+    const noteToClip = new Map<string, string>();
+    const allNotesMap = new Map<string, MidiNote>();
+    for (const n of notes) { allNotesMap.set(n.id, n); noteToClip.set(n.id, clipId); }
+    if (openedClipNotes) {
+        for (const [oid, ns] of Object.entries(openedClipNotes)) {
+            for (const n of ns) { allNotesMap.set(n.id, n); noteToClip.set(n.id, oid); }
+        }
+    }
+    return { noteToClip, allNotesMap };
+}
+
 type PianoRollChordType =
     | 'major'
     | 'minor'
@@ -236,11 +256,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     const hitTest = (x: number, y: number): { note: MidiNote; edge: 'body' | 'left' | 'right'; ownerClipId: string } | null => {
         const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
+        // O(1) pitch→row lookup instead of indexOf per note
+        const pitchToRow = new Map<number, number>();
+        for (let i = 0; i < visiblePitches.length; i++) {
+            pitchToRow.set(visiblePitches[i]!, i);
+        }
 
         const testNoteList = (noteList: MidiNote[], ownerClipId: string) => {
             for (let i = noteList.length - 1; i >= 0; i--) {
                 const note = noteList[i]!;
-                const row = visiblePitches.indexOf(note.pitch);
+                const row = pitchToRow.get(note.pitch) ?? -1;
                 if (row === -1) continue;
                 const nx = note.startBeat * beatWidth;
                 const ny = row * ROW_HEIGHT;
@@ -682,14 +707,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 // Alt+drag duplicate: originals stay, copies land at final positions (R-A1)
                 const dupIds = [...preview.noteIds];
                 // A9: map each note to its owning clip
-                const noteToClip = new Map<string, string>();
-                const allNotesMap = new Map<string, MidiNote>();
-                for (const n of notes) { allNotesMap.set(n.id, n); noteToClip.set(n.id, clipId); }
-                if (openedClipNotes) {
-                    for (const [oid, ns] of Object.entries(openedClipNotes)) {
-                        for (const n of ns) { allNotesMap.set(n.id, n); noteToClip.set(n.id, oid); }
-                    }
-                }
+                const { noteToClip, allNotesMap } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
                 // Group source notes by their owning clip
                 const byClip = new Map<string, MidiNote[]>();
                 for (const id of dupIds) {
@@ -737,14 +755,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             } else if (mode === 'move' && preview && (preview.beatDelta !== 0 || preview.pitchDelta !== 0)) {
                 const movedIds = [...preview.noteIds];
                 // A9: map each note to its owning clip for multi-clip moves
-                const noteToClip2 = new Map<string, string>();
-                const allNotesMap2 = new Map<string, MidiNote>();
-                for (const n of notes) { allNotesMap2.set(n.id, n); noteToClip2.set(n.id, clipId); }
-                if (openedClipNotes) {
-                    for (const [oid, ns] of Object.entries(openedClipNotes)) {
-                        for (const n of ns) { allNotesMap2.set(n.id, n); noteToClip2.set(n.id, oid); }
-                    }
-                }
+                const { noteToClip: noteToClip2, allNotesMap: allNotesMap2 } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
                 const origPositions = movedIds.map((id) => {
                     const n = allNotesMap2.get(id);
                     return { id, clipId: noteToClip2.get(id) ?? noteClipId, beat: n?.startBeat ?? 0, pitch: n?.pitch ?? 0 };
