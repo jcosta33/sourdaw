@@ -5,14 +5,28 @@ import init, { KneadInstance } from '../../wasm/daw_dsp';
 import { getBufferForClip } from '#/modules/Arrangement/useCases';
 import { ingestDspAnalysis } from '#/modules/Knead';
 import { kneadStore } from '#/modules/Knead';
+import { logger } from '#/infra/logger/appLogger';
+
+// Discriminated return so callers can surface a UI toast when the buffer
+// resolution fails (non-audio clip, unresolved audioBufferId, missing track)
+// instead of treating a silent no-op as "not wired up yet".
+type AnalyzePitchForClipOutput =
+    | { status: 'analyzed' }
+    | { status: 'no-buffer'; reason: 'missing-clip-or-buffer' };
 
 /**
  * Runs the offline WASM pitch analysis on a full audio clip.
  * Uses chunked processing to keep UI responsive.
  */
-export async function analyzePitchForClip(clipId: string): Promise<void> {
+export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchForClipOutput> {
     const result = getBufferForClip(clipId);
-    if (!result) {return;}
+    if (!result) {
+        // Non-audio clip / missing track / unresolved audioBufferId. This is an expected
+        // condition (e.g. MIDI clip opened in KneadEditor); keep it at info-level so it
+        // shows up in dev consoles without being escalated to a warning.
+        logger.info(`[analyzePitchForClip] no buffer resolved for clipId=${clipId}`);
+        return { status: 'no-buffer', reason: 'missing-clip-or-buffer' };
+    }
 
     const { buffer } = result;
     const sampleRate = buffer.sampleRate;
@@ -100,4 +114,6 @@ export async function analyzePitchForClip(clipId: string): Promise<void> {
         }
         knead.free();
     }
+
+    return { status: 'analyzed' };
 }

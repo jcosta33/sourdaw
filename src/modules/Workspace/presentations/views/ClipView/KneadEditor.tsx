@@ -10,6 +10,7 @@ import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { Mic } from 'lucide-react';
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: string }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,9 +42,21 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     // Trigger real DSP pitch-analysis pipeline (WASM pitch detection)
     useEffect(() => {
         if (hasKnead && (!kneadState || kneadState.blobs.length === 0)) {
-            analyzePitchForClip(clipId).catch((err) => {
-                logger.error(err);
-            });
+            analyzePitchForClip(clipId)
+                .then((outcome) => {
+                    // Surface the "buffer unresolved" path so users get feedback
+                    // instead of staring at an empty editor that looks like a stub.
+                    if (outcome.status === 'no-buffer') {
+                        notifyUser(
+                            'Pitch analysis skipped: this clip has no audio buffer. Record or import audio into the track first.',
+                            'info'
+                        );
+                    }
+                })
+                .catch((err) => {
+                    logger.error(err);
+                    notifyUser('Pitch analysis failed. See logs for details.', 'error');
+                });
         }
     }, [hasKnead, kneadState, clipId]);
 

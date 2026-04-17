@@ -27,9 +27,9 @@ import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
 // Shared style unions live in `AiGeneration/models/GenerationStyles` — a leaf
 // module with no runtime imports. Using `import type` keeps this file free of
 // any runtime dependency on `AiGeneration/useCases`, which would otherwise
-// close a module-init circular dependency (audit §11.2). The unions are the
-// single source of truth for both the algorithms in `AiGeneration` and the
-// Record-based lookup maps below.
+// close a module-init circular dependency. The unions are the single source
+// of truth for both the algorithms in `AiGeneration` and the Record-based
+// lookup maps below.
 import type {
     ChordProgressionStyle,
     ChordVoicing,

@@ -6,9 +6,9 @@
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 // Canonical type unions live in `AiGeneration/models/GenerationStyles` so
 // that `AiRuntime/useCases/dsoEditor/compileDso.ts` can consume them via
-// `import type` without triggering a module-init circular dependency
-// (audit §11.2). Re-export here to preserve the public import paths of
-// callers that already import these types from `./algorithm`.
+// `import type` without triggering a module-init circular dependency.
+// Re-export here to preserve the public import paths of callers that already
+// import these types from `./algorithm`.
 import type { MelodyStyle, ScaleType } from '../../models/GenerationStyles';
 export type { MelodyStyle, ScaleType };
 

@@ -7,7 +7,6 @@
  */
 
 import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
-import { autoLoadLevainSamples } from '#/modules/Levain/useCases';
 import { logger } from '#/infra/logger/appLogger';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
@@ -68,16 +67,10 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 
-    // Auto-load levain samples after WASM is ready.
-    readyPromise
-        .then(() => {
-            autoLoadLevainSamples(node.port).catch((err) => {
-                logger.warn('[LevainNode] Sample loading failed:', err);
-            });
-        })
-        .catch(() => {
-            // WASM init failed — no samples to load
-        });
+    // Sample loading is driven by `registerLevainDevice` → `loadSamplesForInstrument`,
+    // which reads the active patch's `instrumentId`. Do NOT eagerly load a default
+    // instrument here — doing so races the patch-driven load and wastes bandwidth
+    // on samples the user did not ask for.
 
     const noteOn = (note: number, velocity: number, sampleFrame?: number): void => {
         if (!bypassed) {

@@ -34,7 +34,7 @@ By treating these symptoms systematically, we can target the common root causes�
 | 16. Timeline zoom/minimap broken | Cannot zoom, `cmd+` broken, minimap non-resizable | Keyboard shortcut, Layout | Broken command routing, State disconnect |
 | 17. Levain plugin boot time | Ages to boot, `Failed to load sample... (404)` | Asset-loading, Plugin lifecycle | Asset pipeline / serial fetches |
 | 18. Multi-track selection missing | Cannot select multiple tracks | State-management, UI | Missing interaction model |
-| 19. Curst/Gluten/Proof no audio | No noticeable difference in sound, SharedArrayBuffer errors | Audio engine, Plugin lifecycle | Incomplete plugin fallback / SAB error cascade |
+| 19. Crust/Gluten/Proof no audio | No noticeable difference in sound, SharedArrayBuffer errors (original report wrote "Curst"; the plugin in the code is **Crust**) | Audio engine, Plugin lifecycle | Incomplete plugin fallback / SAB error cascade / missing DSP impl |
 | 20. Pro parametric EQ broken | Vis not interactive, knobs do nothing | Audio engine, UI | Parameter changes not reaching DSP graph |
 
 ---
@@ -190,12 +190,12 @@ By treating these symptoms systematically, we can target the common root causes�
 - **Code to Inspect:** Workspace state (tracks slice), Track header click handlers (Shift/Cmd click).
 - **Actionable Path:** Refactor single-selection state to a Set of IDs, update all downstream consumers (Inspector, Piano Roll, Deletion commands).
 
-### 19) Curst, Gluten, and Proof produce no audible effect
+### 19) Crust, Gluten, and Proof produce no audible effect
 - **Symptom:** No noticeable difference in sound. Associated with SharedArrayBuffer errors for Gluten/Proof.
 - **Subsystem:** WebAssembly / worker / SharedArrayBuffer-related, audio engine / DSP-related, plugin lifecycle-related
 - **Regression Surface:** Plugin DSP initialization, Audio graph routing.
 - **Hypotheses:** The DSP nodes fail to initialize (due to SAB missing, see #4) and silently bypass the audio graph to prevent crashes, but UI indicates they are active. Alternatively, wet/dry mix defaults to 0%.
-- **Code to Inspect:** Audio engine node connections, `Gluten`/`Proof`/`Curst` WASM wrappers, Error boundaries for AudioWorklets.
+- **Code to Inspect:** Audio engine node connections, `Gluten`/`Proof` WASM wrappers, Crust device-strategy registration (see §8.19 — it has no engine-side implementation), Error boundaries for AudioWorklets.
 - **Instrumentation:** Inspect the active AudioContext graph to see if the nodes are inserted and processing.
 
 ### 20) Pro parametric EQ appears completely non-functional
@@ -272,33 +272,12 @@ By treating these symptoms systematically, we can target the common root causes�
 
 > This section captures the result of an end-to-end code investigation of every item in §2 against the current `main`. For each issue it records **Status** (`CONFIRMED` / `PARTIALLY CONFIRMED` / `REFUTED` / `STALE`), the precise file/line references, the minimal reproduction chain, the true root cause, and a fix direction. Any hypothesis from §3 that the code does not support is explicitly refuted.
 
-### 8.1 — Duplicate handler warnings (§3.1) — **STALE**
+### 8.2 — WebLLM `UnsupportedModelIdError` on Qwen3 (§3.2) — **OPEN — surveillance only**
 
-- **Claim in §3.1:** Four `executeAppAction` duplicates at boot (`audioToMidi`, `stripSilence`, `detectKey`, `detectTempo`).
-- **Evidence:** The duplicate-warn path is `mergeHandlers()` in `src/modules/Command/useCases/executeAppAction.ts:46-50`. The historical duplicate source was `src/modules/AiGeneration/useCases/getAiMidiHandlers.ts` — its current header comment (L9-14) explicitly states these four entries were removed and re-homed. Confirmed by `grep`: the four keys now exist exclusively in `src/modules/Arrangement/handlers/clip/clipHandlers.ts:63, 67-69`.
-- **Root cause (historical):** Two modules built handler maps for the same `AppAction.type` because the "clip analysis" actions straddled the `Arrangement` / `AiGeneration` boundary (violation of *one-owner-per-action*).
-- **Recommendation:** No code change required for the original symptom. However, `mergeHandlers` only *warns* and silently overwrites — it should `throw` in dev so this class of drift fails loudly next time. File-line: `executeAppAction.ts:46-50`.
-- **Instrumentation upgrade:** Replace `logger.warn(...)` with `throw new Error(...)` guarded by `import.meta.env.DEV`.
-
-### 8.2 — WebLLM `UnsupportedModelIdError` on Qwen3 (§3.2) — **PARTIALLY CONFIRMED**
-
-- **Evidence:**
-  - `src/modules/AiRuntime/repositories/webLlm/toolCalling.ts:10-12` explicitly documents that Qwen3-4B does **not** implement `ChatCompletionRequest.tools`, and the intended path is a plaintext system-prompt tool schema + `parseToolCallXml`.
-  - The orchestrator `src/modules/AiRuntime/useCases/llmOrchestration/inference.ts:86-94` selects a tool subset via `selectToolsForPrompt` and calls `generateWebLlmToolCalls(...)`. That function lives in `toolCalling.ts` and uses the plaintext workaround — *not* the unsupported `tools` array. So the nominal path is correct.
-- **Why the warning still appears:** The warning message `[WebLLM] Tool call API failed: UnsupportedModelIdError...` is not produced by `toolCalling.ts` (which never calls `engine.chat.completions.create({ tools })`). It is produced elsewhere — most likely a stale call site that still threads `tools: DAW_TOOL_SCHEMAS` into the MLC completion. Search for any site that spreads `tools` into a `ChatCompletionRequest` and remove it. This is the remaining gap to close.
-- **Fix direction:**
-  1. Grep the codebase for `ChatCompletionRequest` and any object literal containing `tools:` passed to an MLC-compatible engine.
-  2. Gate the tool-array path behind a `capabilities.supportsToolsApi` flag keyed on model ID.
-  3. Log the **model ID and payload keys** (not the payload itself — token cost) on every completion invocation so future regressions surface immediately.
-
-### 8.3 — Sampler (Crumbs) position poll failure (§3.3) — **PARTIALLY ADDRESSED — poll still runs on web**
-
-- **Evidence:** `src/modules/Crumbs/repositories/crumbsBridge.ts` exposes `getCrumbsPosition`, `loadSample`, `getWaveformPeaks`, `detectOnsets`, `detectSamplePitch` over `tauriInvoke`. The data-returning calls now throw a typed "only available in the Sourdaw desktop app" error when invoked outside Tauri, but **the polling loop itself still starts**: `src/modules/Crumbs/useCases/positionTracking.ts:57` catches the error and logs a warn every poll tick (~30 Hz, the interpolation loop rate).
-- **Root cause:** The bridge has a guard; the consumer does not. `startPositionTracking` / `loadSample` / etc. never check `isTauri()` before beginning the loop.
-- **Fix direction:**
-  1. `startPositionTracking` must short-circuit when `!isTauri()` instead of entering the poll loop and relying on per-tick errors.
-  2. Same shape for any other Crumbs caller that mounts on web (sample load, waveform-peaks hydration).
-  3. Strategic follow-up (§8.21 / N15 / capabilities module): move the guard into `tauriInvoke` itself and have it return `undefined` in web builds, so the typed error strategy is consistent app-wide.
+- **Call-site audit:** Every `tools:` literal in `src/` was inspected. `src/modules/AiRuntime/repositories/webLlm/toolCalling.ts` routes around the unsupported API via `parseToolCallXml`. `src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts` sends `tools:` only to cloud backends. No MLC-bound call site attaches `tools:` today, so the warning originates inside a third-party dependency or a stale build.
+- **Capability gate:** `src/utils/capabilities.ts` exposes `supportsToolsApi(modelId)` with an explicit allow-list (empty for MLC models). Any future WebLLM call site considering the native `tools` path must gate behind that helper.
+- **Surveillance:** `generateWebLlmCompletion` logs `[WebLLM] completion model=<id> keys=<sorted payload keys>` on every invocation (payload contents intentionally **not** logged — token cost). If the error recurs, the preceding log line names the model and shows whether `tools` is in the payload keys.
+- **Close criteria:** if logs over a representative usage window never contain `tools` in `keys=`, the original audit entry is a stale build artifact and can be closed. If they do, the call site is inside WebLLM itself and the fix becomes a dependency pin or patch.
 
 ### 8.4 — SharedArrayBuffer / CORS errors (§3.4) — **CONFIRMED (plus mis-named culprit)**
 
@@ -316,81 +295,50 @@ By treating these symptoms systematically, we can target the common root causes�
   3. Verify and (if missing) mirror COOP/COEP in `src-tauri/tauri.conf.json` under `app.security.headers`.
   4. For WebLLM: ensure model shards come from the same origin or use CORP-enabled hosting.
 
-### 8.5 — KneadEditor pitch analysis stub (§3.5) — **REFUTED (message stale)**
-
-- **Evidence:**
-  - The specific warning string `Real DSP pitch analysis is not wired up yet for track` does **not** appear anywhere in the current codebase (checked via `rg -F`). It is from an older build.
-  - `src/modules/Workspace/presentations/views/ClipView/KneadEditor.tsx:42-47` imperatively calls `analyzePitchForClip` on mount for tracks with Knead enabled when pitch data is missing.
-  - `src/modules/AudioEngine/useCases/audioAnalysis/analyzePitchForClip.ts` (currently modified in `git status`) initializes `daw_dsp` WASM via `init()` and runs a `KneadInstance` offline pipeline. The WASM binding is real.
-- **What can still fail silently:** `getBufferForClip` (`src/modules/Arrangement/useCases/audioAnalysis/helpers.ts:4-17`) returns `null` when the clip is not an audio clip, when the track is absent, or when `audioBufferId` is unresolved. `analyzePitchForClip` silently exits in that case with no user feedback — which feels like "not wired up" even though the pipeline exists.
-- **Fix direction:** Add a `logger.info` at `analyzePitchForClip` when the buffer resolution fails (trace-level, not warn), and surface a UI toast when the editor opens on a clip whose buffer is missing. Otherwise no code change required — treat the original audit claim as a stale regression report.
-
 ### 8.6 — "Improve the templates" (§3.6) — **UNCHANGED**
 
 - Pure product note. No code evidence to gather. Requires a product decision: project-level vs. track-preset vs. plugin-patch templates. Surface at next triage; do not block engineering on it.
 
-### 8.7 — MIDI clip cut by playhead after recording (§3.7) — **RECORDING-LIFECYCLE MIRROR DRIFT STILL OPEN**
+### 8.7 — MIDI clip cut by playhead after recording (§3.7) — **RESOLVED**
 
-- **Context:** The render model consults `activeRecordingRef` every frame (`src/modules/Arrangement/useCases/buildTimelineRenderModel.ts:224-227` → `applyRecordingOverlay` → `buildTimelineRenderModel.ts:83-84`) and overwrites each active-recording clip's `endBeat` with `playheadPositionRef.current`. Anything that leaves `activeRecordingRef.current` non-empty after the transport has stopped recording will re-appear as "clip cut by playhead".
-- **Open issue — two mirrored sources of truth:** `src/modules/Transport/useCases/transportControls/toggleRecording.ts:16` keeps a module-level `activeRecordingClipIds` array, while Arrangement keeps `activeRecordingRef.current`. The two can drift: e.g. `startRecording` returning zero clips (no armed tracks) while Transport still sets `isRecording = true`; or any future path that calls Arrangement's `stopRecording` without going through Transport (or vice-versa).
-- **Fix direction:**
-  1. Delete `activeRecordingClipIds` from Transport. Derive it from `activeRecordingRef` on the Arrangement side whenever Transport needs to know which clips are being recorded.
-  2. Unify finalisation in a single Arrangement use case (e.g. `finalizeRecording`) that *every* stop path — record button, transport stop, spacebar, escape, shortcut, app blur — must call. Transport should not unilaterally flip `isRecording`.
-  3. Add a dev-only invariant check: if `transport.isRecording === false` and `activeRecordingRef.current.length > 0`, throw in dev / emit a warn in prod.
+- **Single source of truth.** `activeRecordingRef.current` in `src/modules/Arrangement/stores/activeRecordingRef.ts` is now the only store that tracks "which clips are actively being recorded". The previous mirrors — `activeRecordingClipIds` in `src/modules/Transport/useCases/transportControls/toggleRecording.ts` and `punchRecordingClipIds` in `src/modules/Transport/useCases/playheadScheduler.ts` — have been deleted. Only `startRecording` writes to the ref; only `stopRecording` clears it.
+- **Parameterless stop contract.** `src/modules/Arrangement/useCases/recording/stopRecording.ts` takes no arguments: it reads `activeRecordingRef.current`, clears it immediately, and finalises every clip whose ID is in the snapshot. Every stop path in Transport (record button, transport stop, spacebar, escape, punch-out) calls `stopRecording()` with no clip-ID argument, so drift between "what Transport thinks is recording" and "what Arrangement is finalising" is structurally impossible.
+- **Drift invariant.** `buildTimelineRenderModel` runs a one-shot guard per rAF episode: if `transportStore.isRecording === false` but `activeRecordingRef.current.length > 0`, it emits a single `logger.warn` line (`[recording] drift detected — transportStore.isRecording=false but activeRecordingRef has N clip(s)`). The latch resets whenever the ref drains, so a genuine future drift is still reported.
 
-### 8.8 — Spacebar does not play (§3.8) — **CONFIRMED — two-listener race**
+### 8.8 — Spacebar does not play (§3.8) — **RESOLVED (permanent unification landed)**
 
-- **Evidence:**
-  - Three keydown listeners are mounted at `AppShell` simultaneously:
-    1. `useGlobalKeyboardShortcuts` (`src/modules/Workspace/presentations/hooks/useGlobalKeyboardShortcuts.ts:29`) — delegates to `Command/handleKeydown` which looks up `Command/stores/shortcutStore.ts` (definitions + customMappings model) and for `Space` dispatches `transport.togglePlayback` via `executeAppAction`.
-    2. `useAppKeyboardShortcuts` (`src/modules/Workspace/presentations/hooks/useAppKeyboardShortcuts.ts:144`) — panel toggles and save/export; doesn't bind Space directly.
-    3. `startShortcutEngine` (`src/modules/Workspace/useCases/shortcutEngine.ts:148`) — iterates `Workspace/models/Shortcuts.ts` bindings (separate store, `ShortcutState { bindings }` model) where `PLAY_PAUSE: { key: ' ' }` calls `togglePlayback()` directly.
-  - Both #1 and #3 match on spacebar at `window`-level keydown. Neither uses `stopImmediatePropagation`. `togglePlayback()` is invoked twice per press.
-- **Net behaviour:** first call sets `isPlaying = true` and starts transport; second call sees `isPlaying = true` and immediately pauses. Net: nothing appears to play.
-- **Secondary finding (MAJOR — not in original audit):** **Two different `shortcutStore` modules exist with identical export names but incompatible schemas.**
-  - `src/modules/Command/stores/shortcutStore.ts` — `{ definitions: ShortcutDefinition[], customMappings }` and string-key bindings like `"Space"`.
-  - `src/modules/Workspace/models/Shortcuts.ts:64` — `{ bindings: ShortcutMap }` and literal-char bindings like `{ key: ' ' }`.
-  
-  Each listener reads its own store. This is an architectural violation: shortcut definitions are not a shared contract. Under the domain-driven rules in `AGENTS.md`, shortcut bindings are Command-module concerns; Workspace should only toggle panels.
-- **Fix direction:**
-  1. Delete `Workspace/useCases/shortcutEngine.ts` and `Workspace/models/Shortcuts.ts`. Migrate `PLAY_PAUSE`/`STOP_RETURN`/`TOGGLE_*` into `Command/stores/shortcutStore.ts` as `ShortcutDefinition` rows.
-  2. Keep only `useGlobalKeyboardShortcuts` as the single handler mount; remove duplicate listeners in `AppShell` (`AppShell.tsx:152, 158, 162`).
-  3. Until #1 is shipped, have `shortcutEngine` short-circuit if `e.defaultPrevented` is already true, and call `e.preventDefault()` / `e.stopImmediatePropagation()` at the *first* handler to deduplicate.
+- **Permanent fix landed.** The parallel Workspace shortcut stack has been deleted — `Workspace/models/Shortcuts.ts`, `Workspace/useCases/shortcutEngine.ts`, `Workspace/useCases/lintShortcutCollisions.ts`, `Workspace/presentations/hooks/useAppKeyboardShortcuts.ts` and their tests no longer exist. Every global keydown now flows through a single chokepoint: `src/modules/Command/presentations/hooks/useGlobalKeyboardShortcuts.ts` → `handleKeydown` → `Command/stores/shortcutStore.ts`. `AppShell.tsx` mounts exactly one keydown listener; the `defaultPrevented` short-circuit is no longer needed and was removed together with the engine.
+- **Store is the single source of truth.** `src/modules/Command/stores/shortcutStore.ts` now defines every previously-scattered binding as `ShortcutDefinition` rows: `transport.togglePlayback` (Space), `transport.stopPlayback` (Escape/Enter), `transport.toggleMetronome` / `toggleRecording` / `toggleLoop`, `arrangement.addMidiTrack` / `addAudioTrack`, `editing.undo` / `redo` / `copyClip` / `cutClip` / `pasteClip` / `deleteSelection`, `project.saveProject` / `openExportDialog` / `openPreferencesDialog`, `workspace.toggleSidebar` / `toggleInspector` / `toggleMixer` / `toggleChatPanel` / `toggleTrackList` / `toggleVirtualKeyboard` / `showAutomationPanel`. `handleKeydown.ts` dispatches them either as `AppAction`s (for undo/macro-traceable actions) or as direct callbacks (UI toggles, dialog openers, `deleteSelectionShortcut` for the multi-branch time-range-vs-clip delete).
+- **Conflict resolution.** `workspace.clearClipSelection` kept `Escape` only; `mod+shift+a` now exclusively triggers `workspace.showAutomationPanel`. All other previous collisions (Space / Cmd+D / Cmd+K / Cmd+C / Cmd+V / Cmd+S / Backspace) resolve to a single definition.
+- **Preferences UI migrated.** `src/modules/Workspace/presentations/views/ShortcutsSection.tsx` now reads and writes `shortcutStore.customMappings` directly, grouping by `ShortcutDefinition.category` and formatting combos from the store's canonical `modifier+key` strings. The old `Workspace/models/Shortcuts.ts` editor path is gone.
+- **Verification.** `pnpm typecheck` clean. `pnpm deps:validate` 0 errors (pre-existing warnings only). Targeted unit tests pass (`ShortcutsSection.spec.tsx`, `AppShell.spec.tsx`, `handleKeyboardShortcut.spec.ts`, `executeAppAction.spec.ts`, `CaptureKeyButton.spec.tsx`). Broader `Command + Workspace + Proof` suite has 6 pre-existing failures unrelated to this refactor (confirmed via `git stash` replay on main): `ClipMidiAiSection.spec.tsx` (undefined `clip` prop, not a shortcut issue) and `devicePanels.spec.ts` (mismatched `eventBus.emit` payload shape, pre-existing).
 
-### 8.9 — Plugin panels persist on track switch (§3.9) — **CONFIRMED**
+### 8.9 — Plugin panels persist on track switch (§3.9) — **RESOLVED**
 
-- **Evidence:**
-  - Panel state is opened via an event bus contract: `src/modules/Workspace/useCases/panels/devicePanels/showDevicePanel.ts:11` emits `'panel.showDevice'` with `{ deviceType, deviceId }`. Subscribers: `src/modules/Workspace/useCases/panels/devicePanels/onShowDevicePanel.ts:14`.
-  - `src/modules/Arrangement/useCases/toggleTrackState/selectTrack.ts:6-14` only updates `selectedTrackId` and wires MIDI input. **No panel dismissal is emitted.**
-  - No `'panel.hideDevice'` / `'panel.hideAll'` event is ever emitted on track selection change anywhere in `src/modules/**`.
-- **Fix direction:**
-  1. Add a `panel.hideAllDevices` event and subscribe in every device panel view (or at the `BottomPanelHost` level).
-  2. `selectTrack` should emit that event whenever `selectedTrackId` actually changes (not when it's re-selected).
-  3. Consider a stronger invariant: device panels are *scoped to* `{ trackId, deviceId }` — if the current `selectedTrackId` no longer matches the panel's owning track, the panel should render nothing. This removes the need for imperative cleanup entirely.
+- **Scoping invariant landed.** `src/modules/Workspace/presentations/hooks/useActiveDevicePanel.ts` now captures the owning `trackId` on every panel open (`{ kind, deviceId, trackId: string | null }`) and subscribes directly to `trackStore`. When the current selection no longer matches the captured `trackId`, the panel closes. This catches any path that mutates `selectedTrackId`, including paths that bypass `selectTrack` — the previous `track.selectionChanged` event path is no longer a single point of failure.
+- **Panels opened without a selected track** (e.g. Levain opened from the sidebar instruments browser, `trackId === null`) stay open across selection changes, matching the existing "global" opening semantics.
+- **Carry-over event.** The `track.selectionChanged` event from `selectTrack` remains as a broadcast signal for any other consumer that cares about selection transitions; the panel hook no longer depends on it for correctness.
 
 ### 8.10 — Delay tempo-sync (§3.10) — **UNCHANGED (feature gap)**
 
 - Confirmed as a genuine feature gap — no code exists for note-division sync in `src/modules/AudioEngine/repositories/devices/reverbDelay/`. Requires product scope + DSP parameter design. Not a regression; no root-cause remediation applies.
 
-### 8.11 — Chord helper notes cannot be expanded (§3.11) — **PARTIALLY REFUTED**
+### 8.11 — Chord helper notes cannot be expanded (§3.11) — **SCOPE CLARIFIED — parked for spec**
 
-- **Evidence against the "missing IDs" hypothesis:**
-  - `src/modules/MIDI/useCases/chordStamps/stampChord.ts:22-42` builds notes via `createMidiNote` (`src/modules/MIDI/models/MidiNote.ts:28-41`). Each note has a unique `id`, proper `startBeat`, `duration`, `velocity`. They are normal MidiNotes, not transient entities.
-  - `src/modules/Workspace/presentations/hooks/usePianoRollInteractions.ts` uses those IDs through the same hit-test path as any other note.
-- **Probable real cause:** hit-testing filters by `getVisiblePitches(scaleType, scaleRoot, isFolded)`. Chord intervals (e.g. `+3` minor third, `+7` fifth) may land on pitches that are **not in the current scale filter** when fold/scale-lock is active. Those notes are drawn faded, but `indexOf(note.pitch) === -1` excludes them from hit tests and rectangle selection (see `usePianoRollInteractions.ts:522-531`). So the user cannot click-select the 3rd or 5th if their roots are scale-locked to the root.
-- **Secondary real cause:** in chord mode the click-handler branch returns after `stampChord` without setting `dragRef.current.mode`, so subsequent `mouseMove`/`mouseUp` read a stale `'none'` state — but more importantly, the *next* click in chord mode creates another chord on top of the existing notes instead of selecting them. Toggle chord mode off to select.
-- **Fix direction:**
-  1. When chord mode is active and the click lands on an existing note, select/move it instead of stamping.
-  2. In the hit-test path, consult `notes` directly instead of gating through `getVisiblePitches`. Faded notes should remain selectable; visibility-for-rendering and hit-testing should not share the same filter.
-  3. Add a "stamp chord tool off → select last stamped" affordance.
+- **Invalidated claims:** a careful re-read of `usePianoRollInteractions.ts` and `usePianoRollRenderer.ts` refutes the hypotheses in the initial audit:
+  - "Chord-mode click on existing note creates another chord" — `hitTest` runs before the chord-mode branch in `handleMouseDown`; if the click lands on a visible note, the `if (hit)` branch routes into select/move/resize regardless of chord-mode state. The chord-mode stamp only fires on empty-area clicks. Not a bug.
+  - "Notes are drawn faded but not hit-testable" — the renderer's `drawActiveNotes` loop does `if (row === -1) continue;` (see `usePianoRollRenderer.ts:537-540`). Off-scale notes under fold are **hidden entirely**, not faded. The user cannot click something they cannot see, so the hit-test filter is not the bug.
+- **Real remaining bug:** when fold/scale-lock is active, off-scale chord helper notes (the 3rd and 5th that fall outside the current scale) disappear from both the renderer and the hit-test. The user can't select, move, or resize them without first toggling fold off.
+- **Why this cannot ship as a quick win:** the fix couples rendering and coordinate space. Options:
+  1. Include every pitch that has a note in the visible-pitch set — rendering, hit-testing, keyboard sidebar, and row ruler all derive off the same set. Keyboard needs a visual indicator that some rows are "off-scale, present because of notes".
+  2. Render off-scale notes at the nearest scale row with an off-scale glyph — preserves compact fold but loses pitch fidelity.
+  3. Disable fold automatically whenever an off-scale note exists. Aggressive but simple.
+  Any of these is a multi-file, UX-reviewed change. Parked under the §14 / G1 coordinate spec as a linked decision — resolve the coordinate convention and the fold contract together.
 
-### 8.12 — Lasso / rectangle selection (§3.12) — **CONFIRMED (two bugs)**
+### 8.12 — Lasso / rectangle selection (§3.12) — **ONLY OFF-SCALE LASSO MISS REMAINS**
 
-- **Bug A — rectangle selection hidden behind `Alt`:** `src/modules/Workspace/presentations/hooks/usePianoRollInteractions.ts:278-292` gates rubber-band mode on `e.altKey`. Default-drag in empty space falls through to `draw` / `paint` / `chord`, never rectangle-select. Users expect the DAW convention "drag in empty area = rectangle select". Currently rectangle selection is **discoverable only via Alt-drag**, which no onboarding mentions.
-- **Bug B — lasso uses center-point test:** `usePianoRollInteractions.ts:625-649` runs a point-in-polygon check on `(cx = note.center, cy = note.rowCenter)`. For long notes, the lasso can enclose a significant part of the note without enclosing its center. For notes outside the current scale filter, `row = visiblePitches.indexOf(note.pitch)` returns `-1` and they are skipped entirely (same visibility-vs-hit-test pitfall as §8.11).
-- **Fix direction:**
-  1. Make `!altKey && !lassoMode && !chordMode && !drawMode` trigger rectangle-select by default in empty area.
-  2. Lasso polygon test must check note **overlap**, not center. Extrude each note to its bounding box `(nx, ny, nw, ROW_HEIGHT)` and use a rect-vs-polygon overlap test, with the same visibility-vs-hit-test decoupling as Bug §8.11.
+- **Center-point bug (landed).** `usePianoRollInteractions.ts` now extrudes each note to its bounding box and tests the four corners + center against the lasso polygon, plus a polygon-vertex-inside-note-rect fallback. Long notes whose center sat outside a tight lasso are now selected; a small lasso drawn inside a big note still selects the note.
+- **Remaining (tied to §8.11):** off-scale notes under fold still have `visiblePitches.indexOf(note.pitch) === -1`, so they are skipped from the lasso loop even if the polygon encloses them. This is the same filter as the fold-rendering path — they aren't drawn either. Resolving this requires the fold-contract decision from §8.11, not a new lasso pass.
 
 ### 8.14 — Faders snap on release (§3.14) — **CONFIRMED — write-path storm**
 
@@ -408,28 +356,19 @@ By treating these symptoms systematically, we can target the common root causes�
   2. **Decouple rendering from store fanout.** Timeline and mixer meters should not subscribe to the full track object — they should subscribe to the specific fields they read (via selectors) and bail out on shallow-equal updates. This is a broader write-path audit item that affects faders, pan knobs, sends, and device params uniformly.
 - This ties into the §4.4 pattern ("Decoupled Transient UI State vs DSP/Engine State") and should be solved systemically, not per-control.
 
-### 8.15 — `TrackDevicesSection` menu huge (§3.15) — **CONFIRMED**
+### 8.15 — `TrackDevicesSection` menu huge (§3.15) — **UX SCOPE (not a regression)**
 
-- **Evidence:** `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx:84-187` renders three `getPlatformPlugins().filter(...)` iterations inline, three times traversing the full plugin catalog, each producing a list of flat buttons. The scannedPlugins external list (L142-186) is an uncategorised flat scroll of every plugin found on the system. No search filter, no categorisation beyond the initial `effect`/`utility`/`analyzer`/`external` split.
-- **Additional issue (not in original audit):** `getPlatformPlugins()` is called **three times per render**, each walking the full catalog. Move to a single `useMemo`-free `const all = getPlatformPlugins()` at the top of the component.
-- **Fix direction:** Exactly as in §3.15 — decompose into accordions by category, add a search, and virtualise the external list if it gets long.
+- **Evidence:** `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx` renders three categorised lists (`effect` / `utility` / `analyzer`) plus a flat `scannedPlugins` external list. No search filter, no accordion structure.
+- **Fix direction:** Decompose into accordions by category, add a search input across all lists (user-installed and external), and virtualise the external list when it grows beyond a few dozen entries. UX scope — not a regression.
 
-### 8.16 — Timeline zoom shortcut broken (§3.16) — **CONFIRMED — wrong key binding**
+### 8.16 — Timeline zoom shortcut broken (§3.16) — **ZOOM RESOLVED; MINIMAP RESIZE RE-SCOPED AS FEATURE GAP**
 
-- **Evidence:**
-  - Zoom bindings in `src/modules/Command/stores/shortcutStore.ts:60-71`: `['=', '+']` for `view.zoomIn` and `['-']` for `view.zoomOut`. **No `mod+=` entry.**
-  - Matcher `src/modules/Command/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts:47-71` requires `hasMod === desc.mod`, i.e. it will only match `=`/`+`/`-` when **no modifier** is pressed. But on macOS `Cmd+=` sets `mod=true`, so the matcher rejects it and the browser's native zoom (`Cmd+=`) intercepts the key.
-  - Handler branch `handleKeydown.ts:113-118` does receive `zoomIn`/`zoomOut` callbacks and forward to `zoomTimeline(±ZOOM_STEP)` — so the command wiring is fine; only the default keys are wrong.
-- **Fix direction:**
-  1. Update `defaultKeys` to `['mod+=', 'mod++']` and `['mod+-']`. Conventional DAWs usually use `Cmd/Ctrl + Plus` for app-zoom and do call `e.preventDefault()` to beat the browser.
-  2. The matcher supports `mod+` prefix already (`handleKeydown.ts:55-57`). Nothing else needs to change.
-  3. **Must add `e.preventDefault()` when matching — otherwise browser zoom wins even after the app executes the callback.** `executeShortcutAction` currently has no way to tell the DOM layer to prevent default. Plumb a return value (or pass the `KeyboardEvent` down into `executeShortcutAction`) so matched zoom shortcuts can preventDefault.
-- **Minimap resizing:** separate item — not yet validated. Needs its own inspection pass.
+- **Zoom key path:** resolved. `view.zoomIn` / `view.zoomOut` defaults are now `['mod+=', 'mod++', '=', '+']` / `['mod+-', '-']`; the `matches()` parser in `handleKeydown.ts` handles trailing `+` keys correctly; `handleKeydown` already returns `true` for zoom callbacks and `useGlobalKeyboardShortcuts` calls `e.preventDefault()` on that signal — browser zoom is beaten.
+- **Minimap resizing:** re-scoped after code inspection. `src/modules/Arrangement/presentations/views/TimelineMinimap.tsx` renders at a fixed `MINIMAP_HEIGHT = 28px` and exposes no drag-handle on any edge. The minimap's viewport rectangle is click-to-jump and drag-to-scroll only; there is no edge-resize affordance and no prefs key to change its height. This is **not a regression**, it is a missing feature. The container can be made resizable by adding a top-edge `DragResizeHandle` that writes to a new `preferencesStore` key (analogous to `mixerHeight`), but that is a product decision, not a bug fix. Record under feature-gap items (§10.3) if pursued.
 
-### 8.17 — Levain (§3.17) — **TWO BUGS OPEN**
+### 8.17 — Levain (§3.17) — **ONE BUG OPEN**
 
 - **Bug C (unreported — memory pressure):** The transferable-buffer path sends each decoded sample to the worklet with `postMessage([transferable])`, and the browser transfers ownership, which is great. But the same buffer is first held in `fetchAndDecode` — if the worklet processor is slow to acknowledge (no ack flow exists), the main thread can queue dozens of MBs of MessagePort backpressure. Consider ack-based flow control for large banks. Not a correctness bug but a hidden cause of "ages to boot" on slow machines.
-- **Bug D (wrong instrument):** `src/modules/Levain/useCases/autoLoadSamples.ts:13` defaults `instrumentId = 'violin-1'`. If the user wanted the piano (based on the audit's mention of "Levain piano"), the caller path is wrong — piano samples live under a different `instrumentId` and the hardcoded default loads violin first. Verify via `getLevainInstruments` that the default matches the UI-selected instrument.
 
 ### 8.18 — Multi-track selection missing (§3.18) — **CONFIRMED + recording bug**
 
@@ -441,25 +380,35 @@ By treating these symptoms systematically, we can target the common root causes�
   2. Refactor `recording.ts` to hold `recordingSessions: Map<trackId, RecordingSession>` so multiple tracks record into independent rings. Each `stopAudioRecording` stops its own session; a `stopAllAudioRecording` convenience exists for the common "stop everything" path.
   3. The §7 spec should treat these as two independently-landed milestones, with the recording fix gated on the new session map (not on the selection refactor).
 
-### 8.19 — Gluten / Proof / Curst silent (§3.19) — **CONFIRMED (downstream of §8.4)**
+### 8.19 — Gluten / Proof / Crust silent (§3.19) — **SAB-CONTRACT LANDED; CRUST IS A MISSING IMPLEMENTATION**
 
-- **Evidence:**
-  - Gluten and Proof construction fails when `telemetryAllocator.ensureInit()` (`:112-119`) fails to allocate a SAB. Without COOP/COEP cross-origin isolation, this throws, and both nodes currently fail loudly at construction (`GlutenNode.ts:55-59`).
-  - **However, there's an asymmetry:** Grand Boule throws hard (`GrandBouleNode.ts:84-90`), but the failure isn't caught anywhere obvious — it propagates as an unhandled rejection and the node silently fails to join the audio graph. The user sees the plugin chip in the Inspector but hears no effect.
-  - Curst is not SAB-dependent. A separate code path is responsible for Curst's silence; likely a wet/dry default or routing bug. Not yet fully validated.
-- **Fix direction:**
-  1. Wrap node construction in a user-surfaced error boundary that maps `SharedArrayBuffer`-related errors to a typed `PluginRequiresIsolationError`, display a clear banner "this plugin requires cross-origin isolation", and route around the missing node (bypass instead of silent failure).
-  2. Curst: verify the default patch has non-zero wet mix and that parameter updates reach the DSP node. Likely the same shape as §8.20 (knobs → engine disconnect).
+> **Typo correction (carried through §2, §3.19 and the issue table):** the original report wrote "Curst". The plugin's name in the codebase is **Crust** (`src/modules/Crust/...`, `CRUST_DESCRIPTOR`). References below use the correct name; the hypothesis that it was a routing/wet-dry bug in the same family as §8.20 is **wrong** and superseded by the evidence below.
 
-### 8.20 — Proof (parametric EQ) non-functional (§3.20) — **PARTIALLY CONFIRMED**
+- **Contract in place across every SAB-backed node.** `src/modules/AudioEngine/engine/pluginHostingErrors.ts` now exports `requireSharedArrayBuffer(pluginName)`; `GrandBouleNode`, `GlutenNode`, `ProofNode`, `GrinderNode`, `BacteriaNode`, and `ScoringNode` each call it as their first statement, so any SAB-missing failure surfaces as a typed `PluginRequiresIsolationError` with the plugin name. `buildDeviceChain` catches the type, routes audio around the missing node, and — when SAB is present but some other isolation prerequisite is not — fires a per-insert toast. When SAB is globally unavailable, the banner is the signal and the per-insert toast is suppressed to avoid spamming one message per device.
+- **Capability banner landed.** `CapabilityBanner` renders at the top of `AppShell` whenever `!crossOriginIsolated || !SharedArrayBuffer`, is session-dismissible via `sessionStorage`, and lists the affected plugins by name. The per-insert toast from `buildDeviceChain` is gated on `hasSharedArrayBuffer()` to avoid redundant signal when the banner is up.
+- **Crust — root cause is a missing DSP implementation, not a bug.** Searched the entire repo (`src/`, `src-tauri/`, `crates/`) for any engine-side Crust node, worklet, Faust module, or Rust crate — **none exists**. The Crust module ships a complete front-end stack (`src/modules/Crust/stores/`, `src/modules/Crust/useCases/crustParamBridge/`, `src/modules/Crust/presentations/`, presets, waveform display, metering strip, param batcher, panel open/close handlers), and `CRUST_DESCRIPTOR` (`src/modules/Arrangement/models/pluginDescriptors/crustDescriptor.ts`) is included in `BUILTIN_PLUGINS` with `id: 'crust'`, so the plugin is addable from the effects tab. On the engine side, two independent dispatch tables have to resolve the type: (a) `TrackNode.addDevice` (`src/modules/AudioEngine/engine/TrackNode.ts`) — consults `DEVICE_FACTORIES` for the `builtin-*` family then falls through to `findWasmDescriptor` (`src/modules/AudioEngine/engine/wasmDeviceRegistry.ts`); (b) `DeviceFactoryRegistry` in `setupDeviceStrategies.ts` — used by the offline render / rebuild path. `'crust'` matches **nothing** in either: it has no `builtin-` prefix (so skips `DEVICE_FACTORIES` and the `'builtin-'` strategy matcher), is absent from `wasmDeviceRegistry`'s matchers list (`isFermenterDevice` / `isToasterDevice` / `isLevainDevice` / `isGlutenDevice` / `isBacteriaDevice` / `isGrinderDevice` / `isProofDevice` / `isProofChamberDevice` / `isScoringDevice` / `isGrandBouleDevice` / `isFaustModule`), and is not a Faust module (no `registerPluginLoader('crust', …)` anywhere). The concrete sequence:
+  1. `addDevice(trackId, 'crust')` (`src/modules/Arrangement/useCases/device/addDevice.ts`) finds the descriptor in `BUILTIN_PLUGINS`, appends `{ type: 'crust' }` to `track.devices`, then calls `addDeviceToStrip(trackId, deviceId, 'crust')`.
+  2. `TrackNode.addDevice` reaches the `findWasmDescriptor('crust')` fallback, gets `undefined`, and hits the **unlogged** `return;` on `TrackNode.ts:282`. The device is never inserted into `strip.deviceNodes`.
+  3. Every subsequent `updateDeviceParam(trackId, deviceId, ...)` from `setCrustParamWithAudio` targets a device that does not exist on the engine side.
+  4. The offline-render path (`buildDeviceChain` → `deviceRegistry.createDevice`) would throw `No device factory registered for type: crust`, but that path is only hit during render/rebuild when the track has an active chain — and even then `buildDeviceChain`'s catch emits a single `logger.warn` that looks indistinguishable from a routine device load failure.
+- **Impact:**
+  - User adds Crust → device appears in the inspector, the panel opens, presets load, knobs move — but audio is bit-identical to no device inserted.
+  - On the primary "add to live track" path there is **no log signal at all** (`TrackNode.ts:282` returns without logging). Only the offline-render path logs, and only as a generic warn.
+- **Fix direction (not a single-session task — needs spec):**
+  1. Decide the DSP backend for Crust: (a) Faust module alongside the other Faust effects, (b) Rust/WASM native node matching the pattern in `GlutenNode` / `ProofNode` / etc., or (c) pure Web Audio using `DynamicsCompressorNode` + `WaveShaperNode` + oversampling — each has different fidelity and cross-origin-isolation tradeoffs. Choose based on the parameter set in `CRUST_DESCRIPTOR` (true-peak, lookahead, oversampling 1–32×, multi-band — (c) is insufficient; (a) or (b) are the real options).
+  2. Until (1) lands, surface the silence as a first-class user signal rather than a buried warn. Options (any is better than the current state):
+     - Register a "not-implemented" strategy for `'crust'` that throws a typed `PluginNotImplementedError`, and teach `buildDeviceChain`'s catch block to emit a toast (same shape as `PluginRequiresIsolationError`). Mirrors the §8.19 SAB fallback pattern.
+     - Tag `CRUST_DESCRIPTOR` with a new `unavailableReason: 'not-implemented'` field and have `EffectsTab` disable the entry with an explanatory tooltip.
+     - Move `CRUST_DESCRIPTOR` out of `BUILTIN_PLUGINS` into a `PENDING_PLUGINS` list so it never reaches the picker. Least-friction, but loses the front-end work visually.
+  3. Audit all other descriptors in `BUILTIN_PLUGINS` against both dispatch tables. Any descriptor whose `id` matches neither `DEVICE_FACTORIES` + `wasmDeviceRegistry` (live path) nor `DeviceFactoryRegistry` (render path) is a silent-add plugin. `Crumbs` (`CRUMBS_DESCRIPTOR`, `id: 'builtin-crumbs'`) is the next likely candidate: its `builtin-` prefix wins the `DeviceFactoryRegistry` matcher, but `DEVICE_FACTORIES['builtin-crumbs']` is undefined and its runtime state is driven entirely by `tauriInvoke('create_crumbs', …)` (`src/modules/Crumbs/repositories/crumbsBridge.ts`). On web, `createCrumbsInstance` short-circuits to a no-op and the UI is wired to a non-existent engine — same end state as Crust. This should be confirmed and either tagged `platform: 'native'` in the descriptor, or given a web-side fallback.
+- **Generalised `createPluginNodeSafely` (§10.2 item 6)** — the current catch/notify block in `buildDeviceChain` is small enough to stay inline; the generalised wrapper is a refinement, not a blocker. Keep as structural-fix queue item — it becomes more attractive once a second error family (e.g. `PluginNotImplementedError`) joins `PluginRequiresIsolationError`.
 
-- **Evidence (UI side works):** `src/modules/Proof/presentations/components/ProofEqCurve.tsx:244-260` handles pointer drag, computes freq/gain, calls `onPatchChange({ eqBands })` AND `onSendParam('eq_band0_freq', ...)` / `onSendParam('eq_band0_gain', ...)`. So the UI does emit parameter events — refutes the strict reading of the hypothesis.
-- **Evidence (engine side likely broken):** The chain from `onSendParam` down to the Proof AudioWorklet parameter setter needs verification — it hinges on `ProofNode` subscribing to param events and forwarding them through its MessagePort. If `ProofNode` fails to instantiate (see §8.19, SAB) the `onSendParam` calls succeed in the React tree but dead-end before DSP.
-  - This is the most plausible explanation: **Proof fails SAB init → the node is never attached → the UI draws fine and sends param events to nothing.**
-- **Fix direction:** Must be paired with §8.19. First surface the init failure, then confirm param wiring when the node actually exists.
-- **UI-side real issues:**
-  - `Q` parameter has no drag affordance in `ProofEqCurve` — only `freq` (X) and `gain` (Y). The audit's "knobs do nothing" likely included the Q knob which lives elsewhere (in `ProofEqSection.tsx`). Verify that section's knobs dispatch `onSendParam` for `q` too.
-  - The Q defaults to whatever is in `band.q` and only the peaking-magnitude curve responds to it; the draggable dot does not move when Q changes, which is fine but may be confusing.
+### 8.20 — Proof (parametric EQ) non-functional (§3.20) — **UI PATH CLEANED UP; ENGINE PATH STILL GATED BY §8.19**
+
+- **UI path cleaned up.** `src/modules/Proof/presentations/components/ProofEqSection.tsx` previously double-dispatched every numeric knob change (`updateBand` internally called `onSendParam`, and each knob's `onChange` also called `onSendParam` with the same `(name, value)` pair). The `enabled` toggle was worse: `updateBand` sent `onSendParam('eq_band{i}_enabled', value as number)` where `value` is a boolean, so the param value reaching the worklet was `NaN`/`true`/`false` depending on runtime coercion, and then the outer handler sent a proper 0/1 immediately after. Split the two concerns into `updatePatch` (state only) and `updateBandAndSend` (state + one numeric write-through); the `enabled` toggle now calls `updatePatch(i, 'enabled', next)` plus an explicit `onSendParam(..., next ? 1 : 0)`. Net effect: one param send per user action, correct 0/1 encoding for booleans. This is not the cause of "no audio" (the worklet is idempotent under duplicate sets), but it removes a real source of wasted MessagePort traffic and ambiguous wire values.
+- **Q-knob wiring confirmed.** The Q knob in `ProofEqSection.tsx:117-130` calls `updateBandAndSend(i, 'q', v)` → `onSendParam('eq_band{i}_q', v)`. The dispatch path from UI is correct end-to-end through `ProofPanel` / `usePluginConnection`.
+- **Engine path (not yet verified):** the `onSendParam` → `ProofNode.postMessage` → AudioWorklet parameter setter chain has not been audited at the worklet side yet. If `ProofNode` instantiation fails (most commonly the SAB-missing case handled by §8.19) the UI still sends events to a dead MessagePort. Now that the SAB-missing path fails with a typed `PluginRequiresIsolationError` and the banner surfaces it, the next concrete step is to confirm, under cross-origin-isolated conditions, that a param change in the UI produces the matching DSP change. That is the remaining §8.20 work.
+- **Known UI quirk (not a bug):** `ProofEqCurve` only drags `freq` (X) and `gain` (Y); Q is only mutated via the per-band knob strip. The draggable dot on the curve does not move when Q changes — only the peaking-magnitude curve does. Document this in the UX copy if users get confused.
 
 ---
 
@@ -469,18 +418,14 @@ These are regressions / anti-patterns the walk-through found that the original i
 
 | # | Symptom | Subsystem | Root Cause | Severity |
 | --- | --- | --- | --- | --- |
-| N1 | Duplicate `shortcutStore` modules with incompatible schemas (`Command/stores/shortcutStore.ts` vs `Workspace/models/Shortcuts.ts`) | Keyboard, State | Parallel implementations of the same domain concept in two modules; listeners mounted from both fire on the same key | **High** — enables §8.8 double-toggle and creates permanent drift risk |
-| N2 | Three keydown listeners mounted at `AppShell` (`useGlobalKeyboardShortcuts`, `useAppKeyboardShortcuts`, `startShortcutEngine`) | Keyboard | No single chokepoint; each hook attaches `window.addEventListener('keydown', …)` independently | **High** — root enabler of §8.8 and future shortcut collisions |
-| N3 | `mergeHandlers` warns on duplicate action keys but silently overwrites | Command dispatch | `executeAppAction.ts:46-50` uses `logger.warn` + assignment instead of throwing in dev | **Medium** — allows silent contract drift |
+| N1 | Duplicate `shortcutStore` modules with incompatible schemas (`Command/stores/shortcutStore.ts` vs `Workspace/models/Shortcuts.ts`) | Keyboard, State | Parallel implementations of the same domain concept in two modules; listeners mounted from both fire on the same key | **RESOLVED** — `Workspace/models/Shortcuts.ts` deleted; `Command/stores/shortcutStore.ts` is now the single source of truth with every binding (transport / editing / project / workspace / view / arrangement) defined in one place |
+| N2 | Three keydown listeners mounted at `AppShell` (`useGlobalKeyboardShortcuts`, `useAppKeyboardShortcuts`, `startShortcutEngine`) | Keyboard | No single chokepoint; each hook attaches `window.addEventListener('keydown', …)` independently | **RESOLVED** — `useAppKeyboardShortcuts` and `startShortcutEngine` deleted; `AppShell.tsx` now mounts a single keydown listener via `useGlobalKeyboardShortcuts` |
 | N4 | Single `recordingSession` prevents true multi-track audio recording | Audio recording | `AudioEngine/repositories/audioRecorder/recording.ts` models one session per app | **High** — breaks core DAW feature under "arm multiple tracks" |
 | N7 | `trackStore.set(...)` write-path fans out to every subscriber per pointer-move for continuous controls | State / rendering | No selector / shallow-equal gating on the central store | **Medium** — perf root cause of §8.14; pattern also affects pan knobs, sends, device params |
-| N9 | Visibility-filtered pitches (`getVisiblePitches`) gate hit-testing as well as rendering | MIDI editor | Same filter reused for two purposes | **Low** — root cause of §8.11 chord-fold issue and §8.12 Bug B lasso miss for off-scale notes |
+| N9 | Visibility-filtered pitches (`getVisiblePitches`) gate rendering, hit-testing, lasso and rectangle selection uniformly; off-scale notes under fold disappear from every interaction path | MIDI editor | Same filter reused for every coordinate transform from pitch → row in the piano roll | **Medium** — after the §8.12 lasso overlap fix, this is the last remaining barrier to selecting chord-helper 3rd/5th notes under scale-lock. Fix requires a fold-contract UX decision (see §8.11 options), not a narrow filter tweak |
 | N13 | Track selection model is scalar (`selectedTrackId: string \| null`) | State | Single-ID shape hard-coded throughout | **Medium** — blocks §8.18 and multi-select editing in general |
 | N14 | `executeAppAction` merges handlers but `handlers/` + `useCases/*Handlers.ts` both build maps | Command architecture | Mixed layering from an in-progress migration per `AGENTS.md` | **Low** — architectural; makes handler ownership unclear and is a recurring footgun (see §8.1) |
-| N15 | WebLLM model-capability check is not centralised | LLM | Whether tools API is supported is encoded per-call instead of on a `ModelCapabilities` map | **Medium** — root cause of lingering §8.2 warning |
-| N16 | `getPlatformPlugins()` called multiple times per render in `TrackDevicesSection` | UI perf | Each call walks full catalog; no memoisation (compiler helps with pure components only) | **Low** — cosmetic perf |
-| N17 | Zoom shortcut implementations have no path to `preventDefault` on the underlying `KeyboardEvent` | Keyboard | `executeShortcutAction` abstracts the event away before reaching callbacks | **Medium** — root cause of browser-zoom interception in §8.16 |
-| N18 | AudioWorklet plugin failures propagate as unhandled promise rejections | Audio engine | No shared `createPluginNodeSafely` wrapper; each `create*Node` throws directly | **High** — core reason plugins fail silently when SAB or WASM is unavailable (§8.19) |
+| N18 | AudioWorklet plugin failures propagate as unhandled promise rejections | Audio engine | Each `create*Node` threw directly; only Grand Boule originally used the `PluginRequiresIsolationError` contract | **Closed for the SAB-missing class of failure** — every SAB-backed node (`Grand Boule`, `Gluten`, `Proof`, `Grinder`, `Bacteria`, `Scoring`) now calls `requireSharedArrayBuffer(pluginName)` at entry, `buildDeviceChain` catches and routes around, and `CapabilityBanner` + toast handle user feedback. Other failure families (WASM fetch, AudioWorklet registration, handshake timeout) still throw bare `Error` — a generalised `createPluginNodeSafely` is tracked under §10.2 item 6 |
 
 ---
 
@@ -488,19 +433,17 @@ These are regressions / anti-patterns the walk-through found that the original i
 
 ### 10.1 — Landmine fixes (ship immediately, very small diffs)
 
-1. §8.8 / N2 — short-circuit duplicate spacebar handling by deleting `shortcutEngine.ts` key binding for `' '` OR adding `stopImmediatePropagation` at the first matcher. One-file change.
-2. §8.16 — update `view.zoomIn`/`view.zoomOut` `defaultKeys` to `['mod+=','mod++']` / `['mod+-']` and thread `KeyboardEvent` into `executeShortcutAction` so it can `preventDefault`. Small change touching 3 files.
-3. §8.3 follow-up — `startPositionTracking` (Crumbs) must short-circuit when `!isTauri()` instead of entering the 30 Hz poll. Handful of lines.
+1. ~~§8.8 / N2 — short-circuit duplicate spacebar handling~~ **RESOLVED** — superseded by the full unification in §10.2 item 1 below.
 
 ### 10.2 — Structural fixes (require spec + migration)
 
-1. **Unify the keyboard-shortcut architecture.** Kill the parallel `Workspace/models/Shortcuts.ts` store. Route all shortcuts through `Command/stores/shortcutStore.ts` + one mounted listener. Ties to §8.8 / N1 / N2.
+1. ~~**Unify the keyboard-shortcut architecture.**~~ **RESOLVED.** The parallel `Workspace/models/Shortcuts.ts` store, `shortcutEngine.ts`, `useAppKeyboardShortcuts.ts`, and `lintShortcutCollisions.ts` have all been deleted. Every shortcut is now defined in `Command/stores/shortcutStore.ts` and dispatched through the single `useGlobalKeyboardShortcuts` listener; `ShortcutsSection.tsx` edits the unified store directly. Tied §8.8 / N1 / N2 — all closed.
 2. **Fix the recording lifecycle contract.** Single source of truth for "which clips are actively recording" (`activeRecordingRef`) and a single finalisation path reachable from every stop trigger (stop button, record toggle, spacebar-pause, escape). Ties to §8.7 / N5.
 3. **Multi-recording-session support.** Refactor `AudioEngine/repositories/audioRecorder/recording.ts` to a `Map<trackId, RecordingSession>`. Ties to §8.18 / N4.
 4. **Multi-track selection model.** Move `selectedTrackId` → `selectedTrackIds[]` with `primarySelectedTrackId` derived. Ties to §8.18 / N13.
 5. **Continuous-control write path.** Replace per-pointer-move `trackStore.set(...)` with a split fast/commit path (ephemeral ref during drag, commit on release) and selector-based subscriptions. Ties to §8.14 / N7.
-6. **Plugin node instantiation hardening.** Introduce `createPluginNodeSafely` that catches SAB/WASM init errors, publishes a structured event to the UI, and routes audio around the missing node. Ties to §8.4 / §8.19 / N18.
-7. **Centralise environment capability detection.** One module exports `capabilities` = `{ isTauri, hasSharedArrayBuffer, isCrossOriginIsolated, supportsToolsApi }`. All runtime guards consult that module. Ties to §8.2 / §8.3 / §8.4 / N15.
+6. **Plugin node instantiation hardening.** The SAB-missing class is handled: `PluginRequiresIsolationError` + `requireSharedArrayBuffer(pluginName)` (`src/modules/AudioEngine/engine/pluginHostingErrors.ts`) are called by every SAB-backed node; `buildDeviceChain` catches the type and routes audio around the missing node. **Remaining structural work:** generalise to a `createPluginNodeSafely` wrapper that also catches WASM fetch failures, AudioWorklet registration errors, and handshake timeouts — publishing each as a structured, typed error with its own toast mapping. Not blocking; reach for this when the second error family appears. Ties to §8.4 / §8.19 / N18.
+7. **Surface capability status in-app.** Landed. `src/utils/capabilities.ts` is the single source of truth; `CapabilityBanner` consumes it at `AppShell` mount and `buildDeviceChain` consults `hasSharedArrayBuffer()` to deduplicate signal. **Remaining:** migrate any remaining inline `typeof SharedArrayBuffer` / `window.crossOriginIsolated` probes (a grep sweep the next agent can do opportunistically) and add the Tauri-side header-parity check under §8.4.
 
 ### 10.3 — Feature-gap items (product decisions needed)
 
@@ -514,11 +457,11 @@ These are regressions / anti-patterns the walk-through found that the original i
 
 Beyond §6:
 
-- **Runtime-capability banner at boot:** dismissible UI banner when `!crossOriginIsolated || !SharedArrayBuffer`, listing which plugins will be disabled. Stops the "silent bypass" class of bug dead.
-- **Action-dispatch trace via event bus:** every `executeAppAction` publishes `{ type, source, timestamp }` to a bounded ring buffer exposed on `window.__sourdaw_trace__` in dev. Instant triage when shortcuts double-fire or a panel doesn't respond.
-- **Recording-lifecycle inspector:** a dev-only overlay showing `activeRecordingRef.current`, `transport.isRecording`, and the recorded clips' `endBeat` values in real time. Makes §8.7 self-diagnosing.
-- **Shortcut collision linter:** a module-boot-time check that cross-references `Command/stores/shortcutStore.ts` and any remaining `Workspace` shortcut definitions — throw if the same key descriptor is bound in two places.
-- **Write-path profiler:** in dev, wrap `trackStore.set` to track time-to-next-frame and number of downstream re-renders. Emit a warning when a single `set` triggers >N renders in <M ms. Will expose the §8.14 problem and similar ones automatically.
+- **Runtime-capability banner at boot:** landed as `CapabilityBanner` (`src/modules/Workspace/presentations/components/CapabilityBanner.tsx`). Dismissible per session via `sessionStorage`.
+- **Action-dispatch trace ring buffer:** landed as `src/modules/Command/useCases/traceAppAction.ts`. Every `executeAppAction` call pushes `{ type, source, timestamp }` into a 128-entry ring on `window.__sourdaw_trace__` under Vite dev. Read with `__sourdaw_trace__.entries()` / `__sourdaw_trace__.clear()` from devtools. Zero production-path cost.
+- ~~**Shortcut collision linter:**~~ **RETIRED** — no longer needed. With the unification in §10.2 item 1, there is exactly one shortcut store and one listener, so cross-store collisions are structurally impossible. The linter file was deleted with the rest of the parallel Workspace shortcut stack.
+- **Recording-lifecycle inspector:** a dev-only overlay showing `activeRecordingRef.current`, `transport.isRecording`, and the recorded clips' `endBeat` values in real time. Makes §8.7 self-diagnosing. **Not yet landed.**
+- **Write-path profiler:** in dev, wrap `trackStore.set` to track time-to-next-frame and number of downstream re-renders. Emit a warning when a single `set` triggers >N renders in <M ms. Will expose the §8.14 problem and similar ones automatically. **Not yet landed.**
 
 ---
 
@@ -529,7 +472,6 @@ Beyond §6:
 | §8.7 Recording mirror drift | Start a recording via `transport.toggleRecording`, then trigger any path that calls Arrangement's `stopRecording` without going through Transport (or vice-versa) — or arm no tracks and try to record | `activeRecordingRef` and Transport's `activeRecordingClipIds` should agree. Actually: they can drift, and `buildTimelineRenderModel`'s recording overlay re-appears after stop |
 | §8.8 Spacebar | Focus anywhere outside a text input → press Space | Playback should start. Actually: flickers on/off |
 | §8.14 Faders | Drag a track gain fader slowly | Value tracks pointer. Actually: stair-steps; catches up on release |
-| §8.16 Zoom | Focus timeline → `Cmd +` | Timeline zoom-in. Actually: browser zooms |
 | §8.18 Multi-track rec | Arm 2 audio tracks → record | Both buffers captured. Actually: only last-armed track gets audio |
 
 ---
@@ -538,14 +480,17 @@ Beyond §6:
 
 | Status | Issues |
 | --- | --- |
-| CONFIRMED (root cause found) | §8.4, §8.7 (mirror drift), §8.8, §8.9, §8.12, §8.14, §8.15, §8.16, §8.18 |
-| PARTIALLY ADDRESSED (still open) | §8.3 (poll loop still starts on web) |
-| PARTIALLY CONFIRMED | §8.2, §8.11, §8.19, §8.20 |
-| REFUTED / STALE | §8.1, §8.5 |
-| FEATURE GAP (no regression) | §8.6, §8.10 |
-| NEW ISSUES SURFACED | §9 (N1–N4, N7, N9, N13–N18) |
-| NEW ISSUES SURFACED (Generate panel) | §14 (G1, G2, G6 — plus the residual items in §14.3 / §14.4) |
-| DEFERRED — needs spec | §14.1–14.2 / G1+G2 — `MidiNote.startBeat` absolute-vs-relative coordinate unification |
+| CONFIRMED (root cause found) | §8.4, §8.14, §8.18 |
+| RESOLVED | §8.7 recording-lifecycle mirror drift (single `activeRecordingRef`, parameterless `stopRecording()`, drift invariant in `buildTimelineRenderModel`); §8.8 spacebar / full keyboard-shortcut unification (`Command/stores/shortcutStore.ts` single source of truth, `useGlobalKeyboardShortcuts` single listener, Workspace shortcut stack deleted); §8.9 panel scoping invariant (`useActiveDevicePanel` captures `trackId` and subscribes to `trackStore`); §8.12 lasso center-point bug; §8.16 timeline zoom key path; §8.19 SAB-missing contract across every SAB-backed node; §8.20 UI-side double-dispatch in `ProofEqSection`; §11 capability banner + action-dispatch trace ring buffer; N1 / N2 duplicate-shortcut-store and multi-listener (closed by §8.8 unification); N18 for the SAB-missing family; §10.2 item 1 |
+| OPEN — surveillance only | §8.2 (instrumented — close once logs confirm no `tools` in payload keys) |
+| SCOPE CLARIFIED — parked for spec | §8.11 (off-scale notes hidden under fold; needs fold-contract UX decision), §8.12 off-scale lasso miss (same decision), §8.16 minimap resize (feature gap, not a regression) |
+| PARTIALLY CONFIRMED | §8.20 engine-side worklet param wiring (verifiable once under cross-origin-isolated conditions) |
+| MISSING IMPLEMENTATION — needs spec | §8.19 Crust (front-end ships, engine-side DSP does not exist anywhere in the repo; `CRUST_DESCRIPTOR` has no matching device-strategy, so adds are silently skipped by `buildDeviceChain`) |
+| UX SCOPE (not a regression) | §8.15 |
+| FEATURE GAP (no regression) | §8.6, §8.10, §8.16 minimap resize affordance |
+| NEW ISSUES SURFACED | §9 (N4, N7, N9 elevated-to-medium, N13, N14) — N1 and N2 closed by the §8.8 unification |
+| NEW ISSUES SURFACED (Generate panel) | §14 (G1, G2) |
+| DEFERRED — needs spec | §14.1–14.2 / G1+G2 — `MidiNote.startBeat` absolute-vs-relative coordinate unification; §8.11 fold-contract linked decision |
 
 **`MidiNote.startBeat` deferred reason:** standardising on clip-relative requires changes to `clipDrawing.ts`, `createWebGpuRenderer.ts`, `renderOffline.ts`, `duplicateClipCore.ts`, and both AI apply functions, plus a data migration for existing projects and updates across hundreds of tests. It is not a quick win — it needs its own spec and a planned migration.
 
@@ -586,13 +531,6 @@ The only reason this hasn't exploded before is that most internally created clip
 
 ### 14.3 Secondary issues
 
-1. **`TemplateCard` preview and insert call `template.generate(...)` twice.** `PatternBrowser.tsx:188` renders the mini piano-roll with one result; `handleInsertTemplate` (line 262) re-runs `generate`. Templates like the pattern library's `chordPatterns` / `melodyPatterns` are currently deterministic for a given `(key, scale, density, complexity)` tuple, so the two results match today — but the contract is not enforced. If anyone adds RNG to a template, previews will lie.
-2. **Templates that hard-pin `p.scale = 'minor'`.** Several templates in `chordPatterns.ts:66`, `melodyPatterns.ts:34, 107, 150, 170` override the incoming `p.scale` with a hard-coded fallback when `p.scale === 'major'`. If the user picked `major` in the Pattern Browser UI, the template ignores it. This is not a "missing clip" bug but produces notes outside the user's expected scale → perception that "the result looks wrong / unusable".
-
-### 14.4 Tertiary issues
-
-- `addMidiNote` performs one `midiStore.set(...)` per note (`addMidiNote.ts:25-31`). A 48-beat 12-bar blues template with 4 notes per chord × 12 bars = 48 writes for one insert; store subscribers re-render once per write. Not a correctness bug but visibly janky on large templates. `batchAddMidiNotes` already exists and is used by `duplicateClipCore`; both `applyChord/Melody/DrumToTrack` and `PatternBrowser.handleInsertTemplate` should migrate to it.
-- `chordFromDegrees` clamps out-of-range degrees with `Math.min(deg + octaveBase, scalePitches.length - 1)` (`scaleTheory.ts:54`). Templates that bump degrees with `complexity > 5` (e.g. `chordPatterns.ts:27 degs[i % 4]![0]! + 7`) silently collapse the "complex" chord back onto the top scale pitch. Does not affect clip visibility; does degrade audible variety.
 - `generateChordProgression` respects `rhythm = 'whole'` as the default, yielding one downbeat note per bar (`algorithm.ts:158-160`). Combined with the absolute-vs-relative rendering bug above, the total count of visible notes in a 4-bar pop progression can be as low as 4 × 3 = 12 and all of them can be hidden. The "one note per bar" default is worth revisiting as a UX choice once G1 lands.
 
 ### 14.5 Evidence — exact file:line references
@@ -609,8 +547,6 @@ The only reason this hasn't exploded before is that most internally created clip
 | `src/modules/Workspace/presentations/hooks/usePianoRollInteractions.ts` | 318, 340, 545, 693 | User-created notes are inserted with clip-relative beats (G1) |
 | `src/modules/AiGeneration/useCases/generateMelody/applyToTrack.ts` | 14–31 | Adds `startBeat` to `note.startBeat` — will double-offset once G1 lands |
 | `src/modules/AiGeneration/useCases/generateChordProgression/applyToTrack.ts` | 18–36 | Same pattern |
-| `src/modules/AiRuntime/models/patterns/melodyPatterns.ts` | 34, 107, 150, 170 | Templates that override `p.scale` (G6) |
-| `src/modules/AiRuntime/models/patterns/chordPatterns.ts` | 66 | Another `p.scale` override (G6) |
 
 ### 14.6 New issues surfaced (append to §9 mental model)
 
@@ -618,7 +554,6 @@ The only reason this hasn't exploded before is that most internally created clip
 | --- | --- | --- | --- |
 | G1 | `MidiNote.startBeat` coordinate is inconsistent — absolute in the timeline/renderOffline/duplicate paths, clip-relative in the Piano Roll and user-creation paths; neither contract is documented or tested | MIDI model | **High** — root cause of generator-clip invisibility and a latent foot-gun for any feature that creates clips at `startBeat > 0` |
 | G2 | `PatternBrowser.handleInsertTemplate` writes template-local beats as if they were absolute (resolves when G1 lands) | Pattern browser | **High** — direct cause of "empty timeline clip" when playhead > 0 |
-| G6 | Templates hard-override `p.scale = 'minor'` when the user selected a different scale | Pattern templates | **Low** — output mismatches user intent |
 
 ### 14.7 Remediation direction (not a spec; inputs for one)
 
@@ -629,6 +564,3 @@ The only reason this hasn't exploded before is that most internally created clip
    - `applyMelodyToTrack` / `applyChordProgressionToTrack` must stop adding `startBeat` to `note.startBeat` and instead let the clip's `startBeat` carry the offset.
 
    Waits on step 1.
-3. **Tighten the template contract.** `PatternTemplate.generate(params)` should honour `params.scale` and never silently replace it; if a template is scale-specific, encode that at the type level (e.g. `scaleOverride: ScaleType`) so the UI can surface "this template forces minor scale" to the user. Covers G6.
-4. **Make `addMidiNote` batched end-to-end.** `batchAddMidiNotes` already exists and is used by `duplicateClipCore`. Migrate both `applyChord/Melody/DrumToTrack` and `PatternBrowser.handleInsertTemplate` to it so one insert emits a single `midiStore.set(...)`. Removes the per-note render storm from both apply paths.
-5. **De-duplicate the `TemplateCard` preview/insert generation.** Generate once, keep the result in state, reuse it on insert. Makes the template contract honest even when templates become stochastic.

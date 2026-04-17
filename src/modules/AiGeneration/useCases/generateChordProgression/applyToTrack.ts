@@ -1,5 +1,5 @@
 import { addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { type GenerateChordProgressionOptions } from './algorithm';
 import { generateChordProgression } from './algorithm';
 
@@ -34,10 +34,18 @@ export function applyChordProgressionToTrack(
 
     const MIN_NOTE_DURATION = 0.25;
     const { notes } = generateChordProgression(options);
-    for (const note of notes) {
-        const duration = Math.max(MIN_NOTE_DURATION, note.duration);
-        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
-    }
+    // §14.4 — single-shot store write. `addMidiNote` in a loop fires one
+    // `midiStore.set(...)` per note, which becomes visibly janky on long
+    // progressions (e.g. a 12-bar blues = 48+ notes).
+    batchAddMidiNotes(
+        clip.id,
+        notes.map((note) => ({
+            pitch: note.pitch,
+            startBeat: startBeat + note.startBeat,
+            duration: Math.max(MIN_NOTE_DURATION, note.duration),
+            velocity: note.velocity,
+        })),
+    );
 
     return { clipId: clip.id, noteCount: notes.length };
 }

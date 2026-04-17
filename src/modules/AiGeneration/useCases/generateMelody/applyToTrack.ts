@@ -1,5 +1,5 @@
 import { addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { type GenerateMelodyOptions } from './algorithm';
 import { generateMelody } from './algorithm';
 
@@ -34,10 +34,16 @@ export function applyMelodyToTrack(
 
     const MIN_NOTE_DURATION = 0.25;
     const { notes } = generateMelody(options);
-    for (const note of notes) {
-        const duration = Math.max(MIN_NOTE_DURATION, note.duration);
-        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
-    }
+    // §14.4 — single-shot store write (see `applyChordProgressionToTrack`).
+    batchAddMidiNotes(
+        clip.id,
+        notes.map((note) => ({
+            pitch: note.pitch,
+            startBeat: startBeat + note.startBeat,
+            duration: Math.max(MIN_NOTE_DURATION, note.duration),
+            velocity: note.velocity,
+        })),
+    );
 
     return { clipId: clip.id, noteCount: notes.length };
 }

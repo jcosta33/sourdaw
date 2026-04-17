@@ -23,6 +23,7 @@ import { getUndoTreeHandlers } from './getUndoTreeHandlers';
 import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project/useCases';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { recordAction } from './macro/recording/recordAction';
+import { traceAppAction } from './traceAppAction';
 
 /**
  * Built lazily so `getArrangementHandlers` is not invoked while the Arrangement
@@ -44,7 +45,11 @@ function mergeHandlers(...sources: Record<string, ActionHandler<any>>[]): Record
     for (const source of sources) {
         for (const key of Object.keys(source)) {
             if (key in registry) {
-                logger.warn(`[executeAppAction] Duplicate handler for action type: ${key}`);
+                const message = `[executeAppAction] Duplicate handler for action type: ${key}`;
+                if (import.meta.env.DEV) {
+                    throw new Error(message);
+                }
+                logger.warn(message);
             }
             registry[key] = source[key]!;
         }
@@ -93,6 +98,8 @@ export type ExecuteOptions = {
 export const executeAppAction = inject({ logger })(
     ({ logger }) =>
         (async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
+            traceAppAction(action.type, options?.source ?? 'manual');
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const handler = getHandlerRegistry()[action.type] as ActionHandler<any> | undefined;
             if (!handler) {

@@ -16,6 +16,7 @@ import {
     SCALE_LABELS,
     ALL_GENRES,
     filterTemplates,
+    resolveTemplateScale,
     type PatternTemplate,
     type PatternCategory,
     type PatternGenre,
@@ -26,7 +27,7 @@ import {
 } from '../../models/midiPatternLibrary';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { selectClipWithFocus } from '#/modules/Workspace/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -184,9 +185,15 @@ const TemplateCard = ({
 }: {
     template: PatternTemplate;
     genParams: GenerationParams;
-    onInsert: (t: PatternTemplate) => void;
+    onInsert: (t: PatternTemplate, notes: PatternNote[]) => void;
 }): ReactElement => {
-    const notes = template.generate(genParams);
+    // §14.3.1 — generate once per (template, genParams) combo so the preview
+    // and the "Insert" button operate on the same notes. Random templates
+    // previously generated twice and inserted a different pattern than the
+    // one shown in the mini piano-roll.
+    // §14.6 / G6 — honour the template's `scaleOverride` so identity-carrying
+    // templates (Blues, Dorian Vamp, etc.) do not run on an incompatible scale.
+    const notes = template.generate({ ...genParams, scale: resolveTemplateScale(template, genParams) });
 
     return (
         <DawPickerCard
@@ -202,7 +209,7 @@ const TemplateCard = ({
                     variant="ghost"
                     size="icon-xs"
                     className="h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--color-accent-lavender)]/20 hover:text-[var(--color-accent-lavender)]"
-                    onClick={() => onInsert(template)}
+                    onClick={() => onInsert(template, notes)}
                     title="Insert at playhead"
                     aria-label={`Insert ${template.name} at playhead`}
                 >
@@ -247,7 +254,7 @@ export const PatternBrowser = (): ReactElement => {
         genres: activeGenre ? [activeGenre] : undefined,
     });
 
-    const handleInsertTemplate = (template: PatternTemplate): void => {
+    const handleInsertTemplate = (template: PatternTemplate, notes: PatternNote[]): void => {
         const tState = trackStore.value;
         const selectedTrackId = tState?.selectedTrackId;
         let targetTrackId: string | undefined = tState?.tracks.find(
@@ -270,7 +277,6 @@ export const PatternBrowser = (): ReactElement => {
 
         const transport = getTransportState();
         const startBeat = transport ? transport.playheadPosition : 0;
-        const notes = template.generate(genParams);
         const endBeat = startBeat + template.lengthBeats;
 
         const clip = addClip({
@@ -286,9 +292,17 @@ export const PatternBrowser = (): ReactElement => {
             return;
         }
 
-        for (const note of notes) {
-            addMidiNote(clip.id, note.pitch, note.startBeat, note.durationBeats, note.velocity);
-        }
+        // §14.4 — single-shot store write so inserting a 48-beat pattern
+        // doesn't flood subscribers with one `midiStore.set` per note.
+        batchAddMidiNotes(
+            clip.id,
+            notes.map((note) => ({
+                pitch: note.pitch,
+                startBeat: note.startBeat,
+                duration: note.durationBeats,
+                velocity: note.velocity,
+            })),
+        );
         // §14.3 / G3 — use `selectClipWithFocus` so selection-aware surfaces
         // (TakesSection, multi-select, shortcut targets) see the new clip as
         // well, not just the single `selectedClipId` scalar.

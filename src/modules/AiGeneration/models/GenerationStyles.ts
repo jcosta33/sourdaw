@@ -8,7 +8,7 @@
  * Keeping them in `AiGeneration/models/` — a leaf module with no runtime
  * imports from either use-case surface — lets `AiRuntime/useCases/dsoEditor`
  * reference them via `import type` without introducing a module-init
- * circular dependency with `AiGeneration/useCases`. See audit §11.2.
+ * circular dependency with `AiGeneration/useCases`.
  */
 
 export type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
