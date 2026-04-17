@@ -24,7 +24,7 @@ const DDSP_BASE = 'https://storage.googleapis.com/magentadata/js/checkpoints/dds
 export const NSF_HIFIGAN_URL =
     'https://huggingface.co/jcosta33/vocoder-models/resolve/main/nsf-hifigan-44k/nsf_hifigan_44.1k_hop512_128bin_2024.02.onnx';
 
-export const NSF_HIFIGAN_SIZE_BYTES = 52_000_000;
+export const NSF_HIFIGAN_SIZE_BYTES = 56_769_296;
 
 /**
  * Kokoro TTS model — q8f16 quantized (int8 weights, float16 activations), 86 MB.
@@ -121,13 +121,13 @@ export const DIFFSINGER_VOICEBANK_CATALOG = [
         language: 'en' as const,
         license: 'CC-BY-NC-SA-4.0' as const,
         attribution: 'SPORE v0.1.1 by knoxstation — CC BY-NC-ND 4.0',
-        totalSizeBytes: 331_000_000,
+        totalSizeBytes: 347_558_874,
         models: {
-            linguistic: diffSingerModel('spore', 'linguistic', 24_000_000),
-            dur: diffSingerModel('spore', 'dur', 5_000_000),
-            pitch: diffSingerModel('spore', 'pitch', 47_000_000),
-            variance: diffSingerModel('spore', 'variance', 22_000_000),
-            acoustic: diffSingerModel('spore', 'acoustic', 233_000_000),
+            linguistic: diffSingerModel('spore', 'linguistic', 25_506_686),
+            dur: diffSingerModel('spore', 'dur', 5_420_307),
+            pitch: diffSingerModel('spore', 'pitch', 49_022_087),
+            variance: diffSingerModel('spore', 'variance', 23_426_418),
+            acoustic: diffSingerModel('spore', 'acoustic', 244_183_376),
         },
     },
 ];
