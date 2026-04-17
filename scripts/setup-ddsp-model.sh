@@ -15,17 +15,17 @@ HF_PATH="ddsp-decoder/ddsp_decoder.onnx"
 echo "=== DDSP Model Export ==="
 echo ""
 
-# 1. Find a compatible Python (TensorFlow requires 3.10-3.12)
+# 1. Find a compatible Python (TensorFlow requires 3.10-3.12; 3.11 is safest on arm64)
 PYTHON=""
-for candidate in python3.12 python3.11 python3.10; do
+for candidate in python3.11 python3.12 python3.10; do
     if command -v "$candidate" &>/dev/null; then
         PYTHON="$candidate"
         break
     fi
 done
 if [ -z "$PYTHON" ]; then
-    echo "Error: TensorFlow requires Python 3.10-3.12."
-    echo "Install with: brew install python@3.12"
+    echo "Error: TensorFlow requires Python 3.10-3.12 (does NOT support 3.13+)."
+    echo "Install with: brew install python@3.11"
     exit 1
 fi
 echo "1/5  Creating Python venv ($PYTHON)…"
@@ -33,12 +33,16 @@ echo "1/5  Creating Python venv ($PYTHON)…"
 source "$VENV_DIR/bin/activate"
 
 # 2. Install dependencies
-echo "2/5  Installing dependencies (midi-ddsp, tf2onnx, onnx)…"
-pip install --quiet midi-ddsp tensorflow tf2onnx onnx
+# Both ddsp and midi-ddsp depend on crepe (pitch detection) which fails to
+# build and we don't need — we only use the synthesis decoder. Install them
+# without deps, then manually install the deps we actually need.
+echo "2/5  Installing dependencies…"
+pip install --quiet tensorflow tf2onnx onnx numpy scipy
+pip install --quiet --no-deps ddsp midi-ddsp
 
 # 3. Download pretrained MIDI-DDSP model
 echo "3/5  Downloading pretrained MIDI-DDSP weights…"
-midi_ddsp_download_model
+python3 -c "from midi_ddsp.utils.midi_synthesis_utils import download_model; download_model()"
 
 # 4. Export to ONNX
 echo "4/5  Exporting decoder to ONNX…"
