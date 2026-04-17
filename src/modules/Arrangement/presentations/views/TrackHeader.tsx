@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
 import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
 import { LatchButton } from '#/components/daw/LatchButton';
-import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum } from 'lucide-react';
+import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum, Layers } from 'lucide-react';
 import { cn } from '#/utils/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
@@ -11,6 +11,7 @@ import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExc
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { armTrack } from '../../useCases/recording/armTrack';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
+import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 
 import { TrackContextMenu } from './TrackContextMenu';
@@ -162,6 +163,27 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     ) : null}
 
                     <div className="flex items-center gap-1 ml-auto">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    type="button"
+                                    className={cn(
+                                        'size-5 rounded flex items-center justify-center transition-colors',
+                                        track.showVariationLanes
+                                            ? 'bg-accent-gold/20 text-accent-gold'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                    )}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleVariationLanes(track.id);
+                                    }}
+                                >
+                                    <Layers className="size-3" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Variation Lanes (Track Alternatives)</TooltipContent>
+                        </Tooltip>
+
                         {track.kind === 'audio' || track.kind === 'midi' ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>

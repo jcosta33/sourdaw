@@ -2,7 +2,7 @@
  * SampleRow — single sample file entry with preview, favorite, drag-to-timeline.
  */
 import { type ReactElement } from 'react';
-import { File, Star } from 'lucide-react';
+import { File, Star, SearchCode } from 'lucide-react';
 import { cn } from '#/utils/Styles/cn';
 import { type SampleRecord } from '../../models/LibraryTypes';
 
@@ -12,6 +12,7 @@ type SampleRowProps = {
     onPlay: () => void;
     onStop: () => void;
     onToggleFavorite: () => void;
+    onFindSimilar: () => void;
     onDragStart: (e: React.DragEvent) => void;
     onClick: () => void;
 };
@@ -50,6 +51,7 @@ export const SampleRow = ({
     onPlay,
     onStop,
     onToggleFavorite,
+    onFindSimilar,
     onDragStart,
     onClick,
 }: SampleRowProps): ReactElement => (
@@ -81,6 +83,19 @@ export const SampleRow = ({
 
         <File className="size-3 text-muted-foreground/40 shrink-0" />
         <span className="flex-1 text-[10px] text-foreground truncate">{sample.displayName}</span>
+        
+        {/* BPM & Key metadata (G1) */}
+        {sample.analysis?.bpm ? (
+            <span className="text-[8px] text-accent-cyan/60 font-mono shrink-0 px-1">
+                {Math.round(sample.analysis.bpm)}
+            </span>
+        ) : null}
+        {sample.analysis?.key ? (
+            <span className="text-[8px] text-accent-gold/60 font-mono shrink-0 w-[24px] text-center">
+                {sample.analysis.key}
+            </span>
+        ) : null}
+
         <span className="text-[8px] text-muted-foreground/30 uppercase shrink-0">{sample.ext}</span>
 
         {sample.format.durationSec ? (
@@ -110,6 +125,19 @@ export const SampleRow = ({
             <Star
                 className={cn('size-3', sample.favorite ? 'text-amber-400 fill-amber-400' : 'text-muted-foreground')}
             />
+        </button>
+
+        {/* Find Similar (G2) */}
+        <button
+            type="button"
+            className="size-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-accent-cyan"
+            onClick={(e) => {
+                e.stopPropagation();
+                onFindSimilar();
+            }}
+            title="Find similar samples"
+        >
+            <SearchCode className="size-3" />
         </button>
     </div>
 );

@@ -51,6 +51,7 @@ export { removeMidiCC } from './midiEvent/removeMidiCC';
 export { removePitchBend } from './midiEvent/removePitchBend';
 export { setNotePressure } from './midiEvent/setNotePressure';
 export { setNoteSlide } from './midiEvent/setNoteSlide';
+export { setNotePitchBend } from './midiEvent/setNotePitchBend';
 
 export { startMidiLearn } from './midiLearn/startMidiLearn';
 export { stopMidiLearn } from './midiLearn/stopMidiLearn';
@@ -76,12 +77,15 @@ export { splitMidiNotesAtBeat } from './midiNoteCrud/splitMidiNotesAtBeat';
 // ── MIDI Note Transforms ──────────────────────────────────────────────────────
 export { humanizeNotes } from './midiNoteTransforms/humanizeNotes';
 export { invertNotes } from './midiNoteTransforms/invertNotes';
+export { joinNotes } from './midiNoteTransforms/joinNotes';
+export { legatoNotes } from './midiNoteTransforms/legatoNotes';
 export { quantizeNoteLengths } from './midiNoteTransforms/quantizeNoteLengths';
 export { quantizeNotes } from './midiNoteTransforms/quantizeNotes';
 export { retrogradeNotes } from './midiNoteTransforms/retrogradeNotes';
 export { scaleAllVelocities } from './midiNoteTransforms/scaleAllVelocities';
 export { scaleVelocities } from './midiNoteTransforms/scaleVelocities';
 export { setAllVelocities } from './midiNoteTransforms/setAllVelocities';
+export { splitNoteAtBeat } from './midiNoteTransforms/splitNoteAtBeat';
 export { transposeNotes } from './midiNoteTransforms/transposeNotes';
 
 export { setMidiOutput } from './midiRouting/setMidiOutput';
@@ -94,6 +98,9 @@ export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
 export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
 export type { StrumDirection } from './strumNotes/strumNotes';
+
+// ── Hardware ─────────────────────────────────────────────────────────────────
+export { exportHardwareMappings, importHardwareMappings } from './hardware/portableMappings';
 
 // ── Chord Track Transposition ─────────────────────────────────────────────────
 export { transposeForChordTrack } from './transposeForChordTrack';

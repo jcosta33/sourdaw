@@ -8,6 +8,7 @@ import {
     Settings2,
     Sparkles,
     Piano,
+    Layers,
     Link as LinkIcon,
 } from 'lucide-react';
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
@@ -19,6 +20,7 @@ import { toggleMixer } from '../../../useCases/togglePanel/panelToggles/toggleMi
 import { toggleChatPanel } from '../../../useCases/togglePanel/panelToggles/toggleChatPanel';
 import { toggleTrackList } from '../../../useCases/togglePanel/panelToggles/toggleTrackList';
 import { toggleVirtualKeyboard } from '../../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
+import { toggleDualView } from '../../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases';
@@ -41,6 +43,7 @@ type PanelTogglesProps = {
     chatPanelOpen: boolean;
     trackListOpen: boolean;
     virtualKeyboardOpen: boolean;
+    dualViewOpen: boolean;
 };
 
 export const PanelToggles = ({
@@ -50,6 +53,7 @@ export const PanelToggles = ({
     chatPanelOpen,
     trackListOpen,
     virtualKeyboardOpen,
+    dualViewOpen,
 }: PanelTogglesProps): ReactElement => {
     const aiState = useStore<AiPanelState>(aiStore, { isPanelOpen: false });
     const linkStatus = useStore<LinkStatusView>(linkStatusStore, defaultLinkStatus);
@@ -107,6 +111,22 @@ export const PanelToggles = ({
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Toggle Inspector (⌘I)</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant={dualViewOpen ? 'secondary' : 'ghost'}
+                        size="icon-sm"
+                        aria-label="Toggle Session + Arrangement View"
+                        aria-pressed={dualViewOpen}
+                        onClick={toggleDualView}
+                        className={dualViewOpen ? 'text-[var(--color-accent-mint)]' : ''}
+                    >
+                        <Layers className="size-3.5" aria-hidden="true" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>Session + Arrangement View (D1)</TooltipContent>
             </Tooltip>
 
             <Tooltip>

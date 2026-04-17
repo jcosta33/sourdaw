@@ -306,6 +306,48 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         defaultKeys: ['Tab'],
         action: { type: 'callback', id: 'toggleWorkspaceMode' },
     },
+    {
+        id: 'arrangement.loopFromSelection',
+        label: 'Set Loop from Selection',
+        category: 'editing',
+        defaultKeys: ['mod+l'],
+        action: { type: 'callback', id: 'loopFromSelection' },
+    },
+    {
+        id: 'arrangement.deleteTimeRange',
+        label: 'Delete Time Range',
+        category: 'editing',
+        defaultKeys: ['mod+backspace'],
+        action: { type: 'callback', id: 'deleteTimeRange' },
+    },
+    {
+        id: 'arrangement.insertSilence',
+        label: 'Insert Silence at Selection',
+        category: 'editing',
+        defaultKeys: ['mod+shift+i'],
+        action: { type: 'callback', id: 'insertSilence' },
+    },
+    {
+        id: 'arrangement.duplicateTimeRange',
+        label: 'Duplicate Time Range',
+        category: 'editing',
+        defaultKeys: ['mod+shift+r'],
+        action: { type: 'callback', id: 'duplicateTimeRange' },
+    },
+    {
+        id: 'arrangement.cycleGhostClipNext',
+        label: 'Select Next Ghost Clip',
+        category: 'editing',
+        defaultKeys: ['alt+]'],
+        action: { type: 'callback', id: 'cycleGhostClipNext' },
+    },
+    {
+        id: 'arrangement.cycleGhostClipPrev',
+        label: 'Select Previous Ghost Clip',
+        category: 'editing',
+        defaultKeys: ['alt+['],
+        action: { type: 'callback', id: 'cycleGhostClipPrev' },
+    },
 ];
 
 const storage = createLocalStorage<ShortcutStoreState>('sourdaw-shortcuts');

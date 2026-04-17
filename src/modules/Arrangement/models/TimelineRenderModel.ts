@@ -26,10 +26,17 @@ export type TrackRenderModel = {
     soloed: boolean;
     height: number;
     clips: ClipRenderModel[];
+    /** H3: Visible alternative lanes */
+    variationLanes?: {
+        id: string;
+        name: string;
+        clips: ClipRenderModel[];
+    }[];
     automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
 };
 
 export type MiniNoteRenderModel = {
+    id: string;
     pitch: number;
     startBeat: number;
     duration: number;
@@ -54,9 +61,11 @@ export type ClipRenderModel = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     generating?: boolean;
     isGhost?: boolean;
     isLinkedInstance?: boolean;
+    isInlineEditing?: boolean;
 };
