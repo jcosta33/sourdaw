@@ -401,3 +401,10 @@ Frame rate: 44100 / 512 = ~86.13 frames/second.
 10. **Multi-runtime maintenance burden (research §8 Medium / Certain)** — Maintaining both the Rust `ort` path and the Python sidecar path permanently is expensive. The architecture must be designed so models graduate from sidecar to native as their ONNX exports mature; the sidecar is a bridge, not a permanent home. Document the graduation criteria (ONNX parity tests, licence check, regression budget) and track which models are pending graduation.
 
 11. **Apple Silicon performance variability (research §8 Low / Medium)** — CoreML EP and MLX give reasonable acceleration on M-series, but some models are Apple-silicon-optimisation-sensitive (e.g., attention kernels, FFT sizes). Regressions are easy to miss because fallback to CPU is silent. Add a per-model benchmark capture at session creation so the capability report includes real wall-clock numbers for the user's machine, not just "GPU available".
+
+## Implementation Status
+
+- **What is implemented**: Nothing.
+- **What is not implemented**: The entire `SingingVoice` module, Rust `ort` inference pipeline, Python sidecar extensions for RVC, and related UI components.
+- **What is done well**: N/A.
+- **What needs refactoring**: N/A.

@@ -394,17 +394,21 @@ const drawMidiNotePreview = (
 
             // Only draw if within clip visual bounds
             if (relStart + note.duration > 0 && nx < clipX + clipW) {
-                const drawW = Math.min(nw, clipX + clipW - nx);
-                if (isInline) {
-                    ctx.beginPath();
-                    ctx.roundRect(nx, ny, drawW, nh, 1);
-                    ctx.fill();
-                    // Note border when inline
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-                    ctx.lineWidth = 0.5;
-                    ctx.stroke();
-                } else {
-                    ctx.fillRect(nx, ny, drawW, nh);
+                const finalX = Math.max(nx, clipX);
+                const finalW = Math.min(nw - (finalX - nx), clipX + clipW - finalX);
+                
+                if (finalW > 0) {
+                    if (isInline) {
+                        ctx.beginPath();
+                        ctx.roundRect(finalX, ny, finalW, nh, 1);
+                        ctx.fill();
+                        // Note border when inline
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    } else {
+                        ctx.fillRect(finalX, ny, finalW, nh);
+                    }
                 }
             }
         }

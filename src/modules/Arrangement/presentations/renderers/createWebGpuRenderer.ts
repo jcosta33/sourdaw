@@ -337,22 +337,27 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 // Convert to clip-relative, then add loop offset.
                                 const noteRelative = (note.startBeat - midiOffset) - clip.startBeat;
                                 const relBeat = noteRelative + loopOffset;
-                                if (relBeat < 0 || relBeat >= clipDuration) {continue;}
+                                const noteEndRelative = relBeat + Math.max(note.duration, 0.125);
+                                if (noteEndRelative <= 0 || relBeat >= clipDuration) {continue;}
 
                                 const nx1 = beatToX(clip.startBeat + relBeat);
-                                const nx2 = beatToX(clip.startBeat + relBeat + Math.max(note.duration, 0.125));
+                                const nx2 = beatToX(clip.startBeat + noteEndRelative);
                                 if (nx2 < cx1 || nx1 > cx2) {
                                     continue;
                                 }
                                 const noteY = clipBottom - 5 * dpr - ((note.pitch - minPitch) / pitchRange) * noteAreaH;
-                                addRect(
-                                    Math.max(nx1, cx1 + 2),
-                                    noteY - dpr,
-                                    Math.min(nx2, cx2 - 2),
-                                    noteY + 2 * dpr,
-                                    '#ffffff',
-                                    alpha * 0.35
-                                );
+                                const finalX1 = Math.max(nx1, cx1 + 2);
+                                const finalX2 = Math.min(nx2, cx2 - 2);
+                                if (finalX1 < finalX2) {
+                                    addRect(
+                                        finalX1,
+                                        noteY - dpr,
+                                        finalX2,
+                                        noteY + 2 * dpr,
+                                        '#ffffff',
+                                        alpha * 0.35
+                                    );
+                                }
                                 drawnNotes++;
                             }
                             if (drawnNotes >= MAX_NOTES_PER_CLIP) {break;}
@@ -386,14 +391,16 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                                 const startIdx = Math.max(0, Math.floor((audioOffset / totalBeats) * peaks.length));
                                 const binsToDraw = Math.floor((visibleBeats / totalBeats) * peaks.length);
-                                const drawBinWidth = w / binsToDraw;
+                                if (binsToDraw > 0) {
+                                    const drawBinWidth = w / binsToDraw;
 
-                                for (let i = 0; i < binsToDraw; i++) {
-                                    const peakHeight = (peaks[startIdx + i] ?? 0) * amplitude;
-                                    if (peakHeight > 0.5) {
-                                        const bx1 = cx1 + i * drawBinWidth;
-                                        const bx2 = bx1 + drawBinWidth;
-                                        addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.18);
+                                    for (let i = 0; i < binsToDraw; i++) {
+                                        const peakHeight = (peaks[startIdx + i] ?? 0) * amplitude;
+                                        if (peakHeight > 0.5) {
+                                            const bx1 = cx1 + i * drawBinWidth;
+                                            const bx2 = bx1 + drawBinWidth;
+                                            addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.18);
+                                        }
                                     }
                                 }
                             }

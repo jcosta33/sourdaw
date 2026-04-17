@@ -503,3 +503,10 @@ After implementation, a user can create a rack of one of four kinds (Instrument,
 - **UX learning curve**: Map mode is a modal interaction; new users will need discoverable affordances (first-run tooltip, empty-state prompt on the Mapping Inspector). Not a correctness risk, but a product risk.
 - **Memory pressure from 256 slots × N racks**: Each rack preallocates 256 slots plus source/dest arrays. At 64 racks in a large project that is still < 2 MB — acceptable.
 - **Off-thread compile latency**: For very large racks (hundreds of devices), compilation may take > 10 ms. This does not block audio (it runs off-thread) but may produce a user-perceived delay before an edit takes effect. Mitigation: incremental compilation is a follow-up if needed; v1 accepts the delay.
+
+## Implementation Status
+
+- **What is implemented**: Nothing.
+- **What is not implemented**: The `Devices` module frontend, and the `daw-engine` rack runtime, including the `ArcSwap` scheduling, sparse modulation matrix, and Kahn's topological sort compiler.
+- **What is done well**: N/A.
+- **What needs refactoring**: N/A.

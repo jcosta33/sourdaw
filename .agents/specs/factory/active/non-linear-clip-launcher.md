@@ -233,3 +233,10 @@ The scheduler MUST handle the following degenerate cases with documented, determ
 - **IPC Latency**: Tauri command serialization overhead. Mitigation: Keep payloads minimal. Budget: **~2 ms** end-to-end for small commands (research IPC section) — regression-gated.
 - **Legato under disk streaming**: Arbitrary beat-time seeks at a legato splice may land in a region not yet streamed from disk. Mitigation: full-clip RAM mode for legato-eligible clips, or refuse legato and fall back to quantized re-launch until the clip is fully resident.
 - **Permissive warp engine parity with Rubber Band**: The Scope forbids GPL Rubber Band. A permissive-license engine (Phase Vocoder + WSOLA hybrid, Signalsmith Stretch if license-compatible, or a clean-room implementation) MUST publish a **group-delay table** per mode, a documented **warp-mode list** (Beats / Tones / Re-Pitch / Complex equivalents), and a **short-loop strategy** (two-stretcher crossfade at loop boundaries per research §2). The spec's acceptance criteria apply to whichever engine is chosen; Rubber Band is a benchmark reference only.
+
+## Implementation Status
+
+- **What is implemented:** None.
+- **What is not implemented:** The Non-linear Clip Launcher is completely unbuilt. There are no references to `LauncherMatrix`, `ClipSlot`, or `FollowAction` in the Rust engine, and no launcher UI exists.
+- **What is done well:** N/A (unbuilt).
+- **What needs refactoring:** N/A (unbuilt).

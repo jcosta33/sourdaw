@@ -291,3 +291,10 @@ All file I/O, clip creation, and project-tree mutations occur off the RT audio /
 - **Safety-margin mis-tuning.** If the 2–3 s margin is too tight, a capture under heavy CPU load returns a silently-truncated clip. If it's too loose, the usable capture window shrinks from the user's perspective. The margin value should be measured, not guessed, on the target hardware tier.
 - **Worker-thread backpressure.** If the worker thread falls behind its secondary-buffer drain loop (unexpected but possible under an adversarial `rtrb` configuration), the authoritative capture source drifts from the live ring. The poll interval (~10 ms per research) and the secondary buffer size need explicit sizing — documented as an implementation note above.
 - **Feature-adoption risk.** If Capture is slow, unreliable, or produces clips at the wrong tempo, users will disable it once and never try again. The correctness bar is higher than for features users have to deliberately opt into.
+
+## Implementation Status
+
+- **What is implemented**: Nothing.
+- **What is not implemented**: The `RetrospectiveCapture` module, MIDI/audio rolling ring buffers in the Rust engine, tempo inference logic, and the UI commands.
+- **What is done well**: N/A.
+- **What needs refactoring**: N/A.

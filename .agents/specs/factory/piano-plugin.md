@@ -358,3 +358,10 @@ The plugin is considered shippable when ALL of the following are true:
 - **Licensing risk.** Patent US7915515B2 (Pianoteq) imposes a clean-room discipline; parameter tables from academic sources may have NC clauses. Cost of being wrong: plugin has to be withdrawn or rewritten. Mitigation: OQ4 license audit before importing any constant.
 - **RT-safety regression risk.** Adding UI paths that forget the atomic/ring-buffer discipline will silently allocate on the audio thread. Cost: audio dropouts during live performance. Mitigation: `assert_no_alloc` test in CI on every PR that touches `daw-dsp`.
 - **Scope creep.** Per-note editing of 30+ parameters, microtuning to 1/512 of a semitone, model marketplace, and neural warmth layer are all seductive additions. Cost: never shipping. Mitigation: they are in Non-goals and moving one of them in-scope requires an explicit spec revision and sign-off.
+
+## Implementation Status
+
+- **What is implemented:** The Rust DSP engine is robustly implemented in `crates/daw-dsp/src/grand_boule`. It includes the modal string resonator, hammer nonlinearity, coupled strings, sympathetic resonance, soundboard, and pedals.
+- **What is not implemented:** The frontend UI module (`src/modules/PianoPlugin` or `GrandBoule`) is missing. There is no dedicated React interface to expose the piano parameters.
+- **What is done well:** The physical modeling DSP in Rust is very comprehensive and adheres to the physical equations described in the research.
+- **What needs refactoring:** A dedicated frontend module needs to be created to wrap the `grand_boule` DSP engine and fulfill the React/WebGPU UI requirements.

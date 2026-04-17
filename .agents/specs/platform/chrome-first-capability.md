@@ -448,3 +448,25 @@ Release gate for this spec. All items must be checked before the adapter layer i
 - **IndexedDB ~100 MB record cliff.** Large binary records in IDB degrade sharply beyond ~100 MB on some engines (research §13.4). Use OPFS on supported runtimes or Tauri-native storage for large project/model caches; do not rely on IDB alone for multi-hundred-MB assets.
 - **Storage quota split across runtimes.** Chromium WebView2 typically allows ~60 % of free disk; WKWebView non-browser ~15 % (research §§2.16, 11). Plan model / sample / project caches against the smaller figure when targeting all three runtimes.
 - **MIDI-class HID surfaces are not pure MIDI.** Some control surfaces (Mackie/HUI variants) transport control data over HID rather than MIDI (research §13.2). D4 and D5 can cross-reference a shared transport layer where helpful; treat this as a known consideration rather than two fully independent silos.
+
+## Implementation Status
+
+**What is implemented:**
+- None of the explicit Capability Adapter Layer architectures exist yet. The `src/modules/Platform` module is absent.
+- Capabilities are currently resolved via ad-hoc checks directly at the call sites across the codebase.
+
+**What is not implemented:**
+- The frozen `CapabilityRegistry` singleton.
+- Centralized detection of platform shape at startup.
+- Concrete `CapabilityAdapter` implementations for domains D1 through D8.
+- Branded handle types for file operations.
+- Capabilities UI panel in settings.
+- The dev-mode capability override flag (`SOURDAW_CAPABILITY_OVERRIDE`).
+- Dedicated testing and contract tests for the adapter layers.
+
+**What is done well:**
+- N/A (The spec is unimplemented).
+
+**What needs refactoring:**
+- Existing scattered platform checks must be migrated into this adapter architecture once it is scaffolded.
+- Tauri IPC implementations and file/device handling currently bypassing this proposed layer will need adaptation to use the `CapabilityAdapter` interface.

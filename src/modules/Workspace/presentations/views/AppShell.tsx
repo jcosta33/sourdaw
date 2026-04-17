@@ -58,7 +58,7 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 
 import { Button } from '#/components/ui/button';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
-import { CapabilityBanner } from '../components/CapabilityBanner';
+
 import { X } from 'lucide-react';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
@@ -309,7 +309,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 >
                     Skip to content
                 </a>
-                <CapabilityBanner />
                 <TransportBar />
 
                 {/* ─── Main horizontal layout ─── */}

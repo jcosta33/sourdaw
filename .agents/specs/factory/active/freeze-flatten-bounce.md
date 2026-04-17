@@ -473,3 +473,30 @@ The following DAW behaviors inform this spec and are captured here so implemente
 - **Undo history growth**: Long undo chains retain many freeze files. Mitigation: Undo depth limits, explicit GC.
 - **Logic-style PDC automation bug**: Plugins with high latency have a documented history of firing automation at incorrect times during freeze on other DAWs. Mitigation: PDC is mandatory (R4.7); regression-test automation timing on high-latency plugin chains.
 - **Large-template CPU spikes during offline render**: Orchestral templates can saturate CPU during freeze. Mitigation: progress/cancellation (R12) stays responsive; consider documenting expected worst-case render duration as a known limitation.
+
+## Implementation Status
+
+**What is implemented:**
+- `FreezeState` type on the `Track` model (CRDT schema).
+- Freeze operations state machine (`freezeTrack`, `unfreezeTrack`, `flattenTrack`).
+- Staleness detection using content hashing (`initStalenessDetection`, `computeTrackHash`).
+- Background offline render infrastructure (`renderOffline`).
+- Garbage collection sweeps (`cleanupUnusedFreezeFiles`).
+- Basic bounce operations (`bounceInPlace`, `bounceToNewTrack`).
+
+**What is not implemented:**
+- Advanced bounce options dialog (e.g. choose to include inserts, sends, automation).
+- Sidechain-aware dependency graph ordering for freeze renders.
+- Complete visual UI components (progress bar in track header, stale warning overlay).
+- LWW semantics collaborative lock UI and explicit conflict resolution beyond simple CRDT sync.
+- Advanced file system GC based on age/size limits.
+
+**What is done well:**
+- Strong separation of concerns with domain-driven `useCases` (`freezeTrack`, `unfreezeTrack`, `flattenTrack`).
+- Content hashing strategy for staleness is well-implemented and isolated.
+- The CRDT integration uses the `Track` state naturally without creating a parallel structure.
+
+**What needs refactoring:**
+- Bounce operations are creating tracks with duplicate UUIDs in `activeAlternativeId` arrays; could be more robust.
+- The GC script `cleanupUnusedFreezeFiles` appears basic and could need the more robust age/byte-cap logic from the spec.
+- Error handling during `renderOffline` (e.g. plugin crashes) needs more explicit fallback state handling.

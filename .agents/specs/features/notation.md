@@ -558,3 +558,10 @@ For each fixture: export to MusicXML → assert schema validity → (manual) ope
 - **Risk — MusicXML round-trip loss:** MuseScore and Dorico interpret edge cases differently (voice numbering, tied chords, cross-staff beams). Mitigation: a frozen fixture set (R4, R5, R11 canonical fixtures) must pass on every release; new edge cases must be added as fixtures before their requirement is considered complete.
 - **Risk — Verovio LGPL:** If phase-2 print needs Verovio-quality layout, the LGPL obligation (dynamic linking or re-license) must be resolved before inclusion. Mitigation: phase-1 ships VexFlow-only; Verovio is gated behind [CRITICAL] open question.
 - **Risk — metric edge cases (not renderer choice):** Integration risk is concentrated in beams across time-signature changes, ties on every metric boundary, and multi-voice collisions — not in the choice of rendering engine. Budget engineering time for the "long tail" of these fixtures accordingly.
+
+## Implementation Status
+
+- **What is implemented**: Nothing.
+- **What is not implemented**: The `Notation` module, VexFlow v5 integration, display quantization algorithms (grid/DP), and MusicXML export/import pipelines.
+- **What is done well**: N/A.
+- **What needs refactoring**: N/A.

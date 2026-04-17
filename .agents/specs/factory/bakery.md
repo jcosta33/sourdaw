@@ -556,3 +556,10 @@ Patch JSON
 - The `daw-bakery` crate is the **only** place allowed to know about `ProcessTask` layout on behalf of a patch. It must not leak internals (`NodeId`, cable references) to `daw-engine`; once compilation finishes, the audio thread sees a flat task slice indistinguishable from a built-in device's schedule.
 - The frontend `compilePatch` use case orchestrates model validation and shells out to the Rust compiler via a Tauri command. The UI never assembles `ProcessTask` itself.
 - Event payloads exported via `events/index.ts` are the only shape in which other modules (Arrangement, Mixer, Automation) may learn about Bakery state changes, per AGENTS.md's contract-boundary rules.
+
+## Implementation Status
+
+- **What is implemented:** None.
+- **What is not implemented:** The Bakery is completely unbuilt. There is no node-based engine, no Poly/FX/Note containers, and no visual patcher in either the Rust backend or the TypeScript frontend.
+- **What is done well:** N/A (unbuilt). DSP primitives exist in `daw-dsp` ready to be wrapped.
+- **What needs refactoring:** N/A (unbuilt).

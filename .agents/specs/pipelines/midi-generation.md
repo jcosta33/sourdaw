@@ -485,3 +485,21 @@ Two emergency / future paths exist if the AMT export or licensing hits a wall:
 7. **Provenance-regen drift.** R10.3 promises that re-submitting a provenance seed regenerates the same MIDI. This holds only as long as the model weights, tokenizer, and post-processing behaviour are identical — so version-pinning (R8.4) is load-bearing. If a user re-generates after a model upgrade, the output may differ; provenance metadata records `modelVersion` so the UI can warn.
 
 8. **Rule-engine content gap.** This spec explicitly scopes rule-engine content out. If the content spec lags, Tier 1 is empty and the pipeline becomes ML-only — contradicting the research's architectural advice. Track the content spec as a dependency in the task file.
+
+## Implementation Status
+
+**What is implemented:**
+- Underlying infrastructure: The ONNX Runtime (`ort`) dependency, model downloading (`model_download::ensure_model`), and `tokio::spawn_blocking` patterns are established and validated in the codebase via the audio pipeline (`Demucs` in `ai_audio.rs`).
+
+**What is not implemented:**
+- The entire `src/modules/MidiGeneration` frontend module and UI plumbing.
+- The `REMI` / `arrival-time` tokenizers.
+- The `Anticipatory Music Transformer` (AMT) and `GrooVAE` model integrations in Rust.
+- Typed Tauri Channels (`tauri-specta`) specifically for streaming MIDI tokens.
+- The execution harnesses for the specific R9 inference contracts (Session Player continuation, Chord Track progression, Melodize, Humanize).
+
+**What is done well:**
+- N/A (The symbolic-MIDI inference pipeline defined by this spec is currently completely absent).
+
+**What needs refactoring:**
+- N/A

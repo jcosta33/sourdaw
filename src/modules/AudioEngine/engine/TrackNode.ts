@@ -5,6 +5,7 @@ import { DEVICE_FACTORIES } from '../useCases/deviceResolvers/helpers';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
+import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { logger } from '#/infra/logger/appLogger';
 
 export type TrackNodeDeps = {
@@ -18,6 +19,8 @@ export type TrackNodeDeps = {
 
 export class TrackNode {
     public strip: TrackChannelStrip;
+    /** When SAB is unavailable, getPeakLevel falls back to AnalyserNode time-domain data. */
+    private _analyserFallbackBuffer: Float32Array<ArrayBuffer> | null = null;
     // §88.3 — async plugin loads each resolve with a rebuildChain() call;
     // firing multiple of these in the same microtask produced overlapping
     // disconnect/reconnect sweeps. `_rebuildScheduled` coalesces them so at
@@ -44,20 +47,33 @@ export class TrackNode {
         const panNode = context.createStereoPanner();
         panNode.pan.value = 0;
 
-        const meterSab = new SharedArrayBuffer(4);
-        const meterNode = new AudioWorkletNode(context, 'metering-processor');
-        meterNode.port.postMessage({ type: 'init', sab: meterSab, channels: 2 });
-
         const analyserNode = context.createAnalyser();
         analyserNode.fftSize = 256;
         analyserNode.smoothingTimeConstant = 0.8;
+
+        let meterNode: AudioWorkletNode | null = null;
+        let meterBuffer: Float32Array;
+
+        if (hasSharedArrayBuffer()) {
+            const meterSab = new SharedArrayBuffer(4);
+            meterNode = new AudioWorkletNode(context, 'metering-processor');
+            meterNode.port.postMessage({ type: 'init', sab: meterSab, channels: 2 });
+            meterBuffer = new Float32Array(meterSab);
+        } else {
+            meterBuffer = new Float32Array(1);
+            this._analyserFallbackBuffer = new Float32Array(analyserNode.fftSize);
+        }
 
         gainNode.connect(preFaderTap);
         preFaderTap.connect(faderNode);
         faderNode.connect(postFaderGain);
         postFaderGain.connect(panNode);
-        panNode.connect(meterNode);
-        meterNode.connect(analyserNode);
+        if (meterNode) {
+            panNode.connect(meterNode);
+            meterNode.connect(analyserNode);
+        } else {
+            panNode.connect(analyserNode);
+        }
 
         this.strip = {
             trackId,
@@ -71,7 +87,7 @@ export class TrackNode {
             muted: false,
             soloed: false,
             deviceNodes: [],
-            meterBuffer: new Float32Array(meterSab),
+            meterBuffer,
         };
 
         this.routeOutput();
@@ -95,6 +111,15 @@ export class TrackNode {
     }
 
     public getPeakLevel(): number {
+        if (this._analyserFallbackBuffer) {
+            this.strip.analyserNode.getFloatTimeDomainData(this._analyserFallbackBuffer);
+            let peak = 0;
+            for (let i = 0; i < this._analyserFallbackBuffer.length; i++) {
+                const abs = Math.abs(this._analyserFallbackBuffer[i]!);
+                if (abs > peak) peak = abs;
+            }
+            return peak;
+        }
         const peak = this.strip.meterBuffer[0]!;
         this.strip.meterBuffer[0] = 0;
         return peak;
@@ -160,7 +185,7 @@ export class TrackNode {
         s.faderNode.disconnect();
         s.postFaderGain.disconnect();
         s.panNode.disconnect();
-        s.meterNode.disconnect();
+        s.meterNode?.disconnect();
         s.analyserNode.disconnect();
 
         for (const dn of s.deviceNodes) {
@@ -195,7 +220,12 @@ export class TrackNode {
         s.preFaderTap.connect(s.faderNode);
         s.faderNode.connect(s.postFaderGain);
         s.postFaderGain.connect(s.panNode);
-        s.panNode.connect(s.analyserNode);
+        if (s.meterNode) {
+            s.panNode.connect(s.meterNode);
+            s.meterNode.connect(s.analyserNode);
+        } else {
+            s.panNode.connect(s.analyserNode);
+        }
 
         this.routeOutput();
         this.reconnectSends();

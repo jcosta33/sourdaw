@@ -85,7 +85,7 @@ export type TrackChannelStrip = {
     /** Post-device mute node — sits after all devices, before pan. Mute/solo targets this. */
     postFaderGain: GainNode;
     panNode: StereoPannerNode;
-    meterNode: AudioWorkletNode;
+    meterNode: AudioWorkletNode | null;
     analyserNode: AnalyserNode;
     muted: boolean;
     soloed: boolean;

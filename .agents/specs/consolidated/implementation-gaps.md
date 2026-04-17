@@ -661,3 +661,24 @@ This section extends §6.2 with the full-lifecycle requirements surfaced in `.ag
     - Writing a `.kbm` file back and re-reading it reproduces the original keyboard mapping exactly (including `x` markers at the same positions).
     - An `.ascl` file loaded from Ableton Live 12's bundled tuning set round-trips through save/load in Sourdaw with identical named-degree metadata and reference pitch.
     - A malformed file (missing count line, non-numeric ratio, reference-note out of range) produces a structured `TuningParseError` naming the line number; the parser never panics (verified by a `cargo fuzz` target running for ≥ 5 minutes in CI).
+
+## Implementation Status
+
+**What is implemented:**
+- Foundation instruments are present: `Grinder` (Amp Simulator), `Toaster` (Drum Machine), `Levain` (Orchestral Suite), and `Fermenter` (Master Synth) are all implemented as WASM-backed `AudioWorkletProcessor` nodes.
+- Stem separation is actively implemented using Demucs v4 ONNX locally in the browser (`browserStemSeparation.ts` via `onnxruntime-web`).
+- Foundational architectural patterns for Web Audio device registries, shared array buffers for telemetry, and CRDT project sync exist.
+
+**What is not implemented:**
+- The vast majority of the advanced DSP features listed in this tracker (e.g., True Legato Engine, Vital-style Spectral Morphing, ZDF filters).
+- CLAP plugin hosting via `clack-host` (currently relies on custom WASM device implementations or basic native wrappers).
+- Advanced collaboration features like Ghost Playheads, WebRTC voice channels, and Host Approval UX for roles.
+- Scale folding, MTS-ESP host lifecycle, and advanced routing graph visualization.
+
+**What is done well:**
+- The integration of complex machine learning models (Demucs) directly into the browser context.
+- The base `AudioWorklet` architecture (`WasmDeviceRegistry`, shared initialization, telemetry allocation) provides a solid launchpad for the advanced instruments.
+
+**What needs refactoring:**
+- The monolithic tracker itself should eventually be broken down as individual features graduate to dedicated specs.
+- The native hosting architecture needs a complete overhaul to align with the CLAP standard as specified.
