@@ -25,7 +25,9 @@ export async function analyzeSample(sampleId: string): Promise<void> {
             try {
                 buffer = ctx.createBuffer(1, 44100, 44100);
             } finally {
-                await ctx.close();
+                if (ctx.close) {
+                    await ctx.close();
+                }
             }
         }
 
