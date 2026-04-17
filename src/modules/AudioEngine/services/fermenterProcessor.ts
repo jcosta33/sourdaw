@@ -68,7 +68,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg) {
-        let lo = 0,
+        let lo = this._queueHead,
             hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
