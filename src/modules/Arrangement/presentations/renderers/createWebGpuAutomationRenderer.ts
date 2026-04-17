@@ -48,6 +48,13 @@ export type AutomationRenderer = {
     dispose(): void;
 };
 
+function hexToRgb(hex: string): [number, number, number] {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return isNaN(r) || isNaN(g) || isNaN(b) ? [0.6, 0.5, 1.0] : [r, g, b];
+}
+
 export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement): Promise<AutomationRenderer | null> {
     if (!navigator.gpu) return null;
 
@@ -118,7 +125,7 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
         }
 
         for (const lane of model.lanes) {
-            const [r, g, b] = [0.6, 0.5, 1.0]; // Placeholder color parsing
+            const [r, g, b] = hexToRgb(lane.color.startsWith('#') ? lane.color : '#a78bfa');
 
             // Draw ghost points (faded)
             if (lane.ghostPoints && lane.ghostPoints.length >= 2) {

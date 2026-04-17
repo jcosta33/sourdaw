@@ -1,5 +1,5 @@
 /**
- * Hardware Controller Scripting Worker (J2).
+ * Hardware Controller Scripting Worker (R-J2).
  * Runs custom JavaScript scripts for hardware integration in a sandboxed environment.
  */
 
@@ -9,13 +9,12 @@ self.onmessage = (e) => {
     if (type === 'runScript') {
         const { code } = payload;
         try {
-            // R-J2: Hardware scripting API.
             // SECURITY NOTE: using new Function() in a Worker provides basic isolation
             // but is not a full secure sandbox. Production usage should use a more
             // robust isolation mechanism if running untrusted third-party scripts.
             console.log('Running controller script...');
             
-            // Mock API provided to the script
+            // API provided to the script
             const DAW = {
                 setParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
                     self.postMessage({ type: 'setParam', payload: { trackId, deviceId, paramId, value } });

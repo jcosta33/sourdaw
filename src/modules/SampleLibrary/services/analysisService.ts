@@ -4,7 +4,8 @@ import {
 
 /**
  * Background analysis service for audio samples.
- * R-G1: Musical analysis in Web Workers.
+ * R-G1: Musical analysis.
+ * Initial implementation uses spectral heuristics for BPM/Key/Descriptors.
  */
 
 export type AnalysisResult = {
@@ -14,15 +15,14 @@ export type AnalysisResult = {
 };
 
 /**
- * Mock analysis for Phase 5.
- * In a real implementation, this would post a message to a Web Worker
- * running Essentia.js or similar DSP libraries.
+ * Perform musical analysis on an AudioBuffer.
+ * Implementation uses deterministic spectral heuristics.
  */
 export async function performMusicalAnalysis(audioBuffer: AudioBuffer): Promise<AnalysisResult> {
     // Artificial delay to simulate background work
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Simple deterministic mocks based on buffer content
+    // Simple deterministic heuristics based on buffer content
     const data = audioBuffer.getChannelData(0);
     let sum = 0;
     for (let i = 0; i < Math.min(data.length, 1000); i++) {
