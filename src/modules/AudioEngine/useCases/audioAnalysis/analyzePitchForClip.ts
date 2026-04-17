@@ -2,6 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { kneadStore } from '#/modules/Knead/stores';
+import { isTauri } from '#/utils/tauriBridge';
+import { getBufferForClip } from '#/modules/Arrangement/useCases';
+// @ts-ignore
+import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 
 type PitchPoint = {
     time_ms: number;
@@ -22,7 +26,7 @@ type AnalysisProgress = {
 };
 
 /**
- * Runs the offline native pitch analysis on a full audio clip via Tauri IPC.
+ * Runs the offline native pitch analysis on a full audio clip via Tauri IPC or WASM fallback.
  */
 export async function analyzePitchForClip(clipId: string): Promise<PitchContour | null> {
     const tracksState = trackStore.value;
@@ -56,30 +60,49 @@ export async function analyzePitchForClip(clipId: string): Promise<PitchContour 
     let unlisten: (() => void) | null = null;
 
     try {
-        unlisten = await listen<AnalysisProgress>('pitch-analysis-progress', (event) => {
-            const currentState = kneadStore.value;
-            if (currentState) {
-                kneadStore.set({
-                    ...currentState,
-                    analysisProgress: event.payload.progress,
-                });
-            }
-        });
+        let contour: PitchContour;
+        
+        if (isTauri()) {
+            unlisten = await listen<AnalysisProgress>('pitch-analysis-progress', (event) => {
+                const currentState = kneadStore.value;
+                if (currentState) {
+                    kneadStore.set({
+                        ...currentState,
+                        analysisProgress: event.payload.progress,
+                    });
+                }
+            });
 
-        // Note: For a real app we'd resolve the fileId to a full absolute path.
-        // For the sake of this feature task we assume the fileId is the path or
-        // the backend handles the resolution.
-        const contour = await invoke('analyze_pitch', {
-            audioPath: targetClip.fileId,
-        }) as PitchContour;
+            contour = await invoke('analyze_pitch', {
+                audioPath: targetClip.fileId,
+            }) as PitchContour;
+        } else {
+            // WASM fallback
+            const result = getBufferForClip(clipId);
+            if (!result || !result.buffer) {
+                throw new Error('Could not get audio buffer for clip');
+            }
+            
+            // Artificial progress steps to keep UI somewhat responsive
+            const progressSteps = [0.2, 0.5, 0.8];
+            for (const step of progressSteps) {
+                await new Promise(r => setTimeout(r, 0));
+                const s = kneadStore.value;
+                if (s) {
+                    kneadStore.set({ ...s, analysisProgress: step });
+                }
+            }
+
+            const channelData = result.buffer.getChannelData(0);
+            const jsonStr = analyze_pitch_wasm(channelData, result.buffer.sampleRate);
+            contour = JSON.parse(jsonStr);
+        }
 
         // Store the result
         const finalState = kneadStore.value;
         if (finalState) {
             kneadStore.set({
                 ...finalState,
-                // Cast to any to bypass TS complaining about missing pitchContour field in KneadStoreState
-                // This is a common pattern in the codebase when extending stores before updating their types
                 ...({ pitchContour: contour } as any),
             });
         }

@@ -4,27 +4,11 @@ use std::path::PathBuf;
 use hound::{WavReader, WavWriter, WavSpec};
 use daw_dsp::knead::yin::{yin_frame, YinConfig};
 use daw_dsp::knead::psola::{psola_process_offline_inplace, PsolaConfig};
-use daw_dsp::knead::pitch_edit::{CompiledDeltaMap, NoteSegment};
+use daw_dsp::knead::pitch_edit::{CompiledDeltaMap, NoteSegment, PitchPoint, PitchContour, PitchCommitRequest};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AnalysisProgress {
     pub progress: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PitchPoint {
-    pub time_ms: f32,
-    pub frequency_hz: f32,
-    pub confidence: f32,
-    pub voiced: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PitchContour {
-    pub points: Vec<PitchPoint>,
-    pub sample_rate: u32,
-    pub hop_size: u32,
-    pub algorithm: String,
 }
 
 #[tauri::command]

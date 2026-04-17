@@ -4,6 +4,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { kneadStore } from '#/modules/Knead/stores';
+import { isTauri } from '#/utils/tauriBridge';
+import { getBufferForClip } from '#/modules/Arrangement/useCases';
+import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
@@ -13,9 +16,22 @@ vi.mock('@tauri-apps/api/event', () => ({
     listen: vi.fn(),
 }));
 
+vi.mock('#/utils/tauriBridge', () => ({
+    isTauri: vi.fn(() => true),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getBufferForClip: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => ({
+    analyze_pitch_wasm: vi.fn(),
+}));
+
 describe('analyzePitchForClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(isTauri).mockReturnValue(true);
         
         // Setup mock stores
         trackStore.set({
@@ -46,7 +62,7 @@ describe('analyzePitchForClip', () => {
         expect(invoke).not.toHaveBeenCalled();
     });
 
-    it('should set analyzing state, invoke command, and listen for progress', async () => {
+    it('should set analyzing state, invoke command, and listen for progress in Tauri mode', async () => {
         const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
         
         let resolveInvoke: any;
@@ -95,6 +111,38 @@ describe('analyzePitchForClip', () => {
         expect(kneadStore.value.isAnalyzing).toBe(false);
         expect(kneadStore.value.analysisProgress).toBe(1);
         expect(unlistenMock).toHaveBeenCalled();
+    });
+
+    it('should fallback to WASM when isTauri is false', async () => {
+        vi.mocked(isTauri).mockReturnValue(false);
+        const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
+        
+        vi.mocked(getBufferForClip).mockReturnValue({
+            buffer: {
+                sampleRate: 44100,
+                getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
+            }
+        } as any);
+
+        vi.mocked(analyze_pitch_wasm).mockReturnValue(JSON.stringify(mockContour));
+
+        const result = await analyzePitchForClip('c1');
+        
+        expect(invoke).not.toHaveBeenCalled();
+        expect(analyze_pitch_wasm).toHaveBeenCalled();
+        expect(result).toEqual(mockContour);
+        expect(kneadStore.value.isAnalyzing).toBe(false);
+        expect(kneadStore.value.analysisProgress).toBe(1);
+    });
+
+    it('should throw error in WASM mode if buffer is missing', async () => {
+        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(getBufferForClip).mockReturnValue(null);
+        
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        await expect(analyzePitchForClip('c1')).rejects.toThrow('Could not get audio buffer for clip');
+        expect(consoleSpy).toHaveBeenCalled();
+        consoleSpy.mockRestore();
     });
 
     it('should handle errors and restore state', async () => {
