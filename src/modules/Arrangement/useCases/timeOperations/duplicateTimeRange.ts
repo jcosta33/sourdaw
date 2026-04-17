@@ -68,7 +68,6 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
         return;
     }
 
-    let nextId = Date.now();
     setTrackState({
         ...state,
         tracks: state.tracks.map((track) => {
@@ -80,7 +79,7 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
             );
             const duplicated = clipsInRange.map((c) => ({
                 ...c,
-                id: `clip-dup-${nextId++}`,
+                id: `clip-dup-${crypto.randomUUID()}`,
                 startBeat: c.startBeat + duration,
                 endBeat: c.endBeat + duration,
             }));

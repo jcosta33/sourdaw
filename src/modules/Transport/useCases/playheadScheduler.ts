@@ -45,7 +45,7 @@ function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioConte
 // only done from within this file; the holder object prevents importers
 // from rebinding any of these via \`export let\`.
 const schedulerSession = {
-    timerId: null as ReturnType<typeof setTimeout> | null,
+    worker: null as Worker | null,
     lastTickTime: 0,
     accumulatedPosition: 0,
     lastScheduledBeat: -1,
@@ -220,18 +220,25 @@ export function startPlayheadScheduler(): void {
         applyAutomation(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;
-
-        schedulerSession.timerId = setTimeout(tick, current.scheduleGrainMs ?? grainMs);
     };
 
-    schedulerSession.timerId = setTimeout(tick, grainMs);
+    if (!schedulerSession.worker) {
+        schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), { type: 'module' });
+        schedulerSession.worker.onmessage = (e) => {
+            if (e.data?.type === 'tick') {
+                tick();
+            }
+        };
+    }
+    schedulerSession.worker.postMessage({ type: 'start', interval: grainMs });
 }
 
 export function stopPlayheadScheduler(): void {
     stopAutomationRecording();
-    if (schedulerSession.timerId !== null) {
-        clearTimeout(schedulerSession.timerId);
-        schedulerSession.timerId = null;
+    if (schedulerSession.worker) {
+        schedulerSession.worker.postMessage({ type: 'stop' });
+        schedulerSession.worker.terminate();
+        schedulerSession.worker = null;
     }
     if (schedulerSession.punchRecordingActive) {
         stopAudioRecording();

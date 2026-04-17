@@ -560,6 +560,10 @@ Then tackle **I-02** (unify AI dispatch) and **I-05** (define `DeviceNode` inter
 
 ## Resolved
 
+- ~~Transport/useCases/playheadScheduler.ts used setTimeout for main tick~~ — resolved. Refactored to use a dedicated Web Worker (`schedulerWorker.ts`) to bypass 1000ms tab throttling.
+- ~~CRDT ID generation violations~~ — resolved. Replaced `Date.now()` and global counters with `crypto.randomUUID()` in `startRecording.ts`, `duplicateTimeRange.ts`, and multiple ID counter repositories.
+- ~~Transport/useCases/scheduling/scheduleAudioClips.ts created new GainNodes inside tick~~ — resolved. Refactored to use a reusable `GainNode` pool.
+- ~~AudioWorklet message queues use Array.splice~~ — resolved. `ToasterProcessor`, `LevainProcessor`, and `FermenterProcessor` now use an allocation-free circular queue algorithm with a `_queueHead` read index.
 - ~~Toaster missing `busRoute` / `transientAttack` pad parameter hydration~~ — resolved pre-2026-04-16. `PAD_PARAM_MAP` in `toasterProcessor.ts:20-36` now includes both `busRoute: 'bus_route'` and `transientAttack: 'transient_attack'`.
 - ~~Knead offline analysis pipeline "missing entirely"~~ — resolved pre-2026-04-16. Full chunked WASM pipeline exists at `src/modules/AudioEngine/useCases/audioAnalysis/analyzePitchForClip.ts` (KneadInstance.process in blocks, yields every 16 chunks, calls `ingestDspAnalysis`). Ingestion logic lives in `src/modules/Knead/useCases/dspAnalysis.ts` and is populated, not stubbed.
 - ~~AiRuntime name resolution "accidentally adds tracks via splice"~~ — resolved or never existed as described. No `splice` in `src/modules/AiRuntime/transformers/promptParser/parsing.ts` or in `src/modules/AiRuntime/useCases/dsoEditor/compileDso.ts`. `resolveDsoNames` (compileDso.ts:279) uses `bestMatch` (fuzzy) against in-memory `mockTracks`, never mutates the real track store.

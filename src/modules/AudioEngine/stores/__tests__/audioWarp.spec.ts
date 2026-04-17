@@ -13,11 +13,11 @@ describe('DEFAULT_WARP_SETTINGS', () => {
 });
 
 describe('getNextWarpMarkerId', () => {
-    it('returns incrementing warp marker ids', () => {
+    it('returns unique warp marker ids', () => {
         const a = getNextWarpMarkerId();
         const b = getNextWarpMarkerId();
-        expect(a).toMatch(/^wm-\d+$/);
-        expect(b).toMatch(/^wm-\d+$/);
+        expect(a).toMatch(/^wm-.+$/);
+        expect(b).toMatch(/^wm-.+$/);
         expect(a).not.toBe(b);
     });
 });
