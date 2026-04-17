@@ -31,8 +31,8 @@ export function projectSpatialMap(): void {
             nextSamples[i] = {
                 ...sample,
                 spatialMap: {
-                    x: Math.tanh(sumX) * 2 - 1,
-                    y: Math.tanh(sumY) * 2 - 1,
+                    x: Math.tanh(sumX),
+                    y: Math.tanh(sumY),
                 },
             };
             changed = true;

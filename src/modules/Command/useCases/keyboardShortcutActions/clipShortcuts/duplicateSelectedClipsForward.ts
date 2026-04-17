@@ -81,6 +81,18 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         return;
     }
 
+    // Capture the exact clips+positions for redo so we don't re-enter pushUndoEntry
+    const redoInfos = selected.map((info, i) => ({
+        trackId: info.trackId,
+        startBeat: info.startBeat + span,
+        endBeat: info.endBeat + span,
+        name: `${info.name} (copy)`,
+        type: info.type,
+        audioBufferId: info.audioBufferId,
+        sourceClipId: info.clipId,
+        createdId: createdIds[i]!,
+    }));
+
     pushUndoEntry(
         `Duplicate ${createdIds.length} clip${createdIds.length > 1 ? 's' : ''} forward`,
         () => {
@@ -88,6 +100,20 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
                 removeClip(id);
             }
         },
-        () => duplicateSelectedClipsForward(selectedClipIds)
+        () => {
+            for (const ri of redoInfos) {
+                const newClip = addClip({
+                    trackId: ri.trackId,
+                    startBeat: ri.startBeat,
+                    endBeat: ri.endBeat,
+                    name: ri.name,
+                    type: ri.type,
+                    audioBufferId: ri.audioBufferId,
+                });
+                if (newClip) {
+                    duplicateClipAutomation(ri.sourceClipId, newClip.id);
+                }
+            }
+        }
     );
 }

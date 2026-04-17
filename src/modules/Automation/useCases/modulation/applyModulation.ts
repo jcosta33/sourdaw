@@ -40,7 +40,7 @@ export function applyModulation(playheadBeat: number): void {
                     break;
                 case 'random':
                     // Pseudo-random based on beat for consistency
-                    value = (Math.sin(Math.floor(playheadBeat / period) * 12.9898) * 43758.5453123) % 1;
+                    value = Math.abs((Math.sin(Math.floor(playheadBeat / period) * 12.9898) * 43758.5453123) % 1);
                     break;
             }
             value *= cfg.depth;

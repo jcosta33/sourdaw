@@ -48,7 +48,9 @@ describe('planRippleMove', () => {
             clipDuration: 2,
         });
 
-        expect(plan?.gapClosedClips.map(s => s.clipId)).toEqual(['c2', 'c3', 'c4']);
+        // c2 closes the gap (starts at oldEndBeat=2); c3 and c4 are destination-opened only
+        // (not double-counted in gapClosed since they're already in destinationOpened)
+        expect(plan?.gapClosedClips.map(s => s.clipId)).toEqual(['c2']);
         expect(plan?.destinationOpenedClips.map(s => s.clipId)).toEqual(['c3', 'c4']);
     });
 });

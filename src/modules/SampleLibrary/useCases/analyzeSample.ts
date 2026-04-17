@@ -18,11 +18,15 @@ export async function analyzeSample(sampleId: string): Promise<void> {
     try {
         // 1. Fetch and decode audio (assuming it's in cache or accessible)
         let buffer = audioBufferCache.get(sample.id);
-        
+
         if (!buffer) {
             // Mock buffer for analysis demo if not in cache
             const ctx = new AudioContext();
-            buffer = ctx.createBuffer(1, 44100, 44100);
+            try {
+                buffer = ctx.createBuffer(1, 44100, 44100);
+            } finally {
+                await ctx.close();
+            }
         }
 
         // 2. Perform background analysis

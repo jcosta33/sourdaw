@@ -321,7 +321,7 @@ export const PianoRollToolbar = ({
         {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
             <DawCompactSelect
                 value={activeExpressionLane}
-                onChange={(e) => onActiveExpressionLaneChange(e.target.value as any)}
+                onChange={(e) => onActiveExpressionLaneChange(e.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend')}
                 size="micro"
                 aria-label="Active expression lane"
             >

@@ -240,10 +240,11 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                         if (!sel) return false;
                         const duration = sel.endBeat - sel.startBeat;
                         const atBeat = sel.startBeat;
+                        const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
                         insertTime(atBeat, duration);
                         pushUndoEntry(
                             'Insert Silence',
-                            () => deleteTimeRange(atBeat, atBeat + duration, (trackStore.value?.tracks ?? []).map((t) => t.id)),
+                            () => deleteTimeRange(atBeat, atBeat + duration, trackIdsAtAction),
                             () => insertTime(atBeat, duration)
                         );
                         return true;
@@ -254,10 +255,11 @@ export const handleKeydown = inject({ eventBus, executeAppAction })(
                         if (!sel) return false;
                         const { startBeat, endBeat } = sel;
                         const duration = endBeat - startBeat;
+                        const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
                         duplicateTimeRange(startBeat, endBeat);
                         pushUndoEntry(
                             'Duplicate Time Range',
-                            () => deleteTimeRange(endBeat, endBeat + duration, (trackStore.value?.tracks ?? []).map((t) => t.id)),
+                            () => deleteTimeRange(endBeat, endBeat + duration, trackIdsAtAction),
                             () => duplicateTimeRange(startBeat, endBeat)
                         );
                         return true;

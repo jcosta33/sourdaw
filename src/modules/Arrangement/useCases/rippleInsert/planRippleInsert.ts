@@ -25,7 +25,7 @@ type PlanRippleInsertInput = {
  * Returns null when ripple editing is disabled or the track is not found.
  * Clips whose startBeat >= insertBeat are shifted forward by insertDuration.
  */
-export function planRippleInsert({ trackId, insertBeat, insertDuration: _insertDuration }: PlanRippleInsertInput): RippleInsertPlan | null {
+export function planRippleInsert({ trackId, insertBeat }: PlanRippleInsertInput): RippleInsertPlan | null {
     const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
     if (!rippleEnabled) {
         return null;

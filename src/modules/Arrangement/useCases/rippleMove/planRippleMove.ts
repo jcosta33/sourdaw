@@ -57,19 +57,27 @@ export function planRippleMove({
     const gapClosedClips: ClipShift[] = [];
     const destinationOpenedClips: ClipShift[] = [];
 
+    const destOpenedIds = new Set<string>();
+
+    // First pass: identify clips that need to shift forward at the destination
     for (const clip of track.clips) {
-        if (clip.id === clipId) {
-            continue;
-        }
-        if (clip.startBeat >= oldEndBeat) {
-            gapClosedClips.push({
+        if (clip.id === clipId) continue;
+        if (clip.startBeat >= newStartBeat) {
+            destinationOpenedClips.push({
                 clipId: clip.id,
                 origStartBeat: clip.startBeat,
                 origEndBeat: clip.endBeat,
             });
+            destOpenedIds.add(clip.id);
         }
-        if (clip.startBeat >= newStartBeat) {
-            destinationOpenedClips.push({
+    }
+
+    // Second pass: identify clips that shift backward to close the gap,
+    // excluding any already in the destination-open set to avoid double-counting
+    for (const clip of track.clips) {
+        if (clip.id === clipId) continue;
+        if (clip.startBeat >= oldEndBeat && !destOpenedIds.has(clip.id)) {
+            gapClosedClips.push({
                 clipId: clip.id,
                 origStartBeat: clip.startBeat,
                 origEndBeat: clip.endBeat,

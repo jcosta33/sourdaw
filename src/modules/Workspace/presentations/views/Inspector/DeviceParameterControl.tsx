@@ -1,4 +1,4 @@
-import { type ReactElement, type ChangeEvent, useMemo } from 'react';
+import { type ReactElement, type ChangeEvent } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
@@ -73,21 +73,21 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const modState = useStore(modulationStore, { modulators: [], runtimeValues: {} });
 
     // Aggregated modulation amount for this parameter
-    const modulation = useMemo(() => {
+    const modulation = (() => {
         let total = 0;
         for (const mod of modState.modulators) {
             if (!mod.enabled) continue;
             const val = modState.runtimeValues[mod.id] ?? 0;
             for (const mapping of mod.mappings) {
-                if (mapping.targetTrackId === trackId && 
-                    mapping.targetDeviceId === device.id && 
+                if (mapping.targetTrackId === trackId &&
+                    mapping.targetDeviceId === device.id &&
                     mapping.targetParamId === param.id) {
                     total += val * mapping.amount;
                 }
             }
         }
         return Math.max(-1, Math.min(1, total));
-    }, [modState, trackId, device.id, param.id]);
+    })();
 
     const laneLookup = buildLaneLookup(autoState.lanes);
 

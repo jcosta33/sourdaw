@@ -47,7 +47,8 @@ export const SpatialMapRenderer = ({
             const x = (sample.spatialMap.x + 1) * 0.5 * width;
             const y = (sample.spatialMap.y + 1) * 0.5 * height;
 
-            ctx.fillStyle = sample.favorite ? 'var(--color-accent-gold)' : 'rgba(255, 255, 255, 0.4)';
+            const accentGold = getComputedStyle(canvas).getPropertyValue('--color-accent-gold').trim() || '#d4a017';
+            ctx.fillStyle = sample.favorite ? accentGold : 'rgba(255, 255, 255, 0.4)';
             ctx.beginPath();
             ctx.arc(x, y, 3, 0, Math.PI * 2);
             ctx.fill();

@@ -314,14 +314,14 @@ export const PianoRoll = ({
                                     if (activeExpressionLane === 'velocity') return n.velocity ?? 100;
                                     if (activeExpressionLane === 'pressure') return n.pressure ?? 0;
                                     if (activeExpressionLane === 'slide') return n.slide ?? 0;
-                                    if (activeExpressionLane === 'pitchBend') return ((n.pitchBend ?? 0) + 8192) / 128; // Scale to 0-127
+                                    if (activeExpressionLane === 'pitchBend') return ((n.pitchBend ?? 0) + 8192) / 16383 * 127; // Scale to 0-127
                                     return 0;
                                 }}
                                 setValue={(cid, nid, val) => {
                                     if (activeExpressionLane === 'velocity') setNoteVelocity(cid, nid, val);
                                     if (activeExpressionLane === 'pressure') setNotePressure(cid, nid, val);
                                     if (activeExpressionLane === 'slide') setNoteSlide(cid, nid, val);
-                                    if (activeExpressionLane === 'pitchBend') setNotePitchBend(cid, nid, val * 128 - 8192);
+                                    if (activeExpressionLane === 'pitchBend') setNotePitchBend(cid, nid, Math.round(val / 127 * 16383) - 8192);
                                 }}
                                 label={activeExpressionLane}
                                 undoLabel={`Change ${activeExpressionLane}`}

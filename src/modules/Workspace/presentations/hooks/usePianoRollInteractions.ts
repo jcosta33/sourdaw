@@ -672,73 +672,94 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             if (mode === 'duplicate' && preview && (preview.beatDelta !== 0 || preview.pitchDelta !== 0)) {
                 // Alt+drag duplicate: originals stay, copies land at final positions (R-A1)
                 const dupIds = [...preview.noteIds];
-                // A9: look up source notes from both primary and secondary open clips
-                const allNotesMap = new Map<string, MidiNote>(notes.map((n) => [n.id, n]));
+                // A9: map each note to its owning clip
+                const noteToClip = new Map<string, string>();
+                const allNotesMap = new Map<string, MidiNote>();
+                for (const n of notes) { allNotesMap.set(n.id, n); noteToClip.set(n.id, clipId); }
                 if (openedClipNotes) {
-                    for (const ns of Object.values(openedClipNotes)) {
-                        for (const n of ns) { allNotesMap.set(n.id, n); }
+                    for (const [oid, ns] of Object.entries(openedClipNotes)) {
+                        for (const n of ns) { allNotesMap.set(n.id, n); noteToClip.set(n.id, oid); }
                     }
                 }
-                const sourceNotes = dupIds.map((id) => allNotesMap.get(id)).filter(Boolean) as MidiNote[];
-                const copies = batchAddMidiNotes(
-                    noteClipId,
-                    sourceNotes.map((n) => ({
-                        pitch: Math.max(0, Math.min(127, n.pitch + preview.pitchDelta)),
-                        startBeat: Math.max(0, n.startBeat + preview.beatDelta),
-                        duration: n.duration,
-                        velocity: n.velocity,
-                    }))
-                );
-                const copyIds = copies.map((c) => c.id);
+                // Group source notes by their owning clip
+                const byClip = new Map<string, MidiNote[]>();
+                for (const id of dupIds) {
+                    const n = allNotesMap.get(id);
+                    if (!n) continue;
+                    const cid = noteToClip.get(id) ?? noteClipId;
+                    const arr = byClip.get(cid) ?? [];
+                    arr.push(n);
+                    byClip.set(cid, arr);
+                }
+                const allCopyIds: string[] = [];
+                const copyByClip: Array<{ clipId: string; ids: string[] }> = [];
+                for (const [cid, srcNotes] of byClip) {
+                    const copies = batchAddMidiNotes(
+                        cid,
+                        srcNotes.map((n) => ({
+                            pitch: Math.max(0, Math.min(127, n.pitch + preview.pitchDelta)),
+                            startBeat: Math.max(0, n.startBeat + preview.beatDelta),
+                            duration: n.duration,
+                            velocity: n.velocity,
+                        }))
+                    );
+                    const ids = copies.map((c) => c.id);
+                    allCopyIds.push(...ids);
+                    copyByClip.push({ clipId: cid, ids });
+                }
                 pushUndoEntry(
                     `Duplicate ${dupIds.length} note${dupIds.length > 1 ? 's' : ''}`,
-                    () => removeNotesByIds(noteClipId, copyIds),
+                    () => { for (const entry of copyByClip) removeNotesByIds(entry.clipId, entry.ids); },
                     () => {
-                        batchAddMidiNotes(
-                            noteClipId,
-                            sourceNotes.map((n) => ({
-                                pitch: Math.max(0, Math.min(127, n.pitch + preview.pitchDelta)),
-                                startBeat: Math.max(0, n.startBeat + preview.beatDelta),
-                                duration: n.duration,
-                                velocity: n.velocity,
-                            }))
-                        );
+                        for (const [cid, srcNotes] of byClip) {
+                            batchAddMidiNotes(
+                                cid,
+                                srcNotes.map((n) => ({
+                                    pitch: Math.max(0, Math.min(127, n.pitch + preview.pitchDelta)),
+                                    startBeat: Math.max(0, n.startBeat + preview.beatDelta),
+                                    duration: n.duration,
+                                    velocity: n.velocity,
+                                }))
+                            );
+                        }
                     }
                 );
-                setSelectedNoteIds(new Set(copyIds));
+                setSelectedNoteIds(new Set(allCopyIds));
             } else if (mode === 'move' && preview && (preview.beatDelta !== 0 || preview.pitchDelta !== 0)) {
                 const movedIds = [...preview.noteIds];
-                // Commit the final positions — exactly one midiStore.set() per note instead of 60/s
-                // A9: look up source notes from all open clips
-                const allNotesMap2 = new Map<string, MidiNote>(notes.map((n) => [n.id, n]));
+                // A9: map each note to its owning clip for multi-clip moves
+                const noteToClip2 = new Map<string, string>();
+                const allNotesMap2 = new Map<string, MidiNote>();
+                for (const n of notes) { allNotesMap2.set(n.id, n); noteToClip2.set(n.id, clipId); }
                 if (openedClipNotes) {
-                    for (const ns of Object.values(openedClipNotes)) {
-                        for (const n of ns) { allNotesMap2.set(n.id, n); }
+                    for (const [oid, ns] of Object.entries(openedClipNotes)) {
+                        for (const n of ns) { allNotesMap2.set(n.id, n); noteToClip2.set(n.id, oid); }
                     }
                 }
                 const origPositions = movedIds.map((id) => {
                     const n = allNotesMap2.get(id);
-                    return { id, beat: n?.startBeat ?? 0, pitch: n?.pitch ?? 0 };
+                    return { id, clipId: noteToClip2.get(id) ?? noteClipId, beat: n?.startBeat ?? 0, pitch: n?.pitch ?? 0 };
                 });
                 const newPositions = origPositions.map((p) => ({
                     id: p.id,
+                    clipId: p.clipId,
                     beat: Math.max(0, p.beat + preview.beatDelta),
                     // R-A12: snap final pitch to scale when constrain is active
                     pitch: snapToScalePitch(Math.max(0, Math.min(127, p.pitch + preview.pitchDelta))),
                 }));
                 for (const p of newPositions) {
-                    moveMidiNote(noteClipId, p.id, p.pitch, p.beat);
+                    moveMidiNote(p.clipId, p.id, p.pitch, p.beat);
                 }
                 pushUndoEntry(
                     `Move ${movedIds.length} note${movedIds.length > 1 ? 's' : ''}`,
                     () => {
                         for (const p of origPositions) {
-                            moveMidiNote(noteClipId, p.id, p.pitch, p.beat);
+                            moveMidiNote(p.clipId, p.id, p.pitch, p.beat);
                         }
                     },
                     () => {
                         for (const p of newPositions) {
-                            moveMidiNote(noteClipId, p.id, p.pitch, p.beat);
+                            moveMidiNote(p.clipId, p.id, p.pitch, p.beat);
                         }
                     }
                 );
