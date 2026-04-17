@@ -2056,7 +2056,7 @@ The minimum viable platform targets for this architecture are **Safari 16.4 / ma
 
 ## Chapter 8: Design System — True-Black Skeuomorphic Interface Specification
 
-_Source: `look-and-feel.md`_
+_Source: `../ui/design-system.md`_
 
 A true-black, skeuomorphic DAW interface requires a carefully layered surface hierarchy, pastel accent colors tuned for low eye strain, and tactile CSS techniques that simulate physical audio hardware. This report synthesizes research across Bitwig Studio, Logic Pro, Ableton Live, and other professional DAWs into an actionable component library specification for Tailwind CSS and shadcn/ui. The design direction merges Bitwig's modern colorful dimensionality with Logic Pro's Apple-grade polish, rendered against a #000 canvas using rim-lighting and gradient-edge techniques instead of traditional shadows.
 

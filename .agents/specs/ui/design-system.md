@@ -1,6 +1,32 @@
-# Design system blueprint for a professional DAW application
+# Design System — True-Black Skeuomorphic Interface
 
-A true-black, skeuomorphic DAW interface requires a carefully layered surface hierarchy, pastel accent colors tuned for low eye strain, and tactile CSS techniques that simulate physical audio hardware. This report synthesizes research across Bitwig Studio, Logic Pro, Ableton Live, and other professional DAWs into an actionable component library specification for Tailwind CSS and shadcn/ui. The design direction merges Bitwig's modern colorful dimensionality with Logic Pro's Apple-grade polish, rendered against a #000 canvas using rim-lighting and gradient-edge techniques instead of traditional shadows.
+## Context
+
+A true-black, skeuomorphic DAW interface requires a carefully layered surface hierarchy, pastel accent colors tuned for low eye strain, and tactile CSS techniques that simulate physical audio hardware. This spec synthesizes research across Bitwig Studio, Logic Pro, Ableton Live, and other professional DAWs into an actionable component library specification for Tailwind CSS and the shadcn/ui primitives we already use. The direction merges Bitwig's modern colorful dimensionality with Logic Pro's Apple-grade polish, rendered against a `#000` canvas using rim-lighting and gradient-edge techniques instead of traditional shadows.
+
+This is the **foundational** design system. Per-plugin visual identity (color assignments, distinctive accent palettes per plugin) is specified in `plugin-identity.md`.
+
+## Goal
+
+After adoption, every Sourdaw surface uses the same token set (surface elevation, border tiers, signal colors, pastel accents, typography, spacing scale, rim-lighting rules) — so that adding a new panel, plugin, or control means pulling from the token set rather than hand-picking colors.
+
+## Scope
+
+**In scope:** surface color tokens, border/separator tiers, signal and state colors, pastel accent palette, skeuomorphic CSS techniques (rim lighting, gradient-edge, subtle luminance), interaction design patterns for mouse-first control, component inventory.
+
+**Out of scope:**
+
+- Per-plugin identity assignments — see `plugin-identity.md`.
+- Layout primitives (`Stack`, `Row`, `Grid`) — see `layout-components.md` and `layout-components-migration.md`.
+- Keyboard shortcut design.
+- Accessibility guidelines beyond the contrast targets called out inline (future spec if needed).
+
+## Acceptance criteria
+
+- [ ] All tokens defined below are present in `src/main.css` under `@theme` variables.
+- [ ] Every surface-color use in the codebase resolves through a CSS variable — no hard-coded hex in TSX.
+- [ ] Contrast of every signal/state colour against `--surface-default` meets WCAG 2.1 AA (4.5:1 min).
+- [ ] A storybook / component-gallery page demonstrates every token and skeuomorphic technique in one place.
 
 ---
 

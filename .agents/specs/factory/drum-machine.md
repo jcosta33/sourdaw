@@ -1,6 +1,44 @@
-# The Master Drum Machine — Ultimate Implementation Guide
+# Drum Machine — Flagship Spec
 
-> **Codebase Annotation:** Grinder currently exists in the codebase as an Amp Simulator plugin (`crates/daw-dsp/src/grinder`), not a Drum Machine. The pad-based sampler is `Toaster` (`crates/daw-dsp/src/toaster`), which implements basic pad assignments and sample playback, but completely lacks the advanced synthesis engines, physical modeling, and integrated step sequencer detailed below. The Master Drum Machine spec is **Missing / Unimplemented** in its intended flagship form.
+> **Codebase annotation:** Grinder currently exists as an Amp Simulator plugin (`crates/daw-dsp/src/grinder`), not a Drum Machine. The pad-based sampler is `Toaster` (`crates/daw-dsp/src/toaster`), which implements basic pad assignments and sample playback but lacks the advanced synthesis engines, physical modeling, and integrated step sequencer below. The flagship Drum Machine is **Missing / Unimplemented** in its intended form.
+
+---
+
+## Context
+
+Sourdaw's current built-in drum devices (`builtin-drum-kit`, `Toaster`) are rudimentary compared to the reference machines in this space: Logic DMD, Ableton Drum Rack, NI Battery 4, FL Studio FPC, Bitwig Drum Machine, NI Maschine, and hardware classics (MPC, TR-808/909, SP-1200, Digitakt). This spec defines the single flagship drum machine that Sourdaw will ship and use for the Factory suite.
+
+The spec is grounded in consolidated DSP research (`master-drum-machine.md`, `master-drum-machine-secrets*.md`) and the detailed reference-machine breakdowns below. Where multiple research notes contradict, the deeper circuit-level analysis takes precedence (called out inline in each part).
+
+## Goal
+
+After implementation, Sourdaw ships a pad-based drum instrument that (a) matches or exceeds the feature surface of Logic DMD / Ableton Drum Rack / Battery 4, (b) includes an integrated step sequencer with parameter locks and conditional triggers at MPC/Digitakt quality, (c) hosts both sampled and synthesized voices with per-pad effect chains, (d) meets the RT-safety contract (no allocation, no locks, no blocking on the audio thread) on both native and WASM.
+
+## Scope
+
+**In scope:**
+
+- Per-pad hosting of sample playback, drum synthesis engines, and layered sources with independent effects, modulation, mixer channel, and output routing.
+- Integrated step sequencer: per-step probability, velocity, micro-timing, parameter locks, conditional triggers.
+- Drum synthesis engines (808/909/CR-78 style physical/modal models), transient shapers, modal percussion, and advanced slicing.
+- GPU-accelerated visual rendering where applicable.
+- RT-safe real-time implementation matching `AGENTS.md` constraints.
+
+**Out of scope:**
+
+- Articulation maps (see `active/articulation-maps.md`).
+- Cross-device chained behavior beyond single-instance (see `../features/device-racks.md`).
+- AI groove generation UI surface (the DSP for pattern generation is specified in Part 3.5; the UX integration surfaces through `../features/workflow-ui.md`).
+
+## Acceptance criteria (release gate)
+
+- [ ] Every Part below has at least one integration test demonstrating its feature surface under real-time constraints.
+- [ ] RT-safety: no allocation, no mutex locks, no blocking on the audio thread — verified by the repo's standard RT-safety test harness.
+- [ ] Matches or exceeds the checklist of reference-machine features enumerated in "Reference Machines — Architectural Inspirations".
+- [ ] Ships with at least the Factory preset count defined in `../../audits/factory-content-status.md` §2.
+- [ ] `pnpm deps:validate` and `cargo test --workspace` pass.
+
+---
 
 > **Audience**: An AI coding agent building this instrument from scratch in Rust + TypeScript.
 > **Contract**: Every algorithm has the math, the data structures, and implementation details. No hand-waving.
@@ -528,6 +566,179 @@ Sub-triggers within a step: `sub_interval = step_duration / ratchet_count`. Each
 ## Pattern Morphing
 
 Interpolate between patterns A and B: triggers by probability crossfade, velocity linear, microtiming interpolated, ratchets nearest-integer.
+
+---
+
+# Part 3.5: AI Groove & Pattern Generation
+
+Grinder's step sequencer (Part 3) is the **sole write path** for AI-generated rhythmic content. AI does not produce audio and does not run on the audio thread — it produces `Pattern` / `Step` deltas that are committed to the sequencer model exactly as if a user had edited the grid. This part specifies three cooperative features — a **groove-quality classifier**, a **text-to-pattern generator**, and **template-based groove extraction/application** — and how each integrates with the existing step sequencer UI and data structures.
+
+## Runtime placement
+
+- **Native (Tauri shell):** ONNX inference runs in a Rust worker thread via the `ort` crate (ONNX Runtime). The audio thread is never touched. Inference requests arrive on an MPSC channel; results return via a Tauri event. Model files ship as app resources.
+- **Web (browser-only builds and AudioWorklet-only contexts):** Inference runs on a dedicated Web Worker via ONNX Runtime Web (WASM backend; WebGPU backend when available and the user opts in). The AudioWorklet is never touched.
+- **All inference is off the audio thread.** The audio thread reads only the committed `Pattern` after a UI-side commit (see "Preview and commit" below).
+
+This follows the Tauri-platform placement rules in `.agents/skills/tauri-platform/SKILL.md`: inference is a Rust concern on native and a Web Worker concern on web; the audio thread stays deterministic.
+
+## Data contract
+
+All three features read and write the existing `Pattern` / `Step` types defined in Part 3. No new persisted formats are introduced; AI output is simply a `Pattern` delta that the sequencer's commit path accepts:
+
+```rust
+pub struct PatternDelta {
+    pub pad_id: PadId,
+    pub steps: Vec<StepDelta>, // sparse: only changed steps
+}
+
+pub enum StepDelta {
+    SetActive { index: u8, active: bool, velocity: f32 },
+    SetMicroTiming { index: u8, offset: f32 },    // -0.5..+0.5 steps
+    SetProbability { index: u8, probability: f32 },
+    SetRatchets { index: u8, count: u8 },
+    Clear { index: u8 },
+}
+```
+
+A `PatternDelta` is the only object AI features emit. UI applies it by calling the same sequencer mutators used by manual edits. Undo/redo, parameter locks, and conditional triggers behave identically regardless of origin.
+
+## Feature 1 — Groove-quality classifier (CNN-on-mel-spectrograms)
+
+**Purpose.** Score a candidate pattern's rhythmic quality and/or genre fit, so (a) text-to-pattern can rank samples it generates and (b) the user can see a "Groove Fit" meter on any pattern (manual or generated).
+
+**Model.** A small convolutional classifier over **mel-spectrograms** of a short (2–4 bar) rendered preview of the candidate pattern played through a neutral kit. Output: a soft probability distribution over a fixed genre/groove label set (e.g. `{ boom-bap, trap, house, techno, drum-and-bass, afrobeat, amen-break, generic }`), plus a scalar "groove quality" score in `[0, 1]`. Exact architecture (e.g. 4-layer CNN → GAP → MLP head) is an implementation choice subject to the latency AC below.
+
+**Input pipeline.**
+
+1. Offline-render the candidate `Pattern` through the currently selected kit using the engine's offline render path (no realtime audio device required).
+2. Compute a log-mel spectrogram: 22.05 kHz mono downsample, 2048-FFT, 512-hop, 128 mel bins, log-magnitude, zero-mean / unit-variance per clip.
+3. Crop/pad to a fixed `(128, T_max)` tensor (`T_max` set so total bar length ≤ 4 bars at 200 BPM).
+4. Run ONNX model.
+
+**Surface.**
+
+- Small "Groove Fit" chip on every pattern slot (A–H) in the sequencer header (Level 3+), showing top-1 label and quality score.
+- The chip is **advisory only**. It never modifies the pattern.
+
+**Acceptance criteria.**
+
+- [ ] For a curated ground-truth set of ≥ 50 hand-labelled patterns covering all label classes, the top-1 genre classification accuracy is ≥ 70 % and the quality score has Spearman correlation ≥ 0.5 with human-rated quality.
+- [ ] End-to-end latency from "classify this pattern" to result, measured on a reference laptop (Apple M1 / 16 GB), is ≤ 250 ms for a 2-bar pattern — broken down roughly as ≤ 150 ms offline render + ≤ 50 ms mel + ≤ 50 ms inference. On a reference web target (Chrome / M1), ≤ 500 ms.
+- [ ] Classification runs entirely off the audio thread. A verification test triggers classification during playback and asserts that audio callback run-time distribution (p99) is unchanged versus a playback-only control within ±10 %.
+- [ ] The classifier loads its model lazily on first use and caches it for the session; first-use cost is reported to the UI as a "warming up" state and does not block the sequencer.
+
+## Feature 2 — Text-to-pattern (prompt → structured JSON)
+
+**Purpose.** User types a short prompt (e.g. "slow boom-bap with ghost snares on 3e") and receives a candidate `Pattern` proposal they can preview and commit.
+
+**Model and inference location.**
+
+- Native: a small local LLM (e.g. Phi-3-mini or a comparable ≤ 4 B parameter model) via `ort` with quantized weights, OR a call-out to a configured cloud endpoint if the user has enabled one. Both paths emit the same JSON shape.
+- Web: same choice surface, but the local path uses ONNX Runtime Web with WebGPU when available.
+- Choice of specific model is an open question (see below). The spec fixes the **interface**, not the model.
+
+**Prompt contract.** The LLM is constrained to emit JSON matching this schema:
+
+```json
+{
+  "bars": 1,
+  "resolution": 16,
+  "swing": 0.12,
+  "steps": [
+    { "pad": "kick",  "index": 0,  "velocity": 1.00, "probability": 1.0, "micro": 0.00 },
+    { "pad": "snare", "index": 4,  "velocity": 0.85, "probability": 1.0, "micro": -0.02 },
+    { "pad": "hat",   "index": 2,  "velocity": 0.60, "probability": 0.9, "micro": 0.00 }
+  ],
+  "kit_deltas": []
+}
+```
+
+Parsing is strict: invalid JSON, out-of-range velocities, or unknown pads cause the proposal to be rejected (user sees a "model returned invalid pattern — try again" toast). Valid proposals are converted to a `PatternDelta` against the currently selected pattern slot.
+
+**Preview and commit model.** Proposed deltas are **never auto-committed**. Flow:
+
+1. User enters prompt in the sequencer's prompt field (visible at Level 3+).
+2. Worker returns a JSON proposal; UI converts it to a `PatternDelta` and renders it in a **preview overlay** on the step grid (distinct color from manual steps).
+3. Playback plays the previewed pattern without overwriting the underlying slot.
+4. User clicks **Accept** (commits the delta) or **Reject** (discards it). Accept goes through the same mutator path as a manual edit — undoable.
+
+Only steps that the prompt explicitly mentions may appear in the delta; steps the model "decides" to add spuriously are rejected at parse time if they fall outside the prompt's stated intent (bar/resolution/pad list).
+
+**Acceptance criteria.**
+
+- [ ] Over a fixed suite of 10 canonical prompts (recorded in the test fixtures) evaluated across 20 trials each (200 total outputs), "slow boom-bap" prompts produce patterns with **kick density ≥ 70 % on beats 1 and 3** and **snare hits on beats 2 and 4 in ≥ 90 % of trials**.
+- [ ] "Four-on-the-floor house" prompts produce kick on every downbeat in ≥ 95 % of trials and a hat pattern whose inter-onset interval distribution peaks at the 8th-note grid.
+- [ ] Schema-invalid outputs are rejected without crashing and surface a user-visible, non-technical error. The test suite includes adversarial prompts designed to elicit malformed JSON; failure-mode rate must be 100 % rejection, 0 % silent pattern corruption.
+- [ ] Proposals always appear in a preview overlay; a test verifies that `pattern_slot.steps` is unchanged until the user presses Accept.
+- [ ] Prompt-to-preview latency ≤ 3 s on the reference native target for local inference; ≤ 6 s on the reference web target. If exceeded, UI shows cancellable progress.
+
+## Feature 3 — Template groove extraction and application
+
+**Purpose.** Extract the groove (swing, micro-timing, velocity curve, ghost-hit pattern) from a source pattern and re-apply it to a different kit or different note content, producing the MPC / SP-1200 / TR-808-shuffle "feel transfer" workflow.
+
+**Extraction.** Given a source `Pattern` (e.g. a hand-authored or imported 808/909 pattern), compute a `GrooveTemplate`:
+
+```rust
+pub struct GrooveTemplate {
+    pub resolution: u8,                      // 16, 32, etc.
+    pub swing: f32,                          // global swing ratio
+    pub micro_timing: [f32; MAX_STEPS],      // per-step offset in ticks (960 PPQN reference)
+    pub velocity_curve: [f32; MAX_STEPS],    // per-step velocity gain 0..1 relative to nominal
+    pub ghost_mask: [bool; MAX_STEPS],       // which steps are ghost hits (velocity < 0.4)
+}
+```
+
+The template is purely timing + dynamics. It contains **no pad identities, no sample references, and no synth parameters** — it is the re-applicable shape of the groove.
+
+**Application.** Given a target `Pattern` on any kit and a `GrooveTemplate`, the groove-apply operation:
+
+1. Leaves the target's **step activation pattern** unchanged (kicks stay where they are).
+2. Overwrites each active step's `micro_timing` with the template's value (or proportionally mapped if resolutions differ).
+3. Multiplies each active step's `velocity` by the template's velocity curve.
+4. Sets the pattern's global `swing` from the template.
+5. Emits a single `PatternDelta`; the UI routes it through the same preview-and-commit flow as Feature 2.
+
+**Curated library.** Ship with at minimum: "TR-808 shuffle", "TR-909 swing 58 %", "MPC swing 54 %", "MPC swing 62 %", "SP-1200 straight", "J-Dilla late-snare". Each is a hand-authored `GrooveTemplate` stored as JSON in the app resources.
+
+**Generation from reference audio (stretch, optional for v1).** Extracting a `GrooveTemplate` from a reference audio loop (rather than a MIDI pattern) requires transient detection and is covered by the auto-slice path (Part 2, lines 298-307). When that path surfaces a sliced rhythmic pattern, the groove-extract function runs on the detected onsets and their relative amplitudes. This mode is gated behind Level 5 UI.
+
+**Acceptance criteria.**
+
+- [ ] Extract a `GrooveTemplate` from a known 808 reference pattern, apply it to a different kit pattern, and measure: per-step timing deviation between re-applied and source is within **±5 ticks at 960 PPQN** (≈ ±5 ms at 120 BPM) for every active step.
+- [ ] Velocity curve re-application preserves the source's relative dynamics: per-step velocity ratio (re-applied / source) has standard deviation ≤ 0.05 over a suite of 10 reference patterns.
+- [ ] Applying a `GrooveTemplate` to an empty pattern is a no-op (nothing to time-shift).
+- [ ] A round-trip (extract template from pattern A → apply to pattern A again) is idempotent: the resulting `Pattern` is bit-identical to the input.
+- [ ] The groove-apply operation emits one `PatternDelta` and goes through the preview-and-commit flow; a test verifies no direct mutation of `pattern_slot` occurs before Accept.
+- [ ] Ships with the curated library listed above, each passing the round-trip test on synthetic patterns.
+
+## Integration point with the existing sequencer UI
+
+- **Level 1–2:** No AI UI surface. Groove Fit chips are hidden.
+- **Level 3 — Build:** Prompt field in the step sequencer header (Feature 2). Groove-template picker in the swing/groove control area (Feature 3). Groove Fit chip on each pattern slot (Feature 1). All preview-and-commit.
+- **Level 5 — Lab:** Exposes inference settings (model choice, local vs cloud, batch size). Exposes groove extraction from audio loops.
+
+All AI UI is additive; existing step-sequencer interaction is unchanged. A user who never interacts with an AI control gets identical behavior to today.
+
+## Out of scope
+
+- AI-generated **audio** (sample synthesis, neural drum synthesis). This spec only covers MIDI-level / pattern-level generation. Neural audio would be a separate spec.
+- Real-time AI reaction to incoming MIDI (e.g. "complete this phrase live"). Inference latency targets here assume on-demand generation, not continuous adaptation.
+- Training or fine-tuning pipelines. Models are consumed as shipped ONNX files; training is a separate concern.
+- Persisted preference learning across sessions for the quality classifier. The classifier is stateless per session.
+
+## Open questions
+
+- [CRITICAL] **Model choice for Feature 2 (text-to-pattern).** Candidates: Phi-3-mini (MIT license, ~3.8 B params, ~2 GB quantized), Llama-3.2-1B (community license with commercial terms), Qwen2.5-0.5B (Apache 2.0). Unresolved: which meets the ≤ 3 s native latency AC while satisfying the prompt-adherence ACs, and whose license is compatible with distributing a commercial DAW app. Implementation is blocked until this is resolved.
+- **Model distribution.** Ship models bundled (large installer) vs download on first use (smaller installer, first-run network requirement). Likely bundled for native, lazy-download for web, but needs product confirmation.
+- **Cloud fallback policy.** If a user has disabled cloud inference but has no compatible local model, Feature 2 UI must be disabled. Exact wording / discoverability of this state is a UX question, not a spec question, but the toggle needs to exist from day one.
+- **Classifier label set.** The initial genre/groove label set above is a straw-man; the actual set should be validated against Sourdaw's target users. Not a blocker for implementation — the first set can ship as an enumerated constant and evolve.
+- **Groove extraction from audio — transient-to-microtiming mapping precision.** The auto-slice path produces onset timestamps; the mapping from onsets to `GrooveTemplate` indices needs a quantization step whose tolerance to timing ambiguity is not yet specified. Not a blocker for v1 (MIDI-source extraction ships first).
+
+## Dependencies
+
+- Native: `ort` crate (ONNX Runtime bindings), `rustfft` or similar (mel-spectrogram compute), `serde_json`.
+- Web: `onnxruntime-web` (npm), WebAudio `OfflineAudioContext` for offline render, a mel-spectrogram WASM module or JS implementation.
+- Model files: placed in `resources/ai-models/` with per-file license/provenance metadata. Any model added to this directory must have a `<model>.LICENSE` sibling file.
 
 ---
 

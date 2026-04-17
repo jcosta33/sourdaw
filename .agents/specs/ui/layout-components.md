@@ -10,7 +10,7 @@ The Sourdaw codebase currently has 1,164+ inline flex declarations and 391+ `fle
 
 This spec defines strict layout primitives that enforce the established spacing scale from the audit.
 
-See: `.agents/audits/layout-components/flex-grid-patterns-audit.md`
+See: `.agents/audits/layout-components/flex-grid-patterns.md`
 
 ---
 

@@ -4,7 +4,7 @@
 
 Professional video scoring requires sample-accurate synchronization between the audio engine (master) and a video playback engine (slave). Standard browser `<video>` elements and simple `setTimeout` loops are insufficient for professional work due to clock drift (20–100 ppm) and unpredictable IPC latency.
 
-Reference research: `.agents/research/scoring.md`
+Reference research: `.agents/research/factory/active/scoring.md`
 
 ---
 
@@ -49,6 +49,7 @@ Provide a robust, phase-locked loop (PLL) synchronization system that slaves the
 - Real-time video effects or overlays (beyond simple timecode burn-in).
 - Network-based synchronization (MTC/LTC) in this initial spec.
 - Rust-side video frame decoding for real-time display (browser handles main playback decoding).
+- **Superclock / sample-rate-independent internal time base** (e.g., Ardour's 508,032,000-per-second unit). v1 stores time as `u64` sample positions at the project sample rate. See `## Design decisions → Decision: Internal time base (Superclock deferred)` and the `implementation notes` forward pointer for the migration path.
 
 ---
 
@@ -100,15 +101,30 @@ Provide a robust, phase-locked loop (PLL) synchronization system that slaves the
 **Chosen:** Web Worker reading Channel messages -> `SharedArrayBuffer` -> Main thread `Atomics.load`.
 **Justification:** Offloads the 100Hz sync computation from the main thread, preventing UI jank.
 
+### Decision: Sync drift target (engineering target vs release gate)
+
+**Chosen:** Two-tier criterion — **engineering target ±10 ms steady-state** (the PLL must converge to and hold within ±10 ms once locked), **release gate ±40 ms (±1 frame at 25 fps) cumulative drift over 10 minutes** of continuous playback.
+**Considered:** A single ±10 ms criterion over the full 10-minute window (as implied by the research's "±10 ms class accuracy" figure).
+**Justification:** The research's ±10 ms figure describes the PLL's **steady-state convergence band** (the `<10 ms` branch in the three-tier correction algorithm), not a guaranteed long-run envelope. Over 10 minutes the `<video>` element may legitimately cross into the 10–300 ms "medium drift" correction zone (e.g., after a dropped frame, GC pause, tab throttling, or codec reseek), and the PLL is *designed* to allow excursions up to ~300 ms before re-converging. Gating release on ±10 ms for the entire window would fail the product on correct, convergent behavior. We therefore keep ±10 ms as the **engineering target** the control loop must achieve when stable, and use ±40 ms (one frame at the lowest supported frame rate, 25 fps) as the **release gate** — a guaranteed maximum the system never exceeds across a 10-minute window. This matches the ±1-frame tolerance that Logic Pro, Cubase, and Pro Tools target for professional scoring. The ±10 ms target is **not** silently loosened to 40 ms: it is preserved as a distinct acceptance criterion (see `## Acceptance criteria`).
+**Rejected:** Accepting 40 ms only, with no engineering target. This would let an implementation that never actually locks the PLL (e.g., permanently running at ±35 ms) pass release — defeating the purpose of the PLL architecture.
+
+### Decision: Internal time base (Superclock deferred)
+
+**Chosen:** v1 uses `u64` sample positions at the project sample rate as the canonical internal time base. Superclock (a sample-rate-independent integer base unit, e.g., Ardour's 508,032,000-per-second) is an **explicit non-goal** for v1.
+**Justification:** Superclock only pays off when the project sample rate changes mid-session or when losslessly interchanging sessions across sample rates. v1 fixes the project sample rate at load time, so sample-position time is already exact. Introducing Superclock now would require touching every time-bearing type (clips, automation, markers, tempo map, timecode), which is disproportionate to the v1 scope.
+**Forward pointer:** When sample-rate-agnostic time becomes a requirement (e.g., session interchange, runtime sample-rate switching, or hi-res SMPTE offsets per Ardour/Meadowlark precedent), file a dedicated spec. The migration path is: (a) introduce a `SuperclockTicks` newtype in `daw-core`, (b) convert `sample -> ticks` at the I/O boundary, (c) store ticks in the project model, (d) convert back to samples at the audio-thread boundary. The `smpte_seconds = sample_position / sample_rate` invariant must be preserved under the new unit.
+
 ---
 
 ## Acceptance criteria
 
-- [ ] Sync drift stays under 40ms (±1 frame at 25fps) over 10 minutes of playback.
+- [ ] **Sync — engineering target (steady-state):** Once the PLL has converged (after the 1–3 s pre-roll), measured drift between `audioPlayheadSecs` and `video.requestVideoFrameCallback` `metadata.mediaTime` stays within **±10 ms** for at least 95% of sampled frames during a 10-minute continuous playback run at 48 kHz / 29.97 fps. Measured by an automated harness that records `{audioPlayheadSecs, metadata.mediaTime, drift}` per frame callback and computes the distribution.
+- [ ] **Sync — release gate (cumulative drift):** Across the same 10-minute run, measured drift **never exceeds ±40 ms (±1 frame at 25 fps)** at any frame callback. A single sample outside ±40 ms fails the gate.
 - [ ] SMPTE display matches industry-standard calculators for 23.976, 24, 25, 29.97 (NDF/DF), and 30 fps.
 - [ ] Video audio extraction produces an f32/48kHz/stereo WAV/PCM file aligned with the video start.
 - [ ] Thumbnails are accurately generated across the video track using FFmpeg keyframe seeking.
 - [ ] Exported video contains the original video stream and the new DAW audio mix (AAC).
+- [ ] **Scene markers — detection & placement:** On import of a video with known scene cuts, the scene-cut detector emits an ordered list of cut timestamps (in project seconds, derived from the video's PTS and the project SMPTE offset). A scene marker is placed on the video track at each detected cut, typed as `SceneMarker` (distinct from standard and SMPTE-locked markers) and **absolute-time locked** (unaffected by tempo map edits). Verified by an automated fixture: given `tests/fixtures/video/scene-cuts-10.mp4` (10 labelled cuts at known timestamps), the detector returns exactly 10 markers and each marker's timestamp is within **±0.5 s** (half a second, to accommodate detector-vs-ground-truth alignment on faded cuts) of the labelled ground truth. Hard cuts must match within **±1 frame at the source video frame rate**.
 - [ ] `pnpm deps:validate` passes with zero violations.
 
 ---
@@ -118,7 +134,7 @@ Provide a robust, phase-locked loop (PLL) synchronization system that slaves the
 - **Pre-roll:** Allow 1–3 seconds of pre-roll for the PLL to stabilize `playbackRate`.
 - **Sub-frame tracking:** At 48kHz / 29.97fps, samples per frame is non-integer (1601.6). Sub-frame tracking is necessary as frame boundaries don't perfectly align with sample boundaries.
 - **Shared Memory Limit:** Tauri does not support shared memory between Rust and WebView. `SharedArrayBuffer` is only for Web Worker to Main Thread communication.
-- **Superclock:** For future-proofing internal DAW timekeeping, consider a "superclock" base unit (e.g., 508,032,000 per second) to make sample-rate changes lossless, as SMPTE and sample time are always in a fixed linear relationship.
+- **Superclock:** **Out of scope for v1** — see `## Scope → Non-goals` and `## Design decisions → Decision: Internal time base (Superclock deferred)`. Not "future-proofing we might opportunistically add"; it is an explicit non-goal that requires its own spec when the product needs sample-rate-independent time (e.g., session interchange or runtime sample-rate switching).
 
 ---
 
@@ -128,6 +144,8 @@ Provide a robust, phase-locked loop (PLL) synchronization system that slaves the
 - [ ] **Manual:** Change tempo and verify SMPTE-locked markers stay at the same video frame.
 - [ ] **Automated:** Unit tests for rational SMPTE conversion and drop-frame math in Rust.
 - [ ] **Automated:** Integration test for FFmpeg audio extraction, thumbnail generation, and muxing.
+- [ ] **Automated:** Scene-cut detector fixture test — feed `tests/fixtures/video/scene-cuts-10.mp4` with labelled cut timestamps, assert the detector emits exactly the expected number of `SceneMarker` entries, each within ±0.5 s (±1 frame for hard cuts) of ground truth.
+- [ ] **Automated:** PLL drift harness — 10-minute 48 kHz / 29.97 fps playback, record per-frame drift, assert (a) ≥95% of samples within ±10 ms post-convergence and (b) no sample exceeds ±40 ms.
 
 ---
 

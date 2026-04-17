@@ -7,7 +7,7 @@ New layout components (`Stack`, `Row`, `Grid`, `Spacer`, `Divider`) have been cr
 This spec guides the systematic migration from inline Tailwind classes to the new layout primitives.
 
 **Prerequisites:**
-- Audit: `.agents/audits/layout-components/flex-grid-patterns-audit.md`
+- Audit: `.agents/audits/layout-components/flex-grid-patterns.md`
 - Components: `src/components/layout/*.tsx`
 
 ---
@@ -15,6 +15,35 @@ This spec guides the systematic migration from inline Tailwind classes to the ne
 ## Goal
 
 Migrate 80%+ of qualifying inline flex/grid patterns to the new layout components while maintaining visual parity and passing all existing tests.
+
+---
+
+## User-visible behavior
+
+The migration is **invariant** — end users must see zero visual or interaction changes. The observable invariants:
+
+- Every migrated surface renders pixel-identical (within AA subpixel rendering tolerance) to its pre-migration state in Chromium.
+- Hover, focus, keyboard, and scroll behavior are unchanged.
+- No layout thrash or reflow regressions; frame time under load does not regress.
+
+## Constraints
+
+- Follow the existing `Stack / Row / Grid / Spacer / Divider` API — do not invent new props or extend the primitive during migration.
+- No `useMemo`, `useCallback`, `React.memo`, or `forwardRef` (React 19 + React Compiler).
+- Never regress `pnpm deps:validate` or `pnpm typecheck`.
+- Manual edits only — no codemods or automated bulk-rewrite scripts (`AGENTS.md`).
+
+## Design decisions
+
+- **Decision:** A primitive match must preserve gap *and* direction semantics. When an inline class is ambiguous (e.g., `flex gap-2` without `flex-col`), it is treated as a `Row` unless the surrounding context clearly implies a column.
+- **Decision:** Migrate by file group, not by class pattern, to amortize review cost and keep visual regressions local.
+- **Decision:** Ad-hoc patterns outside the primitive's vocabulary (e.g., custom grids with `auto-cols-min`) are left in place; the 80% target explicitly excludes them.
+
+## Test plan
+
+- After each file migration batch: run the full test suite (`pnpm test`) and visual-regression snapshots for the affected surfaces.
+- Run `pnpm deps:validate` per every 10 files touched (`AGENTS.md` reflex rule).
+- Manual spot checks on the high-traffic surfaces listed under "Priority Migration Files" before declaring the migration shippable.
 
 ---
 

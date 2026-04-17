@@ -4,7 +4,7 @@
 
 No single DAW sampler combines all best-in-class workflows. Ableton leads in speed, Logic in intelligence (auto-analysis), FL Studio in per-slice control, and Bitwig in modulation depth. The goal of this architecture is to provide a single instrument that unifies these workflows while maintaining strict real-time safety on the audio thread.
 
-Reference relevant research: `.agents/research/unified-sampler-suite.md`
+Reference relevant research: `.agents/research/factory/unified-sampler-suite.md`
 
 ---
 
@@ -100,6 +100,32 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
     - **Markers:** Interaction with draggable slice markers MUST be debounced (50ms) to prevent IPC flooding.
     - **Direct Recording:** The engine MUST support a "Recorder" mode with SP-404 style threshold triggering to capture audio directly into memory buffers.
 
+9. **Round-Robin Sample Rotation**
+    - A single trigger (pad / MIDI note / slice) MUST support an ordered list of 1–32 round-robin sample variants.
+    - The engine MUST provide three selectable cycle modes: `Sequential` (advance the index by 1 modulo N on each trigger), `Random` (uniform random over all N variants), and `RandomNoRepeat` (uniform random over the N−1 variants that exclude the last played — equivalent to "random-robin with repeat avoidance" in research Part 2d).
+    - The round-robin counter MUST be stored per-pad (Drum mode) or per-slice (Slice mode), advance synchronously with note-on on the audio thread, and MUST NOT allocate.
+    - A `reset_round_robin` command MUST set the counter back to index 0 via the SPSC command queue (for deterministic playback / rendering).
+    - Round-robin selection MUST compose with velocity layering: the velocity layer is resolved first, then round-robin selects among variants within that layer.
+
+10. **Velocity Layering**
+    - Each pad / slice MUST support up to 16 velocity layers. Each layer defines a MIDI velocity range `[v_lo, v_hi]` over `0..=127` and a sample list (each list itself subject to requirement 9).
+    - The engine MUST resolve a layer in O(log N) or O(N) bounded time on the audio thread (no allocation) by selecting the first layer whose range contains the incoming velocity.
+    - Layer ranges MAY overlap. When they overlap, overlapping layers MUST be crossfaded by an equal-power (sin/cos) gain based on the position of the incoming velocity within the overlap window. Non-overlapping layers MUST produce a single hard-selected layer with gain 1.0.
+    - Configuration MUST reject layer sets whose union does not cover `0..=127`; unreachable velocities MUST be surfaced as a validation error to the UI (not silently played as silence).
+    - Layer resolution MUST be deterministic: given identical `{velocity, layer_config, round_robin_state}`, the same voice(s) and gains MUST be produced.
+
+11. **Per-slice articulation and modulation depth**
+
+    The user-visible promises of FL Studio-style articulator groups, Bitwig-level modulation, Mod X/Y crossfading, and voice stacking MUST be formalised as engine surface area — they are not implementation-detail footnotes.
+
+    - **Articulator groups:** Each pad / slice MUST support at least **8 independent articulator slots**. An articulator is one of `{AHDSR envelope, LFO, MSEG, filter, pitch-shift, pan, bitcrush, drive}`. Each slot is pre-allocated per voice at initialisation; adding or removing slots at runtime MUST go through the SPSC command queue and not allocate on the RT thread.
+    - **Mod-matrix surface:** The engine MUST expose a unified modulation matrix where any `{source, destination}` pairing is addressable by stable ID. Sources include MIDI velocity, aftertouch, CC, LFOs, envelopes, MSEGs, mod X, mod Y, macro 1..8. Destinations include per-slot articulator parameters, warp ratio (Flex Speed), filter cutoff/Q, grain density, pitch, pan, and round-robin selection bias. The matrix MUST support up to **32 active routings per pad/slice** (compile-time constant).
+    - **Mod X/Y crossfading (dual-deck):** Each pad / slice MAY carry two "decks" (A and B) of independent sample + articulator state. Mod X and Mod Y are two `AtomicF32` parameters in `[0, 1]` that gate crossfading between decks via equal-power (sin/cos) gains. Switching a pad from single-deck to dual-deck MUST occur off-audio-thread through the SPSC queue.
+    - **Voice stacking with per-voice detuning:** Each pad / slice MAY declare a `stack_count ∈ [1, 8]` and a `stack_detune_cents ∈ [0, 50]`. On note-on, the engine allocates `stack_count` voices with detunes symmetrically distributed across `[-detune_cents, +detune_cents]`; each voice is subject to the normal allocation/stealing rules (requirement 2) and contributes to the overall voice count. Stack voices MUST share round-robin and velocity-layer state so that the perceived variant is identical across the stack.
+    - **MPE-awareness:** The engine MUST accept per-note pitch bend (±48 semitones range configurable), per-note pressure, and per-note CC74 (timbre/Y). Each incoming MPE channel maps to a dedicated voice slot; these per-note controllers are first-class mod-matrix sources. MPE is not required to be wire-protocol MPE — MIDI 1.0 per-channel-note and MIDI 2.0 per-note controllers both resolve to the same internal `PerNoteControllers` struct.
+    - **Flex Speed as modulation target:** The warp ratio exposed by requirement 6 MUST be addressable by the modulation matrix at control rate. Modulating it MUST NOT trigger allocation or FFT-buffer resize — the warp engine's pre-allocated buffers (requirement 6) are sized for the maximum configured ratio at patch load.
+    - **RT discipline:** All articulator computations, matrix routing, deck crossfade, stack mixing, and MPE resolution MUST respect requirement 1 (no alloc, no locks, no blocking on RT thread). The entire matrix evaluation for one audio block MUST complete in bounded `O(active_routings × active_voices)` time.
+
 ---
 
 ## Critical DSP Constants
@@ -155,6 +181,33 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 - [ ] Changing filter cutoff or time-stretch ratio during playback does not produce zipper noise or audible clicks.
 - [ ] Voice allocation bitfield scan completes in O(1) using `trailing_zeros()` and `compare_exchange_weak` without mutex locking.
 - [ ] Mipmap generation completes for a 10-minute stereo file in <500ms and UI receives the peak data via binary IPC.
+- [ ] **Round-robin — Sequential:** Given `N` samples `[S0..S(N-1)]` assigned to one pad in `Sequential` mode, triggering the pad `N+1` times (from reset) produces the voice sequence `S0, S1, …, S(N-1), S0`.
+- [ ] **Round-robin — RandomNoRepeat:** Given `N ≥ 2` samples in `RandomNoRepeat` mode, across 1,000 consecutive triggers no two adjacent triggers select the same variant, and each variant is selected at least once.
+- [ ] **Round-robin — reset:** After `reset_round_robin` is dispatched via the SPSC command queue, the next trigger in `Sequential` mode MUST produce `S0`, regardless of prior counter state.
+- [ ] **Round-robin is allocation-free:** `assert_no_alloc` reports zero allocations during 10,000 consecutive round-robin triggers across 128 voices.
+- [ ] **Velocity layering — non-overlap:** Given layers `[0..63] → L_lo`, `[64..127] → L_hi` with one sample each, triggers at velocities `1, 63, 64, 127` play exactly `L_lo, L_lo, L_hi, L_hi` respectively with gain 1.0.
+- [ ] **Velocity layering — crossfade:** Given layers `[0..80] → L_lo` and `[70..127] → L_hi` overlapping in `[70..80]`, a trigger at velocity 75 MUST sound both layers with equal-power gains summing to approximately unity (±0.5 dB), gains corresponding to the crossfade position 0.5 within the overlap window.
+- [ ] **Velocity layering — coverage validation:** A layer configuration of `[10..20], [30..40]` MUST be rejected at configuration time with an error surfaced to the UI identifying the uncovered velocity ranges.
+- [ ] **Round-robin composes with velocity layers:** Given a pad with two velocity layers, each containing 3 round-robin variants in `Sequential` mode, triggering 4 times alternating within the same layer advances that layer's counter `0 → 1 → 2 → 0` while the other layer's counter remains unchanged.
+- [ ] **Articulator slots allocate-free:** A pad configured with 8 articulator slots (envelope+LFO+MSEG+filter+pitch+pan+bitcrush+drive) processes 10,000 consecutive note-ons with `assert_no_alloc` reporting zero allocations on the RT thread.
+- [ ] **Mod matrix — 32 routings:** A pad with 32 active `{source → destination}` routings evaluates its matrix in bounded time per block; adding the 33rd routing is rejected at configuration time with a UI error.
+- [ ] **Mod X/Y dual deck:** Setting `mod_x = 0.0` plays deck A at full amplitude, `mod_x = 1.0` plays deck B at full amplitude, `mod_x = 0.5` produces both decks at −3 dB (sin/cos crossfade within ±0.5 dB tolerance).
+- [ ] **Voice stacking:** A pad with `stack_count = 4, detune_cents = 20` triggered once produces 4 simultaneous voices with fundamental-frequency offsets of approximately `{-20, -6.67, +6.67, +20} cents` (±2 cents tolerance as measured by FFT peak-picking).
+- [ ] **MPE per-note:** Sending MIDI channels 2–8 carrying simultaneous note-ons at different pitches routes each to a distinct voice slot whose per-note pitch-bend source is addressable in the mod matrix and produces the expected pitch modulation at FFT analysis.
+- [ ] **Flex Speed modulation:** Routing an LFO → warp ratio produces audible pitch/time modulation; during 1,000 LFO cycles `assert_no_alloc` reports zero allocations and the warp engine's FFT buffers retain their pre-allocated capacity (verified by inspecting buffer pointers before/after).
+
+---
+
+## Open questions
+
+- [CRITICAL] **Memory budget for large sampled instruments (stream vs fully-loaded).** Research Part 2b quantifies a ~76MB budget for 128 voices with 12KB preload + 64KB ring buffer. For multi-GB instruments (e.g. 5 velocity layers × 10 round-robins × 88 keys) this remains feasible only while each sample is streamed. HISE's `MAX_SAMPLER_PITCH` heuristic forces full-RAM loads above a pitch-ratio threshold. We need to decide: (a) the hard MB cap above which the engine refuses to load a preset and reports back to the UI, (b) the pitch-ratio threshold that promotes a sample from streaming to fully-resident, and (c) whether a user-visible "stream / RAM / auto" control is exposed per-sample or per-instrument.
+- [CRITICAL] **Missing or relocated sample files at load time.** Presets reference samples by path or content hash. The spec must define behavior when a file is missing, moved, or fails checksum: (a) does the preset fail to load, load partially with placeholder silence voices, or enter a "relink required" state surfaced to the UI? (b) Is there a relink flow (manual path substitution, directory-wide search, hash-based lookup)? (c) What is the RT-thread contract when a voice is triggered for a missing sample — silent voice with telemetry event, or hard refuse to allocate the voice?
+- [CRITICAL] **Sample rate mismatch between asset and engine.** Research Part 2g states SRC must run on the I/O thread using `rubato` at load time. The spec must pin down: (a) is conversion mandatory at load, or does the engine support mixed-rate samples resolved at playback via the existing Cubic Hermite interpolator? (b) which `rubato` variant is authoritative for fixed-ratio conversions (`FftFixedInOut`) vs non-integer ratios (`SincFixedOut`)? (c) What happens during recorded / Recorder-mode captures when the session rate changes while a pad's buffer is already resident — re-resample, refuse, or mark the pad as rate-locked?
+- **Round-robin persistence across sessions.** Should the round-robin counter be persisted in the project file (deterministic re-renders) or reset on project load (avoids surprising "why does this track sound different after reopening")? Research does not specify.
+- **Velocity layer crossfade curve selection.** Research Part 2d fixes equal-power (sin/cos) for loop crossfades but does not specify a curve for inter-layer velocity crossfades. Options include equal-power, linear, or user-selectable. This is non-critical because equal-power is a defensible default and can be revisited.
+- [CRITICAL] **MPE protocol surface.** Requirement 11 accepts MPE as a first-class mod source but does not pin down whether v1 must accept the full MIDI Polyphonic Expression 1.0 spec (master channel + member channels + per-channel pitch bend range negotiation) or just the internal `PerNoteControllers` projection fed by any source. Decide: (a) full MPE 1.0 wire protocol including RPN 0,6 pitch-bend-range messages, (b) simplified "per-note-aware" surface (channel-per-note routing without RPN negotiation), or (c) defer MPE to v1.1 with only per-channel pressure and pitch-bend as mod sources in v1. Affects the input-stage spec and downstream MIDI 2.0 compatibility path.
+- [CRITICAL] **Voice stacking interaction with disk streaming budget.** Requirement 11's stack_count up to 8 multiplies active voice count by up to 8× per trigger, which can push the pre-allocated 128-voice pool + 16MB ring buffer budget (research Part 2b) into starvation on large sampled instruments. Decide: (a) hard cap `total_active_voices ≤ MAX_VOICES` (128) where stacks count as N voices (and the stealing cascade applies), (b) reserve a separate `stack_voice_pool` budget, or (c) degrade stacked voices to lower-quality interpolation under memory pressure. Resolve before implementing requirement 11.
+- **Articulator slot count.** v1 fixes this at 8 per FL Studio precedent. Confirm with product whether the dual-deck case should also carry 8 per deck (16 total per pad) or 8 shared across decks.
 
 ---
 

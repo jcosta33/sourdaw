@@ -2,7 +2,7 @@
 
 ## Context
 
-This spec translates the findings from `.agents/research/pipeline/audio-generation.md` into concrete requirements for the first shippable AI audio generation feature in Sourdaw. The research establishes that local-first AI singing synthesis is now feasible, with DiffSinger (OpenVPI fork) as the production-proven engine, and recommends a hybrid architecture (Rust ONNX + Python sidecar) as the integration pattern.
+This spec translates the findings from `.agents/research/pipelines/audio-generation.md` into concrete requirements for the first shippable AI audio generation feature in Sourdaw. The research establishes that local-first AI singing synthesis is now feasible, with DiffSinger (OpenVPI fork) as the production-proven engine, and recommends a hybrid architecture (Rust ONNX + Python sidecar) as the integration pattern.
 
 Sourdaw already has foundational infrastructure for AI audio work:
 
@@ -67,10 +67,13 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 - SoulX-Singer integration — no ONNX export exists yet; monitor only
 - Piano roll UI for lyric entry — assumed to exist or be specified separately
 - Arrangement-level multi-track vocal workflow — Phase 4 per research UX blueprint
-- Retake tray / A-B compare UI — Phase 3 per research UX blueprint; separate spec
+- Retake tray / A-B compare UI — Phase 3 per research UX blueprint; deferred to a companion UX spec (see Open questions)
+- Lock/unlock semantics for AI-generated regions (pitch, timing, lyrics, voice identity) — research §6 — deferred to the companion UX spec
+- Change overlays (old-pitch-in-gray vs new-pitch-in-color deltas after regeneration) — research §6 — deferred to the companion UX spec
 - Training custom voicebanks or vocoders
 - Browser-only (WASM) DiffSinger inference — Tauri-native only for MVP
 - Custom vocoder training to replace CC-BY-NC-SA NSF-HiFiGAN
+- First-run setup wizard UI — the wizard is required (see Constraints), but its UI design and onboarding flow are a separate spec
 
 ---
 
@@ -163,6 +166,10 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 - Model downloads go through `model_download.rs` infrastructure. No new download mechanisms.
 - License safety: only MIT or Apache 2.0 model weights for shippable features. The community DiffSinger NSF-HiFiGAN vocoder is CC-BY-NC-SA 4.0 — it must NOT be shipped. BigVGAN v2 (MIT) and Vocos (MIT) are the approved vocoders.
 - Generated audio files are cached in `~/.local/share/com.sourdaw.app/generated/singing/` with deterministic naming based on input hash (MIDI data + lyrics + voice + quality + seed), enabling cache hits on re-render.
+- **First-run setup required.** Per research §5, the initial installer (~100–200 MB) ships with the Tauri app and `ort` statically linked — no Python, no CUDA, no models. On first launch, the app must detect GPU hardware, install the correct Python/PyTorch variant via `uv` (or equivalent) only if RVC is requested, and pull the first voicebank + vocoder on demand via HuggingFace Hub. Existing Stable Audio Open sidecar setup already uses a compatible pattern — reuse it; do not introduce a second sidecar runtime.
+- **GPU execution provider selection is mandatory on startup.** Windows without CUDA must fall back to DirectML (covers AMD/Intel/NVIDIA via DirectX 12) rather than CPU — CPU is the last-resort fallback, not the default. macOS uses CoreML; Linux uses CUDA when drivers are present.
+- **Accessibility baseline.** Render progress, stale badges, queue state, and provenance chips must be keyboard-navigable, screen-reader-labeled, and communicate state through shape/text rather than color alone, per research §12. Specific shortcut bindings and full keyboard workflows are deferred to the companion UX spec.
+- **Latency UX targets.** Per research §11 (Nielsen response-time thresholds), the preview pipeline targets ≤1 s perceived start (queue acknowledgment + first progress frame) and ≤5 s to first audible output on Apple M1 / equivalent GPU. Progress stages must be labeled honestly per research §4 ("queued", "preparing", "synthesizing expression", "rendering audio", "ready", "stale"); generic spinners and "almost done" language are disallowed.
 - `pnpm deps:validate` must pass with zero violations after implementation.
 - The frontend must not import from `src-tauri/` or any Rust crate directly — all communication is via Tauri IPC commands and events.
 
@@ -254,6 +261,10 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 - [ ] `pnpm typecheck` passes with zero errors
 - [ ] No ONNX inference runs on the CPAL audio thread — rendering is async on Tokio only
 - [ ] Cache eviction removes oldest entries when cache exceeds 5 GB
+- [ ] On first run, a DiffSinger voicebank + BigVGAN v2 vocoder can be downloaded and rendered end-to-end without the Python sidecar being installed (RVC is optional)
+- [ ] On Windows without CUDA, rendering uses the DirectML execution provider (not CPU) when a DX12 GPU is present; the capability report reflects this
+- [ ] Progress UI uses the exact stage labels from research §4 ("queued", "preparing", "synthesizing expression", "rendering audio", "ready", "stale"); no generic spinners or "almost done" language
+- [ ] Render progress, stale badges, queue state, and provenance chips are keyboard-navigable, screen-reader-labeled, and communicate state through shape/text rather than color alone
 
 ---
 
@@ -351,6 +362,10 @@ Frame rate: 44100 / 512 = ~86.13 frames/second.
 
 - [ ] **[MINOR]** How should phrase crossfade overlap be handled when two adjacent singing phrases have different voicebanks or voice conversion settings? The simplest approach is no crossfade between heterogeneous phrases (hard cut), with crossfade only between homogeneous phrases.
 
+- [ ] **[MINOR]** Where does the companion UX spec for Phase 2–5 of the research UX blueprint live? Proposal: a new `.agents/specs/features/singing-voice-editor.md` covering pronunciation editor, direct pitch drawing, parameter lanes, keyboard shortcuts, retake tray, locks, provenance chips, A/B compare, and the three-region layout (arrangement strip / piano-roll / inspector). Confirm naming and scope boundary before writing.
+
+- [ ] **[MINOR]** How should GPU VRAM pressure be surfaced to the user when a requested render exceeds the available budget? Research §8 flags VRAM exhaustion as a "Medium severity, High likelihood" risk. Simplest: expose detected VRAM in the capability report, block renders that would exceed (available - safety_margin), and prompt the user to either unload another model or fall back to CPU.
+
 ---
 
 ## Tradeoffs and risks
@@ -368,3 +383,11 @@ Frame rate: 44100 / 512 = ~86.13 frames/second.
 6. **Sidecar packaging for RVC** — The Python sidecar for RVC adds packaging complexity (Python runtime + PyTorch + RVC dependencies). This is the same challenge as the existing Stable Audio Open sidecar. The research estimates 2-4 weeks of packaging engineering. For MVP, RVC is optional — the feature degrades gracefully to DiffSinger-only if the sidecar is not available.
 
 7. **OpenUtau C# → Rust port fidelity** — Subtle differences in floating-point behavior, tensor padding, or phoneme handling between the C# and Rust implementations could produce different-sounding output. The port must be validated against OpenUtau's output for the same input, using reference test cases.
+
+8. **Setting quality expectations for paying users (research §8 High / Medium)** — Open-source DiffSinger is ~70–80% of AceStudio's naturalness for straightforward singing and falls short on emotional range, cross-lingual pronunciation, and complex melisma. Positioning must be "AI-assisted" rather than "AI-replaces-singer"; the UI must communicate preview vs final quality honestly, and the release notes / marketing must not overclaim. RVC post-processing is the primary quality lever within the MVP.
+
+9. **ONNX export maturity for future models (research §8 Medium / Medium)** — SoulX-Singer, TokenSynth, ACE-Step, and other prototype-tier models do not yet have validated ONNX exports. Any plan to graduate one of them from sidecar to native ONNX must gate on thorough regression testing (fixture WAV parity against the PyTorch reference), pinned ONNX opset versions, and a fallback path to the sidecar. Do not remove the Python sidecar dependency on the strength of one successful export.
+
+10. **Multi-runtime maintenance burden (research §8 Medium / Certain)** — Maintaining both the Rust `ort` path and the Python sidecar path permanently is expensive. The architecture must be designed so models graduate from sidecar to native as their ONNX exports mature; the sidecar is a bridge, not a permanent home. Document the graduation criteria (ONNX parity tests, licence check, regression budget) and track which models are pending graduation.
+
+11. **Apple Silicon performance variability (research §8 Low / Medium)** — CoreML EP and MLX give reasonable acceleration on M-series, but some models are Apple-silicon-optimisation-sensitive (e.g., attention kernels, FFT sizes). Regressions are easy to miss because fallback to CPU is silent. Add a per-model benchmark capture at session creation so the capability report includes real wall-clock numbers for the user's machine, not just "GPU available".

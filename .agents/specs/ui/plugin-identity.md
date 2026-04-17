@@ -1,4 +1,32 @@
-# Sourdaw Look & Feel Specification
+# Plugin Visual Identity
+
+## Context
+
+Sourdaw ships many plugins (Factory + future). Each needs an immediately recognizable visual identity — users should glance at any plugin and know what it is before reading a label — while staying coherent with the foundational design system (`design-system.md`). This spec fixes the per-plugin color assignments, accent rules, contrast requirements, and migration steps.
+
+## Goal
+
+After implementation, every plugin in Sourdaw has a documented color identity with minimum hue separation, a CSS implementation that inherits base surfaces from the design system, and a compliance checklist any new plugin can follow.
+
+## Scope
+
+**In scope:** color wheel distribution across plugins, per-plugin color palettes, accent-token naming, CSS implementation on top of the foundational surface hierarchy, plugin browser cards, contrast requirements, and a migration/verification checklist.
+
+**Out of scope:**
+
+- Foundational surface / typography / signal tokens (see `design-system.md`).
+- Layout primitives (see `layout-components.md`).
+- Icon design (covered separately in the design system when it lands).
+
+## Acceptance criteria
+
+- [ ] Every plugin listed below has an accent-color token in `src/main.css` under a namespaced variable (e.g., `--plugin-fermenter-accent`).
+- [ ] No two active plugins have primary accents within < 30° on the color wheel.
+- [ ] All active-state colors meet WCAG 2.1 AA (4.5:1) contrast against the plugin's own background.
+- [ ] The plugin browser shows each plugin's accent color on its card.
+- [ ] Adding a new plugin includes an entry in this doc and a CI check (or at least a checklist item) that the new color does not collide with an existing one.
+
+---
 
 ## Visual Identity System
 

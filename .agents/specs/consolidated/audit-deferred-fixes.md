@@ -1,16 +1,16 @@
 ---
 name: consolidated-audit-deferred-fixes
-description: Implementation spec for the deferred items in `.agents/audits/consolidated-issues-audit.md`. Each section is independently implementable with verifiable acceptance criteria.
+description: Implementation spec for the deferred items in `.agents/audits/consolidated-issues.md`. Each section is independently implementable with verifiable acceptance criteria.
 type: spec
 status: open
-related-audit: .agents/audits/consolidated-issues-audit.md
+related-audit: .agents/audits/consolidated-issues.md
 ---
 
 # Consolidated audit — deferred fixes
 
 ## Context
 
-The audit at `.agents/audits/consolidated-issues-audit.md` was partially addressed in the 2026-04-16 fix pass. 13 issues are fixed in code and the audit is annotated. The remaining issues are deferred either because they are architectural (require a contract/interface), require performance work that needs care (Rust DSP, RT paths), require a UX or product decision, or require a small spec to specify behaviour beyond a one-line code change.
+The audit at `.agents/audits/consolidated-issues.md` was partially addressed in the 2026-04-16 fix pass. 13 issues are fixed in code and the audit is annotated. The remaining issues are deferred either because they are architectural (require a contract/interface), require performance work that needs care (Rust DSP, RT paths), require a UX or product decision, or require a small spec to specify behaviour beyond a one-line code change.
 
 This spec is the contract a future agent will execute against. It is grouped by theme so that work in one group does not stall on unrelated questions in another. Each item carries its own scope, requirements, design decisions, and acceptance criteria. Agents may pick up groups in parallel; intra-group items have ordering noted where it matters.
 
@@ -53,7 +53,7 @@ The user-visible end state, by group:
 
 ### In scope
 
-All deferred items from `consolidated-issues-audit.md` and its `# Audit: Timeline and MIDI Editing Behavior` section that have not been re-classified as out-of-scope below:
+All deferred items from `consolidated-issues.md` and its `# Audit: Timeline and MIDI Editing Behavior` section that have not been re-classified as out-of-scope below:
 
 - Timeline §1 (completion), §4, §6, §7, §8.
 - I-01, I-02, I-03, I-04, I-05, I-06, I-08, I-12, I-14, I-15, I-16, I-19 (subsumed by I-05), I-21, I-22, I-26, I-27, I-29.
@@ -69,7 +69,7 @@ All deferred items from `consolidated-issues-audit.md` and its `# Audit: Timelin
 
   These are tracked separately. They are not gating for this spec but should be fixed before the workspace is declared clean.
 - Migrating MIDI notes from absolute to relative positioning. The audit lists this as a "Suggested approach"; this spec preserves the absolute model and fixes the operations that desync. A relative-MIDI migration is a separate, larger spec.
-- Building new flagship features described in `consolidated-implementation-gaps.md` (drum-machine flagship, ZDF filters, ghost playheads, etc.). That spec is forward-looking; this one is corrective.
+- Building new flagship features described in `implementation-gaps.md` (drum-machine flagship, ZDF filters, ghost playheads, etc.). That spec is forward-looking; this one is corrective.
 
 ---
 
@@ -459,7 +459,7 @@ These are the gates a reviewer (or an agent's self-review) checks. Every box mus
 - [ ] `pnpm vitest run` (full suite) passes; no test in scope is `.skip`'d.
 - [ ] `pnpm vitest run` for each new use case spec passes (Group A8, plus B unit tests).
 - [ ] `cargo test -p daw-dsp` passes including the new B1, B2, B3 tests.
-- [ ] The audit file `.agents/audits/consolidated-issues-audit.md` is updated: every item this spec addresses is bumped from `Deferred` to `FIXED (date)` with a one-sentence note. Items explicitly out of scope (I-25, I-28, I-30, pre-existing breaks) remain annotated as such.
+- [ ] The audit file `.agents/audits/consolidated-issues.md` is updated: every item this spec addresses is bumped from `Deferred` to `FIXED (date)` with a one-sentence note. Items explicitly out of scope (I-25, I-28, I-30, pre-existing breaks) remain annotated as such.
 - [ ] `## Session status` block in the audit is regenerated to reflect the new fixed-count.
 
 ### Group A (Timeline / MIDI)

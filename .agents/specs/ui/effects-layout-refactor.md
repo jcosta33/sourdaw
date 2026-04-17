@@ -111,3 +111,10 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 ## Open questions
 
 - [ ] None.
+---
+
+## Tradeoffs and risks
+
+- **Trade-off — merging tabs:** Unifying Color and Stage into a single Effects tab reduces the top-level surface but means the Effects tab carries more responsibility. Acceptable because users already think of effects as one category and splitting them was an implementation artifact.
+- **Risk — missed plugin categorisation:** Premium plugins or new effects added after this refactor may land in the wrong group if their category metadata drifts. Mitigation: a unit test asserts every registered effect plugin maps to exactly one `EffectGroup`.
+- **Risk — route regression:** Existing users' URL bookmarks or deep links may reference the old `color` / `stage` routes. Mitigation: redirect old routes to the unified `effects` route during mount; add a smoke test for the redirect.

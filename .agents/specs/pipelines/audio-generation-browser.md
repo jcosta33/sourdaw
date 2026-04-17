@@ -2,7 +2,7 @@
 
 ## Context
 
-This spec translates the findings from `.agents/research/pipeline/audio-generation-browser.md` into concrete requirements for browser-native AI audio generation in Sourdaw. It is the browser counterpart to the Tauri-native spec at `.agents/specs/audio-generation-pipeline.md`. The two specs share the same product vision but differ in runtime, model constraints, and phasing.
+This spec translates the findings from `.agents/research/pipelines/audio-generation-browser.md` into concrete requirements for browser-native AI audio generation in Sourdaw. It is the browser counterpart to the Tauri-native spec at `.agents/specs/pipelines/audio-generation.md`. The two specs share the same product vision but differ in runtime, model constraints, and phasing.
 
 The research establishes that browser-based AI audio inference is production-ready for models up to ~500M parameters via WebGPU + ONNX Runtime Web, with WASM SIMD as universal fallback. The recommended build order is: (1) DDSP instrument synthesis (proven, tiny models, immediate DAW value), (2) Kokoro TTS for vocal scratch tracks (82M params, npm-ready), (3) DiffSinger singing voice synthesis (the industry-first browser SVS, highest impact, highest risk).
 
@@ -20,7 +20,7 @@ This spec targets **Chrome/Chromium latest versions only**. WebGPU in Chrome del
 
 **Other browsers are explicitly out of scope.** If the feature is accessed on Firefox, Safari, or older Chrome, the UI disables browser AI features and shows an explanatory popup: "Browser AI features require Chrome [version]+. Use the desktop app for AI features on other browsers." This eliminates the entire class of cross-browser WebGPU compatibility issues (Firefox OPFS gaps, Safari WebGPU limitations on older macOS, Linux WebKitGTK having no WebGPU).
 
-In Tauri v2, **Windows** (WebView2/Chromium) gets full WebGPU. **macOS** (WKWebView/Safari) and **Linux** (WebKitGTK) do not — on these platforms, disable browser AI features and route to the Tauri-native pipeline (`.agents/specs/audio-generation-pipeline.md`) instead.
+In Tauri v2, **Windows** (WebView2/Chromium) gets full WebGPU. **macOS** (WKWebView/Safari) and **Linux** (WebKitGTK) do not — on these platforms, disable browser AI features and route to the Tauri-native pipeline (`.agents/specs/pipelines/audio-generation.md`) instead.
 
 ---
 
@@ -54,7 +54,7 @@ This is not a phase to build — it is the assumed baseline that all neural phas
 8. **Render quality control** — A "Render Quality" slider in the right inspector (Layer 2) controls shallow diffusion depth: **Low** (3 steps, fastest), **Standard** (5 steps, default), **High** (10 steps), **Maximum** (20 steps). Default is Standard. The slider directly maps to the `steps` input tensor. Higher settings produce smoother, more natural-sounding vocals at the cost of longer render time (roughly linear scaling).
 9. **Speaker blending** — For multi-speaker voicebanks, individual speakers appear as discrete choices in the voice dropdown (Layer 1). A "Voice Blend" panel (Layer 2) exposes a blend slider between two selected speakers. An advanced multi-speaker mixer (Layer 3) allows weighting across all speakers with per-phrase blend automation curves.
 
-10. **Graceful degradation to Tauri-native** — On non-Chrome platforms (macOS Tauri via WKWebView, Linux Tauri via WebKitGTK, or any non-Chrome browser), browser AI features are disabled entirely. The UI shows a brief explanation and, if running in Tauri, offers a "Use native renderer" button that dispatches to the Tauri-native DiffSinger pipeline (per `.agents/specs/audio-generation-pipeline.md`). In a non-Tauri non-Chrome browser, the features are simply unavailable.
+10. **Graceful degradation to Tauri-native** — On non-Chrome platforms (macOS Tauri via WKWebView, Linux Tauri via WebKitGTK, or any non-Chrome browser), browser AI features are disabled entirely. The UI shows a brief explanation and, if running in Tauri, offers a "Use native renderer" button that dispatches to the Tauri-native DiffSinger pipeline (per `.agents/specs/pipelines/audio-generation.md`). In a non-Tauri non-Chrome browser, the features are simply unavailable.
 
 ### Cross-phase behaviors
 
@@ -374,6 +374,21 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 
 ## Design decisions
 
+### Decision: Full browser-native pipeline (not two-tier hybrid)
+
+**Chosen:** Run the complete audio generation pipeline — DDSP, Kokoro, and DiffSinger (phonemize → variance → acoustic → vocoder) — entirely in the browser via WebGPU + ONNX Runtime Web + TensorFlow.js. The Tauri-native pipeline (`.agents/specs/pipelines/audio-generation.md`) remains as an optional "Render natively" path for higher-quality final renders, not as a required tier for making the feature usable.
+
+**What the research recommended:** `.agents/research/pipelines/audio-generation-browser.md` concludes that a **two-tier hybrid is essential, not optional** — lightweight models (Kokoro, DDSP, variance/duration) in the webview, and heavy models (DiffSinger acoustic, MusicGen, large SVS) in the Rust backend via Candle/`ort` with native CUDA/Metal. The research treats Tier 2 (Rust backend) as the required path for production-quality singing voice synthesis.
+
+**Why the spec chose differently:**
+
+- **Deployment reach.** A browser-only code path works in a plain Chrome tab with no installer, which is the primary user-acquisition surface. Requiring Tauri for the flagship singing feature would gate that feature behind a desktop download.
+- **Single source of truth for the pipeline.** Splitting DiffSinger across webview (variance) and Rust (acoustic + vocoder) would force tensor-shape parity, mel-config parity, and vocoder-compatibility parity across two runtimes, with per-platform execution-provider divergence (CUDA/Metal/DirectML vs WebGPU). One pipeline, one runtime stack (ONNX Runtime Web + TF.js) is dramatically simpler to build and debug.
+- **Quality gap is tolerable for the browser tier.** The research's "two-tier is essential" claim is framed around matching AceStudio final quality. This spec explicitly scopes the browser pipeline as preview-quality (requirement: "Singing voice quality matching AceStudio or Tauri-native quality" is a non-goal). Users who want final quality opt in to the native renderer on Windows Tauri.
+- **Chrome-only + WebGPU lifts the feasibility floor.** The research's tiering assumes broad browser support including WASM fallback. By scoping to Chrome + WebGPU, the practical model-size ceiling (~500M params, ~4 GB per-tab) is high enough for DiffSinger's ~115-160 MB per voice to run end-to-end without spilling to native.
+
+**Consequence:** On non-Chrome and on Tauri macOS/Linux, the feature is disabled and routes to the Tauri-native pipeline where available. This is documented in requirement 10 (graceful degradation) and the Scope section.
+
 ### Decision: DDSP instruments first (not DiffSinger first)
 
 **Chosen:** Build DDSP instrument synthesis as Phase 1, before singing voice synthesis.
@@ -429,7 +444,7 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 
 ### Phase 1: DDSP instruments
 
-- [ ] At least 3 DDSP instrument models (violin, flute, trumpet) load and run in the browser via ONNX Runtime Web or TensorFlow.js
+- [ ] At least 3 DDSP instrument models (violin, flute, trumpet) load and run in the browser via TensorFlow.js (per requirement 8; ONNX is not a valid substitute for DDSP)
 - [ ] A 4-bar monophonic MIDI melody renders to recognizable instrument audio matching the input pitches
 - [ ] DDSP render completes in under 2 seconds for a 4-bar phrase at 120 BPM on Chrome with WebGPU on a 2023 laptop
 - [ ] Instrument models (~5-15 MB each) download on first use with progress indication
@@ -621,6 +636,8 @@ Two research findings should inform the architecture even though they are out of
 
 2. **Neural audio codec architecture** (research novel insight) — MIDI → codec token prediction via small transformer → EnCodec/DAC decoder → waveform. EnCodec (~15M params, ~60 MB) and DAC (~70M params, ~280 MB) are both browser-feasible. This is the expected Tier 3 evolution for instrument synthesis beyond DDSP. **The render pipeline should use a pluggable model backend interface so codec-token models can slot in alongside DDSP and DiffSinger without rearchitecting the worker.**
 
+3. **Knowledge distillation as a sizing lever** (research §6) — TinyMusician showed MusicGen-Small could be distilled to 55% smaller while retaining 93% of quality; combined with INT8 this compresses a 300M-parameter model to ~75 MB. Sourdaw is not distilling its own models in scope of this spec, but the model registry entry schema must already carry a `distillation_origin` field and a `quality_tier` enum (`preview` / `standard` / `high`) so a distilled variant of a DiffSinger voice or a codec-token model can be slotted in later without a registry migration.
+
 ### Checkpoint/resume for long diffusion renders
 
 If a browser tab is killed during a multi-step DiffSinger render, the work is lost. For resilience, the inference worker should save intermediate diffusion state (mel-spectrogram at each step) to a temporary OPFS file. On resume, the worker checks for incomplete renders and offers to continue from the last checkpoint. This is a future enhancement — for MVP, lost renders are simply re-queued.
@@ -648,7 +665,7 @@ Proven browser AI audio demos for implementer reference:
 
 ### Future phases beyond this spec
 
-Per `.agents/research/pipeline/audio-generation-browser.md` section 11 build-vs-wait verdicts:
+Per `.agents/research/pipelines/audio-generation-browser.md` section 11 build-vs-wait verdicts:
 - **Audio-to-MIDI transcription** (Basic Pitch) — **Build now**, TypeScript package ready, Spotify-maintained
 - **Timbre transfer** (RAVE.js) — **Build now**, proven browser demo, 4-20 MB models, unique creative feature
 - **Voice cloning** — **Wait 6-12 months**, Chatterbox-Turbo (Apache 2.0) needs browser optimization
@@ -703,13 +720,13 @@ Chrome's `maxStorageBufferBindingSize` is often capped at 128 MB even when the G
 
 - [x] **[RESOLVED]** ~~Is the DiffSinger ONNX acoustic model small enough for browser deployment?~~ **It is larger than originally estimated but still feasible.** Acoustic models are ~50-80 MB ONNX (not 30-50 MB). Complete voicebanks (acoustic + variance + pitch + linguistic) are 100-300 MB compressed. Total per voice including shared vocoder: ~115-160 MB. This is within the browser's ~500M parameter / ~4 GB memory ceiling but is at the heavy end. **Decision: Proceed — the size is comparable to the Demucs model (235 MB) already running in-browser. Memory-constrained devices may need to limit to one voice at a time.**
 
-- [x] **[RESOLVED]** ~~Does a MIT/Apache 2.0 vocoder exist that is directly compatible with DiffSinger's mel-spectrogram format?~~ **No pretrained MIT vocoder is directly compatible, but this is not a blocker.** The app is free and non-commercial — CC-BY-NC-SA 4.0 is fully compatible with the distribution model. **Decision: Use the community NSF-HiFiGAN vocoder (CC-BY-NC-SA 4.0, ~50 MB ONNX) from openvpi/vocoders.** This is the reference vocoder that DiffSinger is designed for — zero compatibility risk, proven in OpenUtau. If a commercial license is ever needed in the future, fine-tune BigVGAN v2 (MIT code, matching n_fft/hop/win/n_mels/sample_rate, only fmin/fmax differ) with DiffSinger's exact mel config.
-
-- [x] **[RESOLVED]** ~~Which DiffSinger voicebanks can be shipped?~~ **The app is free and non-commercial — CC-BY-NC-SA voicebanks are fully compatible.** Decision: Ship with the **Opencpop** voicebank (Chinese, CC-BY-NC-SA, the most well-tested DiffSinger voice) as the default, plus any English community voicebanks available under CC-BY-NC-SA or similar non-commercial-compatible terms. The model registry should display each voicebank's license clearly. If the app ever becomes commercial, train own voicebanks on permissively-licensed data using the Apache 2.0 DiffSinger training code.
-
 ### Remaining open questions
 
-All resolved. No open questions block implementation.
+Two [CRITICAL] items below must be resolved by a human (with legal / product sign-off) before Phase 3 ships. Earlier phases (DDSP, Kokoro) are not blocked.
+
+- [ ] **[CRITICAL]** Which vocoder can the browser pipeline actually ship with? **Working answer under evaluation:** community NSF-HiFiGAN (CC-BY-NC-SA 4.0, ~50 MB ONNX) from openvpi/vocoders — it is the reference vocoder DiffSinger is designed against, with zero compatibility risk and production use in OpenUtau. **Why this stays [CRITICAL]:** the choice depends on Sourdaw's distribution model qualifying as "NonCommercial" under CC 4.0, and on the ShareAlike clause not forcing downstream obligations onto the app code or the generated audio. Both questions require a human legal determination, not an agent assumption. If NonCommercial or ShareAlike turns out to be incompatible, the fallback (fine-tuning BigVGAN v2 — MIT code — on DiffSinger's exact mel config: n_fft/hop/win/n_mels/sample_rate match, only fmin/fmax differ) is unvalidated and adds material ML-engineering work.
+
+- [ ] **[CRITICAL]** Which DiffSinger voicebank ships on first release? **Working answer under evaluation:** Opencpop (Chinese, CC-BY-NC-SA, the most well-tested DiffSinger voice) as the default, plus any English community voicebanks available under CC-BY-NC-SA or similar non-commercial-compatible terms. **Why this stays [CRITICAL]:** (1) Opencpop is Chinese-only — first-ship without a viable English voicebank makes the flagship browser SVS feature unusable for the core English-speaking user base. (2) The "English community voicebanks under compatible licenses" claim is asserted but not enumerated — an actual shortlist with per-voicebank license verification does not yet exist. (3) Per-voicebank licenses must be displayed in the model registry to satisfy attribution. A concrete first-ship voicebank shortlist with licenses verified must exist before Phase 3 implementation starts.
 
 - [x] **[RESOLVED]** ~~kokoro-js vs Transformers.js v3 for Kokoro?~~ **Use Transformers.js v3.** It is actively maintained by HuggingFace (1.4M monthly users, 155+ architectures), supports quantization variant switching (q4/q8/fp16) out of the box, covers future model additions (not just Kokoro), and uses ONNX Runtime Web internally — same runtime as DiffSinger. `kokoro-js` is a thin wrapper that would become a liability if unmaintained. Transformers.js is the ecosystem standard. Integration: `pipeline('text-to-speech', 'onnx-community/Kokoro-82M-v1.0-ONNX', { device: 'webgpu' })`.
 
@@ -738,3 +755,9 @@ All resolved. No open questions block implementation.
 5. **Audio quality gap between browser and native (MEDIUM)** — Browser renders use fewer diffusion steps, smaller vocoders, and WebGPU inference (which may produce slightly different numerical results than native CUDA/CoreML). Users may be disappointed if browser preview quality is noticeably worse than native final quality. Clear labeling ("Preview quality — use native renderer for final") mitigates expectations.
 
 6. **SharedArrayBuffer/COEP header conflicts (LOW)** — Setting `Cross-Origin-Embedder-Policy: require-corp` may break cross-origin resources (fonts from Google Fonts, images from CDNs) unless they include `Cross-Origin-Resource-Policy: cross-origin` headers. Chrome supports `credentialless` COEP as a safer alternative. If COEP cannot be set, ONNX Runtime Web falls back to single-threaded WASM — functional but ~2-3x slower for large models.
+
+7. **Model download size deters users (MEDIUM)** — A fully-kitted browser install pulls Kokoro (~160 MB) + 1 DiffSinger voice (~115–160 MB) + vocoder (~50 MB) + one or two DDSP instruments (~10–30 MB) = **~335–400 MB** before the user hears anything meaningful. Research §10 flags this as "Medium severity, Medium likelihood." Mitigations already in scope: progressive loading order (phonemizer + DDSP first, DiffSinger acoustic last), background downloads via Background Fetch API where available, and per-phrase cache hits for re-renders. What is NOT in scope and must be tracked: a starter-voice path that ships a distilled/smaller variant for the first-render experience, and a storage-use indicator that sets expectations before the download starts. Add this to the companion UX spec's empty-state design.
+
+8. **Browser tab killed during long inference (LOW)** — A 20-step DiffSinger render in the browser can take 30+ seconds, during which the tab may be backgrounded, reloaded, or killed by the OS. Research §10 rates this Low severity / Medium likelihood. For MVP, lost renders are simply re-queued from the beginning; the checkpoint/resume design in Implementation notes captures the future path (intermediate mel-spectrogram snapshots to OPFS per diffusion step). Constraint on MVP: the render queue state must persist across tab reloads (already implied by OPFS-backed cache keys), so at minimum the user returns to the exact queue state after a reload — even if no individual phrase resumes mid-inference.
+
+9. **Tauri WebView drift on Windows (MEDIUM)** — WebView2 on Windows follows the user's installed Edge channel; WebGPU support, `maxStorageBufferBindingSize`, and Background Fetch availability can regress with a WebView2 update outside Sourdaw's control. Capability detection must run on every cold start (not just first launch) and the detected values must be attached to every render's provenance chip so a support reader can tell later whether a bad render came from a WebView2 regression.

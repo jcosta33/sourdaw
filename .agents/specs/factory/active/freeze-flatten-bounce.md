@@ -12,7 +12,7 @@ Key findings from research:
 - **Sidechain is the #1 pain point**: Most DAWs either block freeze or render incorrect audio
 - **File bloat requires GC**: Orphaned freeze files accumulate rapidly during iterative workflows
 
-Reference: `.agents/research/freeze-flatten-bounce.md`
+Reference: `.agents/research/factory/active/freeze-flatten-bounce.md`
 
 ---
 

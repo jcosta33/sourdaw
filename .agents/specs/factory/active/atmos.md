@@ -4,7 +4,7 @@
 
 The Sourdaw DAW currently supports stereo and basic surround mixing through a standard `StereoPannerNode`. To compete with Pro Tools, Logic Pro, and Nuendo in professional immersive audio production, we need a complete Dolby Atmos-compatible mixing engine. This feature enables object-based spatial audio mixing with speaker rendering (VBAP), headphone monitoring (HRTF), and industry-standard ADM BWF export for delivery.
 
-Research reference: `.agents/research/atmos.md`
+Research reference: `.agents/research/factory/active/atmos.md`
 
 ---
 
