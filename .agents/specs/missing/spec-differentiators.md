@@ -70,14 +70,29 @@ To comprehensively implement the missing recording, editing, mixing, AI, collabo
 
 ## Requirements
 
-1. **AI-Assisted Comping & Punch-in** — The system must score takes by pitch, timing, and tone, and suggest punch-in/out points based on natural phrase boundaries.
-2. **Advanced MIDI Tools** — The system must provide MIDI groove extraction/application, swing quantization, note probability, scale locking with fold-to-scale, and native UMP (MIDI 2.0) architecture.
-3. **Intelligent Audio Processing** — The system must utilize ML-based CNNs for 94%+ accurate onset detection, AI for tempo detection of rubato/syncopation, and AI for material type auto-detection to set optimal elastique warp modes.
-4. **Visual & Complex Routing** — The system must render interactive node-based routing and sidechain relationship diagrams. It must support nested VCAs, pre/post-fader sends (minimum 8 per channel), and hardware insert latency compensation via ping.
-5. **Collaboration & Git-like Versioning** — The CRDT engine must support presence awareness, semantic diffing, content-addressable audio storage, project-aware local-first sync (no locking conflicts), and AI-generated commit messages.
-6. **Workflow & Workspaces** — The UI must include a non-destructive arrangement scratch pad, an integrated mastering page with loudness presets, AI session auto-organization with natural-language search, and mix recall snapshots with visual diffing.
-7. **Extensibility & Hardware** — The system must support MCU, HUI, OSC, ARA 2, and feature a worker-based extension sandbox for third-party scripts/plugins.
-8. **Export & Delivery** — The system must support platform-aware export presets, sidechain-aware stem export, and (for Tier 3) ADM BWF Atmos export and Wwise/FMOD game audio export.
+Due to the sheer volume of features, implementation is structured into logical phases:
+
+### Phase 1: AI-Assisted Recording & Intelligent Audio Processing
+1. **AI Comping & Punch-in** — The system must score takes by pitch/timing/tone and suggest natural phrase boundary punch points.
+2. **CNN Audio Processing** — The system must utilize ML-based CNNs for 94%+ accurate onset detection, AI for tempo detection of rubato/syncopation, and AI for material type auto-detection to set optimal elastique warp modes.
+
+### Phase 2: Advanced MIDI Tools & Modulation
+3. **MIDI Intelligence** — The system must provide MIDI groove extraction/application, swing quantization, note probability, scale locking with fold-to-scale, and native UMP (MIDI 2.0) architecture.
+4. **Unified Modulation** — The system must implement relative modulation with visual routing and AI-suggested macro mappings.
+
+### Phase 3: Visual Routing & Complex Mixing
+5. **Node-based Routing** — The system must render interactive node-based routing and sidechain relationship diagrams.
+6. **Advanced Mixing Console** — The system must support nested VCAs, pre/post-fader sends (minimum 8 per channel), and hardware insert latency compensation via ping.
+
+### Phase 4: Collaboration, Sync & Workspaces
+7. **Git-like Versioning** — The CRDT engine must support presence awareness, semantic diffing, content-addressable audio storage, project-aware local-first sync (no locking conflicts), and AI-generated commit messages.
+8. **Workflow Innovations** — The UI must include a non-destructive arrangement scratch pad, an integrated mastering page with loudness presets, AI session auto-organization with natural-language search, and mix recall snapshots with visual diffing.
+
+### Phase 5: Hardware & Extensibility
+9. **Extensibility & Hardware** — The system must support MCU, HUI, OSC, ARA 2, and feature a worker-based extension sandbox for third-party scripts/plugins.
+
+### Phase 6: Export & Future Delivery (Tier 3)
+10. **Delivery Manager** — The system must support platform-aware export presets, sidechain-aware stem export, ADM BWF Atmos export, and Wwise/FMOD game audio export.
 
 ---
 
@@ -107,12 +122,28 @@ To comprehensively implement the missing recording, editing, mixing, AI, collabo
 
 ## Acceptance criteria
 
-- [ ] AI takes comping successfully scores and ranks 3 overlapping takes.
-- [ ] ML transient detector accurately places markers on a provided drum break with >94% precision.
-- [ ] Visual routing diagram correctly renders a feedback-free directed acyclic graph of a nested VCA and sidechain setup.
-- [ ] Semantic diffing successfully visualizes the difference between two mix snapshots.
-- [ ] Worker-based sandbox successfully loads and executes a mock extension without accessing the main thread DOM.
-- [ ] `pnpm deps:validate` passes with zero violations.
+### Phase 1
+- [ ] **AC-1.1:** AI takes comping successfully scores and ranks 3 overlapping takes.
+- [ ] **AC-1.2:** ML transient detector accurately places markers on a provided drum break with >94% precision.
+
+### Phase 2
+- [ ] **AC-2.1:** MIDI groove extraction successfully applies swing quantization from a reference audio clip to a flat MIDI sequence.
+- [ ] **AC-2.2:** UMP (MIDI 2.0) packet architecture successfully handles high-resolution velocity.
+
+### Phase 3
+- [ ] **AC-3.1:** Visual routing diagram correctly renders a feedback-free directed acyclic graph of a nested VCA and sidechain setup.
+- [ ] **AC-3.2:** Hardware latency ping correctly calculates round-trip delay in milliseconds.
+
+### Phase 4
+- [ ] **AC-4.1:** Semantic diffing successfully visualizes the difference between two mix snapshots.
+- [ ] **AC-4.2:** Project-aware local-first sync resolves a mock conflict without data loss.
+
+### Phase 5 & 6
+- [ ] **AC-5.1:** Worker-based sandbox successfully loads and executes a mock extension without accessing the main thread DOM.
+- [ ] **AC-6.1:** Sidechain-aware stem export outputs discrete audio files that retain sidechain pumping character.
+
+### Global
+- [ ] **AC-G.1:** `pnpm deps:validate` passes with zero violations.
 
 ---
 
@@ -129,10 +160,10 @@ To comprehensively implement the missing recording, editing, mixing, AI, collabo
 
 ## Test plan
 
-- [ ] **Manual step** — Record 3 vocal takes; observe AI scoring and suggested comp lane.
-- [ ] **Manual step** — Create a complex sidechain routing; open the Routing map and verify correct node connections.
-- [ ] **Automated** — Unit tests for the CNN transient detection accuracy against a known dataset.
-- [ ] **Automated** — Integration tests verifying that project-aware local-first sync resolves a mock conflict without data loss.
+- [ ] **Manual step** — Record 3 vocal takes; observe AI scoring and suggested comp lane (Phase 1).
+- [ ] **Manual step** — Create a complex sidechain routing; open the Routing map and verify correct node connections (Phase 3).
+- [ ] **Automated** — Unit tests for the CNN transient detection accuracy against a known dataset (Phase 1).
+- [ ] **Automated** — Integration tests verifying that project-aware local-first sync resolves a mock conflict without data loss (Phase 4).
 
 ---
 
