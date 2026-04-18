@@ -42,7 +42,7 @@ Read the objective. Ask:
 
 **Do I need research?**
 → Yes if the task involves an algorithm, API, standard, library, or technology you do not already have accurate findings for.
-→ Check `.agents/research/` for existing findings. Research is developer-authored — if none exists and it is needed, that is a blocker to surface, not a gap to fill by writing your own.
+→ Check `.agents/research/` for existing findings. If none exist and it is needed, you are empowered and expected to perform research yourself. Aggressively search the codebase and internet to validate your assumptions and document durable findings in a new research file.
 
 **Do I need an audit?**
 → Yes if the task involves changing, migrating, or fixing an area you have not examined in this session.

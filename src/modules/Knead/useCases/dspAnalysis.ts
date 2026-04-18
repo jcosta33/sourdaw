@@ -44,6 +44,7 @@ export function ingestDspAnalysis(
             startTime,
             endTime,
             pitchCenterCents: avgCents,
+            originalPitchCenterCents: avgCents,
             pitchCurveCents: currentPitchPoints.map((p) => Math.round(p.cents - avgCents)),
             voicedConfidence: totalConfidence / currentPitchPoints.length,
             driftPercent: 0,

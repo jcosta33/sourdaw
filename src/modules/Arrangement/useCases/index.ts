@@ -108,6 +108,7 @@ export { createAdjustmentLayer } from './adjustmentLayer/createAdjustmentLayer';
 // ── Device ────────────────────────────────────────────────────────────────────
 
 export { addDevice } from './device/addDevice';
+export { addMidiFx } from './device/addMidiFx';
 export { addExternalDevice } from './device/addExternalDevice';
 export { bypassDevice } from './device/bypassDevice';
 export { removeDevice } from './device/removeDevice';

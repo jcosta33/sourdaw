@@ -15,6 +15,7 @@ export type TrackNodeDeps = {
     getTrackGainNode: (id: string) => GainNode | undefined;
     getSendsForTrack: (tId: string) => SendNode[];
     pendingDevicePromises: Set<Promise<any>>;
+    transportSAB?: SharedArrayBuffer;
 };
 
 export class TrackNode {
@@ -87,10 +88,44 @@ export class TrackNode {
             muted: false,
             soloed: false,
             deviceNodes: [],
+            midiFxNodes: [],
             meterBuffer,
         };
 
         this.routeOutput();
+    }
+...
+    public addMidiFx(fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void {
+        this.strip.midiFxNodes.push({
+            id: fxId,
+            type: fxType,
+            bypassed: false,
+            parameterValues: {},
+        });
+        
+        // Notify native engine if bridge is active
+        const nativeDevice = this.strip.deviceNodes.find(d => d.type === 'external-plugin');
+        if (nativeDevice?.nativeDspControls) {
+            // TODO: Send command to native bridge
+        }
+    }
+
+    public removeMidiFx(fxId: string): void {
+        this.strip.midiFxNodes = this.strip.midiFxNodes.filter((f) => f.id !== fxId);
+    }
+
+    public updateMidiFxParam(fxId: string, paramId: string, value: number): void {
+        const fx = this.strip.midiFxNodes.find((f) => f.id === fxId);
+        if (fx) {
+            fx.parameterValues[paramId] = value;
+        }
+    }
+
+    public updateMidiFxBypass(fxId: string, bypassed: boolean): void {
+        const fx = this.strip.midiFxNodes.find((f) => f.id === fxId);
+        if (fx) {
+            fx.bypassed = bypassed;
+        }
     }
 
     public setGain(gain: number): void {
@@ -315,6 +350,7 @@ export class TrackNode {
                     context: context as AudioContext,
                     deviceId,
                     deviceType,
+                    transportSAB: this.deps.transportSAB,
                     onLoaded: (finalDn) => {
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {

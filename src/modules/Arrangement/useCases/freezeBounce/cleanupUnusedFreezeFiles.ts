@@ -14,5 +14,12 @@ export async function cleanupUnusedFreezeFiles(): Promise<void> {
         }
     }
 
+    // 1. Remove files not referenced by any track
     await audioBufferCache.garbageCollectFreezeFiles(activeIds);
+
+    // 2. Prune by age (30 days)
+    await audioBufferCache.garbageCollectByAge(30);
+
+    // 3. Cap total cache size (2GB)
+    await audioBufferCache.garbageCollectBySize(2 * 1024 * 1024 * 1024);
 }

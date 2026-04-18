@@ -1,7 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { Button } from '#/components/ui/button';
-import { Snowflake, Zap, AlertCircle } from 'lucide-react';
+import { Snowflake, Zap, AlertCircle, RefreshCw } from 'lucide-react';
 import {
     renameTrack,
     setTrackColor,
@@ -13,6 +13,9 @@ import { type Track } from '../../../models/TrackViewTypes';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
+import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
+import { cn } from '#/utils/Styles/cn';
 
 type TrackHeaderSectionProps = {
     track: Track;
@@ -21,6 +24,9 @@ type TrackHeaderSectionProps = {
 export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactElement | null => {
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState(track.name);
+
+    const isFreezing = track.freezeState?.status === 'freezing';
+    const isStale = track.freezeState?.status === 'stale';
 
     if (track.kind === 'master') {
         return null; // Master track name and color are fixed; streamline by hiding editing block.

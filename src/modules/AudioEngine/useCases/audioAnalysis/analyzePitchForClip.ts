@@ -109,7 +109,10 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
         if (finalState) {
             kneadStore.set({
                 ...finalState,
-                ...({ pitchContour: contour } as any),
+                contours: {
+                    ...finalState.contours,
+                    [clipId]: contour
+                }
             });
         }
 

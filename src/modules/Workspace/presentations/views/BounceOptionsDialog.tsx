@@ -4,7 +4,6 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '#/components/ui/dialog';
@@ -14,7 +13,7 @@ import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
-import { type Track } from '../../../models/Track';
+import { type Track } from '#/modules/Arrangement/models/Track';
 
 export type BounceOptions = {
     includeInserts: boolean;

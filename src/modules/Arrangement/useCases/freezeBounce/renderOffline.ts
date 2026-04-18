@@ -2,7 +2,10 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { buildDeviceChain, getAudioContext } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
+import { trackStore } from '../../stores/trackStore';
+import { sidechainStore } from '#/modules/Routing/stores';
 import { type Track } from '../../models/Track';
+import { getUpstreamSubgraph } from '../../services/getUpstreamSubgraph';
 
 const MIDI_FREQUENCIES: Record<number, number> = {};
 for (let n = 0; n < 128; n++) {
@@ -20,11 +23,16 @@ export type RenderOfflineOptions = {
 };
 
 export async function renderTrackOffline(
-    track: Track,
+    targetTrack: Track,
     startBeat: number,
     endBeat: number,
     options?: RenderOfflineOptions
 ): Promise<AudioBuffer | null> {
+    const allTracks = trackStore.value?.tracks ?? [];
+    const allSidechainRoutes = sidechainStore.value?.routes ?? [];
+    const upstreamIds = getUpstreamSubgraph(targetTrack.id, allTracks, allSidechainRoutes);
+    const renderTracks = allTracks.filter((t) => upstreamIds.has(t.id) || t.id === targetTrack.id);
+
     const durationBeats = endBeat - startBeat;
     const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
@@ -32,88 +40,225 @@ export async function renderTrackOffline(
     const durationSeconds = (durationBeats / tempo) * 60;
     const midi = midiStore.value;
 
-    const includeInserts = options?.includeInserts ?? true;
-    const includeAutomation = options?.includeAutomation ?? true;
-    // includeSends implementation is deferred to a subgraph-aware render update
-
     const offlineCtx = new OfflineAudioContext(2, Math.ceil((durationSeconds + (options?.autoTail ? 10 : 0)) * sampleRate), sampleRate);
     
-    // Set up track output nodes
-    const trackGain = offlineCtx.createGain();
-    trackGain.gain.value = includeAutomation ? track.gain : 0.8;
-    
-    const trackPan = offlineCtx.createStereoPanner();
-    trackPan.pan.value = includeAutomation ? track.pan / 50 : 0;
+    // Map trackId -> { input, output, devices }
+    const nodes = new Map<string, { input: AudioNode; output: AudioNode; devices: any[] }>();
 
-    // Build device chain if requested
-    if (includeInserts) {
-        await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
-    } else {
-        trackGain.connect(trackPan);
-    }
-    
-    trackPan.connect(offlineCtx.destination);
+    for (const t of renderTracks) {
+        const isTarget = t.id === targetTrack.id;
+        const includeInserts = isTarget ? (options?.includeInserts ?? true) : true;
+        const includeAutomation = isTarget ? (options?.includeAutomation ?? true) : true;
 
-    if (track.kind === 'midi' && midi) {
-        for (const clip of track.clips) {
-            if (clip.type !== 'midi') continue;
-            const notes = midi.notesByClipId[clip.id];
-            if (!notes) continue;
+        const gainNode = offlineCtx.createGain();
+        gainNode.gain.value = includeAutomation ? t.gain : 0.8;
+        
+        const panNode = offlineCtx.createStereoPanner();
+        panNode.pan.value = includeAutomation ? t.pan / 50 : 0;
 
-            for (const note of notes) {
-                const noteStart = ((clip.startBeat - startBeat + note.startBeat) / tempo) * 60;
-                const noteDur = (note.duration / tempo) * 60;
-                if (noteStart >= durationSeconds || noteStart < 0) continue;
+        let devices: any[] = [];
+        let inputNode: AudioNode = gainNode;
 
-                const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
-                const osc = offlineCtx.createOscillator();
-                const env = offlineCtx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.value = freq;
-                
-                // Simple synth for MIDI tracks without instruments (fallback)
-                // If there's an instrument in the chain, buildDeviceChain handles it
-                // but we still need to trigger noteOn/Off if possible.
-                // TODO: properly trigger instrument nodes in the chain.
-                
-                env.gain.setValueAtTime(0, noteStart);
-                env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, noteStart + 0.005);
-                env.gain.setValueAtTime((note.velocity / 127) * 0.3, noteStart + noteDur - 0.01);
-                env.gain.exponentialRampToValueAtTime(0.001, noteStart + noteDur);
-                osc.connect(env);
-                env.connect(trackGain);
-                osc.start(noteStart);
-                osc.stop(noteStart + noteDur + 0.01);
+        if (includeInserts) {
+            devices = await buildDeviceChain(offlineCtx, t.devices, gainNode, panNode);
+            // buildDeviceChain connects gainNode -> devices -> panNode
+            // so input to the track strip is gainNode.
+        } else {
+            gainNode.connect(panNode);
+        }
+
+        nodes.set(t.id, { input: inputNode, output: panNode, devices });
+
+        if (isTarget) {
+            panNode.connect(offlineCtx.destination);
+        }
+
+        // Schedule content (clips or frozen buffer)
+        if (t.frozen && t.frozenBufferId) {
+            const buffer = audioBufferCache.get(t.frozenBufferId);
+            if (buffer) {
+                // If already frozen, just play the whole thing from its intended start
+                const source = offlineCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(gainNode);
+                // We assume frozen buffer aligns with its clips' start beat
+                // §12.3 — This logic needs refinement if freeze doesn't match the selection
+                source.start(0); 
+            }
+        } else {
+            // Schedule individual clips
+            if (t.kind === 'midi' && midi) {
+                for (const clip of t.clips) {
+                    if (clip.type !== 'midi') continue;
+                    const notes = midi.notesByClipId[clip.id];
+                    if (!notes) continue;
+                    for (const note of notes) {
+                        const noteStart = ((clip.startBeat - startBeat + note.startBeat) / tempo) * 60;
+                        const noteDur = (note.duration / tempo) * 60;
+                        if (noteStart >= durationSeconds || noteStart < 0) continue;
+                        
+                        // Simple synth fallback for MIDI rendering if no instrument in chain
+                        const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
+                        const osc = offlineCtx.createOscillator();
+                        const env = offlineCtx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.value = freq;
+                        env.gain.setValueAtTime(0, noteStart);
+                        env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, noteStart + 0.005);
+                        env.gain.setValueAtTime((note.velocity / 127) * 0.3, noteStart + noteDur - 0.01);
+                        env.gain.exponentialRampToValueAtTime(0.001, noteStart + noteDur);
+                        osc.connect(env);
+                        env.connect(gainNode);
+                        osc.start(noteStart);
+                        osc.stop(noteStart + noteDur + 0.01);
+                    }
+                }
+            } else if (t.kind === 'audio') {
+                for (const clip of t.clips) {
+                    const buffer = audioBufferCache.get(clip.audioBufferId ?? '');
+                    if (!buffer) continue;
+                    const clipStart = ((clip.startBeat - startBeat) / tempo) * 60;
+                    const clipDuration = ((clip.endBeat - clip.startBeat) / tempo) * 60;
+                    const source = offlineCtx.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(gainNode);
+                    source.start(Math.max(0, clipStart), 0, Math.min(clipDuration, buffer.duration));
+                }
             }
         }
     }
 
-    if (track.kind === 'audio') {
-        for (const clip of track.clips) {
-            const buffer = audioBufferCache.get(clip.audioBufferId ?? '');
-            if (!buffer) continue;
+    // Wire Upstream Connections
+    for (const t of renderTracks) {
+        const tNodes = nodes.get(t.id)!;
+        
+        // 1. Output Routing
+        if (t.outputId && nodes.has(t.outputId)) {
+            const destNodes = nodes.get(t.outputId)!;
+            tNodes.output.connect(destNodes.input);
+        }
+
+        // 2. Sends
+        for (const send of t.sends) {
+            if (nodes.has(send.busId)) {
+                const sendGain = offlineCtx.createGain();
+                sendGain.gain.value = send.level;
+                // preFader send logic deferred for now; defaults to post-fader (analyserNode in live)
+                tNodes.output.connect(sendGain);
+                sendGain.connect(nodes.get(send.busId)!.input);
+            }
+        }
+    }
+
+    // 3. Sidechains
+    for (const r of allSidechainRoutes) {
+        if (nodes.has(r.sourceTrackId) && nodes.has(r.targetTrackId)) {
+            const sourceNode = nodes.get(r.sourceTrackId)!.output;
+            const targetTrackNodes = nodes.get(r.targetTrackId)!;
+            const targetDeviceNode = targetTrackNodes.devices.find((d: any) => d.deviceId === r.targetDeviceId);
             
-            const clipStart = ((clip.startBeat - startBeat) / tempo) * 60;
-            const clipDuration = ((clip.endBeat - clip.startBeat) / tempo) * 60;
-            const source = offlineCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(trackGain);
-            source.start(Math.max(0, clipStart), 0, Math.min(clipDuration, buffer.duration));
+            if (targetDeviceNode && targetDeviceNode.inputNode.numberOfInputs >= 2) {
+                const scGain = offlineCtx.createGain();
+                scGain.gain.value = r.gain;
+                sourceNode.connect(scGain);
+                // Connect to the second input (index 1) of the sidechain-aware device
+                scGain.connect(targetDeviceNode.inputNode, 0, 1);
+            }
         }
     }
 
     const buffer = await renderWithProgress(offlineCtx, options);
-    
-    // Apply tail trimming or normalization if needed
+    let finalBuffer = buffer;
+
     if (options?.autoTail) {
-        // TODO: implement silence detection and trim
+        finalBuffer = trimSilence(finalBuffer, -80);
     }
     
-    if (options?.normalization === 'full') {
-        // TODO: implement normalization
+    if (options?.normalization && options.normalization !== 'off') {
+        finalBuffer = normalizeBuffer(finalBuffer, options.normalization);
     }
 
-    return buffer;
+    return finalBuffer;
+}
+
+function trimSilence(buffer: AudioBuffer, thresholdDb: number): AudioBuffer {
+    const threshold = 10 ** (thresholdDb / 20);
+    const sampleRate = buffer.sampleRate;
+    const channels = buffer.numberOfChannels;
+    const length = buffer.length;
+    
+    let lastActiveSample = 0;
+    
+    for (let ch = 0; ch < channels; ch++) {
+        const data = buffer.getChannelData(ch);
+        for (let i = length - 1; i >= lastActiveSample; i--) {
+            if (Math.abs(data[i]!) > threshold) {
+                lastActiveSample = Math.max(lastActiveSample, i);
+                break;
+            }
+        }
+    }
+    
+    // Add 100ms safety buffer
+    const safetySamples = Math.floor(sampleRate * 0.1);
+    const finalLength = Math.min(length, lastActiveSample + safetySamples);
+    
+    if (finalLength === length) return buffer;
+    
+    const newBuffer = new AudioBuffer({
+        length: finalLength,
+        numberOfChannels: channels,
+        sampleRate: sampleRate,
+    });
+    
+    for (let ch = 0; ch < channels; ch++) {
+        newBuffer.copyToChannel(buffer.getChannelData(ch).subarray(0, finalLength), ch);
+    }
+    
+    return newBuffer;
+}
+
+function normalizeBuffer(buffer: AudioBuffer, mode: 'protection' | 'full'): AudioBuffer {
+    const channels = buffer.numberOfChannels;
+    const length = buffer.length;
+    let maxPeak = 0;
+    
+    for (let ch = 0; ch < channels; ch++) {
+        const data = buffer.getChannelData(ch);
+        for (let i = 0; i < length; i++) {
+            const abs = Math.abs(data[i]!);
+            if (abs > maxPeak) maxPeak = abs;
+        }
+    }
+    
+    if (maxPeak === 0) return buffer;
+    
+    let targetPeak = 1.0;
+    if (mode === 'protection') {
+        if (maxPeak <= 1.0) return buffer; // Already safe
+        targetPeak = 0.98; // Normalize down to -0.2dB
+    } else if (mode === 'full') {
+        targetPeak = 0.99; // Normalize up/down to -0.1dB
+    }
+    
+    const ratio = targetPeak / maxPeak;
+    
+    const newBuffer = new AudioBuffer({
+        length,
+        numberOfChannels: channels,
+        sampleRate: buffer.sampleRate,
+    });
+    
+    for (let ch = 0; ch < channels; ch++) {
+        const src = buffer.getChannelData(ch);
+        const dest = new Float32Array(length);
+        for (let i = 0; i < length; i++) {
+            dest[i] = src[i]! * ratio;
+        }
+        newBuffer.copyToChannel(dest, ch);
+    }
+    
+    return newBuffer;
 }
 
 async function renderWithProgress(

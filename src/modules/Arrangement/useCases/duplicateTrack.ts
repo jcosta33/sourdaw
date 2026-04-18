@@ -3,7 +3,7 @@ import { updateTrack } from '../repositories/track/updateTrack';
 import { midiStore } from '#/modules/MIDI/stores';
 import { addTrack } from './addTrack';
 import { type MidiNote } from '../models/MidiNoteViewTypes';
-import { type Track, type Clip } from '../models/Track';
+import { type Clip } from '../models/Track';
 
 export function duplicateTrack(trackId: string): void {
     const source = getTrackById(trackId);

@@ -2,6 +2,7 @@ import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 import { type OfflineDeviceNode } from '../devices/types';
 import { type Device } from '../../models/TrackViewTypes';
 
+import { isKneadDevice, createKneadNode } from '../../engine/KneadNode';
 import { isFermenterDevice, createFermenterNode } from '../../engine/FermenterNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
 import { isLevainDevice, createLevainNode } from '../../engine/LevainNode';
@@ -78,6 +79,8 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
         result = await createScoringNode(ctx);
     } else if (isGrandBouleDevice(device.type)) {
         result = await createGrandBouleNode(ctx);
+    } else if (isKneadDevice(device.type)) {
+        result = await createKneadNode(ctx);
     }
 
     if (!result) {

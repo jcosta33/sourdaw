@@ -1,18 +1,24 @@
 pub mod audio_bridge;
 pub mod audio_thread;
+pub mod midi_fx;
+pub mod mts_esp;
 pub mod plugin_slot;
 pub mod scheduler;
 
 use audio_thread::{spawn_audio_thread, AudioThreadHandle};
+use daw_core::tuning::TuningTable;
+use mts_esp::MtsEspMaster;
 use plugin_slot::NativePlugin;
 use rtrb::{Producer, RingBuffer};
 use scheduler::GraphCommand;
 use std::sync::{Arc, Mutex};
+use triple_buffer::Output;
 
 pub struct EngineHandle {
     command_tx: Producer<GraphCommand>,
     _audio_thread: Arc<Mutex<AudioThreadHandle>>,
     next_plugin_id: usize,
+    mts_esp_master: Option<MtsEspMaster>,
 }
 
 impl EngineHandle {
@@ -25,7 +31,21 @@ impl EngineHandle {
             command_tx: tx,
             _audio_thread: Arc::new(Mutex::new(thread_handle)),
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
+            mts_esp_master: None,
         })
+    }
+
+    /// Register a tuning output to be broadcast to the system via MTS-ESP.
+    pub fn register_mts_esp_master(&mut self, tuning_output: Output<TuningTable>) {
+        self.mts_esp_master = Some(MtsEspMaster::new(tuning_output));
+    }
+
+    /// Background task to update MTS-ESP tuning. Should be called periodically
+    /// from the main loop or a dedicated background thread.
+    pub fn update_mts_esp(&mut self) {
+        if let Some(master) = &mut self.mts_esp_master {
+            master.update();
+        }
     }
 
     /// Add a built-in effect to the native rendering graph.

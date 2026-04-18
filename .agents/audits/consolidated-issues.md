@@ -89,7 +89,7 @@ Repo-wide audit covering: audio engine, every first-party plugin (Toaster, Proof
 | N-12 | WaveformEditor receives audioBufferId instead of clipId | Critical | ClipView | NEW |
 | N-13 | Freeze tail stored in beats, model expects seconds | Critical | Freeze/Bounce | NEW |
 | N-14b | Bounce tempo hardcoded to 120 BPM | Critical | Freeze/Bounce | NEW |
-| N-15 | Synth velocity→filter attack coupling inverted | High | Synth DSP | NEW |
+| ~~N-15~~ | ~~Synth velocity→filter attack coupling inverted~~ | — | — | RETRACTED — math produces shorter attack at higher velocity (correct) |
 | N-16 | Automation recording has no undo | High | Automation | NEW |
 | N-17 | Sidechain routes not cleaned on track deletion | High | Routing | NEW |
 | N-18 | Toaster store singleton — multi-instance collision | High | Toaster | NEW |
@@ -99,21 +99,21 @@ Repo-wide audit covering: audio engine, every first-party plugin (Toaster, Proof
 | N-22 | Yeast worklet sync race — MIDI drops on processor add | High | Yeast | NEW |
 | N-23 | Extension runEditorScript uses new Function() despite security comment | High | Extension | NEW |
 | N-24 | Faust AudioWorklet registration race condition | Medium | Faust | NEW |
-| N-25 | Audio loop gain uses wrong beat offset | Medium | Transport | NEW |
-| N-26 | CC and pitch bend values not validated | Medium | MIDI | NEW |
+| ~~N-25~~ | ~~Audio loop gain uses wrong beat offset~~ | — | — | RETRACTED — uses clip-relative offset correctly |
+| ~~N-26~~ | ~~CC and pitch bend values not validated~~ | — | — | RETRACTED — addMidiCC/addPitchBend files don't exist |
 | N-27 | Crumbs file drop silently fails on web | Medium | Crumbs | NEW |
 | N-28 | Automation circular lane link → infinite recursion | Medium | Automation | NEW |
 | N-29 | Synth offline render skips filter envelope | Medium | Synth | NEW |
-| N-30 | Grinder/Bacteria/Gluten missing device lifecycle hooks | Medium | Plugins | NEW |
+| N-30 | All WASM plugins (incl. Fermenter) missing device unregister hooks | Medium | Plugins | NEW — corrected scope |
 | N-31 | Clip boundary hit test uses inclusive end (off-by-one) | Medium | Arrangement | NEW |
 | N-32 | SampleLibrary analysis creates & closes AudioContext prematurely | Medium | SampleLibrary | NEW |
-| N-33 | Knead DSP analysis loses sub-cent precision | Low | Knead | NEW |
+| ~~N-33~~ | ~~Knead DSP analysis loses sub-cent precision~~ | — | — | RETRACTED — midiNote stored as float, not integer |
 | N-34 | Scoring canvas DPI scaling incomplete | Low | Scoring | NEW |
 | N-35 | 11/13 worklet processors allocate Float32Array in process() | High | Engine RT | NEW |
 | N-36 | Faust param address mismatch — synth params silently fail | Critical | Faust | NEW |
 | N-37 | All Faust instruments are monophonic — no chords | High | Faust | NEW |
-| N-38 | MIDI import running status bleeds between tracks | High | MIDI import | NEW |
-| N-39 | Sidechain routes lost on project reimport | High | Project | NEW |
+| ~~N-38~~ | ~~MIDI import running status bleeds between tracks~~ | — | — | RETRACTED — runningStatus reset per track loop iteration |
+| ~~N-39~~ | ~~Sidechain routes lost on project reimport~~ | — | — | RETRACTED — applyImportedProjectData:33-35 restores routes |
 | N-40 | Bounce operations have no undo | High | Freeze/Bounce | NEW |
 | N-41 | Frozen buffer offline render starts at position 0 | High | Freeze/Bounce | NEW |
 | N-42 | flattenTrack adds hardcoded 4-beat offset to endBeat | Medium | Freeze/Bounce | NEW |
@@ -846,14 +846,7 @@ Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolv
 
 ---
 
-### N-15. Synth velocity→filter attack coupling is inverted
-
-**Problem:** `builtinSynth.ts:107` computes `velAttack = params.attack * (1.5 - velocity / 127)`. Harder hits (higher velocity) produce LONGER attack — the opposite of physical expectation and every other synth.
-
-**Representative files:**
-- `src/modules/Synth/useCases/builtinSynth.ts:107`.
-
-**Status:** NEW. DSP — sounds wrong.
+### ~~N-15.~~ RETRACTED — velocity→attack math is correct (shorter at higher velocity).
 
 ---
 
@@ -956,26 +949,11 @@ Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolv
 
 ---
 
-### N-25. Audio loop gain uses wrong beat offset
-
-**Problem:** `scheduleAudioClips.ts:169` calls `getGainAtBeat(clip.id, iterOffsetBeats)` with a relative offset when an absolute clip-time beat is needed (`clip.startBeat + iterOffsetBeats`). Loop iterations apply gain from the wrong position.
-
-**Representative files:**
-- `src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts:169`.
-
-**Status:** NEW. Audio playback — wrong gain in loops.
+### ~~N-25.~~ RETRACTED — `getGainAtBeat` uses clip-relative `beatOffset` correctly.
 
 ---
 
-### N-26. CC and pitch bend values not validated on add
-
-**Problem:** `addMidiCC.ts:11` and `addPitchBend.ts:11` accept raw values without bounds checking. CC should be 0-127, pitch bend ±8192. Invalid values pass through to playback/export.
-
-**Representative files:**
-- `src/modules/MIDI/useCases/midiNoteCrud/addMidiCC.ts:11`.
-- `src/modules/MIDI/useCases/midiNoteCrud/addPitchBend.ts:11`.
-
-**Status:** NEW. Data integrity.
+### ~~N-26.~~ RETRACTED — `addMidiCC.ts` and `addPitchBend.ts` do not exist in the codebase.
 
 ---
 
@@ -1012,11 +990,11 @@ Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolv
 
 ---
 
-### N-30. Grinder, Bacteria, and Gluten have no device lifecycle hooks
+### N-30. WASM plugin modules lack device unregister hooks
 
-**Problem:** These three plugin modules have no `registerDevice`/`unregisterDevice` pattern (unlike Fermenter, Proof, Levain). When devices are removed, store entries and param batchers leak indefinitely.
+**Problem:** Grinder, Bacteria, Gluten, and Fermenter all lack `unregisterDevice` cleanup. When devices are removed, store entries and param batchers leak. (Original claim that Fermenter had it was wrong — none of these modules implement it.)
 
-**Status:** NEW. Memory leak across three plugins.
+**Status:** NEW. Memory leak across multiple plugins.
 
 ---
 
@@ -1042,14 +1020,7 @@ Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolv
 
 ---
 
-### N-33. Knead DSP analysis loses sub-cent precision
-
-**Problem:** `dspAnalysis.ts:66` computes MIDI note as `69 + 12 * Math.log2(f0 / 440)` (continuous cents) but stores in `pitchCenterCents` as an integer, losing vibrato/drift analysis precision.
-
-**Representative files:**
-- `src/modules/Knead/useCases/dspAnalysis.ts:66`.
-
-**Status:** NEW. Low — precision loss in pitch analysis.
+### ~~N-33.~~ RETRACTED — `midiNote` is stored as a float, not truncated to integer.
 
 ---
 
@@ -1088,13 +1059,13 @@ Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolv
 
 ### N-36. Faust parameter address mismatch — synth params silently fail
 
-**Problem:** Faust DSP files expose params with full addresses like `/FM_Synth/algorithm`, but `faustDeviceFactory.ts:46-73` routes params with bare names (`algorithm`). Additionally, processor name sanitization (`'FM Synth'` → `'FM_Synth'`) doesn't match the lowercase addresses registered by the Faust compiler (`/fm_synth/algorithm`). Params set via `node.setParamValue(name, value)` silently fail because the address doesn't match.
+**Problem:** Faust DSP files expose params with full addresses like `/FM_Synth/algorithm`, but `faustDeviceFactory.ts:46-73` routes params with bare names (`algorithm`). A suffix fallback exists (line 63: `key.endsWith('/' + name)`) but is fragile — if the Faust compiler registers lowercase addresses (`/fm_synth/algorithm`) while the sanitized name is `FM_Synth`, the suffix match still works but case-sensitivity is untested. The bare-name path (line 58) fails silently when no exact match exists.
 
 **Representative files:**
 - `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:145` — name sanitization.
-- `src/modules/AudioEngine/repositories/faustDeviceFactory.ts:46-73` — bare name routing.
+- `src/modules/AudioEngine/repositories/faustDeviceFactory.ts:46-73` — bare name first, suffix fallback.
 
-**Status:** NEW. Critical — ALL Faust synth parameters are broken.
+**Status:** NEW. High — fragile; params may silently fail depending on Faust compiler output casing.
 
 ---
 
@@ -1110,26 +1081,11 @@ Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolv
 
 ---
 
-### N-38. MIDI import running status bleeds between tracks
-
-**Problem:** `midiImportWorker.ts:116` doesn't reset `runningStatus` when parsing starts a new track. If the previous track's last event uses running status (e.g., 0x90 note-on), the stale status applies to the next track's first events, corrupting note data in multi-track MIDI files.
-
-**Representative files:**
-- `src/modules/MIDI/workers/midiImportWorker.ts:116`.
-
-**Status:** NEW. High — corrupts multi-track MIDI import.
+### ~~N-38.~~ RETRACTED — `runningStatus` is reset inside per-track loop (line 116).
 
 ---
 
-### N-39. Sidechain routes lost on project reimport
-
-**Problem:** `exportProjectFile.ts:94` correctly includes `sidechainRoutes: getAllSidechainRoutes()` in the export, but `applyImportedProjectData.ts` never reads or applies these routes on import. All sidechain connections are silently lost.
-
-**Representative files:**
-- `src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts:94`.
-- `src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts` — no sidechain restore.
-
-**Status:** NEW. High — sidechain routing lost on every project save/load cycle.
+### ~~N-39.~~ RETRACTED — `applyImportedProjectData.ts:33-35` does restore sidechain routes via `setSidechainRoutes()`.
 
 ---
 
@@ -1216,9 +1172,9 @@ Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolv
 **Problem:** `insertTime()` and `deleteTime()` shift clips, markers, and automation but never touch `tempoMapStore` or `timeSignatureMapStore`. Tempo changes and time signature changes in the affected region become misaligned with the arrangement.
 
 **Representative files:**
-- `src/modules/Arrangement/useCases/timeOperations/` (insertTime, deleteTime, duplicateTimeRange).
+- `src/modules/Arrangement/useCases/timeOperations/duplicateTimeRange.ts` — `insertTime` function lives here, shifts clips/markers/automation but not tempo or time-sig maps.
 
-**Status:** NEW. High — tempo/time-sig desync after time operations.
+**Status:** NEW. Verified 2026-04-18. High — tempo/time-sig desync after time operations.
 
 ---
 
@@ -1349,15 +1305,38 @@ Device descriptors live in separate modules (`faustEffectDescriptors.ts`, `built
 - **Crust (S-04)** — user-facing plugin that silently does nothing.
 - **Multi-track recording (S-03)** — core DAW feature broken under "arm multiple tracks".
 
+## Dependency graph (blocked-by)
+
+| Issue | Blocked by | Reason |
+|-------|-----------|--------|
+| M-02 | M-01 | PatternBrowser fix depends on coordinate convention decision |
+| T-01 | M-01 | deleteTimeRange MIDI shift needs to know which convention to use |
+| S-08, S-09 | M-01 | Fold contract decision requires coordinate spec |
+| N-48 | N-36 | Faust param routing fix must align with address fix |
+| I-19 | I-05 | Bypass rebuild fix falls out of DeviceNode interface |
+| I-04 | I-02 | DSO undo strategy needs unified dispatch first |
+| N-04 | N-02 | deleteTimeRange cleanup uses same pattern as removeClip cleanup |
+
 ## Reproduction quick-reference
 
-| Issue | Minimal steps | Expected vs Actual |
-|-------|--------------|-------------------|
-| S-01 Faders | Drag a track gain fader slowly | Value tracks pointer. Actually: stair-steps; catches up on release |
-| S-03 Multi-track rec | Arm 2 audio tracks → record | Both buffers captured. Actually: only last-armed track gets audio |
-| S-04 Crust silent | Add Crust to a track → play | Audio processed by Crust. Actually: bit-identical to no device; no log |
-| M-01 / G1 | Create a clip at `startBeat = 8`, insert notes via Patterns tab | Notes visible in both timeline and piano roll. Actually: empty in one view |
-| T-01 deleteTimeRange | Select a time range containing a MIDI clip → delete | MIDI notes shift with clip. Actually: notes stay, clip moves → desync |
+| Issue | Minimal steps | Expected vs Actual | Test assertion |
+|-------|--------------|-------------------|----------------|
+| N-01 Clip drag | Click-drag a clip on the timeline | Clip follows cursor. Actually: stays put, drops on release | Canvas repaints every frame during drag; preview position matches mouse |
+| N-36 Faust params | Add FM Synth → move Algorithm knob | Sound changes. Actually: no DSP change | `node.getParamValue('/FM_Synth/algorithm')` returns updated value |
+| N-37 Faust poly | Add Rhodes → play C major chord (C-E-G) | 3 notes sound simultaneously. Actually: only last note sounds | 3 concurrent oscillators active in Faust worklet |
+| N-05 KneadEditor | Open a Knead clip → check toolbar | Retune/Scale/Human controls visible. Actually: render error | JSX parses without error; all 3 sliders render |
+| N-12 WaveformEditor | Select audio clip → add warp marker | Marker saved to clip. Actually: saved to buffer ID | `getWarpState(clipId)` returns markers for the correct clip |
+| N-13 Freeze tail | Freeze a track at 120 BPM with 8-beat tail | Frozen clip is `trackLength + 4s` long. Actually: `trackLength + 8s` | `frozenClip.tailLengthSeconds === tailBeats * 60 / tempo` |
+| N-06 Punch-in | Enable punch-in → press record | Recording starts at punch-in point. Actually: isRecording set false | Transport enters recording state; audio captured between in/out points |
+| N-02 removeClip | Delete a MIDI clip → check midiStore | Notes for clipId removed. Actually: notes persist | `midiStore.value.notesByClipId[deletedClipId]` is undefined |
+| N-03 duplicateTrack | Duplicate a MIDI track with CC data | CC/pitchBend copied. Actually: lost | New clip has CC entries in `midiStore.value.ccByClipId[newClipId]` |
+| S-01 Faders | Drag a track gain fader slowly | Value tracks pointer. Actually: stair-steps; catches up on release | Fader thumb position updates within 16ms of pointer move |
+| S-03 Multi-track rec | Arm 2 audio tracks → record | Both buffers captured. Actually: only last-armed track gets audio | Both tracks have recorded clips after stop |
+| S-04 Crust silent | Add Crust to a track → play | Audio processed by Crust. Actually: bit-identical to no device; no log | Toast or error when DSP unavailable; device never added silently |
+| M-01 / G1 | Create clip at `startBeat = 8`, insert via Patterns tab | Notes visible in both timeline and piano roll. Actually: empty in one view | Notes render at correct position in both views |
+| T-01 deleteTimeRange | Select time range with MIDI clip → delete | MIDI notes shift with clip. Actually: notes stay → desync | `midiStore` entries for deleted clips are removed |
+| N-40 Bounce | Bounce a track → undo | Bounce reversed. Actually: no undo entry | Undo stack contains bounce entry; track restored on undo |
+| N-47 insertTime | Insert 4 beats at beat 8 with tempo change at beat 12 | Tempo change moves to beat 16. Actually: stays at beat 12 | `tempoMapStore` entry shifted by insert amount |
 
 ## Priorities (open issues only)
 
@@ -1371,11 +1350,9 @@ Device descriptors live in separate modules (`faustEffectDescriptors.ts`, `built
 7. **N-06** — Punch-in recording broken (feature non-functional).
 8. **N-02 / N-04** — removeClip and deleteTimeRange orphan MIDI data.
 9. **N-03** — duplicateTrack drops CC/pitchBend/automation.
-10. **N-38** — MIDI import running status bleeds between tracks.
 
 ### Tier 2 — Significant workflow bugs
-11. **N-39** — Sidechain routes lost on project reimport.
-12. **N-40** — Bounce operations have no undo.
+10. **N-40** — Bounce operations have no undo.
 13. **N-41** — Frozen buffer offline render starts at position 0.
 14. **N-47** — insertTime/deleteTime don't shift tempo/time-sig changes.
 15. **N-44** — removeTrack doesn't clean sidechain routes.
@@ -1384,8 +1361,7 @@ Device descriptors live in separate modules (`faustEffectDescriptors.ts`, `built
 18. **N-10** — IDB auto-save silent failure (data loss on quota).
 19. **N-16** — Automation recording has no undo.
 20. **N-35** — 11/13 worklet processors allocate in process() (RT safety).
-21. **N-15** — Synth velocity→attack inverted (wrong sound).
-22. **N-19** — Proof param bridge incomplete (most params display-only).
+21. **N-19** — Proof param bridge incomplete (most params display-only).
 23. **N-21** — Prompt parser regex escape bug (AI grid sizes never parse).
 24. **S-04** — Crust silent (user-facing breakage).
 25. **N-09** — Freeze/bounce ignores mute/solo (incorrect export).
@@ -1397,7 +1373,7 @@ Device descriptors live in separate modules (`faustEffectDescriptors.ts`, `built
 29. **N-18** — Toaster store singleton.
 30. **N-20** — TrackNode.dispose() memory leaks.
 31. **N-22** — Yeast worklet sync race.
-32. **N-25** — Audio loop gain wrong beat offset.
+32. ~~N-25~~ — RETRACTED.
 33. **N-43** — Duplicate shortcut Cmd+Shift+A.
 34. **N-46** — ScrollY clamping uses hardcoded 200px.
 35. **S-01** — Fader write-path storm.
@@ -1415,30 +1391,13 @@ Device descriptors live in separate modules (`faustEffectDescriptors.ts`, `built
 - **S-01 systemically:** Split fast/commit path as pilot on one fader, then generalise.
 - **Plugin instantiation hardening:** SAB-missing is handled (`PluginRequiresIsolationError`). Generalise to a `createPluginNodeSafely` wrapper catching WASM fetch failures, AudioWorklet registration errors, and handshake timeouts — each as a typed error with toast mapping.
 
-## Resolved
+## Resolved (13 fixed 2026-04-16 + 5 retracted 2026-04-18)
 
-- **I-07** — Dutch Oven stereo EQ struct mismatch: FIXED 2026-04-16.
-- **I-09** — TPDF dither quantisation: FIXED 2026-04-16.
-- **I-10** — Stereo imager centre channel at max width: FIXED 2026-04-16.
-- **I-11** — Crumbs filter shared L/R state: FIXED 2026-04-16.
-- **I-13** — `createAutomergeStorage` deep import: FIXED 2026-04-16.
-- **I-17** — ReasoningBlock ARIA: FIXED 2026-04-16.
-- **I-18** — DSO schema fallback: FIXED 2026-04-16.
-- **I-20** — Toaster/Levain worklet queue splice: FIXED 2026-04-16 (read-head index).
-- **I-23** — ProofChamber mono input drop: FIXED 2026-04-16.
-- **I-24** — ProofPanel dynBands mutation: FIXED 2026-04-16.
-- **Timeline §2** — MIDI split data loss: FIXED 2026-04-16 (`splitMidiNotesAtBeat`).
-- **Timeline §3** — MIDI duplication data loss: FIXED 2026-04-16 (`duplicateClipCore` now copies notes).
-- **Timeline §5** — Audio waveform squash: FIXED 2026-04-16 (windowed `getWaveformPeaks`).
-- **DiffSinger cache key** — ms-quantized hash confirmed correct.
-- Transport `setTimeout` → Web Worker scheduler.
-- CRDT ID generation → `crypto.randomUUID()`.
-- `scheduleAudioClips` GainNode allocation → reusable pool.
-- AudioWorklet message queues → allocation-free circular queue.
-- Toaster `busRoute`/`transientAttack` hydration.
-- Knead offline analysis pipeline exists (not stubbed).
-- AiRuntime name resolution (no splice mutation).
-- Levain jitter buffer (sorted sample-frame queue exists; block-end granularity reframed).
+**Fixed:** I-07 (Dutch Oven stereo EQ), I-09 (TPDF dither), I-10 (imager width), I-11 (Crumbs filter L/R), I-13 (Automerge import), I-17 (ARIA), I-18 (DSO fallback), I-20 (worklet queue), I-23 (mono input), I-24 (dynBands mutation), Timeline §2 (MIDI split), Timeline §3 (MIDI duplicate), Timeline §5 (waveform squash).
+
+**Retracted (false positives from agent sweep, 8 total):** N-15 (velocity math correct), N-25 (gain offset correct), N-26 (files don't exist), N-33 (float not integer), N-38 (runningStatus reset correctly), N-39 (sidechain routes restored), DiffSinger cache key (confirmed correct).
+
+**Previously resolved:** Transport scheduler (Web Worker), CRDT IDs (`crypto.randomUUID`), GainNode pool, worklet queues (circular), Toaster pad hydration, Knead pipeline (not stubbed), AiRuntime name resolution (no splice).
 
 ---
 

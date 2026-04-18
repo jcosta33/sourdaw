@@ -38,6 +38,13 @@ export { updateDeviceParam } from './deviceControls/updateDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
 export { updateDeviceBypass } from './deviceControls/updateDeviceBypass';
+export { registerTuningTable } from './deviceControls/tuningControls';
+export {
+    addMidiFxToStrip,
+    removeMidiFxFromStrip,
+    updateMidiFxParam,
+    updateMidiFxBypass,
+} from './deviceControls/midiFxControls';
 
 export { getAudioContext } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';

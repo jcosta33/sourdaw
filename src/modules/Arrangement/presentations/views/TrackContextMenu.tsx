@@ -23,7 +23,7 @@ import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonit
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { BounceOptionsDialog, type BounceOptions } from '../../../Workspace/presentations/components/Inspector/BounceOptionsDialog';
+import { BounceOptionsDialog, type BounceOptions } from '#/modules/Workspace';
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },
@@ -43,7 +43,6 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
     const [showBounceDialog, setShowBounceDialog] = useState(false);
-    const [bounceMode, setBounceBounceMode] = useState<'replace' | 'new-track'>('new-track');
 
     const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
         e.preventDefault();

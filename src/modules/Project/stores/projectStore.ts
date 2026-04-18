@@ -9,6 +9,8 @@ export type ProjectStoreState = {
     updatedAt: number;
     dirty: boolean;
     loading: boolean;
+    keyRoot: number; // 0-11 (C=0)
+    scaleName: string;
     /** True once the user has explicitly started or loaded a project session.
      *  Ephemeral — not written to CRDT. Resets to false on every cold start.
      *  Controls whether the full-screen LaunchScreen is shown. */
@@ -17,7 +19,9 @@ export type ProjectStoreState = {
 
 export const projectStore = createStore<ProjectStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
-        toCrdt: ({ name, createdAt, updatedAt }) => ({ name, createdAt, updatedAt }),
+        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName }) => ({ 
+            name, createdAt, updatedAt, keyRoot, scaleName 
+        }),
     }),
     initialData: {
         name: 'Untitled Project',
@@ -25,6 +29,8 @@ export const projectStore = createStore<ProjectStoreState>({
         updatedAt: Date.now(),
         dirty: false,
         loading: true,
+        keyRoot: 0,
+        scaleName: 'chromatic',
         initialized: false,
     },
 });

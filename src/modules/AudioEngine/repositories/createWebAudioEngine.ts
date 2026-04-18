@@ -21,8 +21,15 @@ class AudioEngineImpl implements AudioEngine {
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private workletReady = false;
     private fallbackMode = false;
+    private transportSAB: SharedArrayBuffer;
+    private transportView: Float64Array;
 
     constructor(providedContext?: AudioContext) {
+        // Transport SAB Layout (Float64Array):
+        // 0: currentBeat, 1: tempo, 2: sampleRate, 3: loopStart, 4: loopEnd, 5: isPlaying, 6: isLooping
+        this.transportSAB = new SharedArrayBuffer(64);
+        this.transportView = new Float64Array(this.transportSAB);
+
         try {
             this.context = providedContext ?? new AudioContext({ latencyHint: 'interactive' });
             this.masterGainNode = this.context.createGain();
@@ -168,6 +175,7 @@ class AudioEngineImpl implements AudioEngine {
                     getSendsForTrack: (tId) =>
                         Array.from(this.sendNodes.values()).filter((s) => s.sourceTrackId === tId),
                     pendingDevicePromises: this.pendingDevicePromises,
+                    transportSAB: this.transportSAB,
                 });
             }
             this.trackNodes.set(trackId, node);
@@ -268,6 +276,48 @@ class AudioEngineImpl implements AudioEngine {
 
     public updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
         this.trackNodes.get(trackId)?.updateBypass(deviceId, bypassed);
+    }
+
+    public addMidiFxToStrip(trackId: string, fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void {
+        this.trackNodes.get(trackId)?.addMidiFx(fxId, fxType);
+    }
+
+    public removeMidiFxFromStrip(trackId: string, fxId: string): void {
+        this.trackNodes.get(trackId)?.removeMidiFx(fxId);
+    }
+
+    public updateMidiFxParam(trackId: string, fxId: string, paramId: string, value: number): void {
+        this.trackNodes.get(trackId)?.updateMidiFxParam(fxId, paramId, value);
+    }
+
+    public updateMidiFxBypass(trackId: string, fxId: string, bypassed: boolean): void {
+        this.trackNodes.get(trackId)?.updateMidiFxBypass(fxId, bypassed);
+    }
+
+    public syncKneadState(trackId: string, clips: Record<string, any>): void {
+        const trackNode = this.trackNodes.get(trackId);
+        if (trackNode) {
+            for (const dn of trackNode.strip.deviceNodes) {
+                if (dn.kneadControls) {
+                    dn.kneadControls.updateState(clips);
+                }
+            }
+        }
+    }
+
+    public setTransportInfo(beat: number, tempo: number, isPlaying: boolean, loopStart = 0, loopEnd = 0, isLooping = false): void {
+        const v = this.transportView;
+        v[0] = beat;
+        v[1] = tempo;
+        v[2] = this.context.sampleRate;
+        v[3] = loopStart;
+        v[4] = loopEnd;
+        v[5] = isPlaying ? 1 : 0;
+        v[6] = isLooping ? 1 : 0;
+    }
+
+    public getTransportSAB(): SharedArrayBuffer {
+        return this.transportSAB;
     }
 
     public setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
@@ -426,7 +476,7 @@ class AudioEngineImpl implements AudioEngine {
                     // Levain has a realism-layer release burst per noteOff
                     // (bow-lift noise on strings). A 128-note fan-out would
                     // retrigger that burst 128 times and produce an audible
-                    // "ksshh" on every stop. Route through the dedicated
+                    // \"ksshh\" on every stop. Route through the dedicated
                     // silent all-notes-off path instead — see
                     // .agents/bugs/levain-stop-hihat-and-constant-white-noise.md.
                     dn.levainControls.allNotesOff();

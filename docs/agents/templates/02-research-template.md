@@ -1,8 +1,6 @@
 # <Topic>
 
-> **Note:** Research files are developer-authored. This template exists for developers capturing
-> external technical findings to inform implementation. Agents read research; they do not
-> produce it unless explicitly asked.
+> **Note:** Research files can be authored by developers or agents. This template exists for capturing external technical findings to inform implementation. Agents are empowered to produce research when they need to validate assumptions or explore new APIs/approaches.
 
 ---
 

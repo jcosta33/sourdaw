@@ -10,3 +10,6 @@ export type { MidiStoreState } from './midiStore';
 
 export { chordTrackStore, defaultChordTrackState } from './chordTrackStore';
 export type { ChordTrackState } from './chordTrackStore';
+
+export { stepRecordStore, defaultStepRecordState } from './stepRecordStore';
+export type { StepRecordState } from './stepRecordStore';

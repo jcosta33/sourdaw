@@ -14,7 +14,7 @@ Before implementing anything non-trivial:
 2. Check `.agents/specs/` for an existing spec — load `.agents/skills/write-spec/SKILL.md` if writing one
 3. Check `.agents/audits/` for an existing audit — load `.agents/skills/write-audit/SKILL.md` if writing one
 4. Load domain skills from `.agents/skills/` — read the `description` field of each SKILL.md
-5. Check `.agents/research/` for existing findings (you cannot create research — surface gaps as blockers)
+5. Check `.agents/research/` for existing findings (you may proactively research and create new research files when needed to validate assumptions or technical approaches)
 
 Full workflow: `docs/agents/03-workflow.md`
 File type definitions: `docs/agents/02-file-types.md`

@@ -19,6 +19,7 @@ import {
     getNotesForClip,
     strumNotes,
     restoreStrumOriginals,
+    snapClipToScale,
     extractGrooveFromClip,
     applyGrooveToClip,
     restoreGrooveOriginals,
@@ -162,10 +163,10 @@ export const PianoRollContextMenu = ({
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
                 Transpose
             </DawMenuSectionLabel>
-            <div className="flex gap-1 px-3 py-0.5">
+            <div className=\"flex gap-1 px-3 py-0.5\">
                 {([-12, -1, 1, 12] as const).map((semi) => (
                     <button
-                        type="button"
+                        type=\"button\"
                         key={semi}
                         className={pillBtnClass}
                         onClick={act(() => {
@@ -181,6 +182,36 @@ export const PianoRollContextMenu = ({
                     </button>
                 ))}
             </div>
+
+            {/* Scale */}
+            <DawMenuSeparator className=\"border-border/50\" />
+            <DawMenuSectionLabel className=\"text-[10px] font-normal normal-case tracking-normal\">
+                Scale
+            </DawMenuSectionLabel>
+            <DawMenuButton
+                role=\"menuitem\"
+                onClick={act(() => {
+                    const before = getNotesForClip(clipId).map((n) => ({ ...n }));
+                    snapClipToScale(clipId);
+                    const after = getNotesForClip(clipId).map((n) => ({ ...n }));
+                    pushUndoEntry(
+                        'Snap notes to scale',
+                        () => {
+                            for (const n of before) {
+                                moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                            }
+                        },
+                        () => {
+                            for (const n of after) {
+                                moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                            }
+                        }
+                    );
+                })}
+            >
+                Snap to Scale
+            </DawMenuButton>
+
 
             {/* Humanize */}
             <DawMenuSeparator className="border-border/50" />

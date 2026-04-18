@@ -17,6 +17,8 @@ import {
     getMidiStoreState,
     handleMidiMessage as applyMidiMappings,
     setMidiStoreState,
+    stepRecordNoteOn,
+    stepRecordNoteOff,
 } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
@@ -60,6 +62,8 @@ const midiMessageHandlerDependencies = {
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
     processRealtimeMidiInput,
+    stepRecordNoteOn,
+    stepRecordNoteOff,
     eventBus,
 };
 
@@ -106,6 +110,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
     }
 
     return function handleNoteOff(_channel: number, note: number): void {
+        deps.stepRecordNoteOff(note);
         const noteData = activeNotes.get(note);
         if (!noteData) {
             return;
@@ -269,6 +274,8 @@ export const handleNoteOn = inject({
             handleNoteOff(channel, note);
             return;
         }
+
+        deps.stepRecordNoteOn(note, velocity);
 
         if (!getTargetTrackId()) {
             logger.warn('[MIDI] No target track set — select a MIDI track first');

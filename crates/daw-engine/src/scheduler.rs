@@ -4,9 +4,12 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_bridge::PluginAudioBridge;
+use crate::midi_fx::{Arpeggiator, MidiFx, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
+use daw_core::tuning::TuningTable;
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::Consumer;
+use triple_buffer::Output;
 
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
@@ -24,8 +27,16 @@ pub enum GraphCommand {
     // MIDI events (routed to a specific plugin by ID)
     SendMidiNote(usize, MidiNoteEvent),
 
+    // MIDI FX
+    AddMidiFx(usize, String),
+    RemoveMidiFx(usize, usize), // effect_id, fx_index
+    SetMidiFxParam(usize, usize, String, f32),
+
     // Transport state (global, affects all plugins)
     SetTransport(TransportState),
+
+    // Tuning system
+    RegisterTuning(usize, Output<TuningTable>),
 
     // Ring buffer audio bridge
     RegisterAudioBridge(PluginAudioBridge),
@@ -41,6 +52,7 @@ struct ActiveEffect {
     id: usize,
     instance: PluginCore,
     bypassed: bool,
+    midi_fx: Vec<Box<dyn MidiFx>>,
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: Vec<MidiNoteEvent>,
 }
@@ -71,7 +83,13 @@ impl AudioScheduler {
             match cmd {
                 GraphCommand::AddEffect(id, plugin_type) => {
                     let instance = match plugin_type.as_str() {
-                        "knead" => Some(PluginCore::Knead(KneadEngine::new(self.sample_rate))),
+                        "knead" => {
+                            let (_, output) = triple_buffer::triple_buffer(&TuningTable::default());
+                            Some(PluginCore::Knead(KneadEngine::new(
+                                self.sample_rate,
+                                daw_core::tuning::TuningManager::new(output),
+                            )))
+                        }
                         _ => None,
                     };
                     if let Some(inst) = instance {
@@ -79,6 +97,7 @@ impl AudioScheduler {
                             id,
                             instance: inst,
                             bypassed: false,
+                            midi_fx: Vec::new(),
                             pending_midi: Vec::new(),
                         });
                     }
@@ -101,9 +120,9 @@ impl AudioScheduler {
                         id,
                         instance: PluginCore::Native(plugin),
                         bypassed: false,
+                        midi_fx: Vec::new(),
                         pending_midi: Vec::new(),
                     });
-                }
                 GraphCommand::SetPluginParam(id, param_id, value) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         if let PluginCore::Native(ref mut plugin) = effect.instance {
@@ -111,13 +130,48 @@ impl AudioScheduler {
                         }
                     }
                 }
+                GraphCommand::AddMidiFx(id, fx_type) => {
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        let fx: Option<Box<dyn MidiFx>> = match fx_type.as_str() {
+                            "arp" => Some(Box::new(Arpeggiator::default())),
+                            "velocity" => Some(Box::new(VelocityScaler::default())),
+                            _ => None,
+                        };
+                        if let Some(instance) = fx {
+                            effect.midi_fx.push(instance);
+                        }
+                    }
+                }
+                GraphCommand::RemoveMidiFx(id, index) => {
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        if index < effect.midi_fx.len() {
+                            effect.midi_fx.remove(index);
+                        }
+                    }
+                }
+                GraphCommand::SetMidiFxParam(id, index, name, value) => {
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        if let Some(fx) = effect.midi_fx.get_mut(index) {
+                            fx.set_param(&name, value);
+                        }
+                    }
+                }
                 GraphCommand::SendMidiNote(id, event) => {
+                ...
+
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         effect.pending_midi.push(event);
                     }
                 }
                 GraphCommand::SetTransport(state) => {
                     self.transport = state;
+                }
+                GraphCommand::RegisterTuning(id, output) => {
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        if let PluginCore::Knead(ref mut engine) = effect.instance {
+                            engine.tuning = daw_core::tuning::TuningManager::new(output);
+                        }
+                    }
                 }
                 GraphCommand::RegisterAudioBridge(bridge) => {
                     self.audio_bridges.push(bridge);
@@ -148,6 +202,16 @@ impl AudioScheduler {
                 }
 
                 if let PluginCore::Native(ref mut plugin) = effect.instance {
+                    // Apply MIDI FX chain before processing
+                    for fx in &mut effect.midi_fx {
+                        fx.process_midi(
+                            &mut effect.pending_midi,
+                            &self.transport,
+                            self.sample_rate,
+                            num_samples,
+                        );
+                    }
+
                     let midi = &effect.pending_midi;
                     let transport = &self.transport;
 
@@ -173,6 +237,17 @@ impl AudioScheduler {
                 effect.pending_midi.clear();
                 continue;
             }
+
+            // Apply MIDI FX chain before processing
+            for fx in &mut effect.midi_fx {
+                fx.process_midi(
+                    &mut effect.pending_midi,
+                    &self.transport,
+                    self.sample_rate,
+                    num_samples,
+                );
+            }
+
             match &mut effect.instance {
                 PluginCore::Knead(engine) => {
                     engine.process_block(left, right);

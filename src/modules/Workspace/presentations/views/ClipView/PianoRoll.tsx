@@ -12,10 +12,12 @@
 import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState, useEffect } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
-import { midiStore } from '#/modules/MIDI';
+import { projectStore } from '#/modules/Project';
+import { SCALE_PATTERNS, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { useStore } from '#/infra/store/useStore';
+import { midiStore, stepRecordStore } from '#/modules/MIDI';
 
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
@@ -74,10 +76,8 @@ export const PianoRoll = ({
     const setSelectedNoteIds = onSelectedNoteIdsChange;
     const [gridSnap, setGridSnap] = useState(0.25);
 
-    const [scaleRoot, setScaleRoot] = useState(0);
-    const [scaleType, setScaleType] = useState<string>('chromatic');
-    const [stepInput, setStepInput] = useState(false);
-    const [stepBeat, setStepBeat] = useState(0);
+    const { keyRoot, scaleName } = useStore(projectStore);
+    const stepRecord = useStore(stepRecordStore);
     const [showGhostNotes, setShowGhostNotes] = useState(true);
     const [chordMode, setChordMode] = useState(false);
     const [chordType, setChordType] = useState<PianoRollChordType>('major');
@@ -150,11 +150,12 @@ export const PianoRoll = ({
         beatWidth,
         gridSnap,
         scaleType,
-        scaleRoot,
+        scaleRoot: keyRoot,
         isFolded,
         selectedNoteIds,
-        stepInput,
-        stepBeat,
+        stepInput: stepRecord.active,
+        stepBeat: stepRecord.currentBeat,
+        stepPitch: stepRecord.currentPitch,
         showGhostNotes,
         midiNotesByClipId: midiState?.notesByClipId ?? null,
         tracks: trackState?.tracks ?? null,
@@ -185,11 +186,20 @@ export const PianoRoll = ({
         beatWidth,
         gridSnap,
         scaleType,
-        scaleRoot,
+        scaleRoot: keyRoot,
         isFolded,
-        stepInput,
-        stepBeat,
-        setStepBeat,
+        stepInput: stepRecord.active,
+        stepBeat: stepRecord.currentBeat,
+        setStepBeat: (beat) => {
+            if (typeof beat === 'function') {
+                stepRecordStore.set({ 
+                    ...stepRecordStore.value, 
+                    currentBeat: beat(stepRecordStore.value.currentBeat) 
+                });
+            } else {
+                stepRecordStore.set({ ...stepRecordStore.value, currentBeat: beat });
+            }
+        },
         chordMode,
         chordType,
         paintMode,
@@ -207,23 +217,30 @@ export const PianoRoll = ({
     });
 
     // ── Render ────────────────────────────────────────────────────────
-    const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
+    const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
 
     return (
         <div className="flex flex-1 flex-col overflow-hidden">
             <PianoRollToolbar
                 gridSnap={gridSnap}
                 onGridSnapChange={setGridSnap}
-                scaleRoot={scaleRoot}
-                onScaleRootChange={setScaleRoot}
-                scaleType={scaleType}
-                onScaleTypeChange={setScaleType}
+                scaleRoot={keyRoot}
+                onScaleRootChange={(root) => projectStore.set({ ...projectStore.value!, keyRoot: root })}
+                scaleType={scaleName}
+                onScaleTypeChange={(type) => projectStore.set({ ...projectStore.value!, scaleName: type })}
                 isFolded={isFolded}
                 onToggleFolded={() => setIsFolded((p) => !p)}
                 constrainToScale={constrainToScale}
                 onToggleConstrainToScale={() => setConstrainToScale((p: boolean) => !p)}
-                stepInput={stepInput}
-                onToggleStepInput={() => setStepInput((p) => !p)}
+                stepInput={stepRecord.active}
+                onToggleStepInput={() => {
+                    stepRecordStore.set({ 
+                        ...stepRecordStore.value, 
+                        active: !stepRecord.active,
+                        clipId: !stepRecord.active ? clipId : null,
+                        currentBeat: 0 
+                    });
+                }}
                 showGhostNotes={showGhostNotes}
                 onToggleGhostNotes={() => setShowGhostNotes((p) => !p)}
                 chordMode={chordMode}
@@ -262,16 +279,18 @@ export const PianoRoll = ({
                         {visiblePitches.map((pitch, row) => {
                             const noteIndex = pitch % 12;
                             const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
+                            const isInScale = SCALE_PATTERNS[scaleName]?.includes(((noteIndex - keyRoot) + 12) % 12);
                             return (
                                 <div
                                     key={row}
                                     className={cn(
                                         'flex items-center justify-end pr-1 text-[10px]',
-                                        isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60'
+                                        isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60',
+                                        isInScale && 'text-accent-primary/80 font-bold'
                                     )}
                                     style={{ height: ROW_HEIGHT }}
                                 >
-                                    {NOTE_NAMES[noteIndex]}
+                                    {KEY_NAMES[noteIndex]}
                                     {Math.floor(pitch / 12) - 1}
                                 </div>
                             );

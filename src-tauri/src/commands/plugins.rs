@@ -356,10 +356,15 @@ pub async fn start_native_engine(state: tauri::State<'_, AppState>) -> Result<St
         return Ok("Native engine already running".to_string());
     }
 
-    let handle =
+    let mut handle =
         EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
 
-    eprintln!("[Engine] Native audio engine started");
+    // Create a triple-buffer for the global tuning table
+    // and register it with the MTS-ESP master bridge.
+    let (_, output) = triple_buffer::triple_buffer(&daw_core::tuning::TuningTable::default());
+    handle.register_mts_esp_master(output);
+
+    eprintln!("[Engine] Native audio engine started with MTS-ESP support");
     *engine_guard = Some(handle);
     Ok("Native engine started".to_string())
 }
@@ -462,7 +467,15 @@ pub async fn process_plugin_audio(
     // Push input to the audio thread
     bridge.push_input(&left, &right);
 
-    // Try to pop processed output (may be from previous block — 1 block latency)
+    // Update MTS-ESP tuning master (background task)
+    if let Ok(mut engine_guard) = state.engine.lock() {
+        if let Some(ref mut engine) = *engine_guard {
+            engine.update_mts_esp();
+        }
+    }
+
+    // Try to pop processed output
+ (may be from previous block — 1 block latency)
     if let Some(output) = bridge.pop_output() {
         // Re-interleave and encode as raw bytes
         let n = num_samples.min(128);

@@ -30,8 +30,8 @@
  *    during drag) without waiting for the next rAF tick.
  */
 import { type RefObject, useRef, useEffect } from 'react';
-import { midiStore } from '#/modules/MIDI/stores';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { midiStore } from '#/modules/MIDI';
+import { trackStore } from '#/modules/Arrangement';
 import { resolveToken } from '#/utils/UI/resolveToken';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import {
@@ -58,6 +58,7 @@ type RendererDeps = {
     selectedNoteIds: Set<string>;
     stepInput: boolean;
     stepBeat: number;
+    stepPitch: number;
     showGhostNotes: boolean;
     /** A9: additional clip IDs open simultaneously in the piano roll */
     openedClipIds?: string[];
@@ -103,6 +104,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     stepInputRef.current = deps.stepInput;
     const stepBeatRef = useRef(deps.stepBeat);
     stepBeatRef.current = deps.stepBeat;
+    const stepPitchRef = useRef(deps.stepPitch);
+    stepPitchRef.current = deps.stepPitch;
     const showGhostNotesRef = useRef(deps.showGhostNotes);
     showGhostNotesRef.current = deps.showGhostNotes;
     const clipIdRef = useRef(deps.clipId);
@@ -155,6 +158,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             const tId = trackIdRef.current;
             const si = stepInputRef.current;
             const sb = stepBeatRef.current;
+            const sp = stepPitchRef.current;
             const ghost = showGhostNotesRef.current;
             const selIds = selectedNoteIdsRef.current;
 
@@ -263,7 +267,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 }
                 drawActiveNotes(ctx, pitchToRow, notes, bw, selIds, tracks, tId, cId, deps.dragPreviewRef.current);
                 if (si) {
-                    drawStepCursor(ctx, sb, bw, gs, noteAreaHeight);
+                    drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, totalWidth, noteAreaHeight);
                 }
                 drawPreview(ctx, pitchToRow, bw, deps.drawPreviewRef.current);
                 drawRubberBand(ctx, deps.rubberBandRef.current);
@@ -629,12 +633,25 @@ function drawActiveNotes(
 
 function drawStepCursor(
     ctx: CanvasRenderingContext2D,
+    pitchToRow: Map<number, number>,
     stepBeat: number,
+    stepPitch: number,
     beatWidth: number,
     gridSnap: number,
+    totalWidth: number,
     noteAreaHeight: number
 ): void {
     const sx = stepBeat * beatWidth;
+    const row = pitchToRow.get(stepPitch) ?? -1;
+
+    // Row highlight
+    if (row !== -1) {
+        const sy = row * ROW_HEIGHT;
+        ctx.fillStyle = 'rgba(160, 90, 120, 0.15)';
+        ctx.fillRect(0, sy, totalWidth, ROW_HEIGHT);
+    }
+
+    // Column highlight
     ctx.strokeStyle = 'rgba(160, 90, 120, 0.6)';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 3]);
@@ -645,7 +662,7 @@ function drawStepCursor(
     ctx.setLineDash([]);
     ctx.lineWidth = 1;
 
-    ctx.fillStyle = 'rgba(160, 90, 120, 0.06)';
+    ctx.fillStyle = 'rgba(160, 90, 120, 0.08)';
     const stepW = gridSnap * beatWidth;
     ctx.fillRect(sx, 0, stepW, noteAreaHeight);
 }

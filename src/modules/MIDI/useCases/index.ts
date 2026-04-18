@@ -87,6 +87,18 @@ export { scaleVelocities } from './midiNoteTransforms/scaleVelocities';
 export { setAllVelocities } from './midiNoteTransforms/setAllVelocities';
 export { splitNoteAtBeat } from './midiNoteTransforms/splitNoteAtBeat';
 export { transposeNotes } from './midiNoteTransforms/transposeNotes';
+export { snapClipToScale } from './snapClipToScale';
+
+// ── Step Recording ────────────────────────────────────────────────────────────
+export { toggleStepRecording } from './stepRecording/toggleStepRecording';
+export { stepRecordNoteOn } from './stepRecording/stepRecordNoteOn';
+export { stepRecordNoteOff } from './stepRecording/stepRecordNoteOff';
+export { 
+    stepRecordAdvance, 
+    stepRecordRetreat,
+    stepRecordStepUp,
+    stepRecordStepDown 
+} from './stepRecording/stepRecordNavigation';
 
 export { setMidiOutput } from './midiRouting/setMidiOutput';
 export { clearMidiOutput } from './midiRouting/clearMidiOutput';

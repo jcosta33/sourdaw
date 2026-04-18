@@ -53,6 +53,8 @@ export function newProject(name = 'Untitled Project'): void {
         updatedAt: Date.now(),
         dirty: false,
         loading: false,
+        keyRoot: 0,
+        scaleName: 'chromatic',
         initialized: true,
     });
     removeProjectJson();

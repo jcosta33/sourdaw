@@ -4,6 +4,7 @@ import { TrackHeaderSection } from './TrackHeaderSection';
 import { TrackAlternativesSection } from './TrackAlternativesSection';
 import { TrackLevelSection } from './TrackLevelSection';
 import { TrackDevicesSection } from './TrackDevicesSection';
+import { TrackMidiFxSection } from './TrackMidiFxSection';
 import { TrackAutomationSection } from './TrackAutomationSection';
 import { SendsEditor } from './SendsEditor';
 import { TrackVcaSection } from './TrackVcaSection';
@@ -34,6 +35,7 @@ export const TrackInspector = ({
             <TrackHeaderSection track={track} />
             <TrackAlternativesSection track={track} />
             <TrackLevelSection track={track} />
+            <TrackMidiFxSection track={track} />
             <TrackDevicesSection track={track} onSelectDevice={onSelectDevice} />
             <TrackAutomationSection track={track} />
             <SendsEditor track={track} />

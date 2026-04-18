@@ -7,6 +7,7 @@ pub struct MidiNoteEvent {
     pub velocity: u8,
     pub channel: i16,
     pub is_note_on: bool,
+    pub probability: f32, // 0.0 to 1.0
 }
 
 /// Transport state for plugins that need tempo/position info.

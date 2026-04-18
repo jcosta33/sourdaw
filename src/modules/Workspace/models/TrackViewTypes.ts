@@ -32,6 +32,14 @@ export type Device = {
     externalInstanceId?: string;
 };
 
+export type MidiFx = {
+    id: string;
+    name: string;
+    type: 'arp' | 'velocity' | 'probability';
+    bypassed: boolean;
+    parameterValues: Record<string, number>;
+};
+
 export type Clip = {
     id: string;
     trackId: string;
@@ -95,6 +103,7 @@ export type Track = {
     color: string;
     clips: Clip[];
     devices: Device[];
+    midiFx: MidiFx[];
     sends: Send[];
     frozen: boolean;
     frozenBufferId?: string;

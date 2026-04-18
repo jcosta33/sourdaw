@@ -12,13 +12,29 @@ import { Mic } from 'lucide-react';
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { projectStore } from '#/modules/Project';
+import { quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
+
+type KneadHotspot = 'BODY' | 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' | 'CENTER_UPPER' | 'CENTER_LOWER';
+
 export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: string }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const { tracks } = useTracks();
     const [zoom, setZoom] = useState(1.0);
     const [isDragging, setIsDragging] = useState(false);
-    const dragStart = useRef<{ x: number; y: number; blobId: string; startCents: number } | null>(null);
+    const [hoveredBlobId, setHoveredBlobId] = useState<string | null>(null);
+    const [activeHotspot, setActiveHotspot] = useState<KneadHotspot | null>(null);
+
+    const dragStart = useRef<{
+        x: number;
+        y: number;
+        blobId: string;
+        hotspot: KneadHotspot;
+        startCents: number;
+        startTime: number;
+        endTime: number;
+    } | null>(null);
 
     const track = tracks.find((t) => t.id === trackId);
     const hasKnead = track?.devices.some((d) => d.type.toLowerCase() === 'knead') ?? false;
@@ -30,14 +46,36 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         analysisProgress: 0,
     });
     const transportState = useStore(transportStore, defaultTransportState);
+    const { keyRoot, scaleName } = useStore(projectStore);
     const kneadState = kneadStoreState.clips[clipId];
+    const contour = kneadStoreState.contours[clipId];
+
+    const handleCorrectPitch = () => {
+        if (!clipId) return;
+        updateClipKneadState(clipId, (state) => ({
+            ...state,
+            blobs: state.blobs.map((blob) => ({
+                ...blob,
+                pitchCenterCents: quantizeCentsToScale(blob.pitchCenterCents, keyRoot, scaleName),
+            })),
+        }));
+        notifyUser('Pitch corrected to scale.', 'success');
+    };
+
+    const handleKeyChange = (root: number) => {
+        projectStore.set({ ...projectStore.value!, keyRoot: root });
+    };
+
+    const handleScaleChange = (name: string) => {
+        projectStore.set({ ...projectStore.value!, scaleName: name });
+    };
 
     // Refs for animation loop to avoid dependency-triggered re-runs of the loop itself
-    const stateRef = useRef({ kneadState, zoom, transportState, isDragging });
+    const stateRef = useRef({ kneadState, zoom, transportState, isDragging, contour });
     
     useEffect(() => {
-        stateRef.current = { kneadState, zoom, transportState, isDragging };
-    }, [kneadState, zoom, transportState, isDragging]);
+        stateRef.current = { kneadState, zoom, transportState, isDragging, contour };
+    }, [kneadState, zoom, transportState, isDragging, contour]);
 
     // Trigger real DSP pitch-analysis pipeline (WASM pitch detection)
     useEffect(() => {
@@ -62,6 +100,16 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
     const pixelsPerSecond = 300 * zoom;
     const rowHeight = 24;
+
+    const getHotspot = (x: number, y: number, bx: number, by: number, bw: number, bh: number): KneadHotspot => {
+        const padding = 8;
+        if (x < bx + padding) return 'LEFT';
+        if (x > bx + bw - padding) return 'RIGHT';
+        if (y < by - bh / 2 + padding) return 'TOP';
+        if (y > by + bh / 2 - padding) return 'BOTTOM';
+        if (y < by) return 'CENTER_UPPER';
+        return 'CENTER_LOWER';
+    };
 
     // Render loop for the Canvas-based Blob Editor
     useEffect(() => {
@@ -98,6 +146,36 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                 ctx.stroke();
             }
 
+            // Draw Raw Pitch Contour (faint background)
+            if (stateRef.current.contour && stateRef.current.contour.points.length > 0) {
+                const currentContour = stateRef.current.contour;
+                const avgCents =
+                    currentKnead?.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / (currentKnead?.blobs.length || 1) || 6000;
+                
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                let first = true;
+                for (const pt of currentContour.points) {
+                    if (!pt.voiced || pt.confidence < 0.3) {
+                        first = true;
+                        continue;
+                    }
+                    const px = (pt.time_ms / 1000) * currentPPS;
+                    const midiNote = 69 + 12 * Math.log2(pt.frequency_hz / 440);
+                    const cents = midiNote * 100;
+                    const py = height / 2 - ((cents - avgCents) / 100) * rowHeight;
+                    
+                    if (first) {
+                        ctx.moveTo(px, py);
+                        first = false;
+                    } else {
+                        ctx.lineTo(px, py);
+                    }
+                }
+                ctx.stroke();
+            }
+
             // Draw Knead Blobs
             if (currentKnead && currentKnead.blobs.length > 0) {
                 const avgCents =
@@ -112,18 +190,20 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
                     // Map cents to Y
                     const y = height / 2 - ((blob.pitchCenterCents - avgCents) / 100) * rowHeight;
+                    const isHovered = hoveredBlobId === blob.id;
+                    const isDragged = dragStart.current?.blobId === blob.id;
 
                     // Draw outer blob shape
-                    ctx.fillStyle = dragStart.current?.blobId === blob.id ? '#ffffff' : accentCol;
+                    ctx.fillStyle = isDragged || isHovered ? '#ffffff' : accentCol;
                     ctx.globalAlpha = blob.voicedConfidence > 0.5 ? 0.8 : 0.3;
                     ctx.beginPath();
-                    ctx.roundRect(x, y - rowHeight / 2 + 2, w, rowHeight - 4, 4);
+                    ctx.roundRect(x, y - rowHeight / 2 + 2, w, rowHeight - 4, 6);
                     ctx.fill();
 
                     // Draw internal pitch curve
                     if (blob.pitchCurveCents.length > 0) {
-                        ctx.strokeStyle = dragStart.current?.blobId === blob.id ? accentCol : '#ffffff';
-                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = isDragged || isHovered ? accentCol : '#ffffff';
+                        ctx.lineWidth = 1.5;
                         ctx.globalAlpha = 1.0;
                         ctx.beginPath();
                         const step = w / blob.pitchCurveCents.length;
@@ -133,6 +213,31 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                             if (i === 0) {ctx.moveTo(px, py);}
                             else {ctx.lineTo(px, py);}
                         }
+                        ctx.stroke();
+                    }
+
+                    // Draw Handles if hovered or dragged
+                    if (isHovered || isDragged) {
+                        ctx.globalAlpha = 1.0;
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 1;
+                        
+                        // Top/Bottom pitch drift handles
+                        ctx.beginPath();
+                        ctx.arc(x + w / 2, y - rowHeight / 2 + 2, 3, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(x + w / 2, y + rowHeight / 2 - 2, 3, 0, Math.PI * 2);
+                        ctx.stroke();
+
+                        // Left/Right timing handles
+                        ctx.beginPath();
+                        ctx.moveTo(x + 2, y - 4);
+                        ctx.lineTo(x + 2, y + 4);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(x + w - 2, y - 4);
+                        ctx.lineTo(x + w - 2, y + 4);
                         ctx.stroke();
                     }
                 }
@@ -187,7 +292,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         const y = e.clientY - rect.top;
 
         const avgCents =
-            kneadState.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / kneadState.blobs.length;
+            kneadState.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / (kneadState.blobs.length || 1);
 
         const hit = kneadState.blobs.find((blob) => {
             const bx = blob.startTime * pixelsPerSecond;
@@ -197,28 +302,99 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         });
 
         if (hit) {
-            dragStart.current = { x, y, blobId: hit.id, startCents: hit.pitchCenterCents };
+            const bx = hit.startTime * pixelsPerSecond;
+            const bw = (hit.endTime - hit.startTime) * pixelsPerSecond;
+            const by = canvasRef.current!.height / 2 - ((hit.pitchCenterCents - avgCents) / 100) * rowHeight;
+            const hotspot = getHotspot(x, y, bx, by, bw, rowHeight);
+
+            dragStart.current = { 
+                x, y, 
+                blobId: hit.id, 
+                hotspot, 
+                startCents: hit.pitchCenterCents,
+                startTime: hit.startTime,
+                endTime: hit.endTime
+            };
             setIsDragging(true);
+            setActiveHotspot(hotspot);
             canvasRef.current!.setPointerCapture(e.pointerId);
         }
     };
 
     const handlePointerMove = (e: PointerEvent<HTMLCanvasElement>) => {
-        if (!isDragging || !dragStart.current || !kneadState) {return;}
-
         const rect = canvasRef.current!.getBoundingClientRect();
+        const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+
+        if (!isDragging) {
+            // Hover detection
+            const avgCents =
+                kneadState?.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / (kneadState?.blobs.length || 1);
+            
+            const hit = kneadState?.blobs.find((blob) => {
+                const bx = blob.startTime * pixelsPerSecond;
+                const bw = (blob.endTime - blob.startTime) * pixelsPerSecond;
+                const by = canvasRef.current!.height / 2 - ((blob.pitchCenterCents - avgCents) / 100) * rowHeight;
+                return x >= bx && x <= bx + bw && y >= by - rowHeight / 2 && y <= by + rowHeight / 2;
+            });
+
+            if (hit) {
+                setHoveredBlobId(hit.id);
+                const bx = hit.startTime * pixelsPerSecond;
+                const bw = (hit.endTime - hit.startTime) * pixelsPerSecond;
+                const by = canvasRef.current!.height / 2 - ((hit.pitchCenterCents - avgCents) / 100) * rowHeight;
+                const hotspot = getHotspot(x, y, bx, by, bw, rowHeight);
+                
+                // Cursor feedback
+                if (hotspot === 'LEFT' || hotspot === 'RIGHT') canvasRef.current!.style.cursor = 'ew-resize';
+                else if (hotspot === 'TOP' || hotspot === 'BOTTOM') canvasRef.current!.style.cursor = 'ns-resize';
+                else if (hotspot === 'CENTER_UPPER') canvasRef.current!.style.cursor = 'pointer';
+                else canvasRef.current!.style.cursor = 'move';
+            } else {
+                setHoveredBlobId(null);
+                canvasRef.current!.style.cursor = 'crosshair';
+            }
+            return;
+        }
+
+        if (!dragStart.current || !kneadState) {return;}
+
+        const dx = x - dragStart.current.x;
         const dy = y - dragStart.current.y;
+        const hotspot = dragStart.current.hotspot;
 
-        const centsOffset = Math.round((-dy / rowHeight) * 100);
-        const snappedOffset = Math.round(centsOffset / 100) * 100;
+        if (hotspot === 'CENTER_UPPER' || hotspot === 'CENTER_LOWER') {
+            const centsOffset = Math.round((-dy / rowHeight) * 100);
+            // Upper center is quantized to semitones, lower center is free drag
+            const finalOffset = hotspot === 'CENTER_UPPER' ? Math.round(centsOffset / 100) * 100 : centsOffset;
 
-        if (snappedOffset !== 0) {
+            if (finalOffset !== 0) {
+                updateClipKneadState(clipId, (state) => ({
+                    ...state,
+                    blobs: state.blobs.map((b) =>
+                        b.id === dragStart.current!.blobId
+                            ? { ...b, pitchCenterCents: dragStart.current!.startCents + finalOffset }
+                            : b
+                    ),
+                }));
+            }
+        } else if (hotspot === 'LEFT') {
+            const timeOffset = dx / pixelsPerSecond;
             updateClipKneadState(clipId, (state) => ({
                 ...state,
                 blobs: state.blobs.map((b) =>
                     b.id === dragStart.current!.blobId
-                        ? { ...b, pitchCenterCents: dragStart.current!.startCents + snappedOffset }
+                        ? { ...b, startTime: Math.min(b.endTime - 0.05, dragStart.current!.startTime + timeOffset) }
+                        : b
+                ),
+            }));
+        } else if (hotspot === 'RIGHT') {
+            const timeOffset = dx / pixelsPerSecond;
+            updateClipKneadState(clipId, (state) => ({
+                ...state,
+                blobs: state.blobs.map((b) =>
+                    b.id === dragStart.current!.blobId
+                        ? { ...b, endTime: Math.max(b.startTime + 0.05, dragStart.current!.endTime + timeOffset) }
                         : b
                 ),
             }));
@@ -228,6 +404,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     const handlePointerUp = () => {
         dragStart.current = null;
         setIsDragging(false);
+        setActiveHotspot(null);
     };
 
     return (
@@ -235,18 +412,44 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             <div className="absolute top-0 left-0 right-0 h-10 bg-surface-base/90 backdrop-blur-md border-b flex items-center px-4 gap-6 z-20 shadow-sm">
                 {hasKnead && kneadState && kneadState.blobs.length > 0 ? (
                     <>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
+                        <div className=\"flex items-center gap-2\">
+                            <span className=\"text-[10px] uppercase font-bold text-muted-foreground w-12 text-right\">
                                 Retune
                             </span>
                             <Slider
-                                className="w-24"
+                                className=\"w-24\"
                                 value={[kneadState.retuneSpeedMs ?? 25]}
                                 min={0}
                                 max={200}
-                                step={1}
-                                onValueChange={([val]) =>
-                                    updateClipKneadState(clipId, (s) => ({ ...s, retuneSpeedMs: val ?? 25 }))
+                                onValueChange={([val]) => updateClipKneadState(clipId, (s) => ({ ...s, retuneSpeedMs: val }))}
+                            />
+                        </div>
+
+                        <div className=\"h-4 w-[1px] bg-border mx-1\" />
+
+                        <div className=\"flex items-center gap-3\">
+                            <p className=\"text-[10px] font-bold uppercase tracking-wider text-muted-foreground\">Scale</p>
+                            <div className=\"flex items-center gap-1\">
+                                <select 
+                                    className=\"bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors\"
+                                    value={keyRoot}
+                                    onChange={(e) => handleKeyChange(parseInt(e.target.value))}
+                                >
+                                    {KEY_NAMES.map((name, i) => <option key={name} value={i} className=\"bg-surface-elevated text-foreground\">{name}</option>)}
+                                </select>
+                                <select 
+                                    className=\"bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors capitalize\"
+                                    value={scaleName}
+                                    onChange={(e) => handleScaleChange(e.target.value)}
+                                >
+                                    {SCALE_NAMES.map((name) => <option key={name} value={name} className=\"bg-surface-elevated text-foreground\">{name.replace(/([A-Z])/g, ' $1')}</option>)}
+                                </select>
+                            </div>
+                            <Button variant=\"ghost\" size=\"xs\" className=\"h-7 px-2 text-[11px] font-semibold hover:bg-accent-primary/10 hover:text-accent-primary ml-2\" onClick={handleCorrectPitch}>
+                                Correct All
+                            </Button>
+                        </div>
+
                                 }
                             />
                         </div>

@@ -43,6 +43,7 @@ export type Track = {
     clips: Clip[];
     devices: Device[];
     sends: Send[];
+    midiFx: MidiFxDevice[];
     frozen: boolean;
     frozenBufferId?: string;
     freezeState: FreezeState;
@@ -65,6 +66,14 @@ export type Track = {
     followChordTrack: boolean;
     /** H3: Toggle for showing alternative lanes in timeline. */
     showVariationLanes?: boolean;
+};
+
+export type MidiFxDevice = {
+    id: string;
+    name: string;
+    type: 'arp' | 'velocity' | 'probability';
+    bypassed: boolean;
+    parameterValues: Record<string, number>;
 };
 
 export type StretchMode = 'off' | 'repitch' | 'timestretch';
@@ -103,6 +112,10 @@ export type Clip = {
     parentClipId?: string;
     /** H1: helper flag for linked status. */
     isLinkedInstance?: boolean;
+    /** For non-destructive scale folding (mapping MIDI from source key to project key). */
+    sourceKeyRoot?: number;
+    /** For non-destructive scale folding. */
+    sourceScaleName?: string;
     /** Which properties are locally overridden on this instance. */
     overrides?: Record<string, boolean>;
     /** Real-time pitch correction state for this clip. */
@@ -174,6 +187,7 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
         clips: [],
         devices: defaultDevices,
         sends: [],
+        midiFx: [],
         frozen: false,
         freezeState: { status: 'unfrozen' },
         parentId: input.parentId ?? null,

@@ -1,5 +1,6 @@
 //! Top-level engine wrapper for Knead Real-time pitch manipulation.
 
+use daw_core::tuning::TuningManager;
 use crate::knead::psola::{psola_process_offline_inplace, PsolaConfig};
 use crate::knead::voicing::{is_voiced, VoicingConfig};
 use crate::knead::yin::{yin_frame, YinConfig};
@@ -7,6 +8,7 @@ use crate::knead::yin::{yin_frame, YinConfig};
 pub struct KneadEngine {
     pub yin_cfg: YinConfig,
     pub voicing_cfg: VoicingConfig,
+    pub tuning: TuningManager,
 
     // Scratch buffers to avoid RT allocations
     work_d: Vec<f32>,
@@ -37,9 +39,8 @@ pub struct KneadEngine {
     current_periodicity: f32,
     is_actively_voiced: bool,
 }
-
 impl KneadEngine {
-    pub fn new(sample_rate: f32) -> Self {
+    pub fn new(sample_rate: f32, tuning: TuningManager) -> Self {
         let mut yin_cfg = YinConfig::default();
         yin_cfg.sample_rate = sample_rate;
 
@@ -50,7 +51,10 @@ impl KneadEngine {
         Self {
             yin_cfg,
             voicing_cfg: VoicingConfig::default(),
+            tuning,
             work_d: vec![0.0; tau_max + 1],
+...
+
             work_cmnd: vec![1.0; tau_max + 1],
             pitch_marks: Vec::with_capacity(256),
             target_f0_curve: vec![0.0; frame_size],
@@ -77,6 +81,7 @@ impl KneadEngine {
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.tuning.update();
         let num_samples = left.len();
         let ring_cap = self.out_buffer_l.len();
         
@@ -122,7 +127,11 @@ impl KneadEngine {
                                 p += period;
                             }
 
-                            let target_f0 = f0 * 2.0_f32.powf(self.shift_semitones / 12.0);
+                            // Use TuningManager for target frequency
+                            let current_midi = 69.0 + 12.0 * (f0 / 440.0).log2() as f64;
+                            let target_midi = current_midi + self.shift_semitones as f64;
+                            let target_f0 = self.tuning.get_frequency(target_midi) as f32;
+                            
                             for val in self.target_f0_curve.iter_mut() { *val = target_f0; }
 
                             psola_process_offline_inplace(

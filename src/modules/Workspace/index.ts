@@ -3,3 +3,5 @@
 
 export * from './useCases';
 export * from './stores';
+export { BounceOptionsDialog } from './presentations/views/BounceOptionsDialog';
+export type { BounceOptions } from './presentations/views/BounceOptionsDialog';

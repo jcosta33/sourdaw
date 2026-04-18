@@ -147,6 +147,16 @@ export function startPlayheadScheduler(): void {
 
         schedulerSession.accumulatedPosition = newPosition;
         playheadPositionRef.current = newPosition;
+        
+        // Sync to AudioEngine for real-time DSP (SAB-backed)
+        audioEngine.setTransportInfo(
+            newPosition, 
+            currentTempo, 
+            current.isPlaying,
+            current.loopStart,
+            current.loopEnd,
+            current.isLooping
+        );
 
         const hasArmedTracks = trackStore.value?.tracks.some((t) => t.armed) ?? false;
         if (

@@ -32,7 +32,14 @@ import {
     joinNotes,
     legatoNotes,
     splitNoteAtBeat,
-} from '#/modules/MIDI/useCases';
+    stepRecordAdvance,
+    stepRecordRetreat,
+    stepRecordStepUp,
+    stepRecordStepDown,
+    stepRecordNoteOn,
+    stepRecordNoteOff,
+    stepRecordStore,
+} from '#/modules/MIDI';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
@@ -40,7 +47,6 @@ import { getTransportState } from '#/modules/Transport/useCases';
 import {
     ROW_HEIGHT,
     RULER_HEIGHT,
-    SCALES,
     type DragState,
     type PianoRollMenu,
     INITIAL_DRAG_STATE,
@@ -48,6 +54,7 @@ import {
 } from '../helpers/pianoRollConstants';
 
 import { type GestureEvent } from '#/utils/DOM/GestureEvent';
+import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
 /**
  * Build ownership maps from primary + secondary clip notes.
@@ -239,24 +246,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (!constrainToScale || scaleType === 'chromatic') {
             return rawPitch;
         }
-        const intervals = SCALES[scaleType] ?? SCALES['chromatic']!;
-        const noteInOctave = rawPitch % 12;
-        const relative = ((noteInOctave - scaleRoot) + 12) % 12;
-        let bestInterval = intervals[0]!;
-        let minDist = 12;
-        for (const interval of intervals) {
-            const dist = Math.min(Math.abs(relative - interval), 12 - Math.abs(relative - interval));
-            if (dist < minDist) {
-                minDist = dist;
-                bestInterval = interval;
-            }
-        }
-        const octave = Math.floor(rawPitch / 12);
-        let snapped = octave * 12 + ((bestInterval + scaleRoot) % 12);
-        // Avoid shifting to a different octave for extreme pitches
-        if (snapped - rawPitch > 6) snapped -= 12;
-        if (rawPitch - snapped > 6) snapped += 12;
-        return Math.max(0, Math.min(127, snapped));
+        return quantizeMidiNoteToScale(rawPitch, scaleRoot, scaleType);
     };
 
     const hitTest = (x: number, y: number): { note: MidiNote; edge: 'body' | 'left' | 'right'; ownerClipId: string } | null => {
@@ -1264,11 +1254,21 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (stepInput) {
             if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                setStepBeat((prev) => prev + gridSnap);
-            }
-            if (e.key === 'ArrowLeft') {
+                stepRecordAdvance();
+            } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                setStepBeat((prev) => Math.max(0, prev - gridSnap));
+                stepRecordRetreat();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                stepRecordStepUp();
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                stepRecordStepDown();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const state = stepRecordStore.value;
+                stepRecordNoteOn(state.currentPitch);
+                stepRecordNoteOff(state.currentPitch);
             }
             const velocityPresets: Record<string, number> = {
                 '1': 18,
