@@ -807,6 +807,79 @@ This is a v2.0+ feature. Low priority but unique — no DAW currently does this.
 
 ---
 
+## 18. ML-based transient detection
+
+### Current state
+
+Onset detection exists in `crates/daw-dsp/src/crumbs/analysis/onset.rs` using spectral flux, HFC, and complex domain algorithms. These are traditional DSP methods achieving ~90% accuracy. The `audioToMidi.ts` use case in Arrangement uses spectral flux for audio-to-MIDI conversion. No ML-based detector exists.
+
+### What to build
+
+A CNN-based onset detector achieving **94%+ accuracy** that handles soft onsets and polyphonic material far better than spectral flux. This feeds:
+- Snap-to-transient navigation
+- Audio quantization (elastic audio, which exists at `elasticAudioUseCases.ts`)
+- Beat slicing for the Crumbs/Slicer instruments
+- More accurate audio-to-MIDI conversion
+
+### Implementation guidance
+
+- Use a small ONNX model (~5-10 MB) for onset detection, run via the existing `ort` crate in `src-tauri/`
+- The model processes mel-spectrogram frames and outputs onset probability per frame
+- Expose as a Tauri command `detect_onsets_ml` returning `Vec<OnsetEvent>` with frame position and confidence
+- Fall back to spectral flux on platforms without ONNX support (browser without Tauri)
+- Open-source onset detection models exist (e.g., madmom-based, trained on standard datasets)
+- Wire the output into the existing `elasticAudioUseCases.ts` and `audioToMidi.ts` as an alternative detector
+
+---
+
+## 19. AI warp mode auto-detection
+
+### Current state
+
+Audio warping supports 9 algorithms (`audioWarpingUseCases.ts`): elastique Pro/Efficient/Soloist, Rubber Band R3/RT, Complex/Pro, Re-Pitch, Slice. Users must manually select the appropriate mode.
+
+### What to build
+
+AI that analyzes audio content and auto-selects the optimal warp mode:
+- Drums/percussive → Beats/Slice mode
+- Vocals/monophonic → Soloist/Re-Pitch mode  
+- Complex polyphonic → Complex Pro mode
+- Textures/pads → Texture mode
+
+### Implementation guidance
+
+- Create `src/modules/Arrangement/useCases/audioWarp/autoDetectWarpMode.ts`
+- Use spectral analysis (spectral centroid variance, onset density, harmonic-to-noise ratio) to classify material type — this can be pure DSP, no ML model needed
+- The classification feeds into the existing `setWarpAlgorithm.ts` use case
+- Run analysis on a short segment (2-4 seconds) when audio is first imported or when the user enables warping
+- Show the detected mode as a suggestion the user can accept or override
+
+---
+
+## 20. Non-destructive Direct Offline Processing (DOP)
+
+### Current state
+
+Offline processing exists via `renderOffline.ts` for freeze/bounce operations. These are destructive — they render to a new audio file replacing the original content.
+
+### What to build
+
+Cubase-style DOP where offline effect operations stack non-destructively:
+- Apply a plugin to a region → operation is recorded, not baked
+- Change settings, remove, or reorder operations after the fact
+- Each operation stores its plugin state and affected region
+- Only renders when needed (lazy evaluation)
+
+### Implementation guidance
+
+- Add a `dopStack?: DopOperation[]` field to the `Clip` type in `Track.ts`
+- `DopOperation` type: `{ id: string; pluginType: string; parameterValues: Record<string, number>; startBeat: number; endBeat: number; enabled: boolean; order: number }`
+- The playback scheduler checks for DOP operations and renders them on-the-fly or caches the result
+- UI: show the DOP stack in the clip inspector with reorder handles and enable/disable toggles
+- This is a significant feature — scope it as Phase 2+ work, not an immediate build
+
+---
+
 ## What NOT to overbuild
 
 1. **Do not turn intent into project bureaucracy** — no giant object model with statuses, evidence references, and satisfaction scores
@@ -830,3 +903,37 @@ Sourdaw is on the right path when:
 7. Feature availability and fallback behavior are clearly explained
 8. Richer instrument behavior is discovered when available without depending on it
 9. The DAW stays fast and musical with all of the above in play
+
+---
+
+## Acceptance criteria
+
+Testable gates for each feature. A feature is not done until its criteria pass.
+
+### Quick win
+- [ ] **AC-0.1:** Paste a MIDI note with pressure=80, slide=64, pitchBend=8192 set. The pasted note retains all three values.
+- [ ] **AC-0.2:** Paste a clip containing expressive notes. All expression fields survive the paste.
+
+### Phase 1
+- [ ] **AC-1.1:** Create 3 variants of a clip. Audition each in place without duplicating tracks. Promote one. Archived variants remain accessible.
+- [ ] **AC-2.1:** StatusBar shows runtime class (browser/native/hybrid) and fidelity tier. Fallback explanations are visible on click.
+- [ ] **AC-3.1:** AI generation creates a ghost clip (suggest-only mode). Accepting it commits to the timeline. Dismissing it leaves no trace.
+- [ ] **AC-3.2:** AI generation in create-branch mode produces a variant, never overwrites the active clip.
+- [ ] **AC-4.1:** Record a voice note, attach it to bars 17-21, search for "hit harder", find the memo, jump to the timeline range.
+- [ ] **AC-5.1:** Same project opens in browser (preview mode) and desktop (production mode) without manual reconfiguration.
+- [ ] **AC-6.1:** Disabled features show a tooltip explaining why ("native plugin hosting unavailable in browser mode").
+
+### Phase 2
+- [ ] **AC-7.1:** Copy an expressive phrase, paste onto a basic-MIDI instrument. A portability report shows which expression was dropped.
+- [ ] **AC-8.1:** Loading a Fermenter instance auto-detects MPE support. The piano roll shows pressure/slide lanes. Loading a Toaster hides them and shows drum-pad view.
+
+### Standalone
+- [ ] **AC-14.1:** AI comping scores 3 overlapping takes and suggests a comp. The suggestion is auditionable before committing.
+- [ ] **AC-16.1:** Sidechain-aware stem export of a kick-sidechained bass produces a bass stem with audible pumping intact.
+- [ ] **AC-18.1:** ML transient detector places markers on a drum break with >94% precision vs manually marked ground truth.
+- [ ] **AC-19.1:** Auto-detect correctly classifies a drum loop as "Beats" mode and a vocal as "Soloist" mode.
+- [ ] **AC-20.1:** Apply two DOP operations to a clip. Reorder them. Remove the first. Audio reflects the change without re-rendering from scratch.
+
+### Global
+- [ ] **AC-G.1:** `pnpm deps:validate` passes with zero new violations after each feature lands.
+- [ ] **AC-G.2:** All existing tests continue to pass (`npx vitest run`).
