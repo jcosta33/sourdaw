@@ -1,680 +1,1473 @@
 ---
 name: consolidated-issues-audit
-description: Consolidated audit of all open issues across the codebase, verified against source code on 2026-04-16.
+description: Unified codebase audit — all open issues from engine, DSP, AI, plugins, MIDI, timeline, browser inference, and factory content. Code-verified 2026-04-18.
 type: audit
 status: partially-addressed
+last_verified: '2026-04-18'
 ---
 
-# Consolidated Issues Audit
+# Consolidated Codebase Audit
 
-## Session status (2026-04-16 fix pass)
+## Session history
 
-A bug-fix session driven by task `.agents/tasks/fix-consolidated-audit-issues.md` has worked through this audit. Each issue below is annotated with a `**Status:**` line. Summary:
-
-- **Fixed (13):** I-07, I-09, I-10, I-11, I-13, I-17, I-18, I-20, I-23, I-24; Timeline §2, §3, §5.
-- **Partially fixed (1):** Timeline §1 — `nudgeClip` and `insertTime` fixed; `deleteTimeRange` and `rippleDeleteClips` deferred.
-- **Deferred (architectural / feature work):** I-01, I-02, I-03, I-04, I-05, I-06, I-14, I-15, I-16, I-19, I-21, I-25, I-26, I-27, I-28, I-29, I-30; Timeline §4, §6, §7, §8.
-- **Deferred (real DSP issues, non-trivial):** I-08 (LR4 cascade), I-12 (Crumbs pitch AA), I-22 (limiter deque).
-
-The fix session's `Self-review` and verification outputs live in the task file. This audit is kept open until the deferred items either have specs, follow-up tasks, or are explicitly triaged out.
+- **2026-04-16 fix pass:** 13 issues fixed (I-07, I-09, I-10, I-11, I-13, I-17, I-18, I-20, I-23, I-24; Timeline §2, §3, §5). Task file: `.agents/tasks/fix-consolidated-audit-issues.md`.
+- **2026-04-18 document pass:** Re-verified all claims against HEAD. Corrected stale line refs, LOC counts, retracted Fermenter singleton claim (I-03). Merged content from `audio-generation.md`, `factory-content-status.md`, and `systemic-issues-root-cause.md` into this file.
 
 ## Scope
 
-Repo-wide audit of the Sourdaw web app covering: AI runtime, audio engine, every first-party plugin (Toaster, Proof/Dutch Oven, Levain, Knead, Grinder, Grand Boule, Fermenter, Crumbs), Faust runtime, CRDT / storage, and cross-cutting concerns (design system, export, recording, Chromium fast paths). Excludes Tauri backend (daw-core, daw-io, src-tauri), which deserves its own audit.
-
-This file consolidates previously scattered per-domain audits. Each issue was re-verified on 2026-04-16 against `HEAD`. Stale items are moved to `## Resolved`. Items with wrong file references have been corrected.
+Repo-wide audit covering: audio engine, every first-party plugin (Toaster, Proof/Dutch Oven, Levain, Knead, Grinder, Grand Boule, Fermenter, Crumbs, Crust), Faust runtime, AI runtime, browser AI inference (BrowserAi, AiGeneration), CRDT/storage, MIDI model, timeline editing, factory content, and cross-cutting concerns (design system, export, recording, Chromium fast paths). Excludes Tauri backend (daw-core, daw-io, src-tauri).
 
 ## Goal
 
-For every listed subsystem:
-
 - No RT-unsafe code in audio-thread hot paths (no allocations, no `splice`/`shift`, no locks).
-- Cross-module boundaries respect the architecture rules in `AGENTS.md` (no hardcoded plugin branches in shared engine code, no deep imports into module internals).
-- DSP claims in code match DSP reality (stereo means stereo, dither quantises, PDC reports actual latency).
+- Cross-module boundaries respect `AGENTS.md` rules (no hardcoded plugin branches in shared engine code, no deep imports).
+- DSP claims match reality (stereo means stereo, dither quantises, PDC reports actual latency).
 - Plugin state is per-instance, not singleton.
-- Persistence is correct for user data (not silently in-memory for state the user expects to survive reload).
+- Persistence is correct for user data (not silently in-memory for expected-durable state).
 - AI orchestration is layered: one prompt entrypoint, one backend dispatch, one context builder.
+- Browser inference uses OPFS and WebGPU efficiently; no unnecessary JS-heap copies.
+
+## Quick reference — all open issues
+
+| ID | Summary | Severity | Subsystem | Status |
+|----|---------|----------|-----------|--------|
+| I-01 | NativePluginBridge per-block `tauriInvoke` | High | Engine | Deferred — needs SAB spec |
+| I-02 | Parallel AI backend-dispatch layers | Medium | AI runtime | Deferred — unify `invokeLlm` |
+| I-03 | Singleton plugin stores (Levain, Toaster) | Medium | Stores | Deferred — needs spec |
+| I-04 | Full Automerge snapshot on each DSO commit | Medium | AI / CRDT | Deferred — needs undo strategy |
+| I-05 | TrackNode hardcoded plugin branches | High | Engine | Deferred — needs DeviceNode spec |
+| I-06 | PDC latency not wired to host | Medium | Engine | Deferred — needs host-wide PDC spec |
+| I-08 | LR4 crossover doesn't sum flat | High | DSP | Deferred — topology redesign |
+| I-12 | Crumbs pitch-up has no anti-aliasing | Medium | DSP | Deferred — per-voice LPF design |
+| I-14 | Knead/action history stores not persistent | Medium | Storage | Deferred — storage-shim design |
+| I-15 | Fermenter telemetry at audio-rate into store | Medium | Perf | Deferred — needs SAB telemetry |
+| I-16 | Chat UI re-renders on every token | Medium | AI / Perf | Deferred — message-component split |
+| I-19 | Bypass rebuilds graph for generic devices | Medium | Engine | Deferred — tied to I-05 |
+| I-21 | Toaster sequencer no `sampleFrame` | Low | Engine | Deferred — transport sync |
+| I-22 | Limiter O(window×N) lookahead scan | Medium | DSP / Perf | Deferred — monotonic deque |
+| I-25 | Proof module duplication (Proof vs Plugin/) | Low | Architecture | Deferred — product decision |
+| I-26 | Grinder params not sample-accurate | Low | Engine | Deferred — automation policy |
+| I-27 | PianoRoll subscribes to whole stores | Medium | Perf | Deferred — selector design |
+| I-28 | Legacy brand-CMS keys in LocalStorage | Low | Cleanup | Deferred — legal review |
+| I-29 | Recording hardcoded to mono | Medium | Engine | Deferred — UI policy |
+| I-30 | DSP claims needing re-verification | Mixed | DSP | Deferred — per-plugin audits |
+| S-01 | Fader snap on release (write-path storm) | High | UI / Perf | Needs spec — §8.14 |
+| S-02 | Multi-track selection missing | High | State | Needs spec — §8.18 |
+| S-03 | Multi-track recording broken (single session) | Critical | Recording | Needs spec — §8.18/N4 |
+| S-04 | Crust silent — no DSP implementation | High | Plugin | Needs spec — §8.19 |
+| S-05 | Proof EQ engine-side param verification | Medium | Engine | Needs XOI run — §8.20 |
+| S-06 | WebLLM model mismatch (Qwen3 tools) | Low | AI runtime | Surveillance — §8.2 |
+| S-07 | SharedArrayBuffer/COEP residual failures | Medium | Dev env | Residual — §8.4 |
+| S-08 | Chord helper notes hidden under fold | Medium | MIDI editor | Needs fold-contract — §8.11 |
+| S-09 | Off-scale lasso miss under fold | Medium | MIDI editor | Tied to S-08 — §8.12 |
+| S-10 | Delay tempo sync missing | Low | Feature gap | §8.10 |
+| S-11 | TrackDevicesSection menu huge | Low | UX | §8.15 |
+| S-12 | Minimap non-resizable | Low | UX | §8.16 |
+| S-13 | Levain boot time (speculative) | Low | Perf | §8.17 — measure first |
+| S-14 | "Improve the templates" | Low | Product | §8.6 — needs definition |
+| M-01 | MidiNote.startBeat dual convention | Critical | MIDI model | Needs spec — §14/G1 |
+| M-02 | PatternBrowser empty clip at playhead > 0 | High | MIDI / Timeline | Blocked on M-01 — §14/G2 |
+| T-01 | Time-shift desync (deleteTimeRange, rippleDelete) | Critical | Timeline | Partially fixed |
+| T-04 | MIDI drag preview "stay behind" | Major | Timeline | Deferred — preview reshape |
+| T-06 | MIDI stretching not implemented | Major | Timeline | Deferred — needs spec |
+| T-07 | MIDI looping visual distortion | Minor | Timeline | Deferred — preview reshape |
+| T-08 | Missing preview for stretch/trim | Minor | Timeline | Partially groundwork done |
+| B-01 | OPFS model load path (JS heap copy) | Medium | Browser AI | Open — perf |
+| B-02 | DiffSinger inter-stage tensor residency | Medium | Browser AI | Open — perf |
+| B-03 | DDSP/TFJS stub (no browser DDSP) | Medium | Browser AI | Open — blocked on ONNX port |
+| N-01 | Clip drag doesn't follow cursor (dirty flag) | Critical | Timeline UX | NEW — user-reported |
+| N-02 | removeClip() orphans MIDI/automation data | High | Data integrity | NEW |
+| N-03 | duplicateTrack() drops CC, pitch bend, automation | High | Data integrity | NEW |
+| N-04 | deleteTimeRange() orphans MIDI on split/delete | High | Data integrity | NEW |
+| N-05 | KneadEditor toolbar malformed JSX | High | UI render | NEW |
+| N-06 | Punch-in recording broken (early return) | High | Transport | NEW |
+| N-07 | Frozen track field inconsistency | Medium | Scheduling | NEW |
+| N-08 | MIDI note min duration mismatch (add vs resize) | Low | MIDI | NEW |
+| N-09 | Freeze/bounce ignores mute/solo | Medium | Export | NEW |
+| N-10 | IDB auto-save failures silent | High | Persistence | NEW |
+| N-11 | Incremental save timestamp collisions | Medium | Persistence | NEW |
+| N-12 | WaveformEditor receives audioBufferId instead of clipId | Critical | ClipView | NEW |
+| N-13 | Freeze tail stored in beats, model expects seconds | Critical | Freeze/Bounce | NEW |
+| N-14b | Bounce tempo hardcoded to 120 BPM | Critical | Freeze/Bounce | NEW |
+| N-15 | Synth velocity→filter attack coupling inverted | High | Synth DSP | NEW |
+| N-16 | Automation recording has no undo | High | Automation | NEW |
+| N-17 | Sidechain routes not cleaned on track deletion | High | Routing | NEW |
+| N-18 | Toaster store singleton — multi-instance collision | High | Toaster | NEW |
+| N-19 | Proof param bridge incomplete — only 10 params wired | High | Proof | NEW |
+| N-20 | TrackNode.dispose() leaks meterNode port + device controls | High | Engine | NEW |
+| N-21 | Regex escape bug in prompt parser — grid sizes never match | High | AI Runtime | NEW |
+| N-22 | Yeast worklet sync race — MIDI drops on processor add | High | Yeast | NEW |
+| N-23 | Extension runEditorScript uses new Function() despite security comment | High | Extension | NEW |
+| N-24 | Faust AudioWorklet registration race condition | Medium | Faust | NEW |
+| N-25 | Audio loop gain uses wrong beat offset | Medium | Transport | NEW |
+| N-26 | CC and pitch bend values not validated | Medium | MIDI | NEW |
+| N-27 | Crumbs file drop silently fails on web | Medium | Crumbs | NEW |
+| N-28 | Automation circular lane link → infinite recursion | Medium | Automation | NEW |
+| N-29 | Synth offline render skips filter envelope | Medium | Synth | NEW |
+| N-30 | Grinder/Bacteria/Gluten missing device lifecycle hooks | Medium | Plugins | NEW |
+| N-31 | Clip boundary hit test uses inclusive end (off-by-one) | Medium | Arrangement | NEW |
+| N-32 | SampleLibrary analysis creates & closes AudioContext prematurely | Medium | SampleLibrary | NEW |
+| N-33 | Knead DSP analysis loses sub-cent precision | Low | Knead | NEW |
+| N-34 | Scoring canvas DPI scaling incomplete | Low | Scoring | NEW |
+| N-35 | 11/13 worklet processors allocate Float32Array in process() | High | Engine RT | NEW |
+| N-36 | Faust param address mismatch — synth params silently fail | Critical | Faust | NEW |
+| N-37 | All Faust instruments are monophonic — no chords | High | Faust | NEW |
+| N-38 | MIDI import running status bleeds between tracks | High | MIDI import | NEW |
+| N-39 | Sidechain routes lost on project reimport | High | Project | NEW |
+| N-40 | Bounce operations have no undo | High | Freeze/Bounce | NEW |
+| N-41 | Frozen buffer offline render starts at position 0 | High | Freeze/Bounce | NEW |
+| N-42 | flattenTrack adds hardcoded 4-beat offset to endBeat | Medium | Freeze/Bounce | NEW |
+| N-43 | Duplicate shortcut Cmd+Shift+A (deselect vs automation) | Medium | Shortcuts | NEW |
+| N-44 | removeTrack doesn't clean sidechain routes | High | Arrangement | NEW |
+| N-45 | Ghost clips missing loop/stretch properties in render model | Medium | Rendering | NEW |
+| N-46 | ScrollY clamping uses hardcoded 200px instead of viewport | Medium | Timeline | NEW |
+| N-47 | insertTime/deleteTime don't shift tempo/time-sig changes | High | Timeline | NEW |
+| N-48 | Faust node setParam uses partial names, not full addresses | Medium | Faust | NEW |
+| N-14 | `executeAppAction` handler map duplication | Low | Architecture | Open — clarity |
+| F-01 | Legacy builtin-* devices | Low | Factory content | Open — deprecation plan |
+| F-02 | Descriptor layout unification | Low | Factory content | Open — maintainability |
 
 ## Relevant code paths
 
 - `src/modules/AiRuntime/` — chat, DSO editor, prompt parsing, backend resolution.
 - `src/modules/AudioEngine/engine/` — `TrackNode`, `GrinderNode`, `FermenterNode`, `ProofChamberNode`, `NativePluginBridgeNode`, WAM registry.
 - `src/modules/AudioEngine/services/` — worklet processors (one file per plugin).
-- `src/modules/{Toaster,Proof,Levain,Knead,Grinder,GrandBoule,Fermenter,Crumbs,Plugin,Faust}/` — per-plugin UI + stores + use cases.
-- `crates/proof-chamber/`, `crates/daw-dsp/` — Rust DSP (Dattorro reverb, multiband chain, dither, crossover, imager, limiter, Crumbs voice/filter/engine).
+- `src/modules/{Toaster,Proof,Levain,Knead,Grinder,GrandBoule,Fermenter,Crumbs,Crust,Plugin,Faust}/` — per-plugin UI + stores + use cases.
+- `crates/proof-chamber/`, `crates/daw-dsp/` — Rust DSP.
+- `src/modules/BrowserAi/` — ONNX/OPFS/WebGPU inference workers, storage manager.
+- `src/modules/AiGeneration/` — MIDI generation, pattern templates.
+- `src/modules/Arrangement/repositories/presets/` — factory preset banks.
 - `src/infra/store/storage/` — storage adapters and LocalStorage key registry.
 - `src/modules/CrdtDocument/` — Automerge repo, snapshot use cases.
 - `src/modules/Workspace/presentations/views/ClipView/` — PianoRoll, KneadEditor.
 
-## Current behavior
+---
 
-The codebase is a hybrid Tauri + browser DAW with a large surface and a high rate of plugin development. The dominant issues fall into five recurring shapes:
-
-1. **Singleton plugin stores.** Several plugins store one instance's state in a module-level store (Levain, Toaster, Grinder, Fermenter telemetry), which breaks multi-instance usage.
-2. **DSP placeholders masquerading as finished.** Several Rust DSP primitives compile and pass tests but are arithmetically wrong (TPDF dither never quantises, LR4 cascade sums to non-flat, imager zeroes the centre at max width, Dutch Oven right channel bypasses output EQ).
-3. **Audio-thread allocations.** Worklet message queues use `Array.splice` in `process()`. Severity varies: per-block splice is one allocation per block (OK but not great); per-element `shift` would be worse (not observed).
-4. **Architecture drift in the audio engine.** `TrackNode` has grown plugin-specific branches (`faust-`, `fermenterControls`, `toasterControls`, `levainControls`, `unregisterProofDevice`, `unregisterLevainDevice`) and two imports from other modules' private use-case surfaces.
-5. **Tauri-only code paths silently unavailable on Web.** Sample loading, native plugin hosting, and native AI all assume `isTauri()` without a web fallback or a clear capability gate.
-
-## Findings
-
-- **The AI runtime has two parallel backend-dispatch layers.** `sendChatMessage.ts` resolves a backend and dispatches directly; `executeDsoEdit.ts` has its own `invokeLlm` with a different fallback policy; `inference.ts` has a third (`generateToolCalls`). Any bug fixed in one will not fix the others.
-- **"Schema-constrained generation falls back to plain text" is a stated invariant that is not honoured.** `executeDsoEdit.ts` has a comment promising fallback; the code throws instead.
-- **`TrackNode` quietly owns knowledge of eight plugin shapes.** Every new plugin adds another branch. The domain-plugin contract (a uniform interface exposed by each plugin module) does not exist yet.
-- **Dutch Oven proof_chamber.rs contains code that should not compile.** `set_param` references `self.high_cut_l/high_cut_r/low_cut_l/low_cut_r` while the struct declares only `high_cut`/`low_cut`. Either the file only compiles in a configuration not exercised by this review, or there is a real build break that CI isn't catching.
-- **Several audits that fed this file were stale by months.** Three significant claims (Knead offline analysis "missing", Toaster pad hydration "missing", AiRuntime "splice adds tracks") describe code that no longer exists.
-- **Some claims point at the wrong file.** PERF-2 ("sledgehammer undo") points at `saveSnapshot.ts` (13-line wrapper); the actual snapshot-before-and-after logic is in `executeDsoEdit.ts`. Grinder "replacePatch flood" points at `GrinderNode.ts` where `replacePatch` does not exist — it lives in `GrinderPanel.tsx`.
-
-## Priorities
-
-Ordered by impact × confidence-of-evidence:
-
-1. **I-07** Right channel bypasses output EQ in Dutch Oven (audible bug, trivial fix). Also: Dutch Oven file references symbols that don't exist — build health is in question.
-2. **I-09** TPDF dither never quantises — output of "dithered" path is silently wrong.
-3. **I-08** LR4 four-band splitter cascades crossovers and therefore does not sum flat.
-4. **I-14** `createAutomergeStorage.ts` deep-imports into `CrdtDocument/repositories/` — infra layering violation blocks persistence rework.
-5. **I-01** Native plugin audio path uses per-block `tauriInvoke` — fundamental perf ceiling for third-party plugins.
-6. **I-05** TrackNode hardcoded plugin branches — blocks every new plugin integration and violates module architecture.
-7. **I-11** Crumbs filter state corruption (stereo L/R share filter state).
-8. **I-03** Multiple singleton plugin stores (Levain, Toaster controls lookup) prevent multi-instance usage.
-9. **I-02** Two+ parallel AI backend dispatchers — fragile and drift-prone.
-10. **I-06** Proof limiter O(window × samples) lookahead — CPU cost scales poorly.
-
-## Open issues
+## Open issues — Audio Engine & Plugin Architecture
 
 ### I-01. Native plugin audio path uses per-block `tauriInvoke`
 
-**Problem:** Every audio block round-trips through Tauri IPC to reach the native plugin host, which is not viable for low-latency hosting.
+**Problem:** Every audio block round-trips through Tauri IPC to reach the native plugin host.
 
 **Representative files:**
-
 - `src/modules/AudioEngine/engine/NativePluginBridgeNode.ts:51` — `await tauriInvoke('process_plugin_audio', …)` inside the audio path.
 
-**Needed:** Move audio transport off IPC. Use `SharedArrayBuffer` rings (analogous to the recording path) between the worklet and the Rust cpal thread; drive param updates via a separate low-rate control channel.
+**Needed:** `SharedArrayBuffer` rings between the worklet and the Rust cpal thread; param updates via separate low-rate control channel.
 
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — architectural; requires a dedicated spec and SAB transport design.
-
----
-
-### I-02. AI runtime has two parallel backend-dispatch layers
-
-**Problem:** `sendChatMessage`, `executeDsoEdit`, and `generateToolCalls` each implement their own per-backend fallback chain. The three code paths disagree on when cloud is used, how grammar-constraint failure is handled, and how lifecycle state transitions. `sendChatMessage.ts` = 296 LOC; `executeDsoEdit.ts` = 422 LOC.
-
-**Representative files:**
-
-- `src/modules/AiRuntime/useCases/sendChatMessage.ts`
-- `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:300-376` (`invokeLlm` helper)
-- `src/modules/AiRuntime/useCases/llmOrchestration/inference.ts`
-
-**Needed:** Collapse to one backend-dispatch use case that owns the chain, status-store transitions, and error mapping. Call sites should only pass mode + messages + options.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — architectural; needs a unified `invokeLlm` use case. I-18 (schema fallback) was fixed in place without collapsing the dispatchers.
-
----
-
-### I-03. Singleton plugin stores prevent multi-instance usage
-
-**Problem:** Several plugins hold one instance of state in a module-level store, so multiple instances of the same plugin on different tracks collide.
-
-**Representative files:**
-
-- `src/modules/Levain/stores/levainStore.ts:43-45` — one global `LevainState` (patch, macros, micPositions, telemetry) with no per-device keying.
-- `src/modules/Toaster/useCases/loadToasterKit.ts:59-63` — `getToasterControls()` does `tracks.find(t => t.devices.some(d => d.type === 'toaster'))` and returns the first match; all subsequent calls address that one device.
-- `src/modules/Fermenter/stores/fermenterStore.ts` — telemetry (meters, oscilloscope) is a single global object (see I-15).
-
-**Needed:** Key state by device/instance ID (e.g. `Record<DeviceId, LevainPatch>`). The param bridges must look up state by the device they're acting on, not assume "the" one.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — cross-cutting refactor across Levain, Toaster, Fermenter stores; needs a spec.
-
----
-
-### I-04. DSO edit performs full Automerge snapshot before and after each plan
-
-**Problem:** Undo captures a full binary bundle of **every** Automerge document twice per AI edit — before and after.
-
-**Representative files:**
-
-- `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:252,258` — `saveSnapshot()` before + `saveSnapshot()` after inside `commitDsos`.
-- `src/modules/CrdtDocument/useCases/saveSnapshot.ts` — thin 13-line wrapper (not itself the issue — original audit pointed here by mistake).
-
-**Needed:** Reuse Automerge's own change/heads mechanism for AI undo, or snapshot only the documents actually touched by the DSO plan. Do not snapshot the whole bundle for a one-note edit.
-
-**Status:** **Verified** against HEAD. File reference corrected from the original audit. **Deferred (2026-04-16)** — needs an Automerge change/heads strategy decision.
+**Status:** Verified 2026-04-18. Deferred — architectural; requires SAB transport spec.
 
 ---
 
 ### I-05. `TrackNode` hardcodes plugin-specific branches and imports cross-module internals
 
-**Problem:** Shared engine code has grown branches for specific plugins (`'builtin-sidechain-compressor'`, `'faust-'` prefix, `fermenterControls`, `toasterControls`, `levainControls`, `grandBouleControls`, `wamControls`, `nativeDspControls`, `proof` type) plus hard-imports `unregisterLevainDevice` and `unregisterProofDevice` from other modules' use-case surfaces. This is the shape of a missing plugin-host abstraction.
+**Problem:** Shared engine code has branches for specific plugins (`'builtin-sidechain-compressor'`, `'faust-'` prefix, `fermenterControls`, `toasterControls`, `levainControls`, `grandBouleControls`, `wamControls`, `nativeDspControls`, `proof` type) plus hard-imports `unregisterLevainDevice` and `unregisterProofDevice` from other modules.
 
 **Representative files:**
+- `src/modules/AudioEngine/engine/TrackNode.ts:2-3` — cross-module imports.
+- `TrackNode.ts` — ~243 (`builtin-sidechain-compressor`), ~310–329 (`findWasmDescriptor`), ~336–366 (`removeDevice` cleanup), ~369–416 (`updateParam` branches), ~434 (`scheduleParam` `faust-` prefix), ~459–476 (`updateBypass`). Total: **509 LOC**. _(Line numbers approximate; verified 2026-04-18.)_
 
-- `src/modules/AudioEngine/engine/TrackNode.ts:2-3` — cross-module imports of `unregisterLevainDevice`, `unregisterProofDevice`.
-- `src/modules/AudioEngine/engine/TrackNode.ts:213` (sidechain), `:404` (`faust-` prefix), `:314-330` (five `*Controls.destroy()` branches), `:339-385` (per-controls `updateParam` branches), `:429-446` (per-controls `updateBypass` branches).
+**Needed:** Uniform `DeviceNode` interface (`setParam`, `scheduleParam`, `setBypass`, `dispose`). Move per-plugin logic back into plugin modules.
 
-**Needed:** Define a uniform device-node interface (`setParam`, `scheduleParam`, `setBypass`, `dispose`) that every plugin's node implements; `TrackNode` then only calls the interface. Move per-plugin logic back into plugin modules.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — large refactor; needs `DeviceNode` interface spec.
+**Status:** Verified 2026-04-18. Deferred — large refactor; needs DeviceNode interface spec.
 
 ---
 
 ### I-06. Hosted plugins report PDC latency but the host ignores it
 
-**Problem:** `ProofChamberInstance::get_latency()` is implemented in Rust and exposed in the JS WASM binding, but the worklet processor never calls it and no upstream code routes latency to the scheduler.
+**Problem:** `ProofChamberInstance::get_latency()` is implemented and exposed in JS, but the worklet never calls it.
 
 **Representative files:**
+- `crates/proof-chamber/src/lib.rs:164` — `pub fn get_latency(&self) -> u32`.
+- `src/modules/AudioEngine/wasm/proof_chamber.js:17-18` — JS wrapper.
+- `src/modules/AudioEngine/services/proofChamberProcessor.ts` — no `get_latency` reference.
 
-- `crates/proof-chamber/src/lib.rs:162-168` — `pub fn get_latency(&self) -> u32`.
-- `src/modules/AudioEngine/wasm/proof_chamber.js:17-18` — JS-side wrapper.
-- `src/modules/AudioEngine/services/proofChamberProcessor.ts` — no reference to `get_latency`.
-- Recorded audio, MIDI, and automation are also not latency-compensated.
+**Needed:** Host-wide PDC bus. Query latency on plugin ready, sum across chain, compensate recording + automation.
 
-**Needed:** Query `get_latency()` on plugin ready, sum across the chain, and compensate recording + automation paths. Requires a host-wide PDC bus.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — needs a host-wide PDC spec.
-
----
-
-### I-07. Dutch Oven right channel bypasses output EQ and struct fields are inconsistent
-
-**Problem:** In the main reverb `process()` loop, output high-cut and low-cut filters are applied only to `wet_l`. `wet_r` is handed straight to the M/S stage. Additionally, `set_param` references fields (`high_cut_l`, `high_cut_r`, `low_cut_l`, `low_cut_r`) that are not declared on the struct — the struct has singular `high_cut`, `low_cut`.
-
-**Representative files:**
-
-- `crates/proof-chamber/src/proof_chamber.rs:362-363` — struct declares `high_cut: HighCut, low_cut: LowCut` (singular).
-- `crates/proof-chamber/src/proof_chamber.rs:506-512` — `set_param` calls `self.high_cut_l.set_freq(...)`, `self.high_cut_r.set_freq(...)` etc. (fields don't exist on the struct).
-- `crates/proof-chamber/src/proof_chamber.rs:693-697` — only `wet_l` goes through the filters; `wet_r` is untouched. The comment even acknowledges "TODO: add stereo filter instances".
-
-**Needed:** (a) Verify whether this file actually compiles (the field mismatch suggests a broken build or a gating story). (b) Give the reverb two independent filter pairs (`high_cut_l`, `high_cut_r`, `low_cut_l`, `low_cut_r`) and filter both channels.
-
-**Status:** **FIXED (2026-04-16)** — confirmed build break (4× E0609). `proof_chamber.rs` now declares `high_cut_l/_r` and `low_cut_l/_r`; both channels are filtered in `process()`. `cargo check -p proof-chamber` is clean.
-
----
-
-### I-08. LR4 four-band splitter cascades crossovers and therefore does not sum flat
-
-**Problem:** `FourBandSplitter::process` feeds the high output of `xover1` into `xover2`, and the high output of `xover2` into `xover3`. Each output band passes through a different number of highpass stages, so phase delay differs per band; summing them back does not yield flat response.
-
-**Representative files:**
-
-- `crates/daw-dsp/src/proof/crossover.rs:87-92`.
-- `crates/daw-dsp/src/bacteria/crossover.rs` (same pattern in the Bacteria/Proof multiband chain per original audit — to spot-check if reused).
-
-**Needed:** Restructure to parallel LR4s with allpass compensation on the non-split branches, or use a Linkwitz-Riley topology that sums to flat allpass by construction (standard multiband approach).
-
-**Status:** **Verified** in `crates/daw-dsp/src/proof/crossover.rs`; the Bacteria file was not re-read in this pass. **Deferred (2026-04-16)** — real issue but requires crossover topology redesign; not a minimal fix.
-
----
-
-### I-09. TPDF dither never quantises the output
-
-**Problem:** The "dithered" output path adds noise but does not quantise to the declared bit depth, so output is _not_ the quantised signal the name implies.
-
-**Representative files:**
-
-- `crates/daw-dsp/src/proof/dither.rs:32-37` — `process_sample` returns `x + (r1 + r2) * lsb`. No `round()` step.
-- Contrast `NoiseShapedDither::process_sample` on line 77 — `(x_dithered / lsb).round() * lsb` is correct.
-
-**Needed:** Quantise to `lsb` after the dither addition. One-line fix, but exposes the question of whether any test has ever asserted the output grid.
-
-**Status:** **FIXED (2026-04-16)** — `process_sample` now returns `(dithered / lsb).round() * lsb`, matching the `NoiseShapedDither` implementation it was supposed to mirror.
-
----
-
-### I-10. Stereo imager zeroes the centre channel at maximum width
-
-**Problem:** `apply_width` scales mid by `(2.0 - width)`, so `width=2.0` gives `m_scaled = 0` — the centre is gone. At `width=0.0` (mono) `m_scaled = 2*m`, which doubles the centre. A correct M/S width usually scales only side and leaves mid unscaled.
-
-**Representative files:**
-
-- `crates/daw-dsp/src/proof/imager.rs:143-147`.
-
-**Needed:** Replace the formula with `m_scaled = m`, `s_scaled = s * width`. If a "mono → stereo" axis is desired, use a separate control.
-
-**Status:** **FIXED (2026-04-16)** — `apply_width` now leaves mid unscaled and scales only side by `width`. Centre image preserved at all widths.
-
----
-
-### I-11. Crumbs filter shares state across L and R channels
-
-**Problem:** The voice filter is a single `TptSvf` whose `process_mono` advances internal state. Left is processed first, then right is processed through the _already advanced_ state. The comment acknowledges this.
-
-**Representative files:**
-
-- `crates/daw-dsp/src/crumbs/voice.rs:243-255` — `fr = self.filter.process_mono(right, …)` after `fl = self.filter.process_mono(left, …)`. Comment: "Stereo: process right through the same filter state (coupled stereo)."
-
-**Needed:** Two filter instances, or a stereo SVF variant. Current topology introduces channel cross-talk proportional to filter resonance.
-
-**Status:** **FIXED (2026-04-16)** — `CrumbsVoice` now holds independent `filter_l` / `filter_r`; coefficients kept in sync via `set_filter_params`. No state cross-talk. (Note: `cargo check -p daw-dsp` is still blocked by an unrelated pre-existing `grand_boule/voice.rs` break, logged as a follow-up.)
-
----
-
-### I-12. Crumbs pitch playback has no anti-aliasing when transposing up
-
-**Problem:** The voice reads at `position` using 4-point cubic Hermite interpolation. Cubic Hermite is an interpolator, not a pitch-shift anti-aliasing filter. At pitch ratios > 1.0 (transpose up), there is no lowpass pre-filter to prevent aliasing above Nyquist.
-
-**Representative files:**
-
-- `crates/daw-dsp/src/crumbs/voice.rs:218-240`.
-
-**Needed:** For large pitch-up, either oversample the source, run a variable-cutoff lowpass before the interpolator, or switch to a windowed-sinc interpolator with anti-image filtering.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — real issue but requires a pre-resample LPF design cheap enough to run per voice.
-
----
-
-### I-13. `createAutomergeStorage.ts` deep-imports into another module's private `repositories/`
-
-**Problem:** Infra-level storage adapter imports a module-internal repository directly, violating the "repositories are STRICTLY PRIVATE to their module" rule in `AGENTS.md`. This blocks any restructure of CRDT persistence without a cross-layer break.
-
-**Representative files:**
-
-- `src/infra/store/storage/createAutomergeStorage.ts:3` — `import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository'`.
-
-**Needed:** Invert the dependency: `CrdtDocument` module exposes a public use-case API (`saveAll`, `loadAll`, or similar) from its `useCases/` and `index.ts`; the storage adapter imports that instead. Run `pnpm deps:validate` afterwards.
-
-**Status:** **FIXED (2026-04-16)** — the adapter now goes through `getCrdtDoc`, `hasCrdtDoc`, `mutateCrdtDoc`, and `getSemanticContext` from `#/modules/CrdtDocument/useCases/*`. Deep per-file imports (not the barrel) avoid a module-init cycle where the barrel re-exports `projectProjection`, which transitively loads stores that call `createAutomergeStorage()` at module scope. `mutateCrdtDoc` gained an optional `message` parameter so semantic context still flows through. `pnpm deps:validate` reports 0 errors.
-
----
-
-### I-14. Volatile state that should be durable
-
-**Problem:** Stores holding user-expected-persistent data are in-memory-only (no persistence adapter).
-
-**Representative files:**
-
-- `src/modules/Knead/stores/kneadStore.ts` — pitch edits lost on reload.
-- `src/modules/CrdtDocument/stores/actionHistoryStore.ts` — action history lost on reload despite storing AI group labels and undo records.
-
-**Needed:** Wire both stores through `createLocalStorage` / `createAutomergeStorage` adapters with a `toCrdt` shim to strip ephemeral fields.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — depends on a storage-shim design for each store; not a minimal fix.
-
----
-
-### I-15. Fermenter telemetry updates store on every audio tick
-
-**Problem:** Telemetry (meters, oscilloscope) is pushed into a React-subscribed store at audio-rate, causing catastrophic re-renders of any component subscribed to `fermenterStore`. Related: 80+ `postMessage` calls per tick during patch morph; param updates block-aligned, not sample-accurate.
-
-**Representative files:**
-
-- Audit originally pointed at `src/modules/AudioEngine/engine/FermenterNode.ts → setFermenterTelemetry`. Actual location: `src/modules/Fermenter/stores/fermenterStore.ts` and `src/modules/Fermenter/presentations/hooks/useFermenterTelemetry.ts`.
-- `src/modules/AudioEngine/services/fermenterProcessor.ts` — block-aligned param updates.
-
-**Needed:** Publish telemetry via a SAB or an event-emitter that components can selectively subscribe to at UI rate, not through the global store. Batch morph messages into one keyframe message.
-
-**Status:** **Partially verified** — re-render risk verified by pattern; morph/postMessage claims not re-measured this pass. **Deferred (2026-04-16)** — needs a SAB/event-emitter telemetry design.
-
----
-
-### I-16. AI chat UI re-renders on every token and re-parses markdown
-
-**Problem:** `ChatPanel` subscribes to the entire `chatStore`, so every streaming-token update to any message re-renders the panel. Inside the panel, `<ReactMarkdown>{msg.content}</ReactMarkdown>` reruns its tokeniser for every message every render.
-
-**Representative files:**
-
-- `src/modules/AiRuntime/presentations/views/ChatPanel.tsx:68-73` (subscribe), `:164-218` (map + `ReactMarkdown`), `:206` (the `ReactMarkdown` call).
-- `src/modules/AiRuntime/useCases/sendChatMessage.ts:221,235,263` (per-token `updateChatMessage`).
-
-**Needed:** Split each message into its own subscribed component; keyed by message id; only the streaming-target message re-renders per token. Cache markdown parse by `msg.id + content.length`.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — requires a message-component split and markdown parse cache.
-
----
-
-### I-17. `ReasoningBlock` has no ARIA
-
-**Problem:** A collapsible control built from a `<button>` with no `aria-expanded`, no `aria-controls`, no `aria-label`.
-
-**Representative files:**
-
-- `src/modules/AiRuntime/presentations/views/ChatPanel.tsx:34-56`.
-
-**Needed:** Add `aria-expanded={expanded}`, `aria-controls="reasoning-body-{id}"`, a stable region id, and `aria-label="Toggle reasoning"`.
-
-**Status:** **FIXED (2026-04-16)** — `useId`-generated region id, `aria-expanded`, `aria-controls`, and `aria-label` are all present on the `<button>`, and the expanded body is a labelled `role="region"`.
-
----
-
-### I-18. DSO schema-constrained generation does not fall back to plain text
-
-**Problem:** The in-code comment promises "If grammar-constrained generation fails (smaller models may reject tokens), retry without the constraint and rely on the system prompt alone." The `catch (constraintError)` block instead throws, aborting the edit.
-
-**Representative files:**
-
-- `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:334-376`.
-
-**Needed:** Either implement the fallback (second streaming call without `response_format.schema`), or remove the promise from the comment and the expectation from the UX.
-
-**Status:** **FIXED (2026-04-16)** — on schema-constrained failure, the code now retries once without `response_format`. If both attempts fail, it throws a single combined error that includes both failure messages.
+**Status:** Verified 2026-04-18. Deferred — needs PDC spec.
 
 ---
 
 ### I-19. `TrackNode` rebuilds graph on bypass for generic devices
 
-**Problem:** `updateBypass` falls through to `this.rebuildChain()` for any device that isn't fermenter/toaster/levain/native/sidechain. Each bypass toggle on a Faust or WAM device produces an engine-wide disconnect + reconnect sweep.
+**Problem:** `updateBypass` falls through to `this.rebuildChain()` for Faust/WAM/factory devices.
 
 **Representative files:**
+- `src/modules/AudioEngine/engine/TrackNode.ts:459-476`.
 
-- `src/modules/AudioEngine/engine/TrackNode.ts:429-446`.
+**Needed:** Pre-built bypass gain node; bypass becomes one-param change. Related to I-05.
 
-**Needed:** Route generic devices through a pre-built bypass gain (two nodes, one connect-time decision) so bypass becomes a one-param change instead of a graph rebuild. The "scheduleRebuildChain" microtask coalescing helps but does not eliminate the rebuild.
-
-**Status:** **Verified** against HEAD (nuanced — no longer affects modern plugins, still affects Faust/WAM/factory devices). **Deferred (2026-04-16)** — related to I-05; will fall out of the `DeviceNode` interface.
-
----
-
-### I-20. Toaster worklet queue allocates on the audio thread
-
-**Problem:** `_drainQueue` calls `this._queue.splice(0, drained)` inside `process()`. The current implementation is already better than per-element `shift()` but still allocates per block.
-
-**Representative files:**
-
-- `src/modules/AudioEngine/services/toasterProcessor.ts:128-136`.
-- Same pattern: `src/modules/AudioEngine/services/levainProcessor.ts:169-177`.
-
-**Needed:** Replace with a ring buffer or an index-based queue (`_queue[_head++]`), or free-list.
-
-**Status:** **FIXED (2026-04-16)** — both `toasterProcessor.ts` and `levainProcessor.ts` now use a read-head index (`_queueHead`). The array is only cleared (`length = 0`) when fully drained; zero allocations in steady-state playback.
-
----
-
-### I-21. Toaster sequencer uses `setTimeout` for trigger timing
-
-**Problem:** Sequencer uses `setTimeout` with AudioContext-clock drift correction (good: no cumulative drift), but `fire()` triggers the pad without a `sampleFrame`, so individual hits land on main-thread jitter rather than on a sample-accurate grid.
-
-**Representative files:**
-
-- `src/modules/AudioEngine/services/toasterProcessor.ts:97-105` — DOES accept `sampleFrame` on `noteOn`.
-- `src/modules/Toaster/useCases/sequencerPlayback.ts:137-149` — `fire()` calls `triggerToasterPad(track.padIndex, vel)` with no `sampleFrame`.
-
-**Needed:** At schedule time, compute the precise AudioContext `sampleFrame` for each hit and pass it through `triggerToasterPad`. The worklet already honours `sampleFrame` queuing.
-
-**Status:** **Verified** — infrastructure is ready; the caller is the missing link. **Deferred (2026-04-16)** — small but needs care around transport-sync.
-
----
-
-### I-22. Proof limiter does O(window × samples) lookahead scan
-
-**Problem:** Each processed sample computes `self.gain_buffer.iter().copied().fold(0.0_f32, f32::max)` — an O(W) scan per sample, O(W × N) per block.
-
-**Representative files:**
-
-- `crates/daw-dsp/src/proof/limiter.rs:80-87`.
-
-**Needed:** Replace with a monotonic deque (Lemire algorithm) for O(1) amortised max-in-window. Standard limiter implementation.
-
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — real issue but perf, not correctness; monotonic-deque implementation is non-trivial.
-
----
-
-### I-23. Proof AudioWorklet processors silently drop mono inputs
-
-**Problem:** Processors early-return on `input.length < 2`, so any mono upstream yields silence without a warning.
-
-**Representative files:**
-
-- `src/modules/AudioEngine/services/proofChamberProcessor.ts:71`.
-
-**Needed:** Accept mono by duplicating `input[0]` to both channels (the existing `_passthrough` already does this for the bypass path). Fail loudly (once) if a required input is genuinely missing.
-
-**Status:** **FIXED (2026-04-16)** — `proofChamberProcessor.process()` now accepts `input.length >= 1` and duplicates `input[0]` into the right channel when the upstream is mono.
-
----
-
-### I-24. Proof React UI mutates `dynBands` objects via `forEach`
-
-**Problem:** `const bands = [...patch.dynBands]; bands.forEach(b => (b.threshold = v))` shallow-copies the array but mutates each band object in place. When Automerge is the backing store, this can produce inconsistent snapshots.
-
-**Representative files:**
-
-- `src/modules/Proof/presentations/views/ProofPanel.tsx:541-546`.
-
-**Needed:** `const bands = patch.dynBands.map(b => ({ ...b, threshold: v }))`. The sibling code in `ProofDynSection.tsx:28` already does it correctly — use the same pattern.
-
-**Status:** **FIXED (2026-04-16)** — the `dynBands` and `excBands` handlers in `ProofPanel.tsx` now build new band objects via `.map()` instead of mutating in place.
+**Status:** Verified 2026-04-18. Deferred.
 
 ---
 
 ### I-25. Plugin module duplication: `Proof` vs `Plugin/ProofChamber`
 
-**Problem:** Three locations for one plugin: `src/modules/Proof/` (the full module), `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx` (a parallel panel), and `src/modules/AudioEngine/engine/ProofChamberNode.ts` (the node). Whether these are alternate UIs or dead code needs to be decided.
+**Problem:** Three locations for one plugin: `src/modules/Proof/`, `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx`, `src/modules/AudioEngine/engine/ProofChamberNode.ts`.
 
-**Representative files:**
+**Needed:** Product decision on which is canonical; remove the rest.
 
-- `src/modules/Proof/` (module)
-- `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx`
-- `src/modules/AudioEngine/engine/ProofChamberNode.ts`
-
-**Needed:** Pick one. The `Plugin/` namespace looks like a legacy experiment — verify and remove if so.
-
-**Status:** **Verified** three files exist; intent unclear. **Deferred (2026-04-16)** — requires a product decision, not a code fix.
+**Status:** Verified 2026-04-18. Deferred.
 
 ---
 
 ### I-26. Grinder's main parameters are not sample-accurate
 
-**Problem:** Only 9 `parameterDescriptors` are declared (`gain`, `bass`, `mid`, `treble`, `presence`, `resonance`, `master`, `inputGain`, `outputGain`). All other ~50 params go through `port.postMessage`. Additionally, even the declared 9 are read via `values[frames - 1]` — block-end, not sample-accurate.
+**Problem:** 9 `parameterDescriptors` declared, all read via `values[frames - 1]` (block-end). ~50 other params via `postMessage`.
 
 **Representative files:**
+- `src/modules/AudioEngine/services/grinderProcessor.ts:112-123` (descriptors), `:191-196` (block-end read).
 
-- `src/modules/AudioEngine/services/grinderProcessor.ts:112-123` (descriptor list).
-- `src/modules/AudioEngine/services/grinderProcessor.ts:191-196` — `values.length > 1 ? values[frames - 1] : values[0]` (takes last value of the block).
+**Needed:** Policy on automatable params; per-sample reads for those.
 
-**Needed:** Decide which params are automatable and declare them. Read automation using `values[i]` per sample inside the inner loop for automatable params.
+**Status:** Verified 2026-04-18. Deferred.
 
-**Status:** **Verified** against HEAD (audit's original "no AudioParams exposed" is too strong). **Deferred (2026-04-16)** — needs a policy on which params are automatable, then an AudioParam audit.
+---
+
+### I-29. Recording pipeline hardcoded to one channel
+
+**Problem:** Recording `AudioWorkletNode` uses `channelCount: 1, channelInterpretation: 'discrete'`.
+
+**Representative files:**
+- `src/modules/AudioEngine/repositories/audioRecorder/recording.ts:121-127`.
+
+**Needed:** Parameterise by track input channel count; UI toggle.
+
+**Status:** Verified 2026-04-18. Deferred.
+
+---
+
+### S-03. Multi-track recording is broken (single session)
+
+**Problem:** `recording.ts:36-63` holds a single `recordingSession`. When `toggleRecording` loops over armed tracks and calls `startAudioRecording(trackId, ...)`, each call overwrites the previous session — only the last-armed track gets audio.
+
+**Representative files:**
+- `src/modules/AudioEngine/repositories/audioRecorder/recording.ts:36-63` — single `recordingSession` via `createHmrPersistentState`.
+- `src/modules/Transport/useCases/transportControls/toggleRecording.ts:27-59` — loops over armed tracks.
+
+**Needed:** `recordingSessions: Map<trackId, RecordingSession>`. Independent stop per track, plus `stopAllAudioRecording` convenience.
+
+**Status:** Verified 2026-04-18. Critical — needs spec.
+
+---
+
+### S-04. Crust silent — no DSP implementation
+
+**Problem:** Crust ships a complete front-end (stores, useCases, presentations, presets, param bridge) and `CRUST_DESCRIPTOR` is in `BUILTIN_PLUGINS` with `id: 'crust'`, but **no engine-side DSP exists**. No CrustNode, no worklet, no Faust module, no Rust crate.
+
+**Concrete sequence:**
+1. `addDevice(trackId, 'crust')` appends `{ type: 'crust' }` to track.devices.
+2. `TrackNode.addDevice` reaches `findWasmDescriptor('crust')` fallback, gets `undefined`, hits **unlogged** `return;` (~311-312).
+3. Device never inserted into `strip.deviceNodes`. Knobs move but audio is bit-identical to no device.
+4. No log signal on the live path.
+
+**Representative files:**
+- `src/modules/Crust/` — full front-end stack.
+- `src/modules/Arrangement/models/pluginDescriptors/crustDescriptor.ts` — descriptor in `BUILTIN_PLUGINS`.
+- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts` — `'crust'` absent from all matchers.
+- `src/modules/AudioEngine/repositories/deviceStrategy/setupDeviceStrategies.ts` — no `'crust'` strategy.
+
+**Needed:**
+1. Decide DSP backend: Faust module or Rust/WASM (pure Web Audio insufficient for true-peak/lookahead/oversampling).
+2. Interim: register `PluginNotImplementedError` + toast for `'crust'`, or move out of `BUILTIN_PLUGINS`.
+3. Audit all other `BUILTIN_PLUGINS` descriptors against both dispatch tables — **Crumbs** (`builtin-crumbs`) is the next suspect (web-only: `createCrumbsInstance` short-circuits to no-op without Tauri).
+
+**Status:** Verified 2026-04-18. High — needs spec.
+
+---
+
+### S-05. Proof (parametric EQ) engine-side verification
+
+**Problem:** UI double-dispatch and boolean-encoding are fixed, but the `onSendParam` → `ProofNode.postMessage` → AudioWorklet setter chain has not been confirmed end-to-end under cross-origin isolation.
+
+**Known UI quirk:** `ProofEqCurve` only drags freq (X) and gain (Y); Q via knob only.
+
+**Needed:** Confirm under cross-origin-isolated conditions that a param change produces the matching DSP change.
+
+**Status:** Partially verified 2026-04-18. Needs XOI runtime test.
+
+---
+
+## Open issues — DSP
+
+### I-08. LR4 four-band splitter cascades crossovers — doesn't sum flat
+
+**Problem:** `FourBandSplitter::process` feeds high output of xover1 → xover2 → xover3. Phase delay differs per band; sum is not flat.
+
+**Representative files:**
+- `crates/daw-dsp/src/proof/crossover.rs:87-92`.
+- `crates/daw-dsp/src/bacteria/crossover.rs` — same pattern.
+
+**Needed:** Parallel LR4s with allpass compensation, or Linkwitz-Riley topology that sums flat by construction.
+
+**Status:** Verified 2026-04-18. Deferred — topology redesign.
+
+---
+
+### I-12. Crumbs pitch-up has no anti-aliasing
+
+**Problem:** 4-point cubic Hermite interpolation with no lowpass pre-filter at pitch ratios > 1.0.
+
+**Representative files:**
+- `crates/daw-dsp/src/crumbs/voice.rs:218-240`.
+
+**Needed:** Pre-resample LPF or windowed-sinc interpolator.
+
+**Status:** Verified 2026-04-18. Deferred.
+
+---
+
+### I-22. Proof limiter does O(window × samples) lookahead scan
+
+**Problem:** Per-sample `gain_buffer.iter().copied().fold(0.0_f32, f32::max)` — O(W) per sample.
+
+**Representative files:**
+- `crates/daw-dsp/src/proof/limiter.rs:84-92`.
+
+**Needed:** Monotonic deque (Lemire algorithm) for O(1) amortised.
+
+**Status:** Verified 2026-04-18. Deferred — perf not correctness.
+
+---
+
+### I-30. DSP claims requiring re-verification
+
+Carried over from sub-audits, not re-proved this cycle:
+
+- **Toaster:** Transient Shaper click; Tone/Choke/Decay sample-rate dependency; disconnected global effect mix in Rust.
+- **Proof:** Oversampler delay-line state corruption; tape-exciter emphasis ordering; telemetry-slot leak.
+- **Levain:** Tone/Attack/Release macros stubbed in Rust; true legato stubbed; human seed hardcoded to 42.
+- **Knead:** Block-based PSOLA artefacts; static `shift_semitones` API; pitch data bound to track not clip; right channel ignored; UI params not sent to DSP; UI read-only.
+- **Grand Boule:** Missing parameter mappings; inverted voice stealing; simplification defeated by sustain; panic button ineffective.
+- **Faust:** Missing `destroy()` on teardown; monophonic synths used polyphonically; `/fm_synth` vs `/FM_Synth` mismatch; `setTimeout(20)` init race; main-thread compilation.
+- **Crumbs:** Fake loop crossfading; hardcoded 44100; inefficient IPC polling; un-batched IPC for loop params.
+- **Cross-cutting:** Design-system inconsistencies; export gaps; Chromium fast paths.
+
+**Status:** Not re-verified. Deferred — belongs in per-plugin audits.
+
+---
+
+## Open issues — AI Runtime
+
+### I-02. AI runtime has two parallel backend-dispatch layers
+
+**Problem:** `sendChatMessage`, `executeDsoEdit`, and `generateToolCalls` each implement their own fallback chain. `sendChatMessage.ts` ≈ **296 LOC**; `executeDsoEdit.ts` ≈ **451 LOC** (2026-04-18).
+
+**Representative files:**
+- `src/modules/AiRuntime/useCases/sendChatMessage.ts`
+- `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:300-409` (`invokeLlm` helper)
+- `src/modules/AiRuntime/useCases/llmOrchestration/inference.ts`
+
+**Needed:** One backend-dispatch use case owning chain, status transitions, error mapping.
+
+**Status:** Verified 2026-04-18. Deferred — architectural.
+
+---
+
+### I-04. DSO edit performs full Automerge snapshot before and after each plan
+
+**Problem:** Undo captures full binary bundle of every Automerge document twice per AI edit.
+
+**Representative files:**
+- `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:252,258` — `saveSnapshot()` before + after inside `commitDsos`.
+
+**Needed:** Automerge change/heads mechanism for undo, or snapshot only touched documents.
+
+**Status:** Verified 2026-04-18. Deferred.
+
+---
+
+### I-16. AI chat UI re-renders on every token and re-parses markdown
+
+**Problem:** `ChatPanel` subscribes to entire `chatStore`; every token update re-renders all messages with `ReactMarkdown`.
+
+**Representative files:**
+- `src/modules/AiRuntime/presentations/views/ChatPanel.tsx:77-82` (subscribe), `:174-219` (map + ReactMarkdown), `:215` (ReactMarkdown call).
+- `src/modules/AiRuntime/useCases/sendChatMessage.ts:221,235,263` (per-token `updateChatMessage`).
+
+**Needed:** Per-message subscribed component keyed by id; markdown parse cache.
+
+**Status:** Verified 2026-04-18. Deferred.
+
+---
+
+### S-06. WebLLM model mismatch (Qwen3 tools)
+
+**Problem:** `UnsupportedModelIdError: Qwen3-4B-q4f16_1-MLC is not supported for tools`. No MLC-bound call site attaches `tools:` today — warning may be stale build artefact.
+
+**Representative files:**
+- `src/modules/AiRuntime/repositories/webLlm/toolCalling.ts` — routes around via `parseToolCallXml`.
+- `src/utils/capabilities.ts` — `supportsToolsApi(modelId)` gate.
+
+**Close criteria:** If logs over representative usage never show `tools` in payload keys, close as stale.
+
+**Status:** Surveillance only.
+
+---
+
+## Open issues — Plugin Stores & State
+
+### I-03. Singleton plugin stores prevent multi-instance usage
+
+**Problem:** Levain and Toaster hold one instance of state per store; multiple instances collide.
+
+**Representative files:**
+- `src/modules/Levain/stores/levainStore.ts:43-45` — one global `LevainState`.
+- `src/modules/Toaster/useCases/loadToasterKit.ts:59-63` — `tracks.find(...)` returns first match.
+
+**Note:** ~~Fermenter~~ **corrected 2026-04-18:** Fermenter store is already keyed by `deviceId`.
+
+**Needed:** Key state by device/instance ID for Levain and Toaster.
+
+**Status:** Verified 2026-04-18. Deferred.
+
+---
+
+### I-14. Volatile state that should be durable
+
+**Problem:** Knead pitch edits and action history lost on reload (in-memory only, no persistence adapter).
+
+**Representative files:**
+- `src/modules/Knead/stores/kneadStore.ts` — no persistence.
+- `src/modules/CrdtDocument/stores/actionHistoryStore.ts` — no persistence.
+
+**Needed:** Wire through `createLocalStorage` / `createAutomergeStorage` with `toCrdt` shim.
+
+**Status:** Verified 2026-04-18. Deferred.
+
+---
+
+### I-15. Fermenter telemetry updates store at audio-rate
+
+**Problem:** Telemetry pushed into React-subscribed store per audio block; re-renders any subscriber. Morph path sends 80+ `postMessage` per tick (not re-measured).
+
+**Representative files:**
+- `src/modules/Fermenter/stores/fermenterStore.ts` (store), `useFermenterTelemetry.ts` (hook).
+- `src/modules/AudioEngine/services/fermenterProcessor.ts` — block-aligned param updates.
+
+**Needed:** SAB or event-emitter for telemetry at UI rate; batch morph messages.
+
+**Status:** Partially verified 2026-04-18. Deferred.
+
+---
+
+## Open issues — UI & State Management
+
+### S-01. Faders snap on release (write-path storm)
+
+**Problem:** Continuous `onValueChange` commits to `trackStore` per pointer-move; store fanout blocks rendering; slider lags, catches up on release.
+
+**Evidence chain:**
+1. Radix `Slider` emits `onValueChange` continuously.
+2. `TrackLevelSection.tsx:39-41` calls `setTrackGain(track.id, v/100)` synchronously.
+3. `setTrackGain.ts:9-14` does four things: `updateTrack` → store fanout, `engineSetTrackGain`, `syncToasterPadParam`, `maybeRecordAutomation`.
+4. Store subscribers (TimelineSurface, mixer) can take >16ms → missed pointermove events.
+
+**Fix direction:**
+1. Split fast/commit path: local ref during drag, commit on `onValueCommit` (pointer-up).
+2. Decouple: selector-based subscriptions for timeline/mixer.
+
+**Needed:** Systemic fix across faders, pan knobs, sends, device params. Not per-control.
+
+**Status:** Verified 2026-04-18. Needs spec.
+
+---
+
+### S-02. Multi-track selection missing
+
+**Problem:** `trackStore.ts:22-28` models selection as `selectedTrackId: string | null`. No multi-select.
+
+**Needed:** `selectedTrackIds: string[]` with `primarySelectedTrackId` derived. Every consumer (Inspector, automation, deletion, sidebar) migrates simultaneously.
+
+**Status:** Verified 2026-04-18. Needs spec.
+
+---
+
+### S-11. `TrackDevicesSection` menu huge
+
+**Problem:** Three categorised flat lists (effect/utility/analyzer) plus external plugins; no search filter, no accordion.
+
+**Representative files:**
+- `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx`.
+
+**Needed:** Accordions by category, search input, virtualise external list.
+
+**Status:** Verified 2026-04-18. UX scope — not a regression.
+
+---
+
+### S-12. Timeline minimap non-resizable
+
+**Problem:** `MINIMAP_HEIGHT = 28px`, fixed, no drag handle.
+
+**Representative files:**
+- `src/modules/Arrangement/presentations/views/TimelineMinimap.tsx`.
+
+**Needed:** Top-edge `DragResizeHandle` writing to `preferencesStore`.
+
+**Status:** Verified 2026-04-18. Feature gap.
 
 ---
 
 ### I-27. PianoRoll subscribes to whole midiStore + trackStore
 
-**Problem:** PianoRoll uses two store subscriptions. Any change to notes on _any_ clip triggers a full re-render; a dense canvas can lag on busy projects.
+**Problem:** Two `useStore` subscriptions at `PianoRoll.tsx:98-99`; any note change on any clip re-renders.
 
-**Representative files:**
+**Needed:** Selector isolating active clip's notes; or split canvas into own component.
 
-- `src/modules/Workspace/presentations/views/ClipView/PianoRoll.tsx:85-86`.
+**Status:** Verified 2026-04-18. Deferred.
 
-**Needed:** Either subscribe with a selector that isolates the active clip's notes, or move the canvas into its own component that only re-renders on note-structure change. "Excessive `useStore`" in the original audit was wrong — there are only 2 — but the re-render cost is real.
+---
 
-**Status:** **Partially verified** against HEAD (framing corrected). **Deferred (2026-04-16)** — needs a selector design.
+### N-14. `executeAppAction` handler map duplication
+
+**Problem:** `executeAppAction` merges handlers from both `handlers/` directory and `useCases/*Handlers.ts` files — two maps built independently. Makes handler ownership unclear and is a recurring footgun when adding new commands.
+
+**Needed:** Single handler registration point.
+
+**Status:** Verified 2026-04-18. Low priority — architectural.
 
 ---
 
 ### I-28. `LocalStorageKeys.ts` still carries legacy brand-CMS keys
 
-**Problem:** About 80% of the `LocalStorageKey` union is from a different product (brand navigation, asset chooser, marketplace layout, guideline notices, font metrics cache). DAW keys start at line 95.
+**Problem:** ~80% of keys are from a different product (brand nav, marketplace, font cache). DAW keys start at line 95.
 
 **Representative files:**
-
 - `src/infra/store/storage/LocalStorageKeys.ts:14-94`.
 
-**Needed:** Remove legacy keys once a cookie-policy review confirms they are not in production use. The file header mentions legal review is required before removal — route through legal before deleting.
+**Needed:** Legal review before removal per file header.
 
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — requires legal review per the file header.
+**Status:** Verified 2026-04-18. Deferred.
 
 ---
 
-### I-29. Recording pipeline is hardcoded to one channel
+## Open issues — MIDI Model & Coordinate Convention
 
-**Problem:** The recording `AudioWorkletNode` is constructed with `channelCount: 1, channelInterpretation: 'discrete'`, so stereo sources are downmixed before reaching the SAB ring.
+### M-01. `MidiNote.startBeat` has two incompatible conventions (§14/G1)
+
+**Problem:** `MidiNote.startBeat` is **clip-relative** in some paths and **timeline-absolute** in others:
+
+| Path | Convention | Evidence |
+|------|-----------|----------|
+| `clipDrawing.ts:386` | Expects absolute (subtracts `clip.startBeat` in `relStart`) | `relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset` |
+| `renderOffline.ts:96` | Expects clip-relative | `noteStart = (clip.startBeat - startBeat + note.startBeat) / tempo * 60` |
+| `duplicateClipCore.ts:42` | Treats as absolute (shifts by `beatDelta`) | `startBeat: note.startBeat + beatDelta` |
+| `usePianoRollRenderer.ts:526` | Treats as clip-relative | `x = note.startBeat * beatWidth` (no clip.startBeat subtraction) |
+| `usePianoRollInteractions.ts:435-469,581+` | Creates clip-relative | `beat = snap(x / beatWidth)` |
+| `applyMelodyToTrack.ts:42` | Stores absolute | `startBeat: startBeat + note.startBeat` |
+| `applyChordProgressionToTrack.ts:44` | Stores absolute | `startBeat: startBeat + note.startBeat` |
+| `PatternBrowser.tsx:297-305` | Stores clip-relative | `batchAddMidiNotes` with template-local `startBeat` |
+| `importMidiFile.ts:42` | Masks issue | Forces `clip.startBeat = 0` |
+
+**Impact:** When `clip.startBeat > 0`, timeline preview and piano roll disagree. Pattern insert → "empty timeline clip". AI insert → "empty piano roll".
+
+**Secondary:** `generateChordProgression` defaults to `rhythm = 'whole'` (one downbeat per bar, `algorithm.ts:158-160`). Combined with the coordinate bug, a 4-bar progression can produce only 12 notes that are all hidden. The one-note-per-bar default is worth revisiting as a UX choice once M-01 lands.
+
+**Needed:** Pick one convention, align all paths, add test: clip at `startBeat = 8` with notes visible in both views. Touches: `clipDrawing.ts`, `createWebGpuRenderer.ts`, `renderOffline.ts`, `duplicateClipCore.ts`, both AI apply functions, migration + tests.
+
+**Status:** Verified 2026-04-18. Critical — needs its own spec.
+
+---
+
+### M-02. PatternBrowser empty clip when playhead > 0 (§14/G2)
+
+**Problem:** `handleInsertTemplate` stores clip-relative `startBeat` via `batchAddMidiNotes`. Timeline `clipDrawing` `relStart` math assumes absolute notes → clip preview blank when `clip.startBeat > 0`.
+
+**Blocked on:** M-01.
+
+**Status:** Verified 2026-04-18.
+
+---
+
+### S-08. Chord helper notes hidden under fold (§8.11)
+
+**Problem:** Off-scale chord helper notes (3rd/5th outside current scale) disappear from renderer AND hit-test under fold. User can't interact without toggling fold off.
+
+**Options:**
+1. Include every pitch that has a note in visible-pitch set.
+2. Render off-scale at nearest scale row with off-scale glyph.
+3. Auto-disable fold when off-scale notes exist.
+
+**Needed:** Fold-contract UX decision; linked to M-01 coordinate spec.
+
+**Status:** Verified 2026-04-18. Deferred — multi-file, UX-reviewed change.
+
+---
+
+### S-09. Off-scale lasso miss under fold (§8.12)
+
+Tied to S-08 — same `visiblePitches.indexOf(note.pitch) === -1` filter. Resolving S-08 resolves this.
+
+---
+
+## Open issues — Timeline Editing
+
+### T-01. Widespread time-shift desync and data loss
+
+**Problem:** `deleteTimeRange` and `rippleDeleteClips` shift clips without shifting MIDI notes/automation, causing data loss.
 
 **Representative files:**
+- `src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts`
+- `src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts`
 
-- `src/modules/AudioEngine/repositories/audioRecorder/recording.ts:121-127`.
+**Fixed portions:** `nudgeClip` and `insertTime` now shift MIDI + automation (2026-04-16).
 
-**Needed:** Parameterise by the track's input channel count (mono/stereo) and allocate the SAB ring accordingly. Include a UI toggle in input selection.
+**Remaining:** Three-way partition per clip (notes before/inside/after deleted range).
 
-**Status:** **Verified** against HEAD. **Deferred (2026-04-16)** — needs a UI policy for input channel selection.
+**Status:** Partially fixed 2026-04-16. Deferred remaining paths.
 
 ---
 
-### I-30. Claims requiring DSP-level re-verification (not revalidated in this pass)
+### T-04. MIDI drag preview "stay behind" bug
 
-Items carried over from sub-audits, not re-proved against code in this cycle. They remain open but should be treated as "reported, needs DSP review":
+**Problem:** Clip boundary moves during drag but MIDI note previews stay at original positions.
 
-- Toaster: Transient Shaper click (instant gain switch); Tone Filter / Choke / Decay sample-rate dependency; disconnected global effect mix knobs in Rust.
-- Proof: Oversampler delay-line state corruption (shared up/downsample); tape-exciter pre/de-emphasis applied after saturation; telemetry-slot allocation leak.
-- Levain: Tone/Attack/Release macros stubbed in Rust; true legato stubbed in Rust; default human seed hardcoded to 42.
-- Knead: Block-based PSOLA artefacts; static `shift_semitones` API (no time-varying target); pitch data bound to track not clip; right channel ignored by `daw-engine` scheduler; UI params not sent to DSP; UI read-only w.r.t. timeline.
-- Grand Boule: Missing parameter mappings / per-note disconnect; inverted voice stealing; progressive simplification defeated by sustain; panic button ineffective.
-- Faust: Missing `destroy()` on teardown; monophonic synths used polyphonically; `/fm_synth` vs `/FM_Synth` name mismatch; inspector bypasses `FaustParamDescriptor` on lookup fail; `setTimeout(20)` init race; main-thread compilation.
-- Crumbs: Fake loop crossfading (check whether `loop_crossfade` influences the loop transition); hardcoded 44100 at construction site (needs trace back to instantiation site); inefficient IPC polling for playhead position; un-batched IPC for loop params.
-- Cross-cutting: design-system inconsistencies; export gaps (stem export, loudness normalisation, metadata, stem cache, ZIP opt-outs); Chromium fast paths (`OffscreenCanvas`, dual-path OPFS, predicted pointer, `scheduler.yield()`).
+**Representative files:**
+- `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` (`drawMidiNotePreview`).
 
-**Needed:** Per-claim re-verification by someone reading the specific DSP code, ideally as separate per-area audits.
+**Needed:** `visualShift` in `ClipRenderModel` populated during preview phase.
 
-**Status:** **Not re-verified this pass** — carried over. **Deferred (2026-04-16)** — belongs in per-plugin audits, not this consolidated file.
+**Status:** Deferred — preview-layer reshape.
+
+---
+
+### T-06. MIDI stretching not implemented
+
+**Problem:** Stretch tool only changes `endBeat`; doesn't scale note positions/durations.
+
+**Needed:** `scaleClipMidiNotes(clipId, ratio)` use case; spec for anchor point and interplay with audio `stretchRatio`.
+
+**Status:** Deferred — needs spec.
+
+---
+
+### T-07. MIDI looping visual distortion
+
+**Problem:** `drawMidiNotePreview` stretches notes to fit duration instead of repeating at `loopLength`.
+
+**Status:** Deferred — bundled with T-04/T-08 preview reshape.
+
+---
+
+### T-08. Missing preview for stretch/trim
+
+**Problem:** Stretch/trim only update clip boundary in preview; MIDI/waveform don't update until release.
+
+**Groundwork:** `ClipRenderModel` now carries `audioOffsetBeats` and `stretchRatio`.
+
+**Remaining:** Wire preview phase to update these during drag.
+
+**Status:** Partially done. Deferred with T-04/T-07.
+
+---
+
+## Open issues — New findings (2026-04-18 code walk)
+
+### N-01. Clip drag doesn't follow cursor — canvas dirty flag not set during preview
+
+**Problem:** During clip drag, `clipDragPreviewRef` is updated every mousemove (useTimelineInteractions.ts:441-467) but it's a plain ref, not a store. The render loop in TimelineSurface.tsx:267-279 only sets `dirty = true` on store subscriptions (transportStore, trackStore, etc.). Since no store changes during drag, `dirty` may stay false and the canvas skips re-rendering. Clips appear to "teleport" on release instead of following the cursor.
+
+**Representative files:**
+- `src/modules/Arrangement/presentations/views/TimelineSurface.tsx:267-279` — dirty only from store subscriptions.
+- `src/modules/Arrangement/presentations/views/TimelineSurface.tsx:313` — render only if `dirty`.
+- `src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts:441-467` — preview ref mutation without marking dirty.
+
+**Needed:** Either subscribe to preview ref changes, or call `markDirty()` after each preview update. The preview mechanism is well-designed — it just needs to trigger a repaint.
+
+**Status:** NEW. Critical UX — user-reported.
+
+---
+
+### N-02. removeClip() doesn't clean up MIDI notes or automation
+
+**Problem:** `removeClip.ts` (5 lines) only filters the clip from `track.clips`. It never deletes corresponding MIDI notes from `midiStore` (notesByClipId, ccByClipId, pitchBendByClipId) or automation from `automationStore`. Data persists as orphaned entries.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/clip/removeClip.ts:3-5` — only `clips.filter()`.
+
+**Needed:** After removing the clip, clean up `midiStore` entries keyed by the removed clipId, and automation lanes/points.
+
+**Status:** NEW. Data leak — grows with every clip deletion.
+
+---
+
+### N-03. duplicateTrack() drops CC, pitch bend, and automation
+
+**Problem:** When duplicating a MIDI track, `duplicateTrack.ts:37-38` explicitly sets `ccByClipId` and `pitchBendByClipId` to `currentMidi?.ccByClipId ?? {}` (the GLOBAL state, not the per-clip data). CC and pitch bend for the duplicated clips are never copied. Automation is not duplicated at all — no call to any automation copy function.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/duplicateTrack.ts:37-38` — CC/pitchBend overwritten with global state.
+- `src/modules/Arrangement/useCases/duplicateTrack.ts:72-90` — no automation duplication.
+- `src/modules/Arrangement/useCases/duplicateTrack.ts:78-81` — devices shallow-copied but no engine nodes created.
+
+**Needed:** Copy per-clip CC and pitch bend to new clip IDs. Duplicate automation lanes. Create engine-side device nodes for the new track.
+
+**Status:** NEW. Data loss on core workflow.
+
+---
+
+### N-04. deleteTimeRange() orphans MIDI data for split and deleted clips
+
+**Problem:** `deleteTimeRange.ts` creates a new right clip (line 24-30) with a UUID but never migrates MIDI notes to the new clip ID. Fully deleted clips (line 20-21) are removed from `track.clips` but their MIDI data persists in `midiStore`. Same issue as T-01 but specifically for deleteTimeRange's split behavior.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts:20-31`.
+
+**Needed:** When splitting, call `splitMidiNotesAtBeat` (as splitClip already does). When deleting, clean up midiStore entries.
+
+**Status:** NEW. Data loss — MIDI notes orphaned or lost on time-range delete.
+
+---
+
+### N-05. KneadEditor toolbar has malformed JSX — broken rendering
+
+**Problem:** Lines 415-451 of KneadEditor.tsx use escaped quotes (`className=\"...\"`) while the rest of the file uses normal quotes. Lines 453-454 have orphaned `}` and `/>` closing tags that don't match any opening element. This creates a rendering break in the Knead pitch editor toolbar (Retune, Scale, Human controls).
+
+**Representative files:**
+- `src/modules/Workspace/presentations/views/ClipView/KneadEditor.tsx:415-454`.
+
+**Needed:** Replace escaped quotes with normal JSX quotes and fix the orphaned closing tags.
+
+**Status:** NEW. Build/render error — Knead toolbar broken.
+
+---
+
+### N-06. Punch-in recording is broken — sets isRecording false and returns
+
+**Problem:** When `punchInEnabled` is true and the user presses record, `toggleRecording.ts:77-82` immediately sets `isRecording: false` and returns early. It never starts actual recording. Punch-in functionality is completely non-functional.
+
+**Representative files:**
+- `src/modules/Transport/useCases/transportControls/toggleRecording.ts:77-82`.
+
+**Needed:** Remove the `isRecording: false` assignment and early return. Let the flow continue to `beginActualRecording()` (with punch-in-specific scheduling).
+
+**Status:** NEW. Feature completely broken.
+
+---
+
+### N-07. Frozen track field inconsistency between schedulers
+
+**Problem:** `scheduleMidiNotes.ts:181` checks `track.frozen && track.frozenBufferId` while `scheduleAudioClips.ts:80` checks `track.freezeState?.status === 'frozen'`. The Track model has BOTH `frozen: boolean` (line 46) AND `freezeState` (line 18). These can desync — a track could have `frozen: false` but `freezeState.status === 'frozen'`, causing MIDI notes to play on a frozen track or vice versa.
+
+**Representative files:**
+- `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:181` — uses `track.frozen`.
+- `src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts:80` — uses `track.freezeState?.status`.
+- `src/modules/Arrangement/models/Track.ts:18,46` — both fields exist.
+
+**Needed:** Unify on one freeze mechanism. Remove the redundant field.
+
+**Status:** NEW. Potential playback inconsistency.
+
+---
+
+### N-08. MIDI note minimum duration inconsistency
+
+**Problem:** `addMidiNote.ts:20` clamps minimum duration to `0.0625` (64th note), but `resizeMidiNote.ts:12` clamps to `0.125` (32nd note). A note can be created at duration 0.0625 but cannot be resized back to that duration after any edit.
+
+**Representative files:**
+- `src/modules/MIDI/useCases/midiNoteCrud/addMidiNote.ts:20` — `Math.max(0.0625, duration)`.
+- `src/modules/MIDI/useCases/midiNoteCrud/resizeMidiNote.ts:12` — `Math.max(0.125, newDuration)`.
+
+**Needed:** Use the same minimum in both paths.
+
+**Status:** NEW. Minor — UX inconsistency.
+
+---
+
+### N-09. Offline freeze/bounce ignores mute and solo state
+
+**Problem:** `renderOffline.ts` renders all tracks at full gain regardless of whether they are muted or soloed. Bounced output doesn't match what the user hears.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts:54` — uses hardcoded gain, no mute/solo check.
+
+**Needed:** Apply the current solo/mute routing when building the offline render graph.
+
+**Status:** NEW. Incorrect output — bounce doesn't match session.
+
+---
+
+### N-10. IDB auto-save failures are silent — data loss on quota
+
+**Problem:** `startCrdtAutoSave.ts:28` catch block only logs a warning. If IndexedDB quota is exceeded, autoSave silently fails every 2 seconds. No user feedback. Browser restart loses all unsaved work.
+
+**Representative files:**
+- `src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts:28`.
+
+**Needed:** Surface save failures to the user (toast or status bar indicator). Implement a retry or fallback strategy.
+
+**Status:** NEW. Data loss risk.
+
+---
+
+### N-11. Incremental save timestamp collisions can lose edits
+
+**Problem:** `saveIncrementalToIdb.ts:14` uses `Date.now()` for chunk keys. Two saves within the same millisecond overwrite each other. Under rapid AI batch actions, chunks are silently lost.
+
+**Representative files:**
+- `src/modules/CrdtDocument/repositories/crdtPersistence/saveIncrementalToIdb.ts:14`.
+
+**Needed:** Use a monotonic counter or append a random suffix to the timestamp key.
+
+**Status:** NEW. Data loss risk under rapid edits.
+
+---
+
+### N-12. WaveformEditor receives audioBufferId instead of clipId
+
+**Problem:** `ClipView.tsx:134` passes `selectedClip.audioBufferId ?? selectedClip.id` as the `clipId` prop to `WaveformEditor`. All downstream operations (warp markers, `replaceClipAudioBuffer`, `setStretchMode`) target the wrong entity — an audio buffer ID, not a clip ID.
+
+**Representative files:**
+- `src/modules/Workspace/presentations/views/ClipView.tsx:134`.
+
+**Status:** NEW. Critical — corrupts audio clip editing operations.
+
+---
+
+### N-13. Freeze tail length stored in beats, model expects seconds
+
+**Problem:** `freezeTrack.ts:80` stores `tailLengthSeconds: tailBeats` — a value in beats assigned to a seconds field. At 120 BPM, 8 beats of tail becomes 8 "seconds" instead of 4, doubling the frozen clip length.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts:80`.
+
+**Status:** NEW. Critical — frozen clips have wrong duration.
+
+---
+
+### N-14b. Bounce tempo hardcoded to 120 BPM
+
+**Problem:** `bounceOperations.ts:36` has `const tempo = 120; // TODO: get actual tempo`. All bounce/export operations ignore the session's actual tempo.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/freezeBounce/bounceOperations.ts:36`.
+
+**Status:** NEW. Critical — bounce output at wrong tempo.
+
+---
+
+### N-15. Synth velocity→filter attack coupling is inverted
+
+**Problem:** `builtinSynth.ts:107` computes `velAttack = params.attack * (1.5 - velocity / 127)`. Harder hits (higher velocity) produce LONGER attack — the opposite of physical expectation and every other synth.
+
+**Representative files:**
+- `src/modules/Synth/useCases/builtinSynth.ts:107`.
+
+**Status:** NEW. DSP — sounds wrong.
+
+---
+
+### N-16. Automation recording has no undo
+
+**Problem:** `stopAutomationRecording.ts` calls `batchAddAutomationPoints()` which does not register an undo entry. Users cannot undo recorded automation — it's permanent once committed.
+
+**Representative files:**
+- `src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts`.
+
+**Status:** NEW. Data loss — no undo for recorded automation.
+
+---
+
+### N-17. Sidechain routes not cleaned on track deletion
+
+**Problem:** When a track is deleted, no listener in the Routing module cleans up sidechain routes where `sourceTrackId` or `targetTrackId` matches the deleted track. Dangling route references persist in `sidechainStore`.
+
+**Representative files:**
+- `src/modules/Routing/` — no cleanup listener for track deletion.
+
+**Status:** NEW. Data corruption — stale routes cause engine errors.
+
+---
+
+### N-18. Toaster store is a singleton — multi-instance collision
+
+**Problem:** `toasterStore.ts:38-40` is a singleton, not keyed by deviceId (unlike Fermenter which is correctly per-device). Loading a kit in one Toaster instance overwrites state for ALL Toaster instances.
+
+**Representative files:**
+- `src/modules/Toaster/stores/toasterStore.ts:38-40`.
+
+**Status:** NEW. Multi-instance bug — same class as I-03.
+
+---
+
+### N-19. Proof param bridge incomplete — only 10 params connected to audio
+
+**Problem:** `setProofParamWithPatch.ts:6-43` only bridges 10 patch parameters to the audio engine. Missing: `target`, `targetLufs`, `eqBands[]`, `dynBands[]`, `excBands[]`, `imgBandWidth[]`, `dynCrossoverFreqs[]`, and `chainOrder`. These parameters show in UI but don't affect DSP.
+
+**Representative files:**
+- `src/modules/Proof/useCases/setProofParamWithPatch.ts:6-43`.
+
+**Status:** NEW. UI-DSP desync — most Proof parameters are display-only.
+
+---
+
+### N-20. TrackNode.dispose() leaks meterNode port and device controls
+
+**Problem:** `TrackNode.ts:480-508` `dispose()` disconnects analyserNode but never closes `meterNode.port`. It also doesn't clean up `grandBouleControls`, `kneadControls`, or `proofControls` (compare with `removeDevice()` at lines 338-369 which does). Leaks WorkerThread/WASM state.
+
+**Representative files:**
+- `src/modules/AudioEngine/engine/TrackNode.ts:480-508` vs `:338-369`.
+
+**Status:** NEW. Memory leak on track removal.
+
+---
+
+### N-21. Regex escape bug in prompt parser — grid sizes never match
+
+**Problem:** `parsing.ts:139` uses `\\d+` (double backslash) inside a regex literal, creating a pattern that matches literal backslash-d instead of digits. Quantization grid size parsing always fails.
+
+**Representative files:**
+- `src/modules/AiRuntime/transformers/promptParser/parsing.ts:139`.
+
+**Status:** NEW. AI feature broken — grid size prompts never parse.
+
+---
+
+### N-22. Yeast worklet sync race — MIDI drops on processor add
+
+**Problem:** `addYeastProcessor.ts:10` calls `getWorkletNodeSync()` immediately after registering a processor type. If the worklet hasn't initialized, returns null. The processor only exists on the main-thread rack; the worklet silently drops MIDI for that processor.
+
+**Representative files:**
+- `src/modules/Yeast/useCases/addYeastProcessor.ts:10`.
+
+**Status:** NEW. MIDI drop on processor add.
+
+---
+
+### N-23. Extension runEditorScript uses `new Function()` despite security warning
+
+**Problem:** `runEditorScript.ts:26` uses `new Function()` to execute user scripts. Line 5 has a `// SECURITY` comment explicitly warning against this. Scripts from CRDT sync or imported projects execute with full page privileges.
+
+**Representative files:**
+- `src/modules/Extension/useCases/extension/runEditorScript.ts:5,26`.
+
+**Status:** NEW. Security — arbitrary code execution from project files.
+
+---
+
+### N-24. Faust AudioWorklet registration race condition
+
+**Problem:** `compilerEngine.ts:222,236,249,267` uses `resolveReg!()` with non-null assertion. If the Promise constructor fails and `resolveReg` is undefined, concurrent registration requests hang indefinitely.
+
+**Representative files:**
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:222-267`.
+
+**Status:** NEW. Potential hang on Faust plugin load.
+
+---
+
+### N-25. Audio loop gain uses wrong beat offset
+
+**Problem:** `scheduleAudioClips.ts:169` calls `getGainAtBeat(clip.id, iterOffsetBeats)` with a relative offset when an absolute clip-time beat is needed (`clip.startBeat + iterOffsetBeats`). Loop iterations apply gain from the wrong position.
+
+**Representative files:**
+- `src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts:169`.
+
+**Status:** NEW. Audio playback — wrong gain in loops.
+
+---
+
+### N-26. CC and pitch bend values not validated on add
+
+**Problem:** `addMidiCC.ts:11` and `addPitchBend.ts:11` accept raw values without bounds checking. CC should be 0-127, pitch bend ±8192. Invalid values pass through to playback/export.
+
+**Representative files:**
+- `src/modules/MIDI/useCases/midiNoteCrud/addMidiCC.ts:11`.
+- `src/modules/MIDI/useCases/midiNoteCrud/addPitchBend.ts:11`.
+
+**Status:** NEW. Data integrity.
+
+---
+
+### N-27. Crumbs file drop silently fails on web
+
+**Problem:** `handleFileDrop.ts:55-75` gates the entire file drop path behind `if (isTauri())`. On web, file drops are silently ignored — no error, no toast, no fallback.
+
+**Representative files:**
+- `src/modules/Crumbs/useCases/handleFileDrop.ts:55-75`.
+
+**Status:** NEW. Web platform — silent failure.
+
+---
+
+### N-28. Automation circular lane link causes infinite recursion
+
+**Problem:** `getAutomationValueAtBeat.ts:43` adds `laneId` to visited set but should add `lane.linkedLaneId`. A→B→A cycles aren't detected — stack overflow.
+
+**Representative files:**
+- `src/modules/Automation/useCases/automation/getAutomationValueAtBeat.ts:43`.
+
+**Status:** NEW. Crash on circular automation links.
+
+---
+
+### N-29. Builtin synth offline render skips filter envelope modulation
+
+**Problem:** `builtinSynth.ts:375-380` `scheduleNoteOffline()` hardcodes filter cutoff without envelope. Offline bounces sound different from real-time playback.
+
+**Representative files:**
+- `src/modules/Synth/useCases/builtinSynth.ts:375-380`.
+
+**Status:** NEW. Bounce fidelity — offline ≠ realtime.
+
+---
+
+### N-30. Grinder, Bacteria, and Gluten have no device lifecycle hooks
+
+**Problem:** These three plugin modules have no `registerDevice`/`unregisterDevice` pattern (unlike Fermenter, Proof, Levain). When devices are removed, store entries and param batchers leak indefinitely.
+
+**Status:** NEW. Memory leak across three plugins.
+
+---
+
+### N-31. Clip boundary hit test uses inclusive end — off-by-one
+
+**Problem:** `hitTestClip.ts:43` uses `beat <= clip.endBeat` (inclusive). When clicking at exactly a clip's end boundary, the adjacent clip at the same position also matches, causing wrong clip selection.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/hitTestClip.ts:43`.
+
+**Status:** NEW. UX — wrong clip selected at boundaries.
+
+---
+
+### N-32. SampleLibrary analysis creates AudioContext per call, closes prematurely
+
+**Problem:** `analyzeSample.ts:20-31` creates a new AudioContext on every call and closes it in a `finally` block that runs before async analysis completes. May close context while analysis is in progress.
+
+**Representative files:**
+- `src/modules/SampleLibrary/useCases/analyzeSample.ts:20-31`.
+
+**Status:** NEW. Potential crash during sample analysis.
+
+---
+
+### N-33. Knead DSP analysis loses sub-cent precision
+
+**Problem:** `dspAnalysis.ts:66` computes MIDI note as `69 + 12 * Math.log2(f0 / 440)` (continuous cents) but stores in `pitchCenterCents` as an integer, losing vibrato/drift analysis precision.
+
+**Representative files:**
+- `src/modules/Knead/useCases/dspAnalysis.ts:66`.
+
+**Status:** NEW. Low — precision loss in pitch analysis.
+
+---
+
+### N-34. Scoring canvas DPI scaling incomplete
+
+**Problem:** `ScoringPanel.tsx:391-396` applies DPI scaling to StrobeDisplay canvas but not to PolyDisplay, causing inconsistent rendering across display modes.
+
+**Representative files:**
+- `src/modules/Scoring/presentations/views/ScoringPanel.tsx:391-396`.
+
+**Status:** NEW. Low — visual inconsistency.
+
+---
+
+### N-35. 11/13 worklet processors allocate Float32Array on the audio thread
+
+**Problem:** All worklet processors except `grandBouleProcessor`, `recordingProcessor`, and `meteringProcessor` call `new Float32Array()` inside their `process()` method. This allocates on the audio thread and can cause GC pauses → audio glitches. Same files also call `postMessage` in error catch handlers inside `process()`.
+
+**Representative files (all in `src/modules/AudioEngine/services/`):**
+- `toasterProcessor.ts:165,167` — `new Float32Array()`
+- `levainProcessor.ts:208,210`
+- `fermenterProcessor.ts:151,156,172`
+- `grinderProcessor.ts:206,207,216,218`
+- `proofChamberProcessor.ts:85,86`
+- `bacteriaProcessor.ts:109,110,115,116,129`
+- `glutenProcessor.ts:123,124,131,132,138,139`
+- `proofProcessor.ts:91,92,97,98`
+- `kneadProcessor.ts:119,120,129`
+- `scoringProcessor.ts:89,90`
+
+**Needed:** Pre-allocate typed arrays in the constructor; reuse them in `process()`.
+
+**Status:** NEW. RT safety — systemic across all worklets.
+
+---
+
+### N-36. Faust parameter address mismatch — synth params silently fail
+
+**Problem:** Faust DSP files expose params with full addresses like `/FM_Synth/algorithm`, but `faustDeviceFactory.ts:46-73` routes params with bare names (`algorithm`). Additionally, processor name sanitization (`'FM Synth'` → `'FM_Synth'`) doesn't match the lowercase addresses registered by the Faust compiler (`/fm_synth/algorithm`). Params set via `node.setParamValue(name, value)` silently fail because the address doesn't match.
+
+**Representative files:**
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:145` — name sanitization.
+- `src/modules/AudioEngine/repositories/faustDeviceFactory.ts:46-73` — bare name routing.
+
+**Status:** NEW. Critical — ALL Faust synth parameters are broken.
+
+---
+
+### N-37. All Faust instruments compile as monophonic — no chords
+
+**Problem:** `compilerEngine.ts:143` uses `FaustMonoDspGenerator` for ALL instruments (FM Synth, Rhodes, Hammond B3, Minimoog, Acid Bass, etc.). Only one note can sound at a time per Faust instrument. Overlapping notes interfere with envelope/gate state. Users cannot play chords on any Faust synth.
+
+**Representative files:**
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:143`.
+- `src/modules/Synth/useCases/faustInstrumentScheduler/startFaustNote.ts:3-20` — single gate per device.
+
+**Status:** NEW. High — fundamental instrument limitation.
+
+---
+
+### N-38. MIDI import running status bleeds between tracks
+
+**Problem:** `midiImportWorker.ts:116` doesn't reset `runningStatus` when parsing starts a new track. If the previous track's last event uses running status (e.g., 0x90 note-on), the stale status applies to the next track's first events, corrupting note data in multi-track MIDI files.
+
+**Representative files:**
+- `src/modules/MIDI/workers/midiImportWorker.ts:116`.
+
+**Status:** NEW. High — corrupts multi-track MIDI import.
+
+---
+
+### N-39. Sidechain routes lost on project reimport
+
+**Problem:** `exportProjectFile.ts:94` correctly includes `sidechainRoutes: getAllSidechainRoutes()` in the export, but `applyImportedProjectData.ts` never reads or applies these routes on import. All sidechain connections are silently lost.
+
+**Representative files:**
+- `src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts:94`.
+- `src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts` — no sidechain restore.
+
+**Status:** NEW. High — sidechain routing lost on every project save/load cycle.
+
+---
+
+### N-40. Bounce operations have no undo
+
+**Problem:** `bounceOperations.ts:15-111` — `bounceTrack()`, `bounceInPlace()`, `bounceToNewTrack()`, and `bounceSelection()` mutate track state directly without creating undo entries. Destructive operations that cannot be reversed.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/freezeBounce/bounceOperations.ts:15-111`.
+
+**Status:** NEW. High — no undo for destructive operations.
+
+---
+
+### N-41. Frozen buffer offline render always starts at position 0
+
+**Problem:** `renderOffline.ts:86` calls `source.start(0)` for frozen tracks, ignoring the clip's actual `startBeat`. Frozen audio plays at the wrong time offset during bounce/export.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts:86`.
+
+**Status:** NEW. High — export timing wrong for frozen tracks.
+
+---
+
+### N-42. flattenTrack adds hardcoded 4-beat offset
+
+**Problem:** `flattenTrack.ts:29` sets `endBeat: endBeat + 4` regardless of actual frozen buffer duration. Creates visual length mismatch.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts:29`.
+
+**Status:** NEW. Medium.
+
+---
+
+### N-43. Duplicate keyboard shortcut Cmd+Shift+A
+
+**Problem:** `editCommands.ts:74` binds "Deselect All" to `⌘⇧A` and `viewCommands.ts:101` binds "Toggle Automation Panel" to the same combo. Only the automation toggle fires; deselect-all is unreachable via keyboard.
+
+**Representative files:**
+- `src/modules/Command/models/commands/editCommands.ts:74`.
+- `src/modules/Command/models/commands/viewCommands.ts:101`.
+
+**Status:** NEW. Medium — shortcut collision.
+
+---
+
+### N-44. removeTrack doesn't clean up sidechain routes
+
+**Problem:** `removeTrack.ts:10-63` deletes the track and its clips/devices/automation but never removes sidechain routes where the deleted track is `sourceTrackId` or `targetTrackId`. Orphaned routes persist and can crash the audio graph.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/removeTrack.ts:10-63`.
+
+**Status:** NEW. High — orphaned routes after track deletion.
+
+---
+
+### N-45. Ghost clips missing loop/stretch properties in render model
+
+**Problem:** `buildTimelineRenderModel.ts:200-218` constructs ghost clip objects without `loopEnabled`, `loopLength`, `stretchRatio`, or `midiOffsetBeats`. Renderers can't draw loops or stretch indicators on ghost clips.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/buildTimelineRenderModel.ts:200-218`.
+
+**Status:** NEW. Medium — visual issue.
+
+---
+
+### N-46. ScrollY clamping uses hardcoded 200px instead of viewport height
+
+**Problem:** `timelineViewStore.ts:69` clamps max scrollY with `Math.max(0, totalHeight - 200)`. The 200px constant doesn't match the actual viewport height, preventing users from scrolling to see the last tracks when the panel is taller or shorter than 200px.
+
+**Representative files:**
+- `src/modules/Arrangement/stores/timelineViewStore.ts:69`.
+
+**Status:** NEW. Medium — scroll limit wrong.
+
+---
+
+### N-47. insertTime and deleteTime don't shift tempo/time-signature changes
+
+**Problem:** `insertTime()` and `deleteTime()` shift clips, markers, and automation but never touch `tempoMapStore` or `timeSignatureMapStore`. Tempo changes and time signature changes in the affected region become misaligned with the arrangement.
+
+**Representative files:**
+- `src/modules/Arrangement/useCases/timeOperations/` (insertTime, deleteTime, duplicateTimeRange).
+
+**Status:** NEW. High — tempo/time-sig desync after time operations.
+
+---
+
+### N-48. Faust node setParam uses partial names instead of full addresses
+
+**Problem:** `faustDeviceFactory.ts:46-73` calls `node.setParamValue(name, value)` with just the param name (e.g., `algorithm`) but `@grame/faustwasm` expects full addresses (e.g., `/FM_Synth/algorithm`). Partial names may silently fail to set parameters.
+
+**Representative files:**
+- `src/modules/AudioEngine/repositories/faustDeviceFactory.ts:46-73`.
+
+**Status:** NEW. Medium — compounds N-36.
+
+---
+
+## Open issues — Browser AI Inference
+
+### B-01. OPFS model load path duplicates full model in JS heap
+
+**Problem:** `storageManager.ts:100-101` loads models via `fileHandle.getFile()` then `arrayBuffer()`, duplicating full model bytes in JS heap before worker consumption.
+
+**Representative files:**
+- `src/modules/BrowserAi/repositories/storageManager.ts:100-101`.
+
+**Needed:** Worker-side `createSyncAccessHandle()` (where supported) to read into WASM-backed buffers with less intermediate allocation.
+
+**Status:** Verified 2026-04-18. Open — performance.
+
+---
+
+### B-02. DiffSinger inter-stage tensor residency (no WebGPU IO binding)
+
+**Problem:** `onnxInferenceWorker.ts` implements six-stage pipeline (linguistic → duration → pitch → variance → acoustic → vocoder) via `runDiffSingerPipeline`. Each stage `await`s `session.run(...)` feeding outputs to next. No `preferredOutputLocation: 'gpu-buffer'` / IO binding, so intermediate activations may round-trip through CPU between stages.
+
+**Representative files:**
+- `src/modules/BrowserAi/workers/onnxInferenceWorker.ts:130-137` (`DiffSingerSessions`), `:155+` (`runDiffSingerPipeline`).
+
+**Needed:** ORT-Web GPU tensor outputs feeding next stage without CPU copies. Evaluate `preferredOutputLocation` hints.
+
+**Status:** Verified 2026-04-18. Open — performance risk, no profiling data in-repo.
+
+---
+
+### B-03. DDSP / TensorFlow.js stub
+
+**Problem:** `tfjsInferenceWorker.ts` is an intentional stub (Rolldown + COOP/COEP vs cross-origin TF.js CDNs). `renderDdspInstrument` cannot succeed.
+
+**Representative files:**
+- `src/modules/BrowserAi/workers/tfjsInferenceWorker.ts:16-40` — fixed error message.
+
+**Needed:** Port DDSP models to ONNX and run through `onnxInferenceWorker`.
+
+**Status:** Verified 2026-04-18. Open — blocked on model conversion.
+
+---
+
+## Open issues — Dev Environment & Cross-Origin
+
+### S-07. SharedArrayBuffer / COEP residual failures (§8.4)
+
+**Problem:** COOP/COEP headers configured in both `vite.config.ts` and `tauri.conf.json`, but errors still recur from: (1) stale Vite build cache, (2) third-party CDN resources without CORP headers, (3) webview header delivery issues.
+
+**Remaining work:**
+1. Ensure WebLLM model shards are same-origin or CORP-enabled.
+2. Debug header delivery to Tauri webview if SAB remains unavailable.
+
+**Status:** Verified 2026-04-18. Residual.
+
+---
+
+## Open issues — Feature Gaps & UX
+
+### S-10. Delay tempo sync (§8.10)
+
+No code for note-division sync in delay effects. Needs product scope + DSP design.
+
+### S-13. Levain boot time (§8.17)
+
+Speculative: transferable-buffer `postMessage` may queue dozens of MBs without ack flow. Measure before acting.
+
+### S-14. "Improve the templates" (§8.6)
+
+Pure product note. Needs definition: project-level vs track-preset vs plugin-patch templates.
+
+---
+
+## Open issues — Factory Content
+
+### F-01. Legacy Web Audio `builtin-*` devices
+
+**Still present:** `builtin-synth`, `builtin-reverb`, `builtin-drum-kit`, etc. in `builtinInstrumentDescriptors.ts` and `builtinEffectDescriptors.ts`.
+
+**Recommendation:** Deprecate redundant `builtin-*` effects where Faust equivalents exist. Label `builtin-synth` as "basic" if retained. The `builtin-drum-kit` is rudimentary; a full drum machine spec exists at `.agents/specs/missing/drum-machine.md` with research at `.agents/research/factory/advanced-instruments.md` and `.agents/research/factory/active/drum-machine-realism.md`.
+
+---
+
+### F-02. Descriptor layout unification
+
+Device descriptors live in separate modules (`faustEffectDescriptors.ts`, `builtinEffectDescriptors.ts`). A single registry shape for automation + UI remains a maintainability win.
+
+---
+
+## Factory content notes (verified 2026-04-18)
+
+- **FACTORY_PRESETS** in `factoryPresets.ts` aggregates **200+** presets: 41 Faust instrument, 9 Faust effect, 60 expanded, 126 Fermenter, plus category files (bass, lead, pad, keys, strings, drum kits).
+- **Morphing Synth** (`faust-morphing-synth`, DSP `morphing-synth.dsp`): `/wt/morph` is a **crossfade across four static waveforms** — not a wavetable position/scan. True wavetable remains future work.
+- **Hammond drawbars:** Already render **vertical** sliders (`orientation="vertical"` in `HammondB3Layout.tsx`). Remaining polish is cosmetic.
+- **`DeviceFactoryRegistry`** uses flexible matchers via `AudioDeviceStrategy` — not only string prefix matching.
+
+---
 
 ## Open questions
 
-- [ ] Does `crates/proof-chamber/src/proof_chamber.rs` compile as-is? Lines 506-512 reference struct fields (`high_cut_l`, `high_cut_r`, `low_cut_l`, `low_cut_r`) that the struct (362-363) does not declare. Either the workspace is using a feature flag / cfg we didn't examine, there is a real build error, or the file was edited mid-refactor. **This should be answered before any work in §4.**
-- [ ] Is `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx` live code, a draft, or abandoned? Same for `SpectrogramView.tsx`, `SignalFlowDiagram.tsx`, `DecayEqOverlay.tsx` in `src/modules/Plugin/presentations/`.
-- [ ] What is the policy on mono recording — does the audit claim "mono recording missing" mean "stereo recording is broken" (I-29, verified), or does it mean "explicit mono-only recording mode is missing as a feature"? These are different problems.
+- [ ] Is `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx` live code, draft, or abandoned? Same for `SpectrogramView.tsx`, `SignalFlowDiagram.tsx`, `DecayEqOverlay.tsx`.
+- [ ] Mono vs stereo recording policy — I-29 documents single-channel; product decision needed.
+- [ ] WebLLM role in MIDI completion — product decision: parse plain text or tool-supported model?
+- [ ] Crust DSP backend — Faust or Rust/WASM?
+- [ ] Crumbs on web — `createCrumbsInstance` short-circuits to no-op without Tauri. Tag as `platform: 'native'` or build web fallback?
+- [ ] "Improve the templates" — what templates? Where?
 
 ## Risks
 
-- **Silent DSP wrong-answers.** Dither (I-09), imager (I-10), Dutch Oven right-channel EQ (I-07), LR4 cascade (I-08) all produce output that is arithmetically wrong in a way no user test would catch without a reference. Accumulates bad impressions of the plugins.
-- **Live build-health risk.** If I-07's struct field mismatch actually compiles, there is a cfg surface here we don't understand and the plugin may be shipping a different code path than the one we read. If it does not compile, the whole Proof module is broken and we don't know.
-- **Every new plugin makes I-05 worse.** Each addition widens `TrackNode`'s branch tree and the cross-module use-case import surface. Shipping another plugin before I-05 is addressed is a worse-every-time bet.
-- **Two AI dispatchers (I-02) mean any AI bug has to be fixed twice.** Already costing review time.
-- **Persistence gaps (I-14) lose user edits.** Knead pitch edits are user-authored and disappearing.
-- **Singletons (I-03) make "add two instances" a user-visible failure.** This is not subtle — users discover it immediately.
+- **DSP debt** — LR4 topology (I-08), limiter scan (I-22), Crumbs AA (I-12), §I-30 carryovers: wrong or expensive DSP not obvious in casual listening.
+- **Every new plugin widens I-05** — more TrackNode branches until DeviceNode contract lands.
+- **Parallel AI dispatch (I-02)** — behavior diverges; fixes must be replicated.
+- **Persistence gaps (I-14)** — in-memory stores lose edits on reload.
+- **Singletons (I-03)** — multi-instance collisions.
+- **MIDI coordinate split (M-01)** — every new generator or edit path must guess the convention.
+- **Crust (S-04)** — user-facing plugin that silently does nothing.
+- **Multi-track recording (S-03)** — core DAW feature broken under "arm multiple tracks".
+
+## Reproduction quick-reference
+
+| Issue | Minimal steps | Expected vs Actual |
+|-------|--------------|-------------------|
+| S-01 Faders | Drag a track gain fader slowly | Value tracks pointer. Actually: stair-steps; catches up on release |
+| S-03 Multi-track rec | Arm 2 audio tracks → record | Both buffers captured. Actually: only last-armed track gets audio |
+| S-04 Crust silent | Add Crust to a track → play | Audio processed by Crust. Actually: bit-identical to no device; no log |
+| M-01 / G1 | Create a clip at `startBeat = 8`, insert notes via Patterns tab | Notes visible in both timeline and piano roll. Actually: empty in one view |
+| T-01 deleteTimeRange | Select a time range containing a MIDI clip → delete | MIDI notes shift with clip. Actually: notes stay, clip moves → desync |
+
+## Priorities (open issues only)
+
+### Tier 1 — Blocks core DAW workflow / data loss
+1. **N-36 / N-48** — Faust param address mismatch — ALL Faust synth knobs broken.
+2. **N-01** — Clip drag doesn't follow cursor (user-reported, core UX broken).
+3. **N-37** — All Faust instruments monophonic — users can't play chords.
+4. **N-05** — KneadEditor malformed JSX (toolbar render broken).
+5. **N-12** — WaveformEditor receives wrong ID (audio editing corrupted).
+6. **N-13 / N-14b** — Freeze tail unit mismatch + bounce hardcoded 120 BPM.
+7. **N-06** — Punch-in recording broken (feature non-functional).
+8. **N-02 / N-04** — removeClip and deleteTimeRange orphan MIDI data.
+9. **N-03** — duplicateTrack drops CC/pitchBend/automation.
+10. **N-38** — MIDI import running status bleeds between tracks.
+
+### Tier 2 — Significant workflow bugs
+11. **N-39** — Sidechain routes lost on project reimport.
+12. **N-40** — Bounce operations have no undo.
+13. **N-41** — Frozen buffer offline render starts at position 0.
+14. **N-47** — insertTime/deleteTime don't shift tempo/time-sig changes.
+15. **N-44** — removeTrack doesn't clean sidechain routes.
+16. **M-01** — MidiNote.startBeat convention (blocks M-02, T-01, S-08, S-09).
+17. **S-03** — Multi-track recording (critical DAW feature).
+18. **N-10** — IDB auto-save silent failure (data loss on quota).
+19. **N-16** — Automation recording has no undo.
+20. **N-35** — 11/13 worklet processors allocate in process() (RT safety).
+21. **N-15** — Synth velocity→attack inverted (wrong sound).
+22. **N-19** — Proof param bridge incomplete (most params display-only).
+23. **N-21** — Prompt parser regex escape bug (AI grid sizes never parse).
+24. **S-04** — Crust silent (user-facing breakage).
+25. **N-09** — Freeze/bounce ignores mute/solo (incorrect export).
+26. **N-29** — Synth offline render skips filter envelope (bounce ≠ realtime).
+
+### Tier 3 — Important but not blocking
+27. **T-01** — Timeline desync remaining paths.
+28. **N-17 / N-44** — Sidechain/send routes not cleaned on track deletion.
+29. **N-18** — Toaster store singleton.
+30. **N-20** — TrackNode.dispose() memory leaks.
+31. **N-22** — Yeast worklet sync race.
+32. **N-25** — Audio loop gain wrong beat offset.
+33. **N-43** — Duplicate shortcut Cmd+Shift+A.
+34. **N-46** — ScrollY clamping uses hardcoded 200px.
+35. **S-01** — Fader write-path storm.
+36. **I-05 / I-19** — TrackNode / DeviceNode contract.
+37. **I-08** — LR4 crossover (DSP correctness).
+38. **N-23** — Extension script security bypass.
 
 ## Suggested approaches
 
-- **Fix the wrong-DSP bugs first (I-07, I-09, I-10)**: each is a few lines, tests can be added to pin them, impact is user-audible. Start there because cost is minimal and they build trust with users who have heard bad output.
-- **Triage I-07's build-health question before touching Proof code**: read `proof_chamber.rs` in a context where it actually compiles (e.g., `cargo check -p proof-chamber`). Don't bet on the file as it stands.
-- **Unify AI backend dispatch (I-02) before unifying snapshot logic (I-04)**: the latter is a small change inside one caller; the former changes the architecture three callers share. Easier order: I-02, then I-04, then I-18 (fallback behaviour) naturally falls out of the unified dispatch.
-- **Define a plugin-node contract in `AudioEngine` to unblock I-05 and I-19 together**: a `DeviceNode` interface with `setParam`, `scheduleParam`, `setBypass`, `dispose`. Migrate plugins one at a time; each migration removes a branch from `TrackNode`.
-- **For persistence (I-13, I-14)**: invert `createAutomergeStorage`'s dependency first (I-13), so the two volatile stores can adopt the adapter via the public API.
-- **Carry §I-30 into per-area audits**: a single consolidated audit cannot do justice to 40+ DSP-specific claims. Create per-plugin audits under `.agents/audits/` and migrate §I-30 bullets into them as the respective maintainers review.
-
-## Recommendation
-
-Start with **I-07** — verify whether Dutch Oven even compiles as-is (`cargo check -p proof-chamber`). If yes, fix the missing filter fields and wire both channels through output EQ. If no, open a blocker and fix the build before doing anything else in §4.
-
-Once I-07 is triaged, pick up **I-09** and **I-10** (each ~5 lines) as trust-building fixes.
-
-Then tackle **I-02** (unify AI dispatch) and **I-05** (define `DeviceNode` interface) in parallel — both are architectural foundations that many downstream issues depend on.
+- **M-01 first:** Pick one `MidiNote.startBeat` convention and align all paths. Write a unit test: clip at `startBeat = 8`, note visible in both timeline and roll.
+- **S-03 independently:** Refactor `recording.ts` to `Map<trackId, RecordingSession>`. Does not depend on S-02 (selection model).
+- **S-04 interim:** Register `PluginNotImplementedError` for Crust + toast. Then audit `BUILTIN_PLUGINS` for other silent-add descriptors.
+- **I-05 / I-19 together:** Define `DeviceNode` interface spec, migrate incrementally.
+- **I-02 before I-04:** Unify AI dispatch before redesigning DSO undo.
+- **S-01 systemically:** Split fast/commit path as pilot on one fader, then generalise.
+- **Plugin instantiation hardening:** SAB-missing is handled (`PluginRequiresIsolationError`). Generalise to a `createPluginNodeSafely` wrapper catching WASM fetch failures, AudioWorklet registration errors, and handshake timeouts — each as a typed error with toast mapping.
 
 ## Resolved
 
-- ~~Transport/useCases/playheadScheduler.ts used setTimeout for main tick~~ — resolved. Refactored to use a dedicated Web Worker (`schedulerWorker.ts`) to bypass 1000ms tab throttling.
-- ~~CRDT ID generation violations~~ — resolved. Replaced `Date.now()` and global counters with `crypto.randomUUID()` in `startRecording.ts`, `duplicateTimeRange.ts`, and multiple ID counter repositories.
-- ~~Transport/useCases/scheduling/scheduleAudioClips.ts created new GainNodes inside tick~~ — resolved. Refactored to use a reusable `GainNode` pool.
-- ~~AudioWorklet message queues use Array.splice~~ — resolved. `ToasterProcessor`, `LevainProcessor`, and `FermenterProcessor` now use an allocation-free circular queue algorithm with a `_queueHead` read index.
-- ~~Toaster missing `busRoute` / `transientAttack` pad parameter hydration~~ — resolved pre-2026-04-16. `PAD_PARAM_MAP` in `toasterProcessor.ts:20-36` now includes both `busRoute: 'bus_route'` and `transientAttack: 'transient_attack'`.
-- ~~Knead offline analysis pipeline "missing entirely"~~ — resolved pre-2026-04-16. Full chunked WASM pipeline exists at `src/modules/AudioEngine/useCases/audioAnalysis/analyzePitchForClip.ts` (KneadInstance.process in blocks, yields every 16 chunks, calls `ingestDspAnalysis`). Ingestion logic lives in `src/modules/Knead/useCases/dspAnalysis.ts` and is populated, not stubbed.
-- ~~AiRuntime name resolution "accidentally adds tracks via splice"~~ — resolved or never existed as described. No `splice` in `src/modules/AiRuntime/transformers/promptParser/parsing.ts` or in `src/modules/AiRuntime/useCases/dsoEditor/compileDso.ts`. `resolveDsoNames` (compileDso.ts:279) uses `bestMatch` (fuzzy) against in-memory `mockTracks`, never mutates the real track store.
-- ~~Levain "no jitter buffer in Rust engine"~~ — partially stale. `levainProcessor.ts:86-105` implements a sorted sample-frame queue. Remaining issue is that `_drainQueue` fires at block-end granularity, not sample-accurate — reframed under the generic "block-aligned plugin scheduling" family, not a missing jitter buffer.
+- **I-07** — Dutch Oven stereo EQ struct mismatch: FIXED 2026-04-16.
+- **I-09** — TPDF dither quantisation: FIXED 2026-04-16.
+- **I-10** — Stereo imager centre channel at max width: FIXED 2026-04-16.
+- **I-11** — Crumbs filter shared L/R state: FIXED 2026-04-16.
+- **I-13** — `createAutomergeStorage` deep import: FIXED 2026-04-16.
+- **I-17** — ReasoningBlock ARIA: FIXED 2026-04-16.
+- **I-18** — DSO schema fallback: FIXED 2026-04-16.
+- **I-20** — Toaster/Levain worklet queue splice: FIXED 2026-04-16 (read-head index).
+- **I-23** — ProofChamber mono input drop: FIXED 2026-04-16.
+- **I-24** — ProofPanel dynBands mutation: FIXED 2026-04-16.
+- **Timeline §2** — MIDI split data loss: FIXED 2026-04-16 (`splitMidiNotesAtBeat`).
+- **Timeline §3** — MIDI duplication data loss: FIXED 2026-04-16 (`duplicateClipCore` now copies notes).
+- **Timeline §5** — Audio waveform squash: FIXED 2026-04-16 (windowed `getWaveformPeaks`).
+- **DiffSinger cache key** — ms-quantized hash confirmed correct.
+- Transport `setTimeout` → Web Worker scheduler.
+- CRDT ID generation → `crypto.randomUUID()`.
+- `scheduleAudioClips` GainNode allocation → reusable pool.
+- AudioWorklet message queues → allocation-free circular queue.
+- Toaster `busRoute`/`transientAttack` hydration.
+- Knead offline analysis pipeline exists (not stubbed).
+- AiRuntime name resolution (no splice mutation).
+- Levain jitter buffer (sorted sample-frame queue exists; block-end granularity reframed).
 
 ---
 
-_Previous revision of this file used a flat bulleted list without file/line references for many items; it is replaced here by the template in `scripts/agents/templates/audit.md`. Verification performed on 2026-04-16 against `HEAD`._
+## Detailed root-cause analysis appendix
 
-# Audit: Timeline and MIDI Editing Behavior
+The following deep analyses are preserved for context. Issue IDs above are the canonical references.
 
-## Goal
+### §8.14 — Fader write-path storm (→ S-01)
 
-The Timeline should provide a robust, visually accurate environment for arranging and editing audio and MIDI clips. This includes precise dragging, dropping, stretching, cutting, and looping behaviors, with accurate visual previews (waveforms and MIDI notes) at all times, including during interactions.
+Full evidence chain in S-01 above. Key insight: `trackStore.set(...)` triggers re-render of every subscriber per pointermove; some subscribers take >16ms; main thread misses subsequent pointer events.
 
-## Current State
+### §8.18 — Multi-track selection + recording (→ S-02, S-03)
 
-The Timeline implementation uses a React-managed state with a Canvas-based renderer (`createCanvasRenderer.ts`). Interaction logic is primarily in `useTimelineInteractions.ts`, which uses a "preview" mechanism (`clipDragPreviewRef`) to provide high-performance visual feedback during drags without committing to the main store on every frame.
+Full evidence in S-02 and S-03 above. Key insight: scalar `selectedTrackId` and single `RecordingSession` are independent problems that can be fixed separately.
 
-## Findings
+### §8.19 — Crust silent (→ S-04)
 
-- **MIDI notes are absolute**: MIDI notes in the `midiStore` are stored with absolute `startBeat` on the global timeline. While this simplifies playback scheduling, it complicates almost all editing operations (moving, splitting, stretching) as they must manually shift or scale all notes in the affected clips.
-- **Editing operations ignore MIDI/Automation**: Operations like duplicating, nudging, ripple deleting, and inserting time only manipulate the clip boundaries in `trackStore` and fail to coordinate with `midiStore` or `automationStore`, resulting in massive data loss or desync.
-- **Preview mechanism is incomplete**: The `clipDragPreviewRef` only stores new `startBeat` and `endBeat` for clips. The renderer (`drawMidiNotePreview`) uses these new boundaries but fetches original absolute notes, causing a visual mismatch during drags.
-- **Waveform rendering is naive**: `drawWaveformPeaks` squashes the entire audio buffer into the clip's visual width, ignoring `audioOffsetBeats`, `stretchRatio`, and the clip's actual duration relative to the buffer.
+Full evidence in S-04 above. Key insight: no DSP implementation exists anywhere; the engine silently returns when `findWasmDescriptor('crust')` is undefined.
 
-## Issues
+### §14 — MidiNote.startBeat coordinate conventions (→ M-01, M-02)
 
-### 1. [CRITICAL] Widespread Time-Shift Desync and Data Loss
+Full evidence table in M-01. Key insight: freeze path assumes clip-relative; duplicate/AI paths assume timeline-absolute; `importMidiFile` masks the issue by forcing `startBeat = 0`.
 
-Many timeline operations shift clips in time without shifting their associated MIDI notes or automation points. Because MIDI notes and automation are stored in absolute time, they become desynced from the clips.
+### Instrumentation recommendations (from systemic audit)
 
-- **Files**:
-    - `src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts`
-    - `src/modules/Arrangement/useCases/timeOperations/insertTime.ts`
-    - `src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts`
-    - `src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts`
-- **Needed**: All clip movement logic must call `shiftClipMidiNotes` and `shiftClipAutomation` appropriately, or the underlying data model needs to be refactored so that notes/automation belong to the clip conceptually and use relative positioning.
-- **Status (2026-04-16)**: **Partially FIXED**. `nudgeClip` now calls both `shiftClipMidiNotes` and `shiftClipAutomation` when the clip actually moves; `insertTime` now calls the new `shiftMidiNotesAfterBeat` use case so MIDI notes and CC/pitch-bend events follow the same global time insert that clips, markers, and automation already did. **Deferred for `deleteTimeRange` and `rippleDeleteClips`** — same class of bug, but the fix requires a three-way partition per clip (notes before / inside / after the deleted range) and is scoped as a follow-up.
+- **Recording-lifecycle inspector.** Dev-only overlay: `activeRecordingRef`, `transportStore.isRecording`, clip `endBeat` in real time.
+- **Write-path profiler.** Wrap `trackStore.set` to track time-to-next-frame and downstream re-render count.
+- **Coordinate hit-test debugger.** Dev flag for bounding boxes in MIDI editor overlay — validates fold fixes (S-08/S-09).
 
-### 2. [CRITICAL] MIDI Split/Cut Data Loss
+---
 
-When a MIDI clip is split using the Cut tool, the new "right" clip is created without any notes. The notes from the original clip remain associated with the "left" clip ID, but since the left clip's `endBeat` is now the split point, those notes are no longer visible or playable.
-
-- **File**: `src/modules/Arrangement/useCases/clipEditing/splitClip.ts`
-- **Needed**: `splitClip` must identify all notes within the original clip's range and re-associate/clone the notes that fall into the new right clip's range to the new clip ID.
-- **Status (2026-04-16)**: **FIXED**. New MIDI use case `splitMidiNotesAtBeat` partitions notes between the source and the new clip id, splitting any note that straddles the cut into a left (truncated) and right (new-clip) half. `splitClip` calls it whenever a MIDI clip is split.
-
-### 3. [CRITICAL] MIDI Duplication Data Loss
-
-Duplicating a MIDI clip creates a new clip ID and copies automation, but it completely fails to copy any MIDI notes to the new clip.
-
-- **File**: `src/modules/Arrangement/useCases/clip/duplicateClipCore.ts`
-- **Needed**: `duplicateClipCore` must read notes from `midiStore`, clone them with the new absolute `startBeat`, and associate them with the new clip ID.
-- **Status (2026-04-16)**: **FIXED**. `duplicateClipCore` now reads `getNotesForClip(clipId)`, shifts each note by `newStartBeat - originalStartBeat`, and batches them into the new clip id via `batchAddMidiNotes`.
-
-### 4. [MAJOR] MIDI Drag Preview "Stay Behind" Bug
-
-During a MIDI clip drag, the clip boundary (rectangle) moves with the mouse, but the MIDI note previews stay in their original positions. This is because `drawMidiNotePreview` calculates relative positions using the NEW clip `startBeat` but the OLD absolute note `startBeat`.
-
-- **File**: `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` (in `drawMidiNotePreview`)
-- **Needed**: `drawMidiNotePreview` needs to know if a clip is being dragged and by how much, or `buildTimelineRenderModel` must shift the notes in the render model itself during the preview phase.
-- **Status (2026-04-16)**: **Deferred** — preview-layer reshape. Cleanest fix is to add a `visualShift` to `ClipRenderModel` populated by `buildTimelineRenderModel` during the preview phase, then have `drawMidiNotePreview` add it to each note's x. Deferred to a follow-up paired with §8.
-
-### 5. [MAJOR] Audio Waveform "Squash" Bug
-
-The waveform renderer always shows the entire audio buffer squashed into the clip width. If a 1-bar clip points to a 10-minute file, the entire 10 minutes are rendered inside that 1 bar. It ignores `audioOffsetBeats` and `stretchRatio`.
-
-- **File**: `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` (in `drawWaveformPeaks`) and `src/modules/AudioEngine/stores/audioBufferCache.ts`
-- **Needed**: `getWaveformPeaks` should accept `startSample` and `endSample` parameters. `drawWaveformPeaks` should calculate these based on `clip.audioOffsetBeats` and `clip.duration`.
-- **Status (2026-04-16)**: **FIXED**. `getWaveformPeaks(id, numBins, { startSample, endSample })` now supports windowed peak generation and caches per window. `ClipRenderModel` carries `audioOffsetBeats` and `stretchRatio`; `drawWaveformPeaks` computes the sample window from clip beats using `tempo` and `sampleRate` so trimmed / offset / stretched clips render the correct slice.
-
-### 6. [MAJOR] MIDI Stretching Not Implemented
-
-Dragging the edge of a MIDI clip with the Stretch tool (or Shift+drag) only changes the clip's `endBeat` (trimming/extending). It does not scale the MIDI notes' positions or durations.
-
-- **File**: `src/modules/Arrangement/useCases/clip/moveClip.ts` and `src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchRatio.ts`
-- **Needed**: Implement a `scaleClipMidiNotes(clipId, ratio)` use case that is called when a stretch operation is committed.
-- **Status (2026-04-16)**: **Deferred** — feature work, needs a spec first (the scale should anchor on clip `startBeat`; interplay with audio `stretchRatio` needs to be specified).
-
-### 7. [MINOR] MIDI Looping Visual Distortion
-
-When a MIDI clip is trimmed to be longer than its `loopLength`, `drawMidiNotePreview` visually stretches the notes to fit the new duration instead of repeating them correctly. This is due to using `relStart / clipDuration` as the X-coordinate.
-
-- **File**: `src/modules/Arrangement/presentations/renderers/clipDrawing.ts` (in `drawMidiNotePreview`)
-- **Needed**: Change the coordinate calculation to use `relStart * pixelsPerBeat` (absolute pixels from clip left) instead of a percentage of the width.
-- **Status (2026-04-16)**: **Deferred** — bundled with §4 / §8 in the preview-layer reshape.
-
-### 8. [MINOR] Missing Preview for Stretching/Trimming
-
-While "move" drags have a robust preview, "stretch" and "trim" operations only update the clip boundary in the preview. MIDI notes and waveforms do not update their internal scaling/offset until the drag is released.
-
-- **File**: `src/modules/Arrangement/useCases/buildTimelineRenderModel.ts`
-- **Needed**: The preview model should support a `stretchRatio` or `visualOffset` that the drawing functions can respect.
-- **Status (2026-04-16)**: **Partially groundwork in place** — `ClipRenderModel` now carries `audioOffsetBeats` and `stretchRatio`, so the render model is no longer the blocker. Wiring the preview phase to update these during a stretch/trim drag is the remaining piece, deferred with §4 / §7.
-
-## Priorities
-
-1. **Fix Widespread Time-Shift Desync** (Critical - data loss during core timeline operations).
-2. **Fix MIDI Split Data Loss** (Critical - data loss during editing).
-3. **Fix MIDI Duplication Data Loss** (Critical - data loss during editing).
-4. **Fix Audio Waveform "Squash"** (Major - fundamental visual correctness).
-5. **Fix MIDI Drag Preview** (Major - UX / visual feedback).
-6. **Implement MIDI Stretching** (Major - feature parity).
-
-## Risks
-
-- **Memory/Performance**: Fixing `getWaveformPeaks` to support arbitrary ranges might increase peak-generation overhead if not cached properly (e.g., via mipmaps).
-- **Undo/Redo**: Fixing MIDI split/stretch requires careful coordination with the undo system to ensure notes are correctly restored.
-
-## Suggested Approaches
-
-- **Move to Relative MIDI Notes**: Consider changing the MIDI model to store notes relative to the clip start. This would automatically fix moving and simplify splitting/stretching, though it requires a migration and updates to the scheduler. If migration is impossible, ensure every clip modifier cleanly coordinates with `midiStore`.
-- **Enhanced Render Model**: Update `ClipRenderModel` to include a `visualShift` or `visualScale` property that is populated by `buildTimelineRenderModel` during previews, allowing `clipDrawing.ts` to render correctly without touching the main store.
+_Merged from `audio-generation.md`, `factory-content-status.md`, `systemic-issues-root-cause.md`, and original `consolidated-issues.md` on 2026-04-18. All claims re-verified against HEAD._
