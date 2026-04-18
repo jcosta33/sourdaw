@@ -282,6 +282,6 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 ## Implementation Status
 
 - **What is implemented:** Basic sampler functionalities are present within `Fermenter` (`sampler.rs`), `Levain` (`voice.rs`), and `Grand_Boule` (`attack_sampler.rs`).
-- **What is not implemented:** A standalone `sampler_engine` Rust crate or a dedicated `modules/Sampler` React module for the Unified Sampler Suite. The four playback modes, unified UI, and advanced warp/slice features as a standalone instrument are missing.
+- **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 - **What is done well:** Core audio primitives (reading buffers, basic playback) exist in other engines.
-- **What needs refactoring:** The sampler logic needs to be consolidated into the proposed `sampler_engine` architecture and the frontend `Sampler` module needs to be built from scratch.
+- **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

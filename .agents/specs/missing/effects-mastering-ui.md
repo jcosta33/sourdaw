@@ -499,3 +499,19 @@ Every test lives at `src/modules/<Plugin>/presentations/views/__tests__/<Panel>.
 - **Naming conflicts.** Cost: presets, routes, docs, and marketing diverge between product lines. Mitigation: OQ1 and OQ2 are blocked on a product-level rename decision; this spec is explicit that a rename is not a drive-by change.
 - **Two plugins currently modeled differently (Dutch Oven vs the others).** Dutch Oven lives under `src/modules/Plugin/` with its panel at `Plugin/presentations/views/ProofChamberPanel.tsx`, whereas Gluten/Grinder/Crust/Proof live in their own modules. Refactoring Dutch Oven into its own module is out of scope for this spec; the tier migration targets its current location. If a later architectural spec relocates the reverb, the tier plumbing moves with it.
 - **Scope creep.** Adding new analysis features, new translation curves, a preset marketplace, or telemetry is seductive. Cost: never shipping. Mitigation: they are in Non-goals; reopening requires an explicit spec revision.
+
+---
+
+## Implementation Status
+
+**What is implemented:**
+- None. This spec describes a future unified refactor of the plugin UI system.
+
+**What is not implemented:**
+- Disclosure Tiers (Play/Shape/Build/Route/Lab), LUFS-matched bypass, shared metering bridge, and the specific Proof/Dutch Oven enhancements.
+
+**What is done well:**
+- Strong focus on consistency and professional UX standards.
+
+**What needs refactoring:**
+- N/A

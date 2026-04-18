@@ -160,6 +160,7 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
               ]
             : [];
 
+    const initialAltId = `alt-${crypto.randomUUID().slice(0, 8)}`;
     return {
         id: input.id ?? (input.kind === 'master' ? 'master' : `track-${crypto.randomUUID().slice(0, 8)}`),
         name: input.name,
@@ -187,8 +188,8 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
         soloSafe: input.kind === 'bus',
         notes: '',
         inputId: null,
-        activeAlternativeId: 'alt-1',
-        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        activeAlternativeId: initialAltId,
+        alternatives: [{ id: initialAltId, name: 'Alternative 1', clips: [] }],
         vcaGroupId: null,
         midiOutputTrackId: null,
         followChordTrack: false,

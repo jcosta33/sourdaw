@@ -215,6 +215,6 @@ The most impactful implementation priorities are: the surface elevation system (
 ## Implementation Status
 
 - **What is implemented:** The core true-black aesthetic and skeuomorphic techniques (rim lighting, gradient-edge surfaces) are implemented via global utilities in `src/styles/main.css` (e.g., `daw-panel-surface`, `daw-inset-surface`). Typography and base colors are defined in `tokens.css` using CSS variables.
-- **What is not implemented:** The specific token names `--surface-deep`, `--surface-base`, etc., as requested in the spec are not used directly; instead, `--color-bg-*` (e.g., `--color-bg-panel`) and `--color-surface-*` aliases are used in `tokens.css`. Some values (like `overlay`) slightly differ from the spec's recommendation.
+- **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 - **What is done well:** The skeuomorphic "rim lighting" effect is consistently applied via the `@utility` definitions in `main.css`, creating a professional DAW feel that effectively uses luminance for elevation on a dark background.
-- **What needs refactoring:** Consolidate surface token naming in `tokens.css` to match the spec's `--surface-*` convention if strict alignment is required, or update the spec to reflect the established `--color-bg-*` / `--color-surface-*` naming.
+- **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

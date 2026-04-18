@@ -12,6 +12,11 @@ for (let n = 0; n < 128; n++) {
 export type RenderOfflineOptions = {
     onProgress?: (progress: number) => void;
     abortSignal?: AbortSignal;
+    includeInserts?: boolean;
+    includeSends?: boolean;
+    includeAutomation?: boolean;
+    normalization?: 'off' | 'protection' | 'full';
+    autoTail?: boolean;
 };
 
 export async function renderTrackOffline(
@@ -27,15 +32,29 @@ export async function renderTrackOffline(
     const durationSeconds = (durationBeats / tempo) * 60;
     const midi = midiStore.value;
 
-    if (track.kind === 'midi' && midi) {
-        const offlineCtx = new OfflineAudioContext(2, Math.ceil(durationSeconds * sampleRate), sampleRate);
-        const trackGain = offlineCtx.createGain();
-        trackGain.gain.value = track.gain;
-        const trackPan = offlineCtx.createStereoPanner();
-        trackPan.pan.value = track.pan / 50;
-        await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
-        trackPan.connect(offlineCtx.destination);
+    const includeInserts = options?.includeInserts ?? true;
+    const includeAutomation = options?.includeAutomation ?? true;
+    // includeSends implementation is deferred to a subgraph-aware render update
 
+    const offlineCtx = new OfflineAudioContext(2, Math.ceil((durationSeconds + (options?.autoTail ? 10 : 0)) * sampleRate), sampleRate);
+    
+    // Set up track output nodes
+    const trackGain = offlineCtx.createGain();
+    trackGain.gain.value = includeAutomation ? track.gain : 0.8;
+    
+    const trackPan = offlineCtx.createStereoPanner();
+    trackPan.pan.value = includeAutomation ? track.pan / 50 : 0;
+
+    // Build device chain if requested
+    if (includeInserts) {
+        await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
+    } else {
+        trackGain.connect(trackPan);
+    }
+    
+    trackPan.connect(offlineCtx.destination);
+
+    if (track.kind === 'midi' && midi) {
         for (const clip of track.clips) {
             if (clip.type !== 'midi') continue;
             const notes = midi.notesByClipId[clip.id];
@@ -51,6 +70,12 @@ export async function renderTrackOffline(
                 const env = offlineCtx.createGain();
                 osc.type = 'triangle';
                 osc.frequency.value = freq;
+                
+                // Simple synth for MIDI tracks without instruments (fallback)
+                // If there's an instrument in the chain, buildDeviceChain handles it
+                // but we still need to trigger noteOn/Off if possible.
+                // TODO: properly trigger instrument nodes in the chain.
+                
                 env.gain.setValueAtTime(0, noteStart);
                 env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, noteStart + 0.005);
                 env.gain.setValueAtTime((note.velocity / 127) * 0.3, noteStart + noteDur - 0.01);
@@ -61,19 +86,9 @@ export async function renderTrackOffline(
                 osc.stop(noteStart + noteDur + 0.01);
             }
         }
-
-        return renderWithProgress(offlineCtx, options);
     }
 
     if (track.kind === 'audio') {
-        const offlineCtx = new OfflineAudioContext(2, Math.ceil(durationSeconds * sampleRate), sampleRate);
-        const trackGain = offlineCtx.createGain();
-        trackGain.gain.value = track.gain;
-        const trackPan = offlineCtx.createStereoPanner();
-        trackPan.pan.value = track.pan / 50;
-        await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
-        trackPan.connect(offlineCtx.destination);
-
         for (const clip of track.clips) {
             const buffer = audioBufferCache.get(clip.audioBufferId ?? '');
             if (!buffer) continue;
@@ -85,11 +100,20 @@ export async function renderTrackOffline(
             source.connect(trackGain);
             source.start(Math.max(0, clipStart), 0, Math.min(clipDuration, buffer.duration));
         }
-
-        return renderWithProgress(offlineCtx, options);
     }
 
-    return null;
+    const buffer = await renderWithProgress(offlineCtx, options);
+    
+    // Apply tail trimming or normalization if needed
+    if (options?.autoTail) {
+        // TODO: implement silence detection and trim
+    }
+    
+    if (options?.normalization === 'full') {
+        // TODO: implement normalization
+    }
+
+    return buffer;
 }
 
 async function renderWithProgress(

@@ -362,6 +362,6 @@ The plugin is considered shippable when ALL of the following are true:
 ## Implementation Status
 
 - **What is implemented:** The Rust DSP engine is robustly implemented in `crates/daw-dsp/src/grand_boule`. It includes the modal string resonator, hammer nonlinearity, coupled strings, sympathetic resonance, soundboard, and pedals.
-- **What is not implemented:** The frontend UI module (`src/modules/PianoPlugin` or `GrandBoule`) is missing. There is no dedicated React interface to expose the piano parameters.
+- **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 - **What is done well:** The physical modeling DSP in Rust is very comprehensive and adheres to the physical equations described in the research.
-- **What needs refactoring:** A dedicated frontend module needs to be created to wrap the `grand_boule` DSP engine and fulfill the React/WebGPU UI requirements.
+- **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

@@ -37,6 +37,7 @@ export function flattenTrack(trackId: string): void {
         muted: false,
     };
 
+    const altId = `alt-flatten-${crypto.randomUUID().slice(0, 8)}`;
     updateTrack(trackId, (t) => ({
         ...t,
         kind: 'audio',
@@ -45,7 +46,7 @@ export function flattenTrack(trackId: string): void {
         frozen: false,
         frozenBufferId: undefined,
         freezeState: { status: 'unfrozen' },
-        activeAlternativeId: 'alt-main',
-        alternatives: [{ id: 'alt-main', name: 'Main', clips: [newClip] }],
+        activeAlternativeId: altId,
+        alternatives: [{ id: altId, name: 'Flattened', clips: [newClip] }],
     }));
 }

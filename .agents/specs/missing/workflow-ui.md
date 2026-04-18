@@ -807,3 +807,20 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 - **Procedural modulation surface area**: "Connect anything to anything" is vast. Start with a curated parameter set; expand incrementally.
 - **Controller scripting security**: Third-party scripts in a Worker sandbox are safe but limit API capability (no direct DOM access). Trade-off: security vs power. The restricted API is the right default.
 - **In-place MIDI editing vs full editor**: Inline editing at arrangement track height constrains vertical space. Only basic operations are feasible inline — complex editing requires the full piano roll. This is an intentional scope limit, not a gap.
+
+---
+
+## Implementation Status
+
+**What is implemented:**
+- R-B3.2 (Ripple Delete move) and R-B3.3 (Ripple toggle) are implemented via the `ripple-delete-ownership.md` refactor.
+- Basic note CRUD (R-A1-A2 partially) and tool switching (R-A3) exist but the advanced modifiers (Alt+drag) and timing-based switching are not fully verified against this spec's strict ACs.
+
+**What is not implemented:**
+- The vast majority of the 11 feature areas, including WebGPU visualizations (halos, spectrogram), Sample intelligence (UMAP, HNSW), and VCA fader tracks.
+
+**What is done well:**
+- Clear phasing and release gates defined for a massive UX overhaul.
+
+**What needs refactoring:**
+- N/A

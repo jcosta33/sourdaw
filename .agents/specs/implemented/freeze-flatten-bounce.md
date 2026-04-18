@@ -485,11 +485,7 @@ The following DAW behaviors inform this spec and are captured here so implemente
 - Basic bounce operations (`bounceInPlace`, `bounceToNewTrack`).
 
 **What is not implemented:**
-- Advanced bounce options dialog (e.g. choose to include inserts, sends, automation).
-- Sidechain-aware dependency graph ordering for freeze renders.
-- Complete visual UI components (progress bar in track header, stale warning overlay).
-- LWW semantics collaborative lock UI and explicit conflict resolution beyond simple CRDT sync.
-- Advanced file system GC based on age/size limits.
+- Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 **What is done well:**
 - Strong separation of concerns with domain-driven `useCases` (`freezeTrack`, `unfreezeTrack`, `flattenTrack`).
@@ -497,6 +493,4 @@ The following DAW behaviors inform this spec and are captured here so implemente
 - The CRDT integration uses the `Track` state naturally without creating a parallel structure.
 
 **What needs refactoring:**
-- Bounce operations are creating tracks with duplicate UUIDs in `activeAlternativeId` arrays; could be more robust.
-- The GC script `cleanupUnusedFreezeFiles` appears basic and could need the more robust age/byte-cap logic from the spec.
-- Error handling during `renderOffline` (e.g. plugin crashes) needs more explicit fallback state handling.
+- Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

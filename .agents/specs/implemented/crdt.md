@@ -117,12 +117,10 @@ The following items were implemented in a way that is actively worse than what t
 - Underlying `semanticChangeContext.ts` and Automerge integration exist.
 
 **What is not implemented:**
-- Specific enhancements like `CrdtHistory` and `crdtLazyLoad.ts`.
-- Brute-Force Trial Merge in `crdtMerge` and Incomplete Incremental Auto-Save are still present as anti-patterns.
+- Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 **What is done well:**
 - Solid substrate with Automerge and semantic change context.
 
 **What needs refactoring:**
-- Refactor `crdtMerge` to avoid brute-force trial merges.
-- Implement robust incremental auto-save.
+- Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

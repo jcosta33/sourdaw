@@ -325,6 +325,6 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 ## Implementation Status
 
 - **What is implemented:** A local-first sample library module (`src/modules/SampleLibrary`) exists with basic folder indexing (`LibraryRoot`), sample record management (`SampleRecord`), folder tree building, and metadata analysis (BPM, key, spectral descriptors). It also includes a spatial map for sample similarity.
-- **What is not implemented:** The core requirements of this spec are missing: Freesound OAuth2 integration, offline CC0 library support (packs), the specific Rust `PackIndex` and `SampleEntry` models (the current model is in TypeScript), `nucleo-matcher` fuzzy search, advanced audio preview with dedicated thread and crossfades, waveform peak cache, pack downloader, and attribution/license display.
+- **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 - **What is done well:** The existing local folder scanning and metadata analysis are functional and follow the module architecture.
-- **What needs refactoring:** The existing TypeScript models and stores need to be migrated or replaced by the Rust-backed architecture described in this spec to support content-addressing (blake3) and high-performance fuzzy search.
+- **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

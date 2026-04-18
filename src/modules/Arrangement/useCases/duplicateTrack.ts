@@ -2,8 +2,8 @@ import { getTrackById } from '../repositories/track/getTrackById';
 import { updateTrack } from '../repositories/track/updateTrack';
 import { midiStore } from '#/modules/MIDI/stores';
 import { addTrack } from './addTrack';
-import { addClip } from './clip/addClip';
 import { type MidiNote } from '../models/MidiNoteViewTypes';
+import { type Track, type Clip } from '../models/Track';
 
 export function duplicateTrack(trackId: string): void {
     const source = getTrackById(trackId);
@@ -11,49 +11,81 @@ export function duplicateTrack(trackId: string): void {
         return;
     }
 
-    const newTrack = addTrack({ name: `${source.name} (copy)`, kind: source.kind });
+    const newTrackId = `track-dup-${crypto.randomUUID().slice(0, 8)}`;
+    
+    // 1. Deep copy alternatives and their clips
+    const newAlternatives = source.alternatives.map((alt) => {
+        const newAltId = `alt-dup-${crypto.randomUUID().slice(0, 8)}`;
+        const newClips: Clip[] = alt.clips.map((clip) => {
+            const newClipId = `clip-dup-${crypto.randomUUID().slice(0, 8)}`;
+            
+            // Handle MIDI notes duplication if needed
+            if (clip.type === 'midi') {
+                const midiState = midiStore.value;
+                const sourceNotes = midiState?.notesByClipId[clip.id];
+                if (sourceNotes && sourceNotes.length > 0) {
+                    const copiedNotes: MidiNote[] = sourceNotes.map((n) => ({
+                        ...n,
+                        id: `note-dup-${crypto.randomUUID().slice(0, 8)}`,
+                    }));
+                    const currentMidi = midiStore.value;
+                    midiStore.set({
+                        notesByClipId: {
+                            ...(currentMidi?.notesByClipId ?? {}),
+                            [newClipId]: copiedNotes,
+                        },
+                        ccByClipId: currentMidi?.ccByClipId ?? {},
+                        pitchBendByClipId: currentMidi?.pitchBendByClipId ?? {},
+                    });
+                }
+            }
+
+            return {
+                ...clip,
+                id: newClipId,
+                trackId: newTrackId,
+            };
+        });
+
+        return {
+            ...alt,
+            id: newAltId,
+            clips: newClips,
+        };
+    });
+
+    // 2. Find new active alternative ID
+    const sourceActiveIndex = source.alternatives.findIndex((alt) => alt.id === source.activeAlternativeId);
+    const newActiveAlternativeId = newAlternatives[sourceActiveIndex]?.id ?? newAlternatives[0]?.id ?? '';
+
+    // 3. Add the track
+    const newTrack = addTrack({ 
+        id: newTrackId,
+        name: `${source.name} (copy)`, 
+        kind: source.kind 
+    });
+    
     if (!newTrack) {
         return;
     }
 
-    for (const clip of source.clips) {
-        const newClip = addClip({
-            trackId: newTrack.id,
-            startBeat: clip.startBeat,
-            endBeat: clip.endBeat,
-            name: clip.name,
-            type: clip.type,
-            audioBufferId: clip.audioBufferId,
-        });
-
-        if (newClip && clip.type === 'midi') {
-            const midiState = midiStore.value;
-            const sourceNotes = midiState?.notesByClipId[clip.id];
-            if (sourceNotes && sourceNotes.length > 0) {
-                const copiedNotes: MidiNote[] = sourceNotes.map((n) => ({
-                    ...n,
-                    id: `note-${crypto.randomUUID()}`,
-                }));
-                const currentMidi = midiStore.value;
-                midiStore.set({
-                    notesByClipId: {
-                        ...(currentMidi?.notesByClipId ?? {}),
-                        [newClip.id]: copiedNotes,
-                    },
-                    ccByClipId: currentMidi?.ccByClipId ?? {},
-                    pitchBendByClipId: currentMidi?.pitchBendByClipId ?? {},
-                });
-            }
-        }
-    }
-
-    for (const device of source.devices) {
-        updateTrack(newTrack.id, (t) => ({
-            ...t,
-            devices: [
-                ...t.devices,
-                { ...device, id: `device-dup-${crypto.randomUUID()}` },
-            ],
-        }));
-    }
+    // 4. Update track with copied devices, sends, and alternatives
+    updateTrack(newTrack.id, (t) => ({
+        ...t,
+        gain: source.gain,
+        pan: source.pan,
+        color: source.color,
+        devices: source.devices.map((d) => ({
+            ...d,
+            id: `dev-dup-${crypto.randomUUID().slice(0, 8)}`,
+        })),
+        sends: [...source.sends],
+        alternatives: newAlternatives,
+        activeAlternativeId: newActiveAlternativeId,
+        clips: newAlternatives.find((alt) => alt.id === newActiveAlternativeId)?.clips ?? [],
+        vcaGroupId: source.vcaGroupId,
+        outputId: source.outputId,
+        followChordTrack: source.followChordTrack,
+        notes: source.notes,
+    }));
 }

@@ -12,7 +12,7 @@ import { renameTrack } from '../../useCases/renameTrack';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
 import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
-import { bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce/bounceOperations';
+import { bounceTrack } from '../../useCases/freezeBounce/bounceOperations';
 import { armTrack } from '../../useCases/recording/armTrack';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
@@ -23,6 +23,7 @@ import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonit
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+import { BounceOptionsDialog, type BounceOptions } from '../../../Workspace/presentations/components/Inspector/BounceOptionsDialog';
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },
@@ -41,6 +42,8 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const [position, setPosition] = useState<MenuPosition>(null);
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
+    const [showBounceDialog, setShowBounceDialog] = useState(false);
+    const [bounceMode, setBounceBounceMode] = useState<'replace' | 'new-track'>('new-track');
 
     const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
         e.preventDefault();
@@ -82,6 +85,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const handleImportAudio = async (file: File) => {
         await importAudioClipToTrack(track.id, file);
         close();
+    };
+
+    const handleBounceConfirm = (options: BounceOptions) => {
+        void bounceTrack(track.id, options);
     };
 
     type MenuItem = { label: string; action: () => void; destructive?: boolean };
@@ -150,16 +157,9 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
               ]
             : []),
         {
-            label: 'Bounce in Place',
+            label: 'Bounce...',
             action: () => {
-                bounceInPlace(track.id);
-                close();
-            },
-        },
-        {
-            label: 'Bounce to New Track',
-            action: () => {
-                bounceToNewTrack(track.id);
+                setShowBounceDialog(true);
                 close();
             },
         },
@@ -222,6 +222,13 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 }}
             />
             {children}
+
+            <BounceOptionsDialog
+                track={track}
+                open={showBounceDialog}
+                onOpenChange={setShowBounceDialog}
+                onConfirm={handleBounceConfirm}
+            />
 
             {position ? (
                 <DawContextMenuSurface

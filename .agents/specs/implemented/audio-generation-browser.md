@@ -781,6 +781,6 @@ Two [CRITICAL] items below must be resolved by a human (with legal / product sig
 ## Implementation Status
 
 - **What is implemented**: The browser-based audio generation pipeline is well implemented within the `src/modules/BrowserAi` module. It includes the capability detector, storage manager, download workers, ONNX and TF.js inference workers, and use cases for DDSP, Kokoro TTS, and DiffSinger rendering.
-- **What is not implemented**: Some advanced "Phase 3" integrations or full fallback routing might still need refinement, but the core pipeline is present.
+- **What is not implemented**: Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 - **What is done well**: Excellent domain-driven architecture separation (workers, stores, repositories, UI views like `CapabilityReportPanel` and `ModelManagerPanel`), clear separation of inference workers for different backends (`onnxInferenceWorker.ts` and `tfjsInferenceWorker.ts`), and rich event definitions.
-- **What needs refactoring**: Requires verifying the WebGPU fallback robustness across different browser versions and ensuring OPFS storage cleanup logic is optimal under heavy use.
+- **What needs refactoring**: Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

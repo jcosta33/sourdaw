@@ -1,6 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode, type Ref } from 'react';
 
-import { cn } from '#/utils/Styles/cn';
+import { Row } from '#/components/layout';
 import { DawEyebrowLabel } from './DawEyebrowLabel';
 
 type DawMetricClusterProps = HTMLAttributes<HTMLDivElement> & {
@@ -18,12 +18,12 @@ export const DawMetricCluster = ({
     children,
     ...props
 }: DawMetricClusterProps): ReactElement => (
-    <div className={cn('flex items-center gap-1', className)} {...props}>
+    <Row gap={1} className={className} {...props}>
         <DawEyebrowLabel size="sm" className="text-muted-foreground">
             {label}
         </DawEyebrowLabel>
         {meter}
         {value}
         {children}
-    </div>
+    </Row>
 );

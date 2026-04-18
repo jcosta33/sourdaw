@@ -566,6 +566,6 @@ Include these as comments in the relevant source files (e.g., at the top of `kic
 ## Implementation Status
 
 - **What is implemented:** A significant portion of the drum machine realism spec is implemented in `crates/daw-dsp/src/toaster/engines/`. The `BridgedTFilter` is implemented and used by `Kick808`, `Snare808`, `Tom808`, `Perc808`, and `Cr78`. The `DrumEngineType` enum has been expanded to include the new engine variants.
-- **What is not implemented:** Models for the 909, LinnDrum, SP1200, and complete PolyBLEP implementation for the 808 hi-hat might still have missing components based on current scope, but 808 modeling is well underway.
+- **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 - **What is done well:** The Rust implementation of `BridgedTFilter` correctly incorporates component tolerance and TDF-II architecture for stable R_eff modulation.
-- **What needs refactoring:** Ensuring the PolyBLEP implementations and µ-law companding are completely covered and verified in the remaining engines.
+- **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

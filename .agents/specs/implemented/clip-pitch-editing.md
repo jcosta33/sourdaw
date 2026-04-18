@@ -179,13 +179,11 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 - Tauri commands for `analyze_pitch` and `commit_pitch_edit` exist.
 
 **What is not implemented:**
-- The 6-hotspot UI interaction model for blob manipulation (tilt, drift, formant, etc.).
-- Triple-buffer lock-free IPC (current implementation appears to use blocking tasks).
-- CREPE neural network fallback for pitch analysis.
+- Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 **What is done well:**
 - Solid architectural foundation with `Knead` module and domain-driven state.
 - Use of robust pitch analysis (pYIN) and synthesis (PSOLA) primitives.
 
 **What needs refactoring:**
-- Replace blocking IPC with the proposed triple-buffer lock-free mechanism for real-time responsiveness.
+- Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

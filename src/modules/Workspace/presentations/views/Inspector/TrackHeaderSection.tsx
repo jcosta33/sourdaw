@@ -73,15 +73,19 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
                     {track.kind !== 'folder' ? (
                         <div className="flex items-center gap-2">
-                            {track.freezeState?.status === 'freezing' ? (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-muted-foreground w-8 tabular-nums text-right">
-                                        {Math.round((track.freezeState.renderProgress ?? 0) * 100)}%
-                                    </span>
+                            {isFreezing ? (
+                                <div className="flex flex-col gap-1.5 min-w-32">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[9px] font-bold text-primary animate-pulse uppercase tracking-wider">Freezing...</span>
+                                        <span className="text-[10px] text-muted-foreground tabular-nums">
+                                            {Math.round((track.freezeState?.renderProgress ?? 0) * 100)}%
+                                        </span>
+                                    </div>
+                                    <DawMeterBar value={(track.freezeState?.renderProgress ?? 0) * 100} size="sm" fillClassName="bg-primary" />
                                     <Button
-                                        variant="outline"
+                                        variant="ghost"
                                         size="xs"
-                                        className="h-6"
+                                        className="h-5 text-[9px] hover:bg-destructive/10 hover:text-destructive"
                                         onClick={() => cancelFreezeTrack(track.id)}
                                     >
                                         Cancel
@@ -89,26 +93,37 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                 </div>
                             ) : (
                                 <>
-                                    {track.freezeState?.status === 'stale' && (
-                                        <span className="text-[10px] text-destructive flex items-center font-medium" title="Track content has changed since freezing">
-                                            <AlertCircle className="size-3 mr-1" /> Stale
-                                        </span>
+                                    {isStale && (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-state-warning/20 border border-state-warning/30 text-state-warning cursor-help">
+                                                    <AlertCircle className="size-3" />
+                                                    <span className="text-[10px] font-bold uppercase tracking-tight">Stale</span>
+                                                </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent>Content has changed since freeze. Update required.</TooltipContent>
+                                        </Tooltip>
                                     )}
                                     <Button
-                                        variant={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? 'secondary' : 'ghost'}
+                                        variant={track.frozen || isStale ? 'secondary' : 'ghost'}
                                         size="xs"
-                                        className="h-6"
+                                        className={cn(
+                                            'h-6 gap-1.5 px-2',
+                                            isStale && 'border-state-warning/40 text-state-warning hover:bg-state-warning/10'
+                                        )}
                                         onClick={() => {
-                                            if (track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale') {
+                                            if (track.frozen || isStale) {
                                                 unfreezeTrack(track.id);
                                             } else {
                                                 freezeTrack(track.id);
                                             }
                                         }}
-                                        aria-pressed={track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale'}
+                                        aria-pressed={track.frozen || isStale}
                                     >
-                                        {track.freezeState?.status === 'frozen' || track.freezeState?.status === 'stale' ? <Zap className="size-3 mr-1" /> : <Snowflake className="size-3 mr-1" />}
-                                        {track.freezeState?.status === 'stale' ? 'Update Freeze' : track.freezeState?.status === 'frozen' ? 'Unfreeze' : 'Freeze'}
+                                        {isStale ? <RefreshCw className="size-3" /> : track.frozen ? <Zap className="size-3" /> : <Snowflake className="size-3" />}
+                                        <span className="text-[10px] font-medium">
+                                            {isStale ? 'Update Freeze' : track.frozen ? 'Unfreeze' : 'Freeze'}
+                                        </span>
                                     </Button>
                                 </>
                             )}

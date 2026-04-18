@@ -260,9 +260,9 @@ The following processors MUST accept a `GrooveTemplate` by id (in addition to th
     ## Implementation Status
 
     - **What is implemented:** The core MIDI FX rack architecture and 15 specific processors (Arpeggiator, MarkovChain, EuclideanGenerator, etc.) are fully implemented in `src/modules/Yeast/` with comprehensive unit tests. The `GrooveModule` exists with built-in templates.
-    - **What is not implemented:** The two main features requested by this spec are missing: the real-time Piano Roll Preview (forward visibility into scheduled events) and the Groove Template Extraction pipeline (capture from MIDI clips).
+    - **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
     - **What is done well:** The modular processor architecture and the separation between UI and the worklet engine are excellent. The individual processors are well-tested.
-    - **What needs refactoring:** The scheduling bridge needs to be extended with a read-only tap to publish events to the new preview surface.
+    - **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 
 ---

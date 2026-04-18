@@ -1,16 +1,11 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawDialogFooterProps = HTMLAttributes<HTMLDivElement> & {
     tone?: 'neutral' | 'warm';
     align?: 'start' | 'between' | 'end';
-};
-
-const ALIGN_CLASS_NAMES: Record<NonNullable<DawDialogFooterProps['align']>, string> = {
-    start: 'justify-start',
-    between: 'justify-between',
-    end: 'justify-end',
 };
 
 const TONE_CLASS_NAMES: Record<NonNullable<DawDialogFooterProps['tone']>, string> = {
@@ -25,10 +20,12 @@ export const DawDialogFooter = ({
     children,
     ...props
 }: DawDialogFooterProps): ReactElement => (
-    <div
-        className={cn('flex items-center gap-2 px-4 py-3', ALIGN_CLASS_NAMES[align], TONE_CLASS_NAMES[tone], className)}
+    <Row
+        justify={align}
+        gap={2}
+        className={cn('px-4 py-3', TONE_CLASS_NAMES[tone], className)}
         {...props}
     >
         {children}
-    </div>
+    </Row>
 );

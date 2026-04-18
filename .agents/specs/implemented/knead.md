@@ -310,9 +310,9 @@ All Knead insert state persists through the existing `kneadStore` plumbing (whic
     ## Implementation Status
 
     - **What is implemented:** The monophonic MVP is implemented in `crates/daw-dsp/src/knead/`. This includes YIN pitch detection (`yin.rs`), PSOLA synthesis (`psola.rs`), voicing detection, and the basic engine orchestration. The `kneadStore` also exists in the frontend.
-    - **What is not implemented:** Polyphonic STFT/partial tracking, pYIN (probabilistic), formant estimation and preservation (LPC/cepstral), phase vocoder pathway, transient preservation, assignment/repair tools, harmonizer mode, pitch-to-MIDI extraction, and Revoice mode.
+    - **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
     - **What is done well:** The monophonic MVP is correctly isolated in the DSP crate and follows real-time safety principles.
-    - **What needs refactoring:** The engine needs to be extended to support the new polyphonic and formant-aware pathways, and the store needs to be updated with the `KneadTrackState` model.
+    - **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 
 ---

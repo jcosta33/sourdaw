@@ -1,4 +1,6 @@
 import { type ReactElement, useState, useTransition } from 'react';
+
+import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { Search } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
@@ -162,7 +164,7 @@ const K = ({
     unit?: string;
     onChangeFn?: (key: string, value: number) => void;
 }): ReactElement => (
-    <div className="flex min-w-[58px] flex-col items-center gap-1">
+    <Stack align="center" gap={1} className="min-w-[58px]">
         <RotaryKnob
             value={v}
             onChange={(val: number) =>
@@ -180,7 +182,7 @@ const K = ({
         />
         <span className="text-[8px] leading-none text-muted-foreground">{label}</span>
         {unit ? <span className="font-mono text-[7px] text-muted-foreground/45">{formatValue(v, unit)}</span> : null}
-    </div>
+    </Stack>
 );
 
 const SectionHeader = ({
@@ -194,20 +196,20 @@ const SectionHeader = ({
     description: string;
     detail?: string;
 }): ReactElement => (
-    <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
+    <Row align="start" justify="between" gap={3}>
+        <Stack gap={1}>
             <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
                 {eyebrow}
             </div>
             <div className="text-[13px] font-semibold tracking-[0.02em] text-foreground">{title}</div>
             <span className="sr-only">{description}</span>
-        </div>
+        </Stack>
         {detail ? (
             <DawPluginLed tone="mint" className="shrink-0">
                 {detail}
             </DawPluginLed>
         ) : null}
-    </div>
+    </Row>
 );
 
 const BChip = ({
@@ -223,38 +225,38 @@ const BChip = ({
 );
 
 const MetricCell = ({ label, value }: { label: string; value: string }): ReactElement => (
-    <div className="bacteria-window flex min-w-[92px] flex-col gap-1 px-3 py-2">
+    <Stack gap={1} className="bacteria-window min-w-[92px] px-3 py-2">
         <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
         <span className="font-mono text-[12px] text-foreground">{value}</span>
-    </div>
+    </Stack>
 );
 
 const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
-    <div className="bacteria-window flex flex-col gap-2 px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
+    <Stack gap={2} className="bacteria-window px-3 py-2">
+        <Row justify="between" gap={2}>
             <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band energy</span>
             <span className="text-[8px] text-muted-foreground/45">{state.patch.bandCount} active lanes</span>
-        </div>
-        <div className="flex gap-2">
+        </Row>
+        <Row gap={2}>
             {Array.from({ length: state.patch.bandCount }, (_, index) => {
                 const level = Math.max(0, Math.min(1, ((state.bandLevels[index] ?? -60) + 60) / 60));
                 return (
-                    <div key={index} className="flex min-w-0 flex-1 flex-col gap-1">
+                    <Stack key={index} gap={1} grow className="min-w-0">
                         <div className="h-2 overflow-hidden rounded-full bg-black/40">
                             <div
                                 className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent-mint),var(--color-accent-cyan),var(--color-accent-lavender))]"
                                 style={{ width: `${Math.max(6, level * 100)}%` }}
                             />
                         </div>
-                        <div className="flex items-center justify-between gap-2 text-[8px] text-muted-foreground/45">
+                        <Row justify="between" gap={2} className="text-[8px] text-muted-foreground/45">
                             <span>B{index + 1}</span>
                             <span className="font-mono">{formatValue(state.bandLevels[index] ?? -100, 'dB')}</span>
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 );
             })}
-        </div>
-    </div>
+        </Row>
+    </Stack>
 );
 
 const PresetRail = ({
@@ -287,7 +289,7 @@ const PresetRail = ({
     const activeBand = state.patch.bands[state.activeBand] ?? state.patch.bands[0]!;
 
     return (
-        <aside className="bacteria-window flex h-full w-[248px] shrink-0 flex-col gap-2.5 overflow-hidden p-2.5">
+        <Stack as="aside" gap={2} shrink={false} className="bacteria-window h-full w-[248px] gap-2.5 overflow-hidden p-2.5">
             <SectionHeader
                 eyebrow="Presets"
                 title="Cultures"
@@ -295,7 +297,7 @@ const PresetRail = ({
                 detail={`${filteredPresets.length} shown`}
             />
 
-            <div className="bacteria-window flex items-center gap-2 px-3 py-2">
+            <Row gap={2} className="bacteria-window px-3 py-2">
                 <Search className="size-3.5 shrink-0 text-muted-foreground/55" />
                 <label htmlFor="bacteria-preset-search" className="sr-only">
                     Search Bacteria presets
@@ -308,9 +310,9 @@ const PresetRail = ({
                     placeholder="Search cultures"
                     className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
                 />
-            </div>
+            </Row>
 
-            <div className="flex flex-wrap gap-1">
+            <Row wrap gap={1}>
                 {categories.map((entry) => {
                     const isActive = category === entry;
 
@@ -320,25 +322,27 @@ const PresetRail = ({
                         </BChip>
                     );
                 })}
-            </div>
+            </Row>
 
-            <div className="bacteria-window flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex items-center justify-between gap-2 border-b border-white/6 px-3 py-2">
+            <Stack grow className="bacteria-window min-h-0 overflow-hidden">
+                <Row justify="between" gap={2} className="border-b border-white/6 px-3 py-2">
                     <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
                         Preset drawer
                     </span>
                     <span className="text-[8px] text-muted-foreground/45">{state.patch.name}</span>
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-2">
+                </Row>
+                <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2">
                     {filteredPresets.length > 0 ? (
                         filteredPresets.map((preset) => {
                             const active = preset.patch.name === state.patch.name;
 
                             return (
-                                <button
+                                <Stack
                                     key={preset.id}
-                                    type="button"
-                                    className={`bacteria-window flex w-full flex-col items-start gap-1 px-3 py-2 text-left ${
+                                    as="button"
+                                    align="start"
+                                    gap={1}
+                                    className={`bacteria-window w-full px-3 py-2 text-left ${
                                         active ? 'border-[var(--color-accent-mint-bright)]/35' : ''
                                     }`}
                                     onClick={() => loadBacteriaPatchWithAudio(deviceId, preset.patch)}
@@ -347,37 +351,37 @@ const PresetRail = ({
                                     <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
                                         {preset.category}
                                     </span>
-                                </button>
+                                </Stack>
                             );
                         })
                     ) : (
-                        <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-muted-foreground">
+                        <Stack align="center" justify="center" className="h-full px-4 text-center text-[11px] text-muted-foreground">
                             Nothing matches that jar label yet.
-                        </div>
+                        </Stack>
                     )}
-                </div>
-            </div>
+                </Stack>
+            </Stack>
 
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 <MetricCell label="Bands" value={`${state.patch.bandCount}`} />
                 <MetricCell label="Routing" value={state.patch.globalRouting.replace('-', '/')} />
                 <MetricCell label="Active FX" value={`${countEnabledEffects(activeBand)}`} />
                 <MetricCell label="Mix" value={formatValue(state.patch.mix * 100, '%')} />
-            </div>
-        </aside>
+            </Grid>
+        </Stack>
     );
 };
 
 const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(250px,0.92fr)_minmax(0,1.2fr)] gap-2.5 p-2.5">
-        <div className="bacteria-window flex min-h-0 flex-col gap-3 p-3">
+    <Grid gap={2} className="h-full min-h-0 grid-cols-[minmax(250px,0.92fr)_minmax(0,1.2fr)] gap-2.5 p-2.5">
+        <Stack gap={3} className="bacteria-window min-h-0 p-3">
             <SectionHeader
                 eyebrow="Petri pad"
                 title="Morph field"
                 description="Drag the crosshair and smear the patch between the four snapshot corners."
                 detail="A/B/C/D"
             />
-            <div className="flex flex-1 items-center justify-center">
+            <Stack grow align="center" justify="center">
                 <XYMorphPad
                     x={state.patch.morphX}
                     y={state.patch.morphY}
@@ -387,21 +391,21 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                     width={264}
                     height={212}
                 />
-            </div>
-            <div className="grid grid-cols-4 gap-2">
+            </Stack>
+            <Grid cols={4} gap={2}>
                 {state.patch.snapshots.slice(0, 4).map((snapshot) => (
-                    <div key={snapshot.id} className="bacteria-window flex flex-col gap-1 px-3 py-2">
+                    <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
                         <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
                             Snap {snapshot.id}
                         </span>
                         <span className="truncate text-[11px] text-foreground">{snapshot.name}</span>
-                    </div>
+                    </Stack>
                 ))}
-            </div>
-        </div>
+            </Grid>
+        </Stack>
 
-        <div className="flex min-h-0 flex-col gap-2.5">
-            <div className="bacteria-window flex flex-col gap-3 p-3">
+        <Stack gap={2} className="min-h-0 gap-2.5">
+            <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Quick read"
                     title="Current broth"
@@ -438,16 +442,16 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                         setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
                     }
                 />
-            </div>
+            </Stack>
 
-            <div className="grid min-h-0 flex-1 grid-cols-2 gap-2.5">
-                <div className="bacteria-window flex flex-col gap-3 p-3">
+            <Grid cols={2} gap={2} className="min-h-0 flex-1 gap-2.5">
+                <Stack gap={3} className="bacteria-window p-3">
                     <SectionHeader
                         eyebrow="Input"
                         title="Gain staging"
                         description="Keep the organism fed, not flooded."
                     />
-                    <div className="flex flex-wrap gap-4">
+                    <Row wrap gap={4}>
                         <K
                             deviceId={deviceId}
                             v={state.patch.inputGain}
@@ -480,24 +484,24 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                             step={0.01}
                             def={1}
                         />
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
                 <BandMeters state={state} />
-            </div>
-        </div>
-    </div>
+            </Grid>
+        </Stack>
+    </Grid>
 );
 
 const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+    <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Macros"
                 title="Performance cluster"
                 description="Eight knobs for pushing the patch around without diving into the microscope."
                 detail="8 slots"
             />
-            <div className="grid grid-cols-4 gap-x-2 gap-y-4">
+            <Grid cols={4} gapX={2} gapY={4}>
                 {([1, 2, 3, 4, 5, 6, 7, 8] as const).map((index) => (
                     <K
                         key={index}
@@ -511,16 +515,16 @@ const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                         def={0.5}
                     />
                 ))}
-            </div>
-        </div>
+            </Grid>
+        </Stack>
 
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Morph"
                 title="Crosshair offsets"
                 description="Fine-tune the resting position without dragging the pad."
             />
-            <div className="flex flex-wrap gap-4">
+            <Row wrap gap={4}>
                 <K
                     deviceId={deviceId}
                     v={state.patch.morphX}
@@ -541,17 +545,17 @@ const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                     step={0.01}
                     def={0.5}
                 />
-            </div>
-        </div>
-    </div>
+            </Row>
+        </Stack>
+    </Stack>
 );
 
 const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => {
     const moduleMeta = getModuleMeta(state.activeModule);
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
-            <div className="bacteria-window flex flex-col gap-3 p-3">
+        <Stack gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
+            <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Mutation deck"
                     title={moduleMeta.label}
@@ -588,19 +592,19 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
                     }
                 />
-            </div>
+            </Stack>
 
-            <div className="bacteria-window flex min-h-0 flex-1 flex-col gap-3 p-3">
-                <div className="flex items-center justify-between gap-3">
-                    <div>
+            <Stack grow gap={3} className="bacteria-window min-h-0 p-3">
+                <Row justify="between" gap={3}>
+                    <Stack gap={1}>
                         <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
                             Band broth
                         </div>
                         <div className="text-[12px] font-medium text-foreground">Zoomed strips</div>
-                    </div>
+                    </Stack>
                     <DawPluginLed tone="mint">{state.patch.globalRouting.replace('-', ' ')}</DawPluginLed>
-                </div>
-                <div className="flex min-h-0 gap-2 overflow-x-auto">
+                </Row>
+                <Row gap={2} className="min-h-0 overflow-x-auto">
                     {Array.from({ length: state.patch.bandCount }, (_, index) => (
                         <BandStrip
                             key={index}
@@ -618,15 +622,15 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                             }
                         />
                     ))}
-                </div>
-            </div>
-        </div>
+                </Row>
+            </Stack>
+        </Stack>
     );
 };
 
 const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+    <Stack gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Band broth"
                 title="Crossover tray"
@@ -663,17 +667,17 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
                 }
             />
-        </div>
+        </Stack>
 
-        <div className="bacteria-window flex min-h-0 flex-1 flex-col gap-3 p-3">
-            <div className="flex items-center justify-between gap-2">
-                <div>
+        <Stack grow gap={3} className="bacteria-window min-h-0 p-3">
+            <Row justify="between" gap={2}>
+                <Stack gap={1}>
                     <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band cards</div>
                     <div className="text-[12px] font-medium text-foreground">The organism split open</div>
-                </div>
+                </Stack>
                 <DawPluginLed tone="mint">{state.patch.crossoverMode}</DawPluginLed>
-            </div>
-            <div className="flex min-h-0 gap-2 overflow-x-auto">
+            </Row>
+            <Row gap={2} className="min-h-0 overflow-x-auto">
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
                     <BandStrip
                         key={index}
@@ -691,21 +695,21 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         }
                     />
                 ))}
-            </div>
-        </div>
-    </div>
+            </Row>
+        </Stack>
+    </Stack>
 );
 
 const RouteHero = ({ state }: { state: BacteriaState }): ReactElement => (
-    <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
-        <div className="bacteria-window flex h-full min-h-0 flex-col gap-3 p-3">
+    <Stack gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
+        <Stack gap={3} className="bacteria-window h-full min-h-0 p-3">
             <SectionHeader
                 eyebrow="Dish map"
                 title="Signal petri"
                 description="A compact routing map that stays legible in the shallow drawer."
                 detail={state.patch.globalRouting.replace('-', ' ')}
             />
-            <div className="flex flex-1 items-center justify-center">
+            <Stack grow align="center" justify="center">
                 <NodeGraphEditor
                     width={620}
                     height={248}
@@ -720,41 +724,41 @@ const RouteHero = ({ state }: { state: BacteriaState }): ReactElement => (
                         state.patch.crossoverFreq5,
                     ]}
                 />
-            </div>
-        </div>
-    </div>
+            </Stack>
+        </Stack>
+    </Stack>
 );
 
 const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
-    <div className="grid h-full min-h-0 grid-cols-2 gap-2.5 p-2.5">
-        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+    <Grid cols={2} gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
+        <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
             <SectionHeader
                 eyebrow="Curve"
                 title="Shaper bench"
                 description="For when the default clipping law is too polite."
             />
-            <div className="flex flex-1 items-center justify-center">
+            <Stack grow align="center" justify="center">
                 <WaveshaperEditor width={300} height={176} segments={[]} onSegmentsChange={() => {}} />
-            </div>
-        </div>
-        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+            </Stack>
+        </Stack>
+        <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
             <SectionHeader
                 eyebrow="Motion"
                 title="Bezier drift"
                 description="Draw a wobble instead of babysitting a rate knob."
             />
-            <div className="flex flex-1 items-center justify-center">
+            <Stack grow align="center" justify="center">
                 <BezierLfoEditor width={300} height={176} points={[]} onPointsChange={() => {}} gridDivisions={8} />
-            </div>
-        </div>
-        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+            </Stack>
+        </Stack>
+        <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
             <SectionHeader
                 eyebrow="Steps"
                 title="Sequencer"
                 description="Fast lane for rhythmic stabs and gated mutations."
                 detail={`${state.patch.stepSeqSteps} steps`}
             />
-            <div className="flex flex-1 items-center justify-center">
+            <Stack grow align="center" justify="center">
                 <StepSequencerEditor
                     width={300}
                     height={96}
@@ -762,19 +766,19 @@ const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
                     numSteps={state.patch.stepSeqSteps}
                     onStepsChange={() => {}}
                 />
-            </div>
-        </div>
-        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+            </Stack>
+        </Stack>
+        <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
             <SectionHeader
                 eyebrow="Bins"
                 title="Spectral gate"
                 description="Carve holes in the top end without leaving the panel."
             />
-            <div className="flex flex-1 items-center justify-center">
+            <Stack grow align="center" justify="center">
                 <SpectralBinEditor width={300} height={96} binValues={[]} onBinValuesChange={() => {}} mode="gate" />
-            </div>
-        </div>
-    </div>
+            </Stack>
+        </Stack>
+    </Grid>
 );
 
 function renderShapeControls(deviceId: string, state: BacteriaState): ReactElement {
@@ -787,15 +791,15 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
     };
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
-            <div className="bacteria-window flex flex-col gap-3 p-3">
+        <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5">
+            <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Modules"
                     title="Pick the mutation"
                     description="Stay on one band and swap the active organism without losing the overall context."
                     detail={`Band ${state.activeBand + 1}`}
                 />
-                <div className="flex flex-wrap gap-1.5">
+                <Row wrap gap={1} className="gap-1.5">
                     {EFFECT_MODULES.map((module) => {
                         const active = module.id === activeModule;
 
@@ -809,10 +813,10 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                             </BChip>
                         );
                     })}
-                </div>
-            </div>
+                </Row>
+            </Stack>
 
-            <div className="bacteria-window flex flex-col gap-3 p-3">
+            <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Controls"
                     title={getModuleMeta(activeModule).label}
@@ -820,15 +824,15 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                 />
 
                 {activeModule === 'distortion' ? (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2">
+                    <Stack gap={3}>
+                        <Row gap={2}>
                             <BChip
                                 active={Boolean(band.distortionEnabled)}
                                 onClick={() => setBandParam('distortionEnabled', !Boolean(band.distortionEnabled))}
                             >
                                 Enabled
                             </BChip>
-                            <div className="flex flex-wrap gap-1">
+                            <Row wrap gap={1}>
                                 {DISTORTION_MODES.map((mode) => (
                                     <BChip
                                         key={mode}
@@ -837,10 +841,11 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     >
                                         {mode.replace('-', ' ')}
                                     </BChip>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap gap-4">
+                                    ))}
+                                    </Row>
+                                    </Row>
+
+                        <Row wrap gap={4}>
                             <K
                                 v={band.drive}
                                 k="drive"
@@ -930,20 +935,20 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     onChangeFn={setBandParam as never}
                                 />
                             ) : null}
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'filter' ? (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2">
+                    <Stack gap={3}>
+                        <Row gap={2}>
                             <BChip
                                 active={Boolean(band.filterEnabled)}
                                 onClick={() => setBandParam('filterEnabled', !Boolean(band.filterEnabled))}
                             >
                                 Enabled
                             </BChip>
-                            <div className="flex flex-wrap gap-1">
+                            <Row wrap gap={1}>
                                 {FILTER_MODES.map((mode) => (
                                     <BChip
                                         key={mode}
@@ -952,10 +957,11 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     >
                                         {mode}
                                     </BChip>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap gap-4">
+                                    ))}
+                                    </Row>
+                                    </Row>
+
+                        <Row wrap gap={4}>
                             <K
                                 v={band.filterCutoff}
                                 k="filterCutoff"
@@ -1014,19 +1020,19 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'chorus' ? (
-                    <div className="space-y-3">
+                    <Stack gap={3}>
                         <BChip
                             active={Boolean(band.chorusEnabled)}
                             onClick={() => setBandParam('chorusEnabled', !Boolean(band.chorusEnabled))}
                         >
                             Enabled
                         </BChip>
-                        <div className="flex flex-wrap gap-4">
+                        <Row wrap gap={4}>
                             <K
                                 v={band.chorusRate}
                                 k="chorusRate"
@@ -1072,19 +1078,19 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'phaser' ? (
-                    <div className="space-y-3">
+                    <Stack gap={3}>
                         <BChip
                             active={Boolean(band.phaserEnabled)}
                             onClick={() => setBandParam('phaserEnabled', !Boolean(band.phaserEnabled))}
                         >
                             Enabled
                         </BChip>
-                        <div className="flex flex-wrap gap-4">
+                        <Row wrap gap={4}>
                             <K
                                 v={band.phaserRate}
                                 k="phaserRate"
@@ -1130,13 +1136,13 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'granular' ? (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2">
+                    <Stack gap={3}>
+                        <Row gap={2}>
                             <BChip
                                 active={Boolean(band.granularEnabled)}
                                 onClick={() => setBandParam('granularEnabled', !Boolean(band.granularEnabled))}
@@ -1149,8 +1155,8 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                             >
                                 Freeze
                             </BChip>
-                        </div>
-                        <div className="flex flex-wrap gap-4">
+                        </Row>
+                        <Row wrap gap={4}>
                             <K
                                 v={band.grainSize}
                                 k="grainSize"
@@ -1209,13 +1215,13 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'spectral' ? (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2">
+                    <Stack gap={3}>
+                        <Row gap={2}>
                             <BChip
                                 active={Boolean(band.spectralEnabled)}
                                 onClick={() => setBandParam('spectralEnabled', !Boolean(band.spectralEnabled))}
@@ -1228,8 +1234,8 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                             >
                                 Freeze
                             </BChip>
-                        </div>
-                        <div className="flex flex-wrap gap-4">
+                        </Row>
+                        <Row wrap gap={4}>
                             <K
                                 v={band.spectralBlur}
                                 k="spectralBlur"
@@ -1252,19 +1258,19 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'freqShift' ? (
-                    <div className="space-y-3">
+                    <Stack gap={3}>
                         <BChip
                             active={Boolean(band.freqShiftEnabled)}
                             onClick={() => setBandParam('freqShiftEnabled', !Boolean(band.freqShiftEnabled))}
                         >
                             Enabled
                         </BChip>
-                        <div className="flex flex-wrap gap-4">
+                        <Row wrap gap={4}>
                             <K
                                 v={band.freqShiftHz}
                                 k="freqShiftHz"
@@ -1288,19 +1294,19 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'lofi' ? (
-                    <div className="space-y-3">
+                    <Stack gap={3}>
                         <BChip
                             active={Boolean(band.lofiEnabled)}
                             onClick={() => setBandParam('lofiEnabled', !Boolean(band.lofiEnabled))}
                         >
                             Enabled
                         </BChip>
-                        <div className="flex flex-wrap gap-4">
+                        <Row wrap gap={4}>
                             <K
                                 v={band.lofiAmount}
                                 k="lofiAmount"
@@ -1324,19 +1330,19 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
 
                 {activeModule === 'convolution' ? (
-                    <div className="space-y-3">
+                    <Stack gap={3}>
                         <BChip
                             active={Boolean(band.convolutionEnabled)}
                             onClick={() => setBandParam('convolutionEnabled', !Boolean(band.convolutionEnabled))}
                         >
                             Enabled
                         </BChip>
-                        <div className="flex flex-wrap gap-4">
+                        <Row wrap gap={4}>
                             <K
                                 v={band.convolutionMix}
                                 k="convolutionMix"
@@ -1359,12 +1365,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 ) : null}
-            </div>
+            </Stack>
 
-            <div className="bacteria-window flex flex-col gap-3 p-3">
+            <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Quick modulation"
                     title="Fast movers"
@@ -1415,20 +1421,20 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         unit="ms"
                     />
                 </div>
-            </div>
-        </div>
+            </Stack>
+        </Stack>
     );
 }
 
 const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Split"
                 title="Crossover controls"
                 description="Keep the lane count and slope close at hand."
             />
-            <div className="flex flex-wrap gap-2">
+            <Row wrap gap={2}>
                 {[1, 2, 3, 4, 5, 6].map((count) => (
                     <BChip
                         key={count}
@@ -1443,8 +1449,8 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         {count} band{count === 1 ? '' : 's'}
                     </BChip>
                 ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
+            </Row>
+            <Row wrap gap={2}>
                 {['12', '24', '36', '48'].map((slope, index) => (
                     <BChip
                         key={slope}
@@ -1454,8 +1460,8 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         {slope} dB
                     </BChip>
                 ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
+            </Row>
+            <Row wrap gap={2}>
                 {(['lr4', 'linear-phase'] as const).map((mode) => (
                     <BChip
                         key={mode}
@@ -1465,10 +1471,10 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         {mode === 'lr4' ? 'LR4' : 'Linear'}
                     </BChip>
                 ))}
-            </div>
-        </div>
+            </Row>
+        </Stack>
 
-        <div className="bacteria-window flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
+        <Stack grow gap={2} className="bacteria-window min-h-0 overflow-y-auto p-3">
             <SectionHeader
                 eyebrow="Modulation"
                 title="Source dock"
@@ -1480,19 +1486,19 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 onAssignmentAdd={() => {}}
                 onAssignmentRemove={() => {}}
             />
-        </div>
-    </div>
+        </Stack>
+    </Stack>
 );
 
 const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Global"
                 title="Routing mode"
                 description="Choose how the bands behave before you dive into the per-band overrides."
             />
-            <div className="flex flex-wrap gap-2">
+            <Row wrap gap={2}>
                 {ROUTING_MODES.map((mode) => (
                     <BChip
                         key={mode}
@@ -1502,20 +1508,20 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         {mode === 'serial' ? 'Serial' : mode === 'parallel' ? 'Parallel' : 'Mid/side'}
                     </BChip>
                 ))}
-            </div>
-        </div>
+            </Row>
+        </Stack>
 
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Per band"
                 title="Lane overrides"
                 description="Useful when one band needs to misbehave on its own."
             />
-            <div className="flex flex-col gap-2">
+            <Stack gap={2}>
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
-                    <div key={index} className="bacteria-window flex items-center justify-between gap-3 px-3 py-2">
+                    <Row key={index} justify="between" gap={3} className="bacteria-window px-3 py-2">
                         <span className="text-[11px] font-medium text-foreground">Band {index + 1}</span>
-                        <div className="flex flex-wrap gap-1">
+                        <Row wrap gap={1}>
                             {ROUTING_MODES.map((mode) => (
                                 <BChip
                                     key={mode}
@@ -1525,23 +1531,23 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                                     {mode === 'mid-side' ? 'M/S' : mode}
                                 </BChip>
                             ))}
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
                 ))}
-            </div>
-        </div>
-    </div>
+            </Stack>
+        </Stack>
+    </Stack>
 );
 
 const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="LFOs"
                 title="Motion core"
                 description="Rates and shapes for the built-in wigglers."
             />
-            <div className="flex flex-wrap gap-4">
+            <Row wrap gap={4}>
                 <K
                     deviceId={deviceId}
                     v={state.patch.lfo1Rate}
@@ -1584,8 +1590,8 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                     step={0.01}
                     def={0.5}
                 />
-            </div>
-            <div className="flex flex-wrap gap-2">
+            </Row>
+            <Row wrap gap={2}>
                 {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
                     <BChip
                         key={`lfo1-${shape}`}
@@ -1595,8 +1601,8 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                         LFO1 {shape}
                     </BChip>
                 ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
+            </Row>
+            <Row wrap gap={2}>
                 {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
                     <BChip
                         key={`lfo2-${shape}`}
@@ -1606,16 +1612,16 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                         LFO2 {shape}
                     </BChip>
                 ))}
-            </div>
-        </div>
+            </Row>
+        </Stack>
 
-        <div className="bacteria-window flex flex-col gap-3 p-3">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Followers"
                 title="Bench controls"
                 description="Envelope, Lorenz, and steps in one place."
             />
-            <div className="flex flex-wrap gap-4">
+            <Row wrap gap={4}>
                 <K
                     deviceId={deviceId}
                     v={state.patch.envFollowerAttack}
@@ -1699,9 +1705,9 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
                     step={0.01}
                     def={1}
                 />
-            </div>
-        </div>
-    </div>
+            </Row>
+        </Stack>
+    </Stack>
 );
 
 function renderHero(deviceId: string, state: BacteriaState): ReactElement {
@@ -1748,7 +1754,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
     const moduleMeta = getModuleMeta(state.activeModule);
 
     return (
-        <div className="bacteria-faceplate flex h-full min-h-0 gap-2.5 overflow-hidden p-2.5">
+        <Row className="bacteria-faceplate h-full min-h-0 gap-2.5 p-2.5">
             <PresetRail
                 deviceId={deviceId}
                 state={state}
@@ -1766,16 +1772,16 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                 }}
             />
 
-            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-                <header className="bacteria-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
-                    <div className="space-y-1">
+            <Stack gap={2.5} grow className="min-w-0">
+                <Row as="header" gap={2.5} className="bacteria-window shrink-0 flex-wrap px-3 py-2">
+                    <Stack gap={1}>
                         <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
                             {activeLevel.eyebrow}
                         </div>
                         <div className="text-[13px] font-semibold text-foreground">Bacteria</div>
-                    </div>
+                    </Stack>
 
-                    <div className="flex flex-wrap gap-1.5">
+                    <Row wrap gap={1.5}>
                         {LEVELS.map((level) => {
                             const active = level.id === state.uiLevel;
 
@@ -1790,10 +1796,10 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                                 </BChip>
                             );
                         })}
-                    </div>
+                    </Row>
 
                     {state.uiLevel >= 2 ? (
-                        <div className="flex flex-wrap gap-1">
+                        <Row wrap gap={1}>
                             {Array.from({ length: state.patch.bandCount }, (_, index) => (
                                 <BChip
                                     key={index}
@@ -1803,41 +1809,41 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                                     Band {index + 1}
                                 </BChip>
                             ))}
-                        </div>
+                        </Row>
                     ) : null}
 
-                    <div className="ml-auto flex items-center gap-2">
+                    <Row gap={2} className="ml-auto">
                         <DawPluginLed tone="mint">{moduleMeta.label}</DawPluginLed>
-                        <div className="text-right">
+                        <Stack align="end" className="text-right">
                             <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">
                                 In {formatValue(state.inputDb, 'dB')} / Out {formatValue(state.outputDb, 'dB')}
                             </div>
                             <div className="text-[10px] text-muted-foreground">
                                 {countEnabledEffects(activeBand)} active effects in band {state.activeBand + 1}
                             </div>
-                        </div>
+                        </Stack>
                         <BChip
                             active={Boolean(state.patch.bypass)}
                             onClick={() => setGlobalParam(deviceId, 'bypass', !Boolean(state.patch.bypass))}
                         >
                             {Boolean(state.patch.bypass) ? 'Bypassed' : 'Live'}
                         </BChip>
-                    </div>
-                </header>
+                    </Row>
+                </Row>
 
-                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_minmax(320px,0.92fr)] gap-2.5 overflow-hidden">
+                <Grid cols={2} gap={2.5} className="min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_minmax(320px,0.92fr)]">
                     <section className="bacteria-window min-h-0 overflow-hidden">{renderHero(deviceId, state)}</section>
                     <section className="bacteria-window min-h-0 overflow-hidden">{renderDeck(deviceId, state)}</section>
-                </div>
+                </Grid>
 
-                <footer className="grid shrink-0 grid-cols-[repeat(4,minmax(0,auto))_minmax(0,1fr)] gap-2.5">
+                <Grid gap={2.5} className="shrink-0 grid-cols-[repeat(4,minmax(0,auto))_minmax(0,1fr)]">
                     <MetricCell label="Input" value={formatValue(state.inputDb, 'dB')} />
                     <MetricCell label="Output" value={formatValue(state.outputDb, 'dB')} />
                     <MetricCell label="Latency" value={state.latency > 0 ? `${state.latency} smp` : '0 smp'} />
                     <MetricCell label="Active band" value={`B${state.activeBand + 1}`} />
                     <BandMeters state={state} />
-                </footer>
-            </div>
-        </div>
+                </Grid>
+            </Stack>
+        </Row>
     );
 };

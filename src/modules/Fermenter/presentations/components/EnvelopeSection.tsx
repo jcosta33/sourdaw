@@ -3,6 +3,7 @@
  * Large interactive ADSR as hero (drag breakpoints). Knobs below for precision.
  */
 import { type ReactElement, useState } from 'react';
+import { Stack, Row } from '#/components/layout';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
@@ -55,20 +56,20 @@ export const EnvelopeSection = ({
     };
 
     return (
-        <div className="space-y-2 w-full max-w-[320px]">
+        <Stack gap={2} className="w-full max-w-[320px]">
             {/* Header with AMP/FILTER toggle */}
             <DawPluginSectionHeader
                 title="Envelope"
                 titleClassName="text-muted-foreground"
                 actions={
-                    <div className="flex gap-0.5">
+                    <Row gap={0.5}>
                         <DawPluginChip active={isAmp} tone="mint" size="xs" onClick={() => setActiveEnv('amp')}>
                             AMP
                         </DawPluginChip>
                         <DawPluginChip active={!isAmp} tone="cyan" size="xs" onClick={() => setActiveEnv('filter')}>
                             FILTER
                         </DawPluginChip>
-                    </div>
+                    </Row>
                 }
             />
 
@@ -87,7 +88,7 @@ export const EnvelopeSection = ({
             </div>
 
             {/* Precision knobs */}
-            <div className="flex items-end gap-2">
+            <Row align="end" gap={2}>
                 {[
                     { label: 'A', value: a, key: 'Attack', min: 0.001, max: 5, fmt: `${(a * 1000).toFixed(0)}ms` },
                     { label: 'D', value: d, key: 'Decay', min: 0.001, max: 5, fmt: `${(d * 1000).toFixed(0)}ms` },
@@ -96,7 +97,7 @@ export const EnvelopeSection = ({
                 ].map(({ label, value, key, min, max, fmt }) => {
                     const mappedKey = `${isAmp ? 'amp' : 'filter'}${key}` as const;
                     return (
-                        <div key={key} className="flex flex-col items-center gap-0">
+                        <Stack key={key} align="center" gap={0}>
                             <RotaryKnob
                                 paramId={mappedKey}
                                 value={value}
@@ -111,10 +112,10 @@ export const EnvelopeSection = ({
                             />
                             <span className="text-[7px] text-muted-foreground">{label}</span>
                             <span className="text-[6px] text-muted-foreground/50 font-mono">{fmt}</span>
-                        </div>
+                        </Stack>
                     );
                 })}
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
