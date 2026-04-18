@@ -46,7 +46,59 @@ Build the parts that solve real production pain:
 
 ---
 
+# Quick win — fix before anything else
+
+## 0. Expression data loss on paste (bug fix)
+
+**This is a data loss bug. Fix it independently before starting any feature work.**
+
+`pasteNotes.ts` and `pasteClip.ts` strip `pressure`, `slide`, and `pitchBend` from copied notes by routing through `createMidiNote()` which only accepts 5 args. The clipboard correctly preserves all fields (via spread in `copySelectedNotes.ts`), but paste discards them.
+
+**Fix in `src/modules/Arrangement/useCases/clipboard/pasteNotes.ts` line 24-25:**
+```typescript
+// BEFORE (drops expression):
+const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) =>
+    createMidiNote(n.pitch, n.startBeat - minStart + beatOffset, n.duration, n.velocity)
+);
+
+// AFTER (preserves all fields):
+const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) => ({
+    ...n,
+    id: `note-${crypto.randomUUID().slice(0, 8)}`,
+    startBeat: n.startBeat - minStart + beatOffset,
+}));
+```
+
+**Same fix in `src/modules/Arrangement/useCases/clipboard/pasteClip.ts` line 50-51:**
+```typescript
+// BEFORE:
+const copiedNotes: MidiNote[] = entry.midiNotes.map((n) =>
+    createMidiNote(n.pitch, n.startBeat, n.duration, n.velocity)
+);
+
+// AFTER:
+const copiedNotes: MidiNote[] = entry.midiNotes.map((n) => ({
+    ...n,
+    id: `note-${crypto.randomUUID().slice(0, 8)}`,
+}));
+```
+
+**Test**: copy a note with pressure/slide/pitchBend set, paste it, verify the pasted note retains all expression fields. The existing `pasteNotes.spec.ts` and `pasteClip.spec.ts` need new assertions for expression preservation.
+
+---
+
 # Phase 1 — Real differentiators
+
+### Build order within Phase 1
+
+Items have dependencies — build in this order:
+
+1. **Capability-aware feature planning (item 6)** — foundation for session modes and runtime transparency
+2. **Hardware-adaptive session modes (item 5)** — depends on capability system
+3. **Runtime transparency strip (item 2)** — depends on session modes and capability system
+4. **Variation-native clips (item 1)** — independent, can start in parallel with items 5-6
+5. **Trust modes for AI (item 3)** — depends on variants system (the "create branch" mode uses variants)
+6. **Capture-anything project memory (item 4)** — independent, can start in parallel
 
 ## 1. Variation-native clips and branches
 
@@ -100,6 +152,8 @@ Clips with the same `variantGroupId` are siblings. The active variant is the one
 **UI** — add a variant count badge to clip rendering in `src/modules/Arrangement/presentations/renderers/clipDrawing.ts`. Add a `VariantPanel` in `src/modules/Arrangement/presentations/components/` showing the variant list for the selected clip with audition/promote/archive buttons.
 
 **Audition** — temporarily swap the active clip's MIDI data for a variant's data during playback without committing. Use `midiStore` to hot-swap `notesByClipId[clipId]` and restore on audition end.
+
+**CRDT/collaboration** — the new `variantGroupId`, `variantLabel`, `variantSource`, and `variantCreatedAt` fields on `Clip` will be synced through Automerge via the existing `CrdtDocument` module (`src/modules/CrdtDocument/`). Since `Clip` is already part of the synced project document, adding optional fields is backward-compatible — older clients ignore unknown fields. Variant archives stored in `TrackAlternative` are also already part of the synced `Track` model. No new CRDT merge logic is needed — Automerge's JSON CRDT handles concurrent edits to these fields automatically. When a collaborator creates a variant, it appears as a new sibling in the other collaborator's variant list.
 
 ---
 
@@ -365,13 +419,11 @@ Expression data exists but is fragmented:
 - Groove extraction/application works
 - GrandBoule has per-note physical parameters (hammerHardness, stringStiffness, etc.)
 
-**Critical bug**: `pasteNotes.ts` (line 25) and `pasteClip.ts` (line 51) call `createMidiNote(n.pitch, n.startBeat, n.duration, n.velocity)` which drops `pressure`, `slide`, and `pitchBend`. Expression data is lost on copy/paste.
+**Known bug (fix is item 0 above)**: `pasteNotes.ts` and `pasteClip.ts` strip expression data on paste. Fix that first.
 
 ### What to build
 
-**Fix the expression data loss bug first** — `pasteNotes.ts` and `pasteClip.ts` must preserve all MidiNote fields.
-
-Then build a **Performance Editor** layer:
+Build a **Performance Editor** layer on top of the fixed paste infrastructure:
 
 - Copy notes only / copy expression only / copy notes+expression
 - Transfer feel from one phrase to another (extend existing groove extraction)
@@ -384,38 +436,7 @@ A phrase recorded with rich expression is editable semantically, copied with fee
 
 ### Implementation guidance
 
-**Bug fix (do this first — it's a data loss bug):**
-
-`src/modules/Arrangement/useCases/clipboard/pasteNotes.ts` line 24-25:
-```typescript
-// BEFORE (drops expression):
-const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) =>
-    createMidiNote(n.pitch, n.startBeat - minStart + beatOffset, n.duration, n.velocity)
-);
-
-// AFTER (preserves all fields):
-const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) => ({
-    ...n,
-    id: `note-${crypto.randomUUID().slice(0, 8)}`,
-    startBeat: n.startBeat - minStart + beatOffset,
-}));
-```
-
-Same fix needed in `src/modules/Arrangement/useCases/clipboard/pasteClip.ts` line 50-51:
-```typescript
-// BEFORE:
-const copiedNotes: MidiNote[] = entry.midiNotes.map((n) =>
-    createMidiNote(n.pitch, n.startBeat, n.duration, n.velocity)
-);
-
-// AFTER:
-const copiedNotes: MidiNote[] = entry.midiNotes.map((n) => ({
-    ...n,
-    id: `note-${crypto.randomUUID().slice(0, 8)}`,
-}));
-```
-
-Note: `copySelectedNotes.ts` (line 26) already correctly spreads notes (`{ ...n }`), so all expression data reaches the clipboard — only paste is broken. The `MidiNote` type (both `src/modules/MIDI/models/MidiNote.ts` and the local view type at `src/modules/Arrangement/models/MidiNoteViewTypes.ts`) includes `pressure?: number`, `slide?: number`, `pitchBend?: number`. These fields are properly preserved.
+The paste bug fix is item 0 above — do that first. Once expression data survives paste, build these features:
 
 **Expression clipboard modes** — add to `src/modules/Arrangement/useCases/clipboard/`:
 - `pasteExpressionOnly.ts` — paste `pressure`, `slide`, `pitchBend`, `velocity` from clipboard notes onto matching notes in the target clip (match by relative position/pitch)
@@ -764,14 +785,23 @@ Stem export is in `src/modules/Arrangement/useCases/freezeBounce/exportStems.ts`
 
 ### Current state
 
-No game audio export support.
+No game audio export support. The existing stem export (`exportStems.ts`) and DAWproject export (`dawProjectUseCases.ts`) provide the closest foundation.
 
 ### What to build
 
-Export mode that generates middleware project structures from DAW session:
-- Auto-create Wwise containers or FMOD events from session structure
-- Per-asset naming conventions
-- Metadata export for middleware import
+Export mode that generates middleware project structures from a DAW session:
+- Map arrangement sections/markers to Wwise containers or FMOD events
+- Per-asset naming conventions (e.g., `sfx_footstep_wood_01.wav`) with configurable templates
+- Metadata export (loop points, volume, priority) as Wwise `.wwu` XML or FMOD bank metadata
+- Batch render regions between markers as individual assets with silence-trimmed heads/tails
+
+### Implementation guidance
+
+- Add a "Game Audio Export" tab to the export dialog
+- Use the existing marker/section system to define asset boundaries — each section becomes one exported asset
+- Naming template: `{section}_{track}_{index}.wav` with user-customizable pattern
+- Wwise XML format is documented publicly; FMOD Studio API has a scripting interface
+- Start with flat WAV export with naming conventions (immediately useful). Add Wwise/FMOD project generation as a follow-up.
 
 This is a v2.0+ feature. Low priority but unique — no DAW currently does this.
 
