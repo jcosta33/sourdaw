@@ -1,5 +1,4 @@
 import { midiStore } from '#/modules/MIDI/stores';
-import { createMidiNote } from '#/modules/MIDI/useCases';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { clipboardStore } from '../../stores/clipboardStore';
 
@@ -21,9 +20,11 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
         if (n.startBeat < minStart) { minStart = n.startBeat; }
     }
 
-    const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) =>
-        createMidiNote(n.pitch, n.startBeat - minStart + beatOffset, n.duration, n.velocity)
-    );
+    const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) => ({
+        ...n,
+        id: `note-${crypto.randomUUID().slice(0, 8)}`,
+        startBeat: n.startBeat - minStart + beatOffset,
+    }));
 
     midiStore.set({
         ...midiState,
