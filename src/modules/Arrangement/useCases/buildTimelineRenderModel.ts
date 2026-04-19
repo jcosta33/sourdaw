@@ -11,7 +11,8 @@ import {
 } from '../models/TimelineRenderModel';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
-import { timeSignatureMapStore, getTimeSignatureAtBeat } from '#/modules/Transport';
+import { timeSignatureMapStore } from '#/modules/Transport/stores';
+import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
 import { logger } from '#/app/registerDependencies';
 
 function defaultViewportWidth(): number {

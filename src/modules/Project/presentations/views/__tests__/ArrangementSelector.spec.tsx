@@ -70,7 +70,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { switchArrangement } = await import('#/modules/Project/useCases/arrangement/switchArrangement');
+const { switchArrangement } = await import('#/modules/Project/presentations/views/arrangement/switchArrangement');
 
 describe('ArrangementSelector', () => {
     beforeEach(() => {

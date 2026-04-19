@@ -5,7 +5,7 @@ const fakeBuffer = {
     getChannelData: vi.fn(() => new Float32Array(8192).fill(0)),
 };
 
-vi.mock('#/modules/AudioEngine', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioBufferCache: {
         get: vi.fn((id: string) => (id === 'present' ? fakeBuffer : null)),
     },

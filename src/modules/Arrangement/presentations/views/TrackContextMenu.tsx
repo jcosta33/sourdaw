@@ -23,7 +23,8 @@ import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonit
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { BounceOptionsDialog, type BounceOptions } from '#/modules/Workspace';
+import { BounceOptionsDialog } from '#/modules/Workspace/presentations/views';
+import { type BounceOptions } from '#/modules/Arrangement';
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },

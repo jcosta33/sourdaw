@@ -12,22 +12,22 @@
 import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState, useEffect } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
-import { projectStore } from '#/modules/Project';
-import { SCALE_PATTERNS, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
+import { projectStore } from '#/modules/Project/stores';
+import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { useStore } from '#/infra/store/useStore';
-import { midiStore, stepRecordStore } from '#/modules/MIDI';
+import { midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollToolbar } from './PianoRollToolbar';
 import { PianoRollContextMenu } from './PianoRollContextMenu';
-import { NOTE_NAMES, GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
+import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
-import { setNoteVelocity, setNotePressure, setNoteSlide, setNotePitchBend } from '#/modules/MIDI';
+import { setNoteVelocity, setNotePressure, setNoteSlide, setNotePitchBend } from '#/modules/MIDI/useCases';
 
 type PianoRollProps = {
     clipId: string;
@@ -77,6 +77,7 @@ export const PianoRoll = ({
     const [gridSnap, setGridSnap] = useState(0.25);
 
     const { keyRoot, scaleName } = useStore(projectStore);
+    const scaleType = scaleName;
     const stepRecord = useStore(stepRecordStore);
     const [showGhostNotes, setShowGhostNotes] = useState(true);
     const [chordMode, setChordMode] = useState(false);
@@ -188,16 +189,18 @@ export const PianoRoll = ({
         scaleType,
         scaleRoot: keyRoot,
         isFolded,
-        stepInput: stepRecord.active,
-        stepBeat: stepRecord.currentBeat,
+        stepInput: stepRecord?.active ?? false,
+        stepBeat: stepRecord?.currentBeat ?? 0,
         setStepBeat: (beat) => {
+            const state = stepRecordStore.value;
+            if (!state) return;
             if (typeof beat === 'function') {
                 stepRecordStore.set({ 
-                    ...stepRecordStore.value, 
-                    currentBeat: beat(stepRecordStore.value.currentBeat) 
+                    ...state, 
+                    currentBeat: beat(state.currentBeat) 
                 });
             } else {
-                stepRecordStore.set({ ...stepRecordStore.value, currentBeat: beat });
+                stepRecordStore.set({ ...state, currentBeat: beat });
             }
         },
         chordMode,
@@ -232,12 +235,14 @@ export const PianoRoll = ({
                 onToggleFolded={() => setIsFolded((p) => !p)}
                 constrainToScale={constrainToScale}
                 onToggleConstrainToScale={() => setConstrainToScale((p: boolean) => !p)}
-                stepInput={stepRecord.active}
+                stepInput={stepRecord?.active ?? false}
                 onToggleStepInput={() => {
+                    const state = stepRecordStore.value;
+                    if (!state) return;
                     stepRecordStore.set({ 
-                        ...stepRecordStore.value, 
-                        active: !stepRecord.active,
-                        clipId: !stepRecord.active ? clipId : null,
+                        ...state, 
+                        active: !state.active,
+                        clipId: !state.active ? clipId : null,
                         currentBeat: 0 
                     });
                 }}

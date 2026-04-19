@@ -11,6 +11,12 @@ export type ProjectStoreState = {
     loading: boolean;
     keyRoot: number; // 0-11 (C=0)
     scaleName: string;
+    /** Current project-wide tuning table (128 frequencies).
+     * Defaults to standard 12-TET. */
+    tuning: {
+        name: string;
+        frequencies: number[];
+    };
     /** True once the user has explicitly started or loaded a project session.
      *  Ephemeral — not written to CRDT. Resets to false on every cold start.
      *  Controls whether the full-screen LaunchScreen is shown. */
@@ -19,8 +25,8 @@ export type ProjectStoreState = {
 
 export const projectStore = createStore<ProjectStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
-        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName }) => ({ 
-            name, createdAt, updatedAt, keyRoot, scaleName 
+        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName, tuning }) => ({ 
+            name, createdAt, updatedAt, keyRoot, scaleName, tuning 
         }),
     }),
     initialData: {
@@ -31,6 +37,10 @@ export const projectStore = createStore<ProjectStoreState>({
         loading: true,
         keyRoot: 0,
         scaleName: 'chromatic',
+        tuning: {
+            name: 'Equal Temperament',
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+        },
         initialized: false,
     },
 });

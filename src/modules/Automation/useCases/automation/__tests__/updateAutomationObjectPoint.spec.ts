@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { updateAutomationObjectPoint } from '#/modules/Automation/useCases/automation/updateAutomationObjectPoint';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { updateAutomationObjectPoint } from '../updateAutomationObjectPoint';
+import { automationStore } from '../../../stores/automationStore';
 
 describe('updateAutomationObjectPoint', () => {
     beforeEach(() => {

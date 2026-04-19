@@ -1,22 +1,23 @@
-import { stepRecordStore } from '../../stores/stepRecordStore';
+import { stepRecordStore, defaultStepRecordState } from '../../stores/stepRecordStore';
+import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
-export function toggleStepRecording(clipId: string | null = null, startBeat = 0): void {
-    const current = stepRecordStore.value;
+export function toggleStepRecording(): void {
+    const ws = getWorkspaceState();
+    const ts = transportStore.value;
+    if (!ws || !ts) return;
     
-    if (current.active && (clipId === null || clipId === current.clipId)) {
-        // Deactivate
+    const current = stepRecordStore.value;
+    const nextActive = !current?.active;
+    
+    if (nextActive) {
         stepRecordStore.set({
-            ...current,
-            active: false,
-            clipId: null,
+            ...defaultStepRecordState,
+            active: true,
+            clipId: ws.selectedClipId,
+            currentBeat: ts.playheadPosition,
         });
     } else {
-        // Activate (or switch clip)
-        stepRecordStore.set({
-            ...current,
-            active: true,
-            clipId: clipId,
-            currentBeat: startBeat,
-        });
+        stepRecordStore.set(null);
     }
 }

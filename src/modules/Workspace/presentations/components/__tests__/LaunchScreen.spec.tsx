@@ -20,8 +20,8 @@ vi.mock(
     }),
 );
 
-vi.mock('#/modules/AudioEngine', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioEngine')>();
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         ...actual,
         decodeAudioFile: vi.fn(),

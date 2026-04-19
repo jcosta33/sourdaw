@@ -9,7 +9,7 @@ import { save } from '@tauri-apps/plugin-dialog';
  * Uses Tauri native save for desktop, and File System Access API for web (with anchor fallback).
  */
 export async function downloadProjectFile(data: ProjectData): Promise<void> {
-    const safeName = data.name.replaceAll(/[^a-zA-Z0-9_\-]/g, '_');
+    const safeName = data.meta.name.replaceAll(/[^a-zA-Z0-9_\-]/g, '_');
     const filename = `${safeName}.sourdaw`;
 
     if (isTauri()) {

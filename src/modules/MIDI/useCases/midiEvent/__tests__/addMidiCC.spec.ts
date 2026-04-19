@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '../../../stores/midiStore';
 
 import { addMidiCC } from '../addMidiCC';
 

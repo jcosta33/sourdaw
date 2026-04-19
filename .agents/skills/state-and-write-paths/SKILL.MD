@@ -226,6 +226,10 @@ If feature A needs to change feature B’s truth:
 
 Do not mutate another feature’s state slice directly.
 
+### Blast Radius Awareness for State
+
+When you modify the structure of a state slice or its write path, you must map its blast radius. Who reads this? Who writes this? Trace the upstream commands that mutate it and the downstream selectors/components that project it. Lean heavily on the TypeScript compiler (`pnpm typecheck`) to verify that all consumers are updated to match the new state shape. Do not assume your local change is safe until the compiler proves it.
+
 ---
 
 ## Projections and read models

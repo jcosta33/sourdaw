@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { type VersionControlState, createDefaultState } from '../models/ProjectVersion';
+export type { VersionControlState };
 
 const VC_STORAGE_KEY = 'sourdaw-version-control';
 

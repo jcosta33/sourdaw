@@ -46,7 +46,7 @@ export {
     updateMidiFxBypass,
 } from './deviceControls/midiFxControls';
 
-export { getAudioContext } from './engineAccess/getAudioContext';
+export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
 export { resumeEngine } from './engineAccess/resumeEngine';
 export { waitForDevices } from './engineAccess/waitForDevices';

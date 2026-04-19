@@ -2,7 +2,7 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { getAllTracks } from '../getAllTracks';
-import { recordAutomationValue } from '#/modules/Automation';
+import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { setTrackGain as engineSetTrackGain, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { maybeRecordAutomation, syncToasterPadParam } from './helpers';
 

@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { markerStore, takeLaneStore, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -63,10 +63,14 @@ export async function exportProjectFile(): Promise<void> {
 
     const data: ProjectData = {
         version: 1,
-        name: project.name,
-        createdAt: project.createdAt,
-        updatedAt: Date.now(),
-        tracks,
+        meta: {
+            name: project.name,
+            createdAt: project.createdAt,
+            updatedAt: Date.now(),
+            keyRoot: project.keyRoot,
+            scaleName: project.scaleName,
+            tuning: project.tuning,
+        },
         transport: {
             tempo: transport.tempo,
             timeSignatureNumerator: transport.timeSignatureNumerator,
@@ -85,16 +89,33 @@ export async function exportProjectFile(): Promise<void> {
             preRollBars: transport.preRollBars,
             masterGain: transport.masterGain,
         },
+        arrangement: {
+            tracks: tracks?.tracks || [],
+        },
         automation,
-        midi,
+        mixer: {
+            master: { gain: 0.8, pan: 0 },
+            buses: []
+        },
+        midi: {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {}
+        },
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
-        markers: markerStore.value ?? undefined,
+        markers: (markerStore.value?.markers || []).map(m => ({
+            id: m.id,
+            beat: m.beat,
+            name: (m as any).name || (m as any).label || 'Untitled',
+            color: m.color
+        })),
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
         arrangements: arrState.arrangements,
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
+        history: { checkpoints: [] }
     };
 
     await downloadProjectFile(data);

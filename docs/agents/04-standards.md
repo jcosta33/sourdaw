@@ -19,36 +19,20 @@ Documents must be written for the reader, not the writer.
 
 ## No false certainty
 
-Do not state things you are not sure about as if they are facts.
-
-If you are uncertain:
+Do not state assumptions as facts. If uncertain:
 
 - Say so explicitly: "This is an assumption — not yet confirmed"
-- Record it in `## Assumptions` in the task file
+- Record it in `## Assumptions`
 - Do not implement on top of an unverified assumption without flagging it
-
-This rule exists because wrong assumptions that look like facts are harder to catch than flagged uncertainty. A clearly marked assumption can be verified. A buried guess causes bugs.
-
----
 
 ## Capturing unknowns
 
-Every document type has a place for unknowns. Use it.
+Record unknowns. Do not assume they are obvious.
 
-- Specs have `## Open questions`
-- Research files have `## Open questions`
-- Task files have `## Blockers` and `## Assumptions`
+- Specs and Research: `## Open questions`
+- Tasks: `## Blockers` and `## Assumptions`
 
-Unknown things that are not recorded do not exist for the next session. Record them even if you think they are obvious.
-
-A blocker is anything that prevents correct or confident implementation:
-
-- a design decision that was not made
-- an API behavior that was not confirmed
-- a performance constraint that was not measured
-- a dependency on another module's change that has not landed
-
-Record blockers immediately. Do not work around them silently.
+A blocker prevents correct or confident implementation (e.g., pending design decisions, unconfirmed APIs). Record blockers immediately; do not work around them silently.
 
 ---
 

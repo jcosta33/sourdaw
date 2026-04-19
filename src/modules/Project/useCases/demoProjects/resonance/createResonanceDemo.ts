@@ -4,14 +4,15 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '../../../stores/projectStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
-import { automationStore, createAutomationLane } from '#/modules/Automation';
-import type { MidiNote } from '../../../models/DemoProjectTypes';
+import { automationStore } from '#/modules/Automation/stores';
+import { createAutomationLane } from '#/modules/Automation/useCases';
 import { note } from '../demoUtils/note';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createAudioClip } from '../demoUtils/createAudioClip';
 import { createMidiClip } from '../demoUtils/createMidiClip';
 import { generateDemoDrumBuffer } from '../demoUtils/generateDemoDrumBuffer';
 import { syncArrangement } from '../demoUtils/syncArrangement';
+import type { MidiNote } from '../../../models/DemoProjectTypes';
 export async function demo1_TheCompleteMix(): Promise<void> {
     const bpm = 120;
     const TB = 640; // totalBeats — ~5:20
@@ -1888,16 +1889,16 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         microN.push(note(c.root + 24, b + 3.75, 0.05, hv(60, 5)));
         microN.push(note(c.fifth + 24, b + 3.875, 0.05, hv(50, 5)));
     }
-    (pluckArpAClip as any).notes = arpAN;
-    (pluckArpBClip as any).notes = arpBN;
-    (rhodesStabAClip as any).notes = rStabAN;
-    (rhodesStabBClip as any).notes = rStabBN;
-    (bellScatterClip as any).notes = bScatN;
-    (glassSwellClip as any).notes = gSwellN;
-    (malletTapClip as any).notes = malTapN;
-    (pizzLayerClip as any).notes = pizzN;
-    (chimeDropClip as any).notes = chimeN;
-    (microPercClip as any).notes = microN;
+    pluckArpAClip.notes = arpAN;
+    pluckArpBClip.notes = arpBN;
+    rhodesStabAClip.notes = rStabAN;
+    rhodesStabBClip.notes = rStabBN;
+    bellScatterClip.notes = bScatN;
+    glassSwellClip.notes = gSwellN;
+    malletTapClip.notes = malTapN;
+    pizzLayerClip.notes = pizzN;
+    chimeDropClip.notes = chimeN;
+    microPercClip.notes = microN;
 
     const leadSoftVol = mkLane(leadSoftTrack.id, 'volume', 'Volume', 0, 1);
     leadSoftVol.points = [
@@ -2224,6 +2225,12 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         dirty: false,
         loading: false,
         initialized: true,
+        keyRoot: 0,
+        scaleName: 'chromatic',
+        tuning: {
+            name: 'Equal Temperament',
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+        },
     });
 }
 

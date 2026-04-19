@@ -1,6 +1,6 @@
 import { kneadStore } from '../stores/kneadStore';
-import { trackStore } from '#/modules/Arrangement';
-import { audioEngine } from '#/modules/AudioEngine';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 /**
  * Orchestrates the synchronization of Knead pitch data from the store
@@ -9,6 +9,7 @@ import { audioEngine } from '#/modules/AudioEngine';
 export function syncKneadToEngine(): () => void {
     // Listen to changes in the kneadStore
     const unsubscribeKnead = kneadStore.subscribe((state) => {
+        if (!state) return;
         const tracks = trackStore.value?.tracks ?? [];
         
         // For each track, check if it has a Knead device and sync its clips' states

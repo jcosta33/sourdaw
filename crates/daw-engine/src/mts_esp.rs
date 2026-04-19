@@ -27,7 +27,7 @@ impl MtsEspMaster {
         }
     }
 
-    fn broadcast_tuning(&self, table: &TuningTable) {
+    fn broadcast_tuning(&self, _table: &TuningTable) {
         // LOGIC: For each note in the 0-127 range, we push the Sourdaw frequency
         // to the MTS-ESP system.
         //
@@ -36,8 +36,6 @@ impl MtsEspMaster {
         //    let freq = table.frequencies[note];
         //    unsafe { MTS_SetNote(freq, note as i8, -1); } // -1 for all channels
         // }
-        
-        println!("[MTS-ESP] Broadcasting new tuning table to system...");
     }
 }
 

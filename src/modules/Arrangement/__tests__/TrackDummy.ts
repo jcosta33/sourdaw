@@ -33,6 +33,7 @@ export const TrackDummy = {
         vcaGroupId: null,
         midiOutputTrackId: null,
         followChordTrack: false,
+        midiFx: [],
         ...overrides,
     }),
 };

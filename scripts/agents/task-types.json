@@ -30,26 +30,6 @@
         "readonly": false
     },
     {
-        "id": "audit",
-        "label": "Audit",
-        "description": "Read-only investigation — produces an audit document, no code changes",
-        "docsSource": "specs",
-        "docsLabel": "Spec",
-        "requiresDoc": false,
-        "requiresDepsValidate": false,
-        "readonly": true
-    },
-    {
-        "id": "migration",
-        "label": "Migration",
-        "description": "Move code to a new structure — shim contracts required",
-        "docsSource": "specs",
-        "docsLabel": "Spec",
-        "requiresDoc": true,
-        "requiresDepsValidate": true,
-        "readonly": false
-    },
-    {
         "id": "spec",
         "label": "Spec",
         "description": "Write a spec document — no code changes",
@@ -58,15 +38,5 @@
         "requiresDoc": false,
         "requiresDepsValidate": false,
         "readonly": true
-    },
-    {
-        "id": "tests",
-        "label": "Tests",
-        "description": "Write new tests, improve existing ones, close coverage gaps — follows docs/06-testing.md",
-        "docsSource": null,
-        "docsLabel": null,
-        "requiresDoc": false,
-        "requiresDepsValidate": true,
-        "readonly": false
     }
 ]

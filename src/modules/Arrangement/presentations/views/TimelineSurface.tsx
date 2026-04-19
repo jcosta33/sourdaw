@@ -21,7 +21,7 @@ import {
 } from '#/modules/Workspace/useCases';
 import { PresenceOverlay } from '#/modules/Collaboration/presentations/views';
 
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { markerStore } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';

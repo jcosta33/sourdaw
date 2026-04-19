@@ -14,6 +14,8 @@
 ---
 
 > ⚠️ **REFACTOR SESSION** — Run `pnpm deps:validate` after every 10 files. Do not declare done until it passes with zero violations. No codemods. No automated mutations. Every file change is individual and deliberate.
+> 
+> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Janitor** persona.
 
 ---
 
@@ -143,6 +145,11 @@ Stop. Refactors are high-risk: they touch many files, they drift from intent, an
 ### Primary deliverable and related work
 
 - The refactor plan is the main job. If you fixed or improved something beyond it, note it in **Findings** or **Decisions** so the branch stays reviewable. Do not revert correct work only because it was extra.
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.

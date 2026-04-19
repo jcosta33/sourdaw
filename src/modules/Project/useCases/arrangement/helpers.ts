@@ -1,5 +1,5 @@
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { arrangementStore } from '../../stores/arrangementStore';

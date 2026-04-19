@@ -140,6 +140,10 @@ Payloads crossing the bridge should be:
 
 Do not leak native/runtime internals over IPC.
 
+### Empirical FFI Verification (Show, Don't Tell)
+
+The boundary between Rust and TypeScript is a common failure point for autonomous agents. When modifying Tauri commands, events, or state models, you MUST empirically verify the bridge. Run `cargo test` or `cargo build` to generate the updated Specta/TS bindings, and then run `pnpm typecheck` on the frontend to prove the IPC payloads align. Do not trust your mental model of the Rust-to-TS serialization; prove it compiles.
+
 ---
 
 ## Shell discipline

@@ -1,7 +1,7 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin/useCases';
 import { requestMicPermission } from './audioRecorder/requestMicPermission';
-import { syncKneadToEngine } from '#/modules/Knead';
+import { syncKneadToEngine } from '#/modules/Knead/useCases';
 
 export const initializeAudioEngineDependencies = {
     audioEngine,

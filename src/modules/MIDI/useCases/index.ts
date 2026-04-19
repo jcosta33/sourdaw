@@ -7,9 +7,7 @@ export type { ArpPattern, ArpRate } from './arpeggiator';
 
 export { stampChord } from './chordStamps/stampChord';
 export { removeNotesByIds } from './chordStamps/removeNotesByIds';
-export { CHORD_TYPES } from './chordStamps/helpers';
 export { CHORD_TYPE_KEYS } from './chordStamps/CHORD_TYPE_KEYS';
-export type { ChordType } from './chordStamps/helpers';
 
 // ── Chord Track ───────────────────────────────────────────────────────────────
 export { addChordEvent } from './chordTrack/addChordEvent';
@@ -40,7 +38,6 @@ export { setMidiStoreState } from './setMidiStoreState';
 export { extractGrooveFromClip } from './grooveExtraction/extractGrooveFromClip';
 export { applyGrooveToClip } from './grooveExtraction/applyGrooveToClip';
 export { restoreGrooveOriginals } from './grooveExtraction/restoreGrooveOriginals';
-export type { GrooveTemplate } from './grooveExtraction/helpers';
 
 // ── MIDI Events ───────────────────────────────────────────────────────────────
 export { addMidiCC } from './midiEvent/addMidiCC';
@@ -109,7 +106,6 @@ export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
 
 export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
-export type { StrumDirection } from './strumNotes/strumNotes';
 
 // ── Hardware ─────────────────────────────────────────────────────────────────
 export { exportHardwareMappings, importHardwareMappings } from './hardware/portableMappings';

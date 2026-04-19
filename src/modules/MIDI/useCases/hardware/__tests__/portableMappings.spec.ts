@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { exportHardwareMappings, importHardwareMappings } from '#/modules/MIDI/useCases/hardware/portableMappings';
-import { hardwareControllerStore } from '#/modules/MIDI/stores/hardwareControllerStore';
+import { exportHardwareMappings, importHardwareMappings } from '../portableMappings';
+import { hardwareControllerStore } from '../../../stores/hardwareControllerStore';
 
 describe('portableMappings', () => {
     beforeEach(() => {

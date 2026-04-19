@@ -130,4 +130,9 @@ Stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't
 - Is anything left stubbed, TODO'd, or half-finished? Would the next developer be able to continue from this task file and Self-review alone with zero questions?
   Answer:
 
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
+  Answer:
+
 Only when every answer above is written is this task complete.

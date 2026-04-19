@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setNotePitchBend } from '#/modules/MIDI/useCases/midiEvent/setNotePitchBend';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { setNotePitchBend } from '../setNotePitchBend';
+import { midiStore } from '../../../stores/midiStore';
 
 describe('setNotePitchBend', () => {
     beforeEach(() => {

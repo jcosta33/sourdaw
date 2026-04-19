@@ -1,7 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '../../stores';
 import { updateTrack } from '../updateTrack';
-import { addMidiFxToStrip } from '#/modules/AudioEngine';
+import { addMidiFxToStrip } from '#/modules/AudioEngine/useCases';
 
 export function addMidiFx(
     trackId: string,

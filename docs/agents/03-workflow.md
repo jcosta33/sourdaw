@@ -141,7 +141,7 @@ Complete `## Self-review` in the task file before ending the session (every ques
 
 Not every task needs all five document types, but some combinations are never valid.
 
-Documentation is proportionate to scope. A two-line bug fix in a single isolated file needs none of this. The system exists to prevent wasted effort on non-trivial work — not to add overhead to obvious changes.
+Documentation scales with scope. Trivial single-file fixes require no docs.
 
 **Allowed sequences:**
 
@@ -179,4 +179,4 @@ Steps can be skipped when there is a genuine reason, not by default.
 | Skills       | No skill exists for the relevant domain                                   |
 | Audit (post) | Trivial fix that does not change observable behavior                      |
 
-When skipping steps on a non-trivial task, the reason should be noted somewhere — in the task file if one exists, or briefly in a commit message if not. "I didn't write a spec because this is a one-line style fix" is fine. Silence on a non-trivial change is not.
+When skipping steps on a non-trivial task, explicitly document the reason in the task file or commit message. Silence is unacceptable.

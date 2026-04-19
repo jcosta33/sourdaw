@@ -1,5 +1,5 @@
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { getAutomationLanes } from '#/modules/Automation';
+import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { getMidiStoreState } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,

@@ -17,7 +17,7 @@ vi.mock('../../../useCases/removeTrack', () => ({
     removeTrack: mocks.removeTrack,
 }));
 
-vi.mock('#/modules/Automation', () => ({
+vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { get value() { return mocks.automationStoreValue.value; } },
 }));
 

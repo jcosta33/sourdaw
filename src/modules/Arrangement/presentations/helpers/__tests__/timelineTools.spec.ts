@@ -7,7 +7,8 @@ import { splitClip } from '../../../useCases/clipEditing/splitClip';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
-import { automationStore, addAutomationPoint, addAutomationLane } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { addAutomationPoint, addAutomationLane } from '#/modules/Automation/useCases';
 
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: vi.fn() }));
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({ hitTestTrack: vi.fn() }));
@@ -16,7 +17,7 @@ vi.mock('../../../useCases/clipEditing/splitClip', () => ({ splitClip: vi.fn() }
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: vi.fn() }));
 vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: vi.fn() }));
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: vi.fn() }));
-vi.mock('#/modules/Automation', () => ({
+vi.mock('#/modules/Automation/useCases', () => ({
     automationStore: { value: { lanes: [] } },
     addAutomationPoint: vi.fn(),
     addAutomationLane: vi.fn(),

@@ -1,7 +1,7 @@
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { getAllTracks } from '../getAllTracks';
-import { recordAutomationValue } from '#/modules/Automation';
+import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { type AutomationMode } from '../../stores/trackStore';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 export const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);

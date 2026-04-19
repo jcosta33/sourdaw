@@ -31,6 +31,7 @@ import {
 } from './agents/git.mjs';
 import { createOrUpdateTaskFile } from './agents/template.mjs';
 import { resolveBackend, launch, checkBackend } from './agents/terminal.mjs';
+import { colors, c, red, green, yellow, blue, cyan, dim, bold, success, info, warn as printWarn, error as printError, box } from './agents/colors.mjs';
 
 // ─── Argument parser ─────────────────────────────────────────────────────────
 
@@ -83,12 +84,12 @@ function parseArgs(argv) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function die(msg) {
-    console.error(`\nError: ${msg}\n`);
+    printError(msg);
     process.exit(1);
 }
 
 function warn(msg) {
-    console.warn(`Warning: ${msg}`);
+    printWarn(msg);
 }
 
 async function loadAdapter(agentName) {
@@ -273,10 +274,10 @@ async function cmdNew(argv) {
         const taskTypeDef = taskTypes.find((t) => t.id === interactiveType);
 
         // Step 2: Reference doc — source folder depends on task type.
-        //   feature/audit/migration → .agents/specs
-        //   refactor                → .agents/audits
-        //   spec                    → .agents/research
-        //   fix/tests               → null (no picker)
+        //   feature  → .agents/specs
+        //   refactor → .agents/audits
+        //   spec     → .agents/research
+        //   fix      → null (no picker)
         const docsSource = taskTypeDef?.docsSource;
         if (docsSource) {
             const docsDir = join(repoRootEarly, '.agents', docsSource);
@@ -410,15 +411,16 @@ async function cmdNew(argv) {
         printJson({ slug, branch: names.branch, worktreePath: worktreeAbs, taskFile: names.taskFile });
         if (noLaunch) return;
     } else {
-        console.log(`\nCreated sandbox: ${slug}`);
-        console.log(`  Branch:    ${names.branch}`);
-        console.log(`  Worktree:  ${worktreeAbs}`);
-        console.log(`  Task file: ${names.taskFile}`);
+        success(`Created sandbox: ${cyan(slug)}`);
+        box(slug, [
+            `${dim('Branch:')}    ${names.branch}`,
+            `${dim('Worktree:')}  ${worktreeAbs}`,
+            `${dim('Task file:')} ${names.taskFile}`,
+        ]);
         if (noLaunch) {
-            console.log('\n(--no-launch: skipping terminal open)');
+            console.log(dim('(--no-launch: skipping terminal open)\n'));
             return;
         }
-        console.log('');
     }
 
     await openAt({
@@ -611,14 +613,13 @@ async function cmdShow(argv) {
         return;
     }
 
-    console.log('');
-    console.log(`Sandbox: ${slug}`);
-    console.log(`${'─'.repeat(50)}`);
-    console.log(`  Branch:    ${names.branch}`);
-    console.log(`  Worktree:  ${worktreeAbs}`);
-    console.log(`  Task file: ${names.taskFile}`);
-    console.log(`  Status:    ${gitStatus}`);
-    console.log('');
+    info(`Sandbox Details`);
+    box(slug, [
+        `${dim('Branch:')}    ${names.branch}`,
+        `${dim('Worktree:')}  ${worktreeAbs}`,
+        `${dim('Task file:')} ${names.taskFile}`,
+        `${dim('Status:')}    ${gitStatus.includes('dirty') ? yellow(gitStatus) : green(gitStatus)}`,
+    ]);
 }
 
 // ─── Subcommand: task ────────────────────────────────────────────────────────
@@ -1015,7 +1016,7 @@ QOL subcommands:
 
 Flags for \`new\`:
   --agent <name>            Agent to launch: claude (default), gemini, codex, opencode
-  --type <type>             Task type: feature, refactor, fix, audit, migration, spec
+  --type <type>             Task type: feature, refactor, fix, spec
   --spec <path>             Spec file to embed in task (also accepted as positional)
   --base <branch>           Base branch (default: main)
   --terminal <backend>      Terminal backend: current (default), terminal, iterm

@@ -18,7 +18,7 @@ import { ProjectName } from './Transport/ProjectName';
 import { PromptBar } from './PromptBar';
 import { ToolSelector } from './ToolSelector';
 import { TempoEditor } from './TempoEditor';
-import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project';
+import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];

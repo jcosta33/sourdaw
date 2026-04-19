@@ -15,6 +15,10 @@ All Vitest specs live in **`__tests__/`** directories **inside** the folder that
 | `repositories/foo.ts` | `repositories/__tests__/foo.spec.ts` |
 | `presentations/views/ClipView.tsx` | `presentations/views/__tests__/ClipView.spec.tsx` (or a subfolder’s `__tests__/` if the concept is scoped there) |
 
+## Reproduction First (Empirical Proof)
+
+Before fixing a bug or modifying application behavior, you MUST write a failing test or a reproduction script first. If you cannot empirically prove the bug exists or the behavior is missing in a vacuum, you are not allowed to fix it. This forces you to understand the actual execution path rather than guessing based on static code reading.
+
 ## Imports
 
 From `path/to/__tests__/foo.spec.ts`, import the subject with **`../foo`** (one level up to the sibling source file). Adjust `../` depth for nested folders.

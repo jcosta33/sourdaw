@@ -1,15 +1,13 @@
 import { type ReactElement } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
-import { Plus, Power, Trash2, Settings2 } from 'lucide-react';
+import { Power, Trash2, Settings2 } from 'lucide-react';
 import { type Track } from '../../../models/TrackViewTypes';
 import { cn } from '#/utils/Styles/cn';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
-import { addMidiFx } from '#/modules/Arrangement';
-import { updateMidiFxParam, updateMidiFxBypass, removeMidiFxFromStrip } from '#/modules/AudioEngine';
+import { addMidiFx, removeMidiFx, bypassMidiFx, updateMidiFxParam } from '#/modules/Arrangement/useCases';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
-import { updateTrack } from '#/modules/Arrangement/useCases';
 
 type TrackMidiFxSectionProps = {
     track: Track;
@@ -25,28 +23,14 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
     const handleAddProbability = () => addMidiFx(track.id, 'probability', 'Probability');
 
     const handleRemove = (fxId: string) => {
-        updateTrack(track.id, (t) => ({
-            ...t,
-            midiFx: t.midiFx.filter((f) => f.id !== fxId),
-        }));
-        removeMidiFxFromStrip(track.id, fxId);
+        removeMidiFx(track.id, fxId);
     };
 
     const handleToggleBypass = (fxId: string, current: boolean) => {
-        updateTrack(track.id, (t) => ({
-            ...t,
-            midiFx: t.midiFx.map((f) => f.id === fxId ? { ...f, bypassed: !current } : f),
-        }));
-        updateMidiFxBypass(track.id, fxId, !current);
+        bypassMidiFx(track.id, fxId, !current);
     };
 
     const handleParamChange = (fxId: string, paramId: string, value: number) => {
-        updateTrack(track.id, (t) => ({
-            ...t,
-            midiFx: t.midiFx.map((f) => 
-                f.id === fxId ? { ...f, parameterValues: { ...f.parameterValues, [paramId]: value } } : f
-            ),
-        }));
         updateMidiFxParam(track.id, fxId, paramId, value);
     };
 
@@ -110,7 +94,8 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             min={0.125} max={1.0} 
                                             onChange={(v) => handleParamChange(fx.id, 'rate', v)}
                                         />
-                                        <MixerStripValue size="xs">Rate</MixerStripValue>
+                                        <MixerStripValue size="sm">
+Rate</MixerStripValue>
                                     </div>
                                     <div className="flex flex-col items-center gap-1">
                                         <select 
@@ -123,7 +108,8 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             <option value={2}>UpDown</option>
                                             <option value={3}>Random</option>
                                         </select>
-                                        <MixerStripValue size="xs">Mode</MixerStripValue>
+                                        <MixerStripValue size="sm">
+Mode</MixerStripValue>
                                     </div>
                                 </>
                             )}
@@ -136,7 +122,8 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             min={0.1} max={2.0} 
                                             onChange={(v) => handleParamChange(fx.id, 'scale', v)}
                                         />
-                                        <MixerStripValue size="xs">Scale</MixerStripValue>
+                                        <MixerStripValue size="sm">
+Scale</MixerStripValue>
                                     </div>
                                     <div className="flex flex-col items-center gap-1">
                                         <RotaryKnob 
@@ -145,7 +132,8 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             min={-64} max={64} 
                                             onChange={(v) => handleParamChange(fx.id, 'offset', v)}
                                         />
-                                        <MixerStripValue size="xs">Offset</MixerStripValue>
+                                        <MixerStripValue size="sm">
+Offset</MixerStripValue>
                                     </div>
                                 </>
                             )}
@@ -157,7 +145,8 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                         min={1} max={65535} 
                                         onChange={(v) => handleParamChange(fx.id, 'seed', v)}
                                     />
-                                    <MixerStripValue size="xs">Seed</MixerStripValue>
+                                    <MixerStripValue size="sm">
+Seed</MixerStripValue>
                                 </div>
                             )}
                         </div>

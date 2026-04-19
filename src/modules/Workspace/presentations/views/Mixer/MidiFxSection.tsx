@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { cn } from '#/utils/Styles/cn';
-import { addMidiFx } from '#/modules/Arrangement';
+import { addMidiFx } from '#/modules/Arrangement/useCases';
 import { type Track } from '../../../models/TrackViewTypes';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
 import { MixerSection } from '../../components/Mixer/MixerSection';

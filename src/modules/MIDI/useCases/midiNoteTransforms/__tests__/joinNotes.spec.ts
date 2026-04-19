@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '../../../stores/midiStore';
 import { joinNotes } from '../joinNotes';
 
 const note = (id: string, pitch: number, startBeat: number, duration: number) => ({

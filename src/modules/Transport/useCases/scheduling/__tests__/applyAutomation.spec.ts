@@ -21,7 +21,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         getEffectiveGain: vi.fn((_, g) => g),
     };
 });
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/stores', () => ({
     getAutomationValueAtBeat: vi.fn(),
     isRecordingAutomation: vi.fn(() => false),
 }));

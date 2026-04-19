@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setNotePressure } from '#/modules/MIDI/useCases/midiEvent/setNotePressure';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { setNotePressure } from '../setNotePressure';
+import { midiStore } from '../../../stores/midiStore';
 
 describe('setNotePressure', () => {
     beforeEach(() => {

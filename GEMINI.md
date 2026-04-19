@@ -34,6 +34,9 @@ If `.agents/tasks/` contains a file, that is your task file for this session. Re
 
 ## Hard rules
 
+- **Force Empirical Proof (Show, Don't Tell):** Mistrust your own code. Never declare a task complete without empirical verification. You must paste actual console output of tests, linters, or compilation to prove success.
+- **Three Strikes Rule:** If you attempt to fix an error 3 times and fail, stop. Discard your approach, reread the spec, and formulate a fundamentally different strategy.
+- **Blast Radius & Invariants:** Use `pnpm typecheck` to navigate the blast radius of your changes. Evaluate the holistic app state (errors, loading) and avoid "happy path only" coding.
 - `pnpm deps:validate` must pass with zero violations before any task is complete
 - Cross-module imports must target each module’s root `index.ts` only (no deep paths into `useCases/`, `stores/`, `presentations/views/`, etc.)
 - Module internals (`models/`, `repositories/`, `engine/`, `presentations/components/`) are strictly private

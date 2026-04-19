@@ -3,9 +3,11 @@
  * Shared between the main view, renderer, gestures hook, and sub-components.
  */
 
-import { SCALE_PATTERNS } from '#/utils/Music/MusicalScale';
+import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 
 export { NOTE_NAMES } from '#/utils/noteNames';
+export const SCALES = SCALE_PATTERNS;
+export const SCALE_ROOT_LABELS = KEY_NAMES;
 export const TOTAL_ROWS = 60;
 export const BASE_PITCH = 24;
 export const ROW_HEIGHT = 16;

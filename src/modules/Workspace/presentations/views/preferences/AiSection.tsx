@@ -10,7 +10,7 @@ import {
     isCloudAvailable,
     resolveBackend,
 } from '#/modules/AiRuntime/useCases';
-import { CapabilityReportPanel, ModelManagerPanel } from '#/modules/BrowserAi';
+import { CapabilityReportPanel, ModelManagerPanel } from '#/modules/BrowserAi/presentations/views';
 import { cn } from '#/utils/Styles/cn';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 

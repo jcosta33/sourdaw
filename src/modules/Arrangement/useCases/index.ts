@@ -21,6 +21,7 @@ export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { flattenTrack } from './freezeBounce/flattenTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
 export { bounceInPlace, bounceToNewTrack, bounceSelection } from './freezeBounce/bounceOperations';
+export type { BounceOptions } from './freezeBounce/bounceOperations';
 export { setTrackInput } from './setTrackInput';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
@@ -109,6 +110,9 @@ export { createAdjustmentLayer } from './adjustmentLayer/createAdjustmentLayer';
 
 export { addDevice } from './device/addDevice';
 export { addMidiFx } from './device/addMidiFx';
+export { removeMidiFx } from './device/removeMidiFx';
+export { bypassMidiFx } from './device/bypassMidiFx';
+export { updateMidiFxParam } from './device/updateMidiFxParam';
 export { addExternalDevice } from './device/addExternalDevice';
 export { bypassDevice } from './device/bypassDevice';
 export { removeDevice } from './device/removeDevice';

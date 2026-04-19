@@ -5,20 +5,24 @@ import { getTempoAtBeat } from '../models/TempoMap';
 import { startRecording, stopRecording, addTakeLane, addTake } from '#/modules/Arrangement/useCases';
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { evaluateFollowActions } from './evaluateFollowActions';
-import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation';
+import { 
+    startAutomationRecording, 
+    stopAutomationRecording, 
+    applyModulation,
+} from '#/modules/Automation/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     stopAllScheduled,
     startAudioRecording,
     stopAudioRecording,
     getAudioContext,
+    audioEngine,
 } from '#/modules/AudioEngine/useCases';
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
 import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
 import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
-import { applyModulation } from '#/modules/Automation';
 
 export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
 
@@ -44,7 +48,7 @@ function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioConte
 // §28.1 / §107.1 — Coalesce scheduler mutables into a single holder so
 // the active playback session lives behind one handle. Mutation is still
 // only done from within this file; the holder object prevents importers
-// from rebinding any of these via \`export let\`.
+// from rebinding any of these via `export let`.
 const schedulerSession = {
     worker: null as Worker | null,
     lastTickTime: 0,

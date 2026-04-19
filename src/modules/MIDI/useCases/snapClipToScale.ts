@@ -1,6 +1,6 @@
 import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 import { setNotesForClip } from './midiNoteCrud/setNotesForClip';
-import { projectStore } from '#/modules/Project';
+import { projectStore } from '#/modules/Project/stores';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
 export function snapClipToScale(clipId: string): void {

@@ -13,16 +13,7 @@ import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
-import { type Track } from '#/modules/Arrangement/models/Track';
-
-export type BounceOptions = {
-    includeInserts: boolean;
-    includeSends: boolean;
-    includeAutomation: boolean;
-    normalization: 'off' | 'protection' | 'full';
-    tailHandling: 'auto' | 'manual' | 'off';
-    destination: 'new-track' | 'replace';
-};
+import { type Track, type BounceOptions } from '#/modules/Arrangement';
 
 type BounceOptionsDialogProps = {
     track: Track;

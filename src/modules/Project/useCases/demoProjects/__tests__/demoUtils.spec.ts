@@ -5,7 +5,7 @@ import { applyPreset } from '../demoUtils/applyPreset';
 import { syncArrangement } from '../demoUtils/syncArrangement';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { arrangementStore } from '../../../stores/arrangementStore';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { markerStore } from '#/modules/Arrangement/stores';
 
@@ -18,7 +18,7 @@ vi.mock('../../../stores/arrangementStore', () => ({
     defaultArrangementId: 'default-arrangement-id',
 }));
 
-vi.mock('#/modules/Automation', () => ({
+vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: { lanes: [] }, set: vi.fn() },
 }));
 

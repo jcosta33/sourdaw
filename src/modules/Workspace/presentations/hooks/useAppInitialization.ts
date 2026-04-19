@@ -5,18 +5,18 @@ import {
     getAudioContext,
     initWebMidi,
     setMasterGainValue,
-} from '#/modules/AudioEngine/useCases';
+} from '#/modules/AudioEngine';
 import {
     verifyAudioBufferReferences,
     loadProject,
     projectStore,
     saveProject,
 } from '#/modules/Project';
-import { registerProModulationEffects } from '#/modules/Plugin/useCases';
-import { registerProSynthInstruments } from '#/modules/Synth/useCases';
-import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
-import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
-import { restoreLibrary } from '#/modules/SampleLibrary/useCases';
+import { registerProModulationEffects } from '#/modules/Plugin';
+import { registerProSynthInstruments } from '#/modules/Synth';
+import { hasCrdtProject } from '#/modules/CrdtDocument';
+import { ensureTrackStrips, getTransportState } from '#/modules/Transport';
+import { restoreLibrary } from '#/modules/SampleLibrary';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 

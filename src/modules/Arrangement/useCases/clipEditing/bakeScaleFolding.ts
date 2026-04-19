@@ -1,7 +1,7 @@
 import { updateClip } from '../updateClip';
-import { projectStore } from '#/modules/Project';
+import { projectStore } from '#/modules/Project/stores';
 
-export function bakeClipScaleFolding(clipId: string, currentMidiNotes: any[]): void {
+export function bakeClipScaleFolding(clipId: string): void {
     const project = projectStore.value;
     if (!project) return;
 

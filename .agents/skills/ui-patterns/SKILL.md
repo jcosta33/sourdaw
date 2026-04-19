@@ -92,6 +92,14 @@ Use the project’s design tokens/component system consistently.
 
 Do not fragment styling into many unrelated local approaches.
 
+### 6. Behavioral Invariants (Holistic Evaluation)
+
+When implementing UI, you must evaluate the holistic state of the application. **No "happy path only" coding.** 
+- Does the UI update optimistically?
+- Are pending and loading states explicitly handled?
+- What happens if the network request fails, or the audio thread crashes? 
+- You must automatically implement error boundaries, fallback UIs, and graceful degradation for components that depend on async data or external state. Assume everything that can fail will fail.
+
 ---
 
 ## React implementation guidance

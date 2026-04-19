@@ -1,7 +1,7 @@
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { removeTrack } from '../../useCases/removeTrack';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { createHandler } from '#/utils/createHandler';
 import { midiStore } from '#/modules/MIDI/stores';
 

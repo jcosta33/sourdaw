@@ -99,6 +99,8 @@ pub fn run() {
             // Pitch Edit
             commands::pitch_edit::analyze_pitch,
             commands::pitch_edit::commit_pitch_edit,
+            // Tuning
+            commands::tuning::parse_scl,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

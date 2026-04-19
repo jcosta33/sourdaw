@@ -6,7 +6,8 @@ import { cn } from '#/utils/Styles/cn';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
-import { addAutomationLane, removeAutomationLane, automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation';
+import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
+import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { useStore } from '#/infra/store/useStore';
 import { type Device } from '../../../models/TrackViewTypes';
 

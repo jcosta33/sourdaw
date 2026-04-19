@@ -6,7 +6,7 @@
 
 import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 import { ensureWorkletRegistered, fetchWasmBinary, createReadyHandshake } from './workletInitShared';
-import { type NoteBlob, type KneadClipState } from '#/modules/Knead/stores/kneadStore';
+import { type KneadClipState } from '#/modules/Knead/stores/kneadStore';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

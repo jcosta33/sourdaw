@@ -11,7 +11,7 @@ import {
     adjustYZoom,
     zoomToUsedRange,
     toggleVirginTerritory,
-} from '#/modules/Automation';
+} from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
 import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';

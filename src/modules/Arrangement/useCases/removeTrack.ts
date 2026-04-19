@@ -3,7 +3,7 @@ import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { eventBus } from '#/app/registerDependencies';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { takeLaneStore } from '../stores/takeLaneStore';
 

@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
     midiStoreValue: { value: { notesByClipId: {} } },
 }));
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
         get value() { return mocks.midiStoreValue.value; },
     }

@@ -7,8 +7,8 @@ vi.mock('../../../useCases/setWorkspaceMode', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('#/modules/Automation', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Automation')>();
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
     return {
         ...actual,
         getAutomationStoreState: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
-import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation';
+import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation/useCases';
 import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

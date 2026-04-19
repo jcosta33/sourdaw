@@ -44,7 +44,8 @@ import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { eventBus } from '#/app/registerDependencies';
 import { shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { executeAppAction } from '../../executeAppAction';
-import { toolSwapStore, getWorkspaceState } from '#/modules/Workspace';
+import { toolSwapStore } from '#/modules/Workspace/stores';
+import { getWorkspaceState } from '#/modules/Workspace/useCases';
 
 const ZOOM_STEP = 4;
 

@@ -14,6 +14,8 @@
 ---
 
 > **FIX SESSION** — Prefer the smallest change that fixes the bug. If you discover a related defect or an obvious safety fix in the same area, you may take it on; document it in **Findings** or **Decisions**. Do not revert correct fixes only to keep the diff smaller.
+> 
+> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Skeptic** persona.
 
 ---
 
@@ -139,6 +141,11 @@ Stop. The standard for a fix is brutal simplicity: the minimum change that addre
 ### Conventions
 
 - Did you accidentally violate any React 19 rules, architectural boundaries, or coding conventions while fixing the bug?
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.

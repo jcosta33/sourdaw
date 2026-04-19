@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
-import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation';
+import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
 import { transportStore } from '../../stores/transportStore';
 
 vi.mock('../../stores/transportStore', () => ({
@@ -72,8 +72,8 @@ vi.mock('../scheduling/applyAutomation/applyVcaGains', () => ({
 vi.mock('../scheduling/applyAutomation/applyAutomation', () => ({
     applyAutomation: vi.fn(),
 }));
-vi.mock('#/modules/Automation', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Automation')>();
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const mod = await importOriginal<typeof import('#/modules/Automation/useCases')>();
     return {
         ...mod,
         startAutomationRecording: vi.fn(),

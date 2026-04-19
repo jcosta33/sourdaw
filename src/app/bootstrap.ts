@@ -4,7 +4,7 @@
 import { eventBus, logger } from './registerDependencies';
 import { initToasterSubscribers } from '#/modules/Toaster/useCases';
 import { initStalenessDetection } from '#/modules/Arrangement/useCases/freezeBounce/initStalenessDetection';
-import { initBrowserAi } from '#/modules/BrowserAi';
+import { initBrowserAi } from '#/modules/BrowserAi/useCases';
 import { setFermenterDependencies } from '#/modules/Fermenter/useCases/fermenterDependencies';
 import {
     getAllTracks,

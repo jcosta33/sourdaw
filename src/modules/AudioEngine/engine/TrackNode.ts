@@ -94,7 +94,7 @@ export class TrackNode {
 
         this.routeOutput();
     }
-...
+
     public addMidiFx(fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void {
         this.strip.midiFxNodes.push({
             id: fxId,
@@ -125,6 +125,17 @@ export class TrackNode {
         const fx = this.strip.midiFxNodes.find((f) => f.id === fxId);
         if (fx) {
             fx.bypassed = bypassed;
+        }
+    }
+
+    public registerTuningTable(frequencies: number[]): void {
+        for (const dn of this.strip.deviceNodes) {
+            if (dn.kneadControls) {
+                dn.kneadControls.setParam('tuning-table', frequencies as any);
+            }
+            if (dn.fermenterControls) {
+                dn.fermenterControls.setParam('tuning-table', frequencies as any);
+            }
         }
     }
 

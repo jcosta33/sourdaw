@@ -2,7 +2,7 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
-import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync } from 'lucide-react';
+import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync, Settings } from 'lucide-react';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
 import { useTracks } from '../hooks/useTracks';
@@ -13,6 +13,7 @@ import { type SidebarRoute } from './Sidebar/SidebarTypes';
 import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';
 import { EffectsTab } from './Sidebar/EffectsTab';
+import { ProjectTab } from './Sidebar/ProjectTab';
 
 export type { SidebarRoute };
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
@@ -38,22 +39,24 @@ type SidebarProps = {
 /** User-imported samples only — no placeholder data */
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
-const TAB_ITEMS: { id: 'instruments' | 'effects' | 'library' | 'macros'; label: string; Icon: typeof Music }[] =
+const TAB_ITEMS: { id: 'instruments' | 'effects' | 'library' | 'macros' | 'project'; label: string; Icon: typeof Music }[] =
     [
         { id: 'instruments', label: 'Instruments', Icon: Music },
         { id: 'effects', label: 'Effects', Icon: Waves },
         { id: 'library', label: 'Library', Icon: FileAudio },
         { id: 'macros', label: 'Macros', Icon: Zap },
+        { id: 'project', label: 'Project', Icon: Settings },
     ];
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('instruments');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros' | 'project'>('instruments');
     const [libSubTab, setLibSubTab] = useState<'mine' | 'find' | 'folders'>('folders');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
         effects: [{ id: 'effects', title: 'Effects' }],
         macros: [{ id: 'macros', title: 'Macros' }],
+        project: [{ id: 'project', title: 'Project' }],
     });
 
     const currentStack = navStacks[activeTab] ?? [];
@@ -291,6 +294,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     ) : null}
 
                     {activeTab === 'macros' ? <MacrosPanel /> : null}
+                    {activeTab === 'project' ? <ProjectTab /> : null}
                 </div>
             </ScrollArea>
         </aside>

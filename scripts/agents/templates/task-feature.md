@@ -13,6 +13,10 @@
 
 ---
 
+> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Builder** persona.
+
+---
+
 ## Objective
 
 What this session must accomplish. One paragraph maximum. Be specific — vague objectives produce vague outcomes.
@@ -139,6 +143,11 @@ Stop. Act as a senior engineer doing an adversarial review of this implementatio
 ### Completeness
 
 - Is anything left stubbed, TODO'd, or half-implemented? Would the next developer be able to pick this up with zero questions from this task file and Self-review alone?
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.

@@ -1,5 +1,5 @@
 import { type ReactElement, useRef, useEffect, useLayoutEffect, useState, type PointerEvent } from 'react';
-import { kneadStore, updateClipKneadState } from '#/modules/Knead';
+import { kneadStore, updateClipKneadState } from '#/modules/Knead/stores';
 import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
 import { useStore } from '#/infra/store/useStore';
 import { useTracks } from '../../hooks/useTracks';
@@ -12,7 +12,7 @@ import { Mic } from 'lucide-react';
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { projectStore } from '#/modules/Project';
+import { projectStore } from '#/modules/Project/stores';
 import { quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
 
 type KneadHotspot = 'BODY' | 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' | 'CENTER_UPPER' | 'CENTER_LOWER';
@@ -24,7 +24,6 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     const [zoom, setZoom] = useState(1.0);
     const [isDragging, setIsDragging] = useState(false);
     const [hoveredBlobId, setHoveredBlobId] = useState<string | null>(null);
-    const [activeHotspot, setActiveHotspot] = useState<KneadHotspot | null>(null);
 
     const dragStart = useRef<{
         x: number;
@@ -42,6 +41,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     const kneadStoreState = useStore(kneadStore, {
         activeClipId: null,
         clips: {},
+        contours: {},
         isAnalyzing: false,
         analysisProgress: 0,
     });
@@ -150,7 +150,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             if (stateRef.current.contour && stateRef.current.contour.points.length > 0) {
                 const currentContour = stateRef.current.contour;
                 const avgCents =
-                    currentKnead?.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / (currentKnead?.blobs.length || 1) || 6000;
+                    (currentKnead?.blobs?.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) ?? 6000) / (currentKnead?.blobs?.length || 1) || 6000;
                 
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
                 ctx.lineWidth = 1;
@@ -316,7 +316,6 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                 endTime: hit.endTime
             };
             setIsDragging(true);
-            setActiveHotspot(hotspot);
             canvasRef.current!.setPointerCapture(e.pointerId);
         }
     };
@@ -329,7 +328,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         if (!isDragging) {
             // Hover detection
             const avgCents =
-                kneadState?.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / (kneadState?.blobs.length || 1);
+                (kneadState?.blobs?.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) ?? 6000) / (kneadState?.blobs?.length || 1);
             
             const hit = kneadState?.blobs.find((blob) => {
                 const bx = blob.startTime * pixelsPerSecond;
@@ -404,7 +403,6 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     const handlePointerUp = () => {
         dragStart.current = null;
         setIsDragging(false);
-        setActiveHotspot(null);
     };
 
     return (
@@ -412,46 +410,42 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             <div className="absolute top-0 left-0 right-0 h-10 bg-surface-base/90 backdrop-blur-md border-b flex items-center px-4 gap-6 z-20 shadow-sm">
                 {hasKnead && kneadState && kneadState.blobs.length > 0 ? (
                     <>
-                        <div className=\"flex items-center gap-2\">
-                            <span className=\"text-[10px] uppercase font-bold text-muted-foreground w-12 text-right\">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
                                 Retune
                             </span>
                             <Slider
-                                className=\"w-24\"
+                                className="w-24"
                                 value={[kneadState.retuneSpeedMs ?? 25]}
                                 min={0}
                                 max={200}
-                                onValueChange={([val]) => updateClipKneadState(clipId, (s) => ({ ...s, retuneSpeedMs: val }))}
+                                onValueChange={([val]) => updateClipKneadState(clipId, (s) => ({ ...s, retuneSpeedMs: val ?? 25 }))}
                             />
                         </div>
 
-                        <div className=\"h-4 w-[1px] bg-border mx-1\" />
+                        <div className="h-4 w-[1px] bg-border mx-1" />
 
-                        <div className=\"flex items-center gap-3\">
-                            <p className=\"text-[10px] font-bold uppercase tracking-wider text-muted-foreground\">Scale</p>
-                            <div className=\"flex items-center gap-1\">
+                        <div className="flex items-center gap-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Scale</p>
+                            <div className="flex items-center gap-1">
                                 <select 
-                                    className=\"bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors\"
+                                    className="bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors"
                                     value={keyRoot}
                                     onChange={(e) => handleKeyChange(parseInt(e.target.value))}
                                 >
-                                    {KEY_NAMES.map((name, i) => <option key={name} value={i} className=\"bg-surface-elevated text-foreground\">{name}</option>)}
+                                    {KEY_NAMES.map((name, i) => <option key={name} value={i} className="bg-surface-elevated text-foreground">{name}</option>)}
                                 </select>
                                 <select 
-                                    className=\"bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors capitalize\"
+                                    className="bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors capitalize"
                                     value={scaleName}
                                     onChange={(e) => handleScaleChange(e.target.value)}
                                 >
-                                    {SCALE_NAMES.map((name) => <option key={name} value={name} className=\"bg-surface-elevated text-foreground\">{name.replace(/([A-Z])/g, ' $1')}</option>)}
+                                    {SCALE_NAMES.map((name) => <option key={name} value={name} className="bg-surface-elevated text-foreground">{name.replace(/([A-Z])/g, ' $1')}</option>)}
                                 </select>
                             </div>
-                            <Button variant=\"ghost\" size=\"xs\" className=\"h-7 px-2 text-[11px] font-semibold hover:bg-accent-primary/10 hover:text-accent-primary ml-2\" onClick={handleCorrectPitch}>
+                            <Button variant="ghost" size="xs" className="h-7 px-2 text-[11px] font-semibold hover:bg-accent-primary/10 hover:text-accent-primary ml-2" onClick={handleCorrectPitch}>
                                 Correct All
                             </Button>
-                        </div>
-
-                                }
-                            />
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">

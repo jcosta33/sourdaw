@@ -42,7 +42,7 @@ vi.mock('#/modules/Arrangement/presentations/views/TimelineChromeSurface', () =>
     ),
 }));
 
-vi.mock('#/modules/Automation/stores/automationStore', () => ({
+vi.mock('#/modules/Automation/useCases/automationStore', () => ({
     automationStore: { value: { lanes: [] } },
 }));
 

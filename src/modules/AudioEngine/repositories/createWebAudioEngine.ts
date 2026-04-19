@@ -305,6 +305,15 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
+    public registerTuningTable(frequencies: number[]): void {
+        if (this.fallbackMode) {
+            return;
+        }
+        for (const trackNode of this.trackNodes.values()) {
+            trackNode.registerTuningTable(frequencies);
+        }
+    }
+
     public setTransportInfo(beat: number, tempo: number, isPlaying: boolean, loopStart = 0, loopEnd = 0, isLooping = false): void {
         const v = this.transportView;
         v[0] = beat;

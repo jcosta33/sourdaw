@@ -29,8 +29,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Automation', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Automation')>();
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
     return {
         ...actual,
         getAutomationLanes: offlineRenderMocks.getAutomationLanes,

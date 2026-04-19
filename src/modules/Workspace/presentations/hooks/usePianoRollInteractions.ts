@@ -38,8 +38,8 @@ import {
     stepRecordStepDown,
     stepRecordNoteOn,
     stepRecordNoteOff,
-    stepRecordStore,
-} from '#/modules/MIDI';
+} from '#/modules/MIDI/useCases';
+import { stepRecordStore } from '#/modules/MIDI/stores';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
@@ -1264,12 +1264,18 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 stepRecordStepDown();
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
+            } else if (e.key === ' ' && e.ctrlKey) {
                 const state = stepRecordStore.value;
-                stepRecordNoteOn(state.currentPitch);
-                stepRecordNoteOff(state.currentPitch);
+                if (state) {
+                    stepRecordNoteOn(state.currentPitch);
+                    stepRecordNoteOff(state.currentPitch);
+                }
+            } else if (e.key === 'Enter') {
+                stepRecordAdvance();
+            } else if (e.key === 'Backspace') {
+                stepRecordRetreat();
             }
+
             const velocityPresets: Record<string, number> = {
                 '1': 18,
                 '2': 36,

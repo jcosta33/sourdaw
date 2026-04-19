@@ -14,6 +14,8 @@
 ---
 
 > 🔒 **SPEC WRITING SESSION** — This session produces a spec document, not code. You may NOT modify any source files, configuration files, or dependencies. Output: `.agents/specs/{{slug}}.md`.
+> 
+> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Architect** persona.
 
 ---
 
@@ -171,6 +173,11 @@ Stop. A spec that ships with gaps, ambiguities, or unresolved questions will cau
 ### Integration with existing patterns
 
 - Did you complete the Pattern survey above? For each major design choice, does it reuse an established helper/primitive/convention, or does it introduce a new one? If new, is the "Deliberate departures" justification defensible? Would a reviewer familiar with the codebase recognize the spec's shape immediately?
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.

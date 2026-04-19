@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resetOverride } from '#/modules/Automation/useCases/automation/resetOverride';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { resetOverride } from '../resetOverride';
+import { automationStore } from '../../../stores/automationStore';
 
 describe('resetOverride', () => {
     beforeEach(() => {

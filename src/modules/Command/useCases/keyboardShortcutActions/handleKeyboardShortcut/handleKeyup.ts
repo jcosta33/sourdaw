@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
-import { toolSwapStore, setEditingTool } from '#/modules/Workspace';
+import { toolSwapStore } from '#/modules/Workspace/stores';
+import { setEditingTool } from '#/modules/Workspace/useCases';
 
 /**
  * Handles a keyup event for shortcuts that need release tracking.

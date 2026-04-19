@@ -157,6 +157,7 @@ export type AudioEngine = {
     updateMidiFxParam(trackId: string, fxId: string, paramId: string, value: number): void;
     updateMidiFxBypass(trackId: string, fxId: string, bypassed: boolean): void;
     syncKneadState(trackId: string, clips: Record<string, any>): void;
+    registerTuningTable(frequencies: number[]): void;
     ensureBusStrip(busId: string): BusStrip;
     removeBusStrip(busId: string): void;
     setBusGain(busId: string, gain: number): void;
@@ -170,4 +171,12 @@ export type AudioEngine = {
     unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
     waitForDevices(): Promise<void>;
     setMasterTrackId?(trackId: string): void;
+    setTransportInfo(
+        beat: number, 
+        bpm: number, 
+        playing: boolean, 
+        loopStart?: number, 
+        loopEnd?: number, 
+        isLooping?: boolean
+    ): void;
 };

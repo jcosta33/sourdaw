@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { cyan, dim, bold, blue, reset } from './colors.mjs';
 
 /**
  * Resolve the effective terminal backend based on config/flag/platform.
@@ -21,13 +22,14 @@ export function resolveBackend(requested) {
  * @returns {string}
  */
 function buildBanner(info) {
+    const titleWidth = Math.max(0, 50 - info.title.length - 3);
     return [
-        `Task:      ${info.title}`,
-        `Slug:      ${info.slug}`,
-        `Branch:    ${info.branch}`,
-        `Task file: ${info.taskFile}`,
-        ``,
-        `Launching ${info.agent}...`,
+        `\n${cyan('┌')} ${bold(cyan(info.title))} ${cyan('─'.repeat(titleWidth))}`,
+        `${cyan('│')} ${dim('Slug:')}      ${info.slug}`,
+        `${cyan('│')} ${dim('Branch:')}    ${info.branch}`,
+        `${cyan('│')} ${dim('Task file:')} ${info.taskFile}`,
+        `${cyan('└' + '─'.repeat(50))}\n`,
+        `${blue('i')} Launching ${bold(info.agent)}...\n`,
     ].join('\n');
 }
 

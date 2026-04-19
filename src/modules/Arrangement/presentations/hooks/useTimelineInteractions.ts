@@ -27,15 +27,15 @@ import {
 import { trackStore } from '../../stores/trackStore';
 import { midiStore } from '#/modules/MIDI/stores';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
-import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation';
+import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { addClip } from '../../useCases/clip/addClip';
 import { removeClip } from '../../useCases/clip/removeClip';
 import { moveClip } from '../../useCases/clip/moveClip';
-import { moveMidiNote } from '#/modules/MIDI';
+import { moveMidiNote } from '#/modules/MIDI/useCases';
 import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
-import { getWorkspaceState } from '#/modules/Workspace';
+import { getWorkspaceState } from '#/modules/Workspace/useCases';
 import { planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';
 import { rippleInsertClip, undoRippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
 import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';

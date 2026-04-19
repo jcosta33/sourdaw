@@ -1,7 +1,7 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../models/Track';
-import { shiftClipAutomation } from '#/modules/Automation';
+import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 
 export function moveClip(
