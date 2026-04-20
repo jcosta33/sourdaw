@@ -8,7 +8,6 @@ const { mocks } = vi.hoisted(() => {
             initialize: vi.fn().mockResolvedValue(undefined),
             registerPlugins: vi.fn(),
             registerFaustDsp: vi.fn(),
-            requestMic: vi.fn(),
         },
     };
 });
@@ -18,10 +17,6 @@ vi.mock('../../repositories/createWebAudioEngine', () => ({
         initialize: mocks.initialize,
         context: null as AudioContext | null,
     },
-}));
-
-vi.mock('../audioRecorder/requestMicPermission', () => ({
-    requestMicPermission: mocks.requestMic,
 }));
 
 vi.mock('#/modules/Plugin/useCases', async (importOriginal) => {
@@ -39,7 +34,6 @@ describe('initializeAudioEngine', () => {
         await initializeAudioEngine();
 
         expect(mocks.initialize).toHaveBeenCalledTimes(1);
-        expect(mocks.requestMic).toHaveBeenCalledTimes(1);
         expect(mocks.registerPlugins).toHaveBeenCalledTimes(1);
         expect(mocks.registerFaustDsp).toHaveBeenCalledTimes(1);
     });

@@ -1,5 +1,19 @@
 # Bug Report: Console Errors and Warnings
 
+## Progress
+
+- **Bug 1 (TrackNode / InvalidStateError):** ✅ Fixed at root.
+    - `audioEngine.initialize()` is now kicked off at module instantiation in `src/modules/AudioEngine/repositories/createWebAudioEngine.ts` — worklet module loading no longer depends on a user gesture (only `context.resume()` does).
+    - `initialize()` is idempotent and caches its own promise; a new `whenReady()` method on the engine returns it.
+    - `useAppInitialization` (`src/modules/Workspace/presentations/hooks/useAppInitialization.ts`) now `await`s `initializeAudioEngine()` on mount **before** loading the project — so `projectStore.initialized` cannot flip to `true` (and therefore the track-creation UI cannot render) until worklets are loaded. First-click gesture handler is now only `resumeEngine()` + `requestMicPermission()`.
+    - `initialize()` no longer swallows module-load failures with a try/catch; worklet load errors propagate so they surface as real failures instead of a half-working engine.
+- **Bug 2 (Staleness Detection TypeError):** ✅ Fixed at root.
+    - `src/modules/Arrangement/useCases/freezeBounce/initStalenessDetection.ts` now uses `track.freezeState?.status` and defaults `freezeState` to `{ status: 'unfrozen' }` when updating, so tracks loaded from older project files or created without the field don't crash the subscriber.
+- **Bug 3 (Worklet Module Loading AbortError):** ✅ Fixed at root.
+    - Root cause: all 10 processor files in `src/modules/AudioEngine/services/*.ts` imported a deleted `../wasm/workletPolyfill.js`, which made every processor fail to bundle and thus `audioWorklet.addModule()` 404'd in Vite.
+    - Polyfills for `TextDecoder`/`TextEncoder`/`FinalizationRegistry` already live at the top of the generated bindings (`daw_dsp.js`, `proof_chamber.js`, `scoring.js`) via `scripts/gen-*-worklet.ts`. The separate polyfill import is redundant.
+    - Removed the `import '../wasm/workletPolyfill.js';` line from: `toasterProcessor.ts`, `scoringProcessor.ts`, `kneadProcessor.ts`, `proofChamberProcessor.ts`, `levainProcessor.ts`, `grinderProcessor.ts`, `bacteriaProcessor.ts`, `glutenProcessor.ts`, `proofProcessor.ts`, `fermenterProcessor.ts`.
+
 ## 1. TrackNode Creation Failure (InvalidStateError)
 
 **Error:** `Uncaught InvalidStateError: Failed to construct 'AudioWorkletNode': AudioWorkletNode cannot be created: AudioWorklet does not have a valid AudioWorkletGlobalScope. Load a script via audioWorklet.addModule() first.`

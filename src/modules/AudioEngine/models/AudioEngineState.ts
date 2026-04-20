@@ -130,6 +130,12 @@ export type AudioEngine = {
     readonly masterGainNode: GainNode;
     readonly masterAnalyser: AnalyserNode;
     initialize(): Promise<void>;
+    /**
+     * Resolves once worklet modules are fully loaded and the engine can
+     * safely construct AudioWorkletNodes. Kicked off at module load; callers
+     * that create tracks/devices MUST await this before the first such call.
+     */
+    whenReady(): Promise<void>;
     resume(): Promise<void>;
     suspend(): Promise<void>;
     setMasterGain(value: number): void;

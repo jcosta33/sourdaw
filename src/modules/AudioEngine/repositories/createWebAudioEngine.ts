@@ -25,6 +25,7 @@ class AudioEngineImpl implements AudioEngine {
     private fallbackMode = false;
     private transportSAB: SharedArrayBuffer;
     private transportView: Float64Array;
+    private initPromise: Promise<void> | null = null;
 
     constructor(providedContext?: AudioContext) {
         // Transport SAB Layout (Float64Array):
@@ -68,30 +69,35 @@ class AudioEngineImpl implements AudioEngine {
         this.masterMeterBuffer = new Float32Array(1);
     }
 
-    public async initialize(): Promise<void> {
-        if (this.fallbackMode) {
-            return;
+    public initialize(): Promise<void> {
+        if (this.initPromise) {
+            return this.initPromise;
         }
-        try {
+        if (this.fallbackMode) {
+            this.initPromise = Promise.resolve();
+            return this.initPromise;
+        }
+        // Load worklet modules. This does NOT require a user gesture and is
+        // safe to run on app mount; it MUST complete before any TrackNode or
+        // device node is constructed because they synchronously instantiate
+        // AudioWorkletNodes (metering-processor, etc.). Resuming the context
+        // is a separate concern — see resume(), which must run on a gesture.
+        this.initPromise = (async () => {
             await this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js');
             await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js');
             await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js');
             await this.context.audioWorklet.addModule(recordingProcessorUrl);
             await this.context.audioWorklet.addModule(meteringProcessorUrl);
             this.workletReady = true;
-        } catch (error) {
-            logger.warn(`AudioWorklet modules failed to load: ${error}`);
-            notifyUser('Some audio processing modules failed to load — certain effects may not work.', 'error');
-            this.workletReady = false;
-        }
+        })();
+        return this.initPromise;
+    }
 
-        try {
-            if (this.context.state === 'suspended') {
-                await this.context.resume();
-            }
-        } catch (error) {
-            logger.warn(`AudioContext resume failed during init: ${error}`);
-        }
+    public whenReady(): Promise<void> {
+        // initialize() is idempotent and caches its own promise. Calling it
+        // here ensures whenReady() always returns the same promise whether
+        // initialize() has been kicked off yet or not.
+        return this.initialize();
     }
 
     public async resume(): Promise<void> {
@@ -542,3 +548,11 @@ export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
 }
 
 export const audioEngine = createAudioEngine();
+
+// Start worklet module loading eagerly — worklets don't require a user
+// gesture and loading them before first interaction closes the race where
+// UI handlers synchronously construct AudioWorkletNodes (e.g. TrackNode's
+// metering-processor) before initialize() has resolved. Consumers that
+// construct tracks or devices must await audioEngine.whenReady() before
+// their first call.
+void audioEngine.initialize();

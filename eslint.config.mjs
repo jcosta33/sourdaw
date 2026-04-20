@@ -401,6 +401,102 @@ const sourdawPlugin = {
                 };
             },
         },
+
+        // AGENTS.md L147: Prefer `as const` objects over `enum`.
+        'no-enum': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Disallow `enum` declarations. Use `as const` objects instead (AGENTS.md § React 19 & Coding Conventions).',
+                },
+                schema: [],
+                messages: {
+                    noEnum: 'Do not use `enum`. Use an `as const` object instead. See AGENTS.md § React 19 & Coding Conventions → TypeScript Forms.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                return {
+                    /** @param {any} node */
+                    TSEnumDeclaration(node) {
+                        context.report({ node, messageId: 'noEnum' });
+                    },
+                };
+            },
+        },
+
+        // AGENTS.md L149: Never use namespace imports (`import * as X`). Zod is exempted because
+        // `import * as z from 'zod'` is the standard documented pattern (docs/02-forms.md).
+        'no-namespace-import': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Disallow namespace imports (`import * as X`). Always import named exports individually (AGENTS.md § React 19 & Coding Conventions).',
+                },
+                schema: [],
+                messages: {
+                    noNamespaceImport:
+                        'Do not use namespace imports (`import * as X from ...`). Import named exports individually. See AGENTS.md § React 19 & Coding Conventions.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        const source = node.source.value;
+                        if (source === 'zod' || (typeof source === 'string' && source.startsWith('zod/'))) return;
+
+                        for (const specifier of node.specifiers ?? []) {
+                            if (specifier.type === 'ImportNamespaceSpecifier') {
+                                context.report({ node: specifier, messageId: 'noNamespaceImport' });
+                            }
+                        }
+                    },
+                };
+            },
+        },
+
+        // AGENTS.md L148: `as`, `as any`, or `as unknown as …` to silence compiler errors is forbidden.
+        // Catches `x as any` and the `x as unknown as T` double-assertion escape hatch.
+        'no-type-assertion-escape': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Disallow `as any` and `as unknown as X` — forbidden soundness escapes (AGENTS.md § TypeScript — soundness).',
+                },
+                schema: [],
+                messages: {
+                    noAsAny:
+                        '`as any` is forbidden. Fix the value or the type. Use `unknown` + narrowing, `satisfies`, or Zod validation at I/O boundaries.',
+                    noAsUnknownAs:
+                        '`as unknown as X` double-assertion is forbidden — it silences the type checker. Narrow via `unknown` + type guards or validate with Zod at I/O boundaries.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                return {
+                    /** @param {any} node */
+                    TSAsExpression(node) {
+                        // `x as any`
+                        if (node.typeAnnotation?.type === 'TSAnyKeyword') {
+                            context.report({ node, messageId: 'noAsAny' });
+                            return;
+                        }
+                        // `x as unknown as T`: outer TSAsExpression where inner is `as unknown`
+                        if (
+                            node.expression?.type === 'TSAsExpression' &&
+                            node.expression.typeAnnotation?.type === 'TSUnknownKeyword'
+                        ) {
+                            context.report({ node, messageId: 'noAsUnknownAs' });
+                        }
+                    },
+                };
+            },
+        },
     },
 };
 
@@ -565,7 +661,8 @@ export default defineConfig(
             '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
             'no-dupe-class-members': 'off',
             '@typescript-eslint/no-dupe-class-members': 'error',
-            '@typescript-eslint/no-explicit-any': 'warn',
+            // AGENTS.md L148: `any` is forbidden except at a boundary with immediate narrowing.
+            '@typescript-eslint/no-explicit-any': 'error',
             'no-implied-eval': 'off',
             '@typescript-eslint/no-implied-eval': 'error',
             'dot-notation': 'off',
@@ -575,11 +672,12 @@ export default defineConfig(
             '@typescript-eslint/no-unnecessary-type-assertion': 'error',
             '@typescript-eslint/no-unnecessary-condition': 'warn',
             '@typescript-eslint/switch-exhaustiveness-check': 'warn',
-            '@typescript-eslint/no-unsafe-argument': 'warn',
-            '@typescript-eslint/no-unsafe-assignment': 'warn',
-            '@typescript-eslint/no-unsafe-call': 'warn',
-            '@typescript-eslint/no-unsafe-member-access': 'warn',
-            '@typescript-eslint/no-unsafe-return': 'warn',
+            // AGENTS.md L148: soundness — unsafe `any` propagation is forbidden.
+            '@typescript-eslint/no-unsafe-argument': 'error',
+            '@typescript-eslint/no-unsafe-assignment': 'error',
+            '@typescript-eslint/no-unsafe-call': 'error',
+            '@typescript-eslint/no-unsafe-member-access': 'error',
+            '@typescript-eslint/no-unsafe-return': 'error',
             'require-await': 'off',
             '@typescript-eslint/require-await': 'warn',
             '@typescript-eslint/restrict-plus-operands': 'error',
@@ -601,6 +699,43 @@ export default defineConfig(
             '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
             '@typescript-eslint/no-floating-promises': 'error',
             '@typescript-eslint/prefer-promise-reject-errors': 'warn',
+
+            // AGENTS.md L147: Prefer `type` over `interface`.
+            '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
+
+            // AGENTS.md L148: `{}`, unconstrained `object` are forbidden placeholder types.
+            '@typescript-eslint/no-empty-object-type': 'error',
+
+            // AGENTS.md L148: `@ts-expect-error`/`@ts-ignore`/`@ts-nocheck` without justification forbidden.
+            '@typescript-eslint/ban-ts-comment': [
+                'error',
+                {
+                    'ts-expect-error': 'allow-with-description',
+                    'ts-ignore': true,
+                    'ts-nocheck': true,
+                    'ts-check': false,
+                    minimumDescriptionLength: 10,
+                },
+            ],
+
+            // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
+            'sourdaw/no-enum': 'error',
+            'sourdaw/no-namespace-import': 'error',
+            'sourdaw/no-type-assertion-escape': 'error',
+
+            // AGENTS.md L150: No single-letter variable names.
+            // `_` is kept for intentionally-unused destructured positional slots.
+            'id-length': ['error', { min: 2, exceptions: ['_'], properties: 'never' }],
+
+            // AGENTS.md L150: No single-letter generic type parameters.
+            '@typescript-eslint/naming-convention': [
+                'error',
+                {
+                    selector: 'typeParameter',
+                    format: ['PascalCase'],
+                    custom: { regex: '^.{2,}$', match: true },
+                },
+            ],
         },
     },
 
@@ -851,6 +986,32 @@ export default defineConfig(
             // Vitest `vi.mock()` calls sit between imports by design (Vitest hoists them),
             // which triggers false positives for `import-x/first`.
             'import-x/first': 'off',
+            // `import * as subject from '../module'` is the canonical "test the whole surface" pattern.
+            'sourdaw/no-namespace-import': 'off',
+            // Mocks and minimal stubs often use `{}` as a placeholder shape.
+            '@typescript-eslint/no-empty-object-type': 'off',
+            // Tests frequently use short names (`t`, `p`, `a`, `b`) for intermediate values.
+            'id-length': 'off',
+            // Tests frequently parameterise generics with `T`, `K` etc. for brevity.
+            '@typescript-eslint/naming-convention': 'off',
+            // `as any` in tests is sometimes necessary to construct partial mocks of complex types.
+            'sourdaw/no-type-assertion-escape': 'off',
+            '@typescript-eslint/no-unsafe-argument': 'warn',
+            '@typescript-eslint/no-unsafe-assignment': 'warn',
+            '@typescript-eslint/no-unsafe-call': 'warn',
+            '@typescript-eslint/no-unsafe-member-access': 'warn',
+            '@typescript-eslint/no-unsafe-return': 'warn',
+            '@typescript-eslint/no-explicit-any': 'warn',
+        },
+    },
+
+    // ─── shadcn / Radix UI primitives ────────────────────────────────────────
+    // Radix documents its public API as `import * as Primitive from '@radix-ui/...'`.
+    // These wrappers in `src/components/` follow that convention.
+    {
+        files: ['src/components/**/*.{ts,tsx}'],
+        rules: {
+            'sourdaw/no-namespace-import': 'off',
         },
     },
 
